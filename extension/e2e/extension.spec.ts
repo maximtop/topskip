@@ -1,0 +1,207 @@
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { test, expect, chromium, type BrowserContext } from '@playwright/test';
+
+import {
+  expectNoCollectedErrors,
+  openPopupAndWaitForUi,
+  trackPageErrors,
+  trackServiceWorkerConsoleErrors,
+} from './extension-helpers';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const extensionPath = path.resolve(__dirname, '../dist');
+
+/**
+ * Default **headless** for CI/local; set `PW_EXTENSION_HEADED=1` for a visible
+ * browser when debugging.
+ */
+const extensionHeadless = process.env.PW_EXTENSION_HEADED !== '1';
+
+function extensionContextOptions() {
+  return {
+    headless: extensionHeadless,
+    args: [
+      `--disable-extensions-except=${extensionPath}`,
+      `--load-extension=${extensionPath}`,
+    ],
+  };
+}
+
+async function getExtensionId(context: BrowserContext): Promise<string> {
+  const fromUrl = (w: { url: () => string }) => new URL(w.url()).hostname;
+
+  const existing = context
+    .serviceWorkers()
+    .find((w) => w.url().includes('background'));
+  if (existing) {
+    return fromUrl(existing);
+  }
+
+  const worker = await context.waitForEvent('serviceworker', {
+    predicate: (w) => w.url().includes('background'),
+    timeout: 30_000,
+  });
+  return fromUrl(worker);
+}
+
+test.describe('TopSkip extension', () => {
+  test.setTimeout(120_000);
+
+  test('service worker and popup load without console errors', async () => {
+    const errors: string[] = [];
+    const context = await chromium.launchPersistentContext(
+      '',
+      extensionContextOptions(),
+    );
+
+    try {
+      trackServiceWorkerConsoleErrors(context, errors);
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await openPopupAndWaitForUi(
+        context,
+        extensionId,
+        errors,
+      );
+      await popupPage.close();
+
+      expectNoCollectedErrors(errors);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('skips from ~30s to 60s on fixture page', async () => {
+    const errors: string[] = [];
+    const context = await chromium.launchPersistentContext(
+      '',
+      extensionContextOptions(),
+    );
+
+    try {
+      trackServiceWorkerConsoleErrors(context, errors);
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await openPopupAndWaitForUi(
+        context,
+        extensionId,
+        errors,
+      );
+      await popupPage.close();
+
+      const page = await context.newPage();
+      trackPageErrors(page, 'fixture', errors);
+      await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+
+      await page.waitForSelector('video', { state: 'attached' });
+      await page.evaluate(async () => {
+        const video = document.querySelector('video');
+        if (!video) {
+          throw new Error('no video');
+        }
+        await new Promise<void>((resolve, reject) => {
+          if (video.readyState >= 1) {
+            resolve();
+            return;
+          }
+          video.addEventListener('loadedmetadata', () => resolve(), {
+            once: true,
+          });
+          video.addEventListener(
+            'error',
+            () => reject(new Error('video error')),
+            { once: true },
+          );
+        });
+      });
+
+      await page.evaluate(() => {
+        const video = document.querySelector('video') as HTMLVideoElement;
+        video.muted = true;
+        video.playbackRate = 4;
+        void video.play();
+      });
+
+      await expect
+        .poll(
+          async () =>
+            page.evaluate(() => {
+              const video = document.querySelector('video') as HTMLVideoElement;
+              return video.currentTime;
+            }),
+          { timeout: 90_000 },
+        )
+        .toBeGreaterThan(59);
+
+      expectNoCollectedErrors(errors);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('popup toggle disables skip', async () => {
+    const errors: string[] = [];
+    const context = await chromium.launchPersistentContext(
+      '',
+      extensionContextOptions(),
+    );
+
+    try {
+      trackServiceWorkerConsoleErrors(context, errors);
+      const extensionId = await getExtensionId(context);
+
+      const popupPage = await openPopupAndWaitForUi(
+        context,
+        extensionId,
+        errors,
+      );
+      await popupPage.getByRole('switch', { name: /enable/i }).click();
+
+      const page = await context.newPage();
+      trackPageErrors(page, 'fixture', errors);
+      await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+      await page.waitForSelector('video');
+
+      await page.evaluate(async () => {
+        const video = document.querySelector('video') as HTMLVideoElement;
+        await new Promise<void>((resolve, reject) => {
+          if (video.readyState >= 1) {
+            resolve();
+            return;
+          }
+          video.addEventListener('loadedmetadata', () => resolve(), {
+            once: true,
+          });
+          video.addEventListener(
+            'error',
+            () => reject(new Error('video error')),
+            { once: true },
+          );
+        });
+      });
+
+      await page.evaluate(() => {
+        const video = document.querySelector('video') as HTMLVideoElement;
+        video.muted = true;
+        video.playbackRate = 4;
+        void video.play();
+      });
+
+      await page.waitForTimeout(12_000);
+
+      const t = await page.evaluate(() => {
+        const video = document.querySelector('video') as HTMLVideoElement;
+        return video.currentTime;
+      });
+
+      expect(t).toBeGreaterThan(40);
+      expect(t).toBeLessThan(58);
+
+      expectNoCollectedErrors(errors);
+    } finally {
+      await context.close();
+    }
+  });
+});

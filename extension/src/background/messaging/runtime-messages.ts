@@ -1,0 +1,83 @@
+import * as v from 'valibot';
+
+import browser from '@/shared/browser';
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+import { userPreferencesSchema } from '@/shared/constants';
+import { getErrorMessage } from '@/shared/error';
+import {
+  TOPSKIP_MESSAGE,
+  type GetPrefsResponse,
+  type SetPrefsResponse,
+} from '@/shared/messages';
+
+import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+
+/**
+ * Namespace for `runtime.onMessage` prefs handling; not instantiable.
+ */
+export class PrefsRuntimeMessages {
+  private constructor() {}
+
+  /**
+   * Handles `runtime` messages from the popup or content scripts (preferences
+   * read/write). Uses the Promise return form so the channel stays open until
+   * the async work finishes.
+   *
+   * @param message Opaque message from `runtime.sendMessage`.
+   * @param _sender Extension message sender (required by the API; unused here).
+   * @returns Response payload for known types, or `undefined` when the message
+   * is ignored.
+   */
+  static async handle(
+    message: unknown,
+    _sender: Runtime.MessageSender,
+  ): Promise<GetPrefsResponse | SetPrefsResponse | undefined> {
+    if (!message || typeof message !== 'object') {
+      return undefined;
+    }
+
+    await PrefsSyncStorage.ready();
+
+    const typeRaw: unknown = Reflect.get(message, 'type');
+    if (typeof typeRaw !== 'string') {
+      return undefined;
+    }
+    const type = typeRaw;
+
+    if (type === TOPSKIP_MESSAGE.GET_PREFS) {
+      try {
+        const prefs = await PrefsSyncStorage.load();
+        return { ok: true, prefs };
+      } catch (e) {
+        return { ok: false, error: getErrorMessage(e) };
+      }
+    }
+
+    if (type === TOPSKIP_MESSAGE.SET_PREFS) {
+      try {
+        const enabledRaw: unknown = Reflect.get(message, 'enabled');
+        const prefs = v.parse(userPreferencesSchema, {
+          enabled: enabledRaw,
+        });
+        await PrefsSyncStorage.save(prefs);
+        await PrefsBroadcast.sendUpdatedToAllTabs(prefs);
+        return { ok: true };
+      } catch (e) {
+        return { ok: false, error: getErrorMessage(e) };
+      }
+    }
+
+    return undefined;
+  }
+
+  /**
+   * Registers the `runtime.onMessage` listener for prefs queries/commands.
+   */
+  static register(): void {
+    browser.runtime.onMessage.addListener(
+      (message: unknown, sender: Runtime.MessageSender) =>
+        PrefsRuntimeMessages.handle(message, sender),
+    );
+  }
+}

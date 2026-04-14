@@ -7,6 +7,7 @@ import {
   getWatchVideoIdFromSearch,
   shouldActivateTopSkip,
 } from '@/content/page-guards';
+import { WatchCaptions } from '@/content/watch-captions';
 import type { UserPreferences } from '@/shared/constants';
 import browser from '@/shared/browser';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
@@ -241,6 +242,7 @@ export class YoutubeWatch {
 
     if (vid !== YoutubeWatch.currentVideoId) {
       YoutubeWatch.resetForNewVideo(vid);
+      WatchCaptions.scheduleForVideoId(vid);
       if (video) {
         YoutubeWatch.bindVideo(video);
       }
@@ -310,6 +312,7 @@ export class YoutubeWatch {
     if (start) {
       YoutubeWatch.bindVideo(start);
     }
+    WatchCaptions.scheduleForVideoId(YoutubeWatch.currentVideoId);
 
     const onNav = (): void => {
       YoutubeWatch.syncVideoBinding();

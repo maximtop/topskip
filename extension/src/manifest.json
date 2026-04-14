@@ -3,7 +3,7 @@
   "name": "TopSkip",
   "version": "0.1.0",
   "description": "Auto-skip 30s–1min on YouTube (MVP)",
-  "permissions": ["storage", "tabs"],
+  "permissions": ["storage", "tabs", "scripting"],
   "host_permissions": ["https://www.youtube.com/*"],
   "background": {
     "service_worker": "background.js"

@@ -51,11 +51,15 @@ There is **no backend** and **no `fetch()` to third-party APIs** in MVP — all 
 │   │   ├── index.ts           # `Content.init()` only (bundle entry)
 │   │   ├── content.ts         # class `Content` — `static init()` gates URL, then `YoutubeWatch.init()`
 │   │   ├── youtube-watch.ts   # class `YoutubeWatch` — watch binding, `timeupdate`, messaging, SPA hooks, toast
+│   │   ├── captions/          # `youtube-transcript-fetch`, `page-player-response` (parse `ytInitialPlayerResponse` from `<script>` text)
 │   │   ├── skip-logic.ts      # Pure skip / seek-heuristic logic (unit-tested)
 │   │   └── page-guards.ts     # URL rules: watch vs Shorts vs e2e host (unit-tested)
 │   ├── popup/                 # `main.tsx` → `Popup.init()` only; `popup.tsx` (class `Popup`), PopupApp, preferences-store, index.html
 │   └── shared/
 │       ├── browser.ts         # `webextension-polyfill` default export (`browser.*` API)
+│       ├── caption-types.ts   # Caption/transcript result types (shared shapes only)
+│       ├── captions/transcript-xml.ts  # Pure `parseTranscriptXml` (no I/O)
+│       ├── captions/player-json.ts     # Pure InnerTube caption helpers (no I/O)
 │       ├── constants.ts     # `SKIP_START_SEC` / `SKIP_END_SEC`, storage key, Valibot `userPreferencesSchema`, `UserPreferences`
 │       ├── error.ts         # `getErrorMessage` (ValiError → `extractMessageFromValiError`, else `Error` / string)
 │       ├── messages.ts    # `TOPSKIP_*` runtime message types (popup/content ↔ background)
@@ -109,6 +113,7 @@ There is **no** repo-wide formatter (no Prettier script). Rely on ESLint + edito
 - **Separation**: Pure logic in **`skip-logic.ts`** and **`page-guards.ts`**; DOM + `browser.runtime` messaging in **`YoutubeWatch`** (`youtube-watch.ts`); **popup** prefs via **`src/popup/preferences-store.ts`** (messages only); **only `PrefsSyncStorage`** performs **`browser.storage.sync`** read/write for preferences. **Content** (`content.ts`), **background** (`background.ts`), and **popup** (`popup.tsx`) use static-only entry classes; bundle entries **`index.ts`** / **`main.tsx`** only call **`Content.init()`** / **`Background.init()`** / **`Popup.init()`** (no other side effects at load).
 - **Imports**: Use **`@/...`** alias mapping to `src/` (see `tsconfig.json`).
 - **Content script** matches YouTube + local e2e origin; **activation** for real users is gated in code via **`shouldActivateTopSkip`** (`page-guards.ts`), not only by broad manifest patterns.
+- **`src/shared/`**: Reserve for **constants**, **shared types**, **`browser`**, **message type unions**, and **pure helpers** (deterministic, no network/storage/timers/`console` side effects). Do **not** put modules that perform **I/O** or other ambient side effects in `shared/` — keep those next to the bundle that owns them (e.g. YouTube **`fetch`** lives under **`src/content/captions/`**, not `shared/`).
 
 ### Code quality
 

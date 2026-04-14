@@ -1,6 +1,5 @@
 import * as v from 'valibot';
 
-import browser from '@/shared/browser';
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 import { userPreferencesSchema } from '@/shared/constants';
 import { getErrorMessage } from '@/shared/error';
@@ -69,15 +68,5 @@ export class PrefsRuntimeMessages {
     }
 
     return undefined;
-  }
-
-  /**
-   * Registers the `runtime.onMessage` listener for prefs queries/commands.
-   */
-  static register(): void {
-    browser.runtime.onMessage.addListener(
-      (message: unknown, sender: Runtime.MessageSender) =>
-        PrefsRuntimeMessages.handle(message, sender),
-    );
   }
 }

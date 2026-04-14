@@ -1,4 +1,6 @@
-import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
+import {
+  registerRuntimeMessages,
+} from '@/background/messaging/register-runtime-messages';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 
 /**
@@ -15,7 +17,8 @@ export class Background {
    * `PrefsSyncStorage.ready()` before prefs work.
    */
   static init(): void {
+    console.info('[TopSkip] Service worker started');
     void PrefsSyncStorage.ready();
-    PrefsRuntimeMessages.register();
+    registerRuntimeMessages();
   }
 }

@@ -181,6 +181,33 @@ Unit tests live under **`tests/`**, mirroring **`src/`** (e.g. `tests/content/sk
 4. Open the extension **popup** and turn the **switch off** — on another long video, playback should **not** jump at 0:30.
 5. Turn the switch **on** again **before** 0:30 — the jump at 0:30 should return.
 
+### Developer: caption fetch (diagnostic)
+
+**Default:** **`CAPTION_TRANSCRIPT_DEV_ENABLED`** is **`false`** in **`src/shared/constants.ts`** — the extension **does not** load captions or call timedtext URLs; skip behavior is unchanged.
+
+To enable diagnostic logging: set **`CAPTION_TRANSCRIPT_DEV_ENABLED`** to **`true`** locally, rebuild, and reload the extension.
+
+**Safer path:** **`fetchYoutubeTranscript`** first parses **`ytInitialPlayerResponse`** from existing **`<script>`** tag text in the DOM (**`page-player-response.ts`** — no inline script injection; YouTube’s CSP blocks injected scripts from extensions). Then it **GET**s only the caption **timedtext** URL. **`CAPTION_TRANSCRIPT_ALLOW_INNERTUBE_FALLBACK`** (default **`false`**) controls whether to fall back to watch HTML + InnerTube **`player`** POST when embedded JSON is not found yet (more bot-like).
+
+Fetches use the same **general class** of YouTube web-client caption flow as common open-source tools; output is for **development / analysis** (see `specs/20260414-youtube-web-client-captions-dev/spec.md`).
+
+**Trigger:** When captions are enabled, the **watch content script** (`WatchCaptions`, wired from `youtube-watch.ts`) **debounces** (~450ms) after the watch **video id** changes. It runs **`fetchYoutubeTranscript`** in **`src/content/captions/youtube-transcript-fetch.ts`**, then sends **`TOPSKIP_CAPTIONS_FROM_CONTENT`** to the background so **`log-transcript-dev.ts`** can print structured cues in the worker — **no keyboard shortcut**.
+
+1. `make build`, load **`dist/`** unpacked.
+2. Open **`chrome://extensions`**, find TopSkip, click **Service worker** (this DevTools window is where **chunked transcript** **`[TopSkip captions]`** logs from the background appear).
+3. Navigate to a YouTube **`/watch?v=…`** video that has **captions** (CC), or click another video so the watch URL updates (SPA).
+4. After a short delay (~450ms debounce), the **watch tab** DevTools console shows **`[TopSkip captions] Fetch started`** (content script). The **service worker** console shows transcript lines or a forwarded **error** string.
+
+The **watch tab** console shows the fetch start line; the **service worker** console shows the full structured transcript log (same **`[TopSkip captions]`** prefix).
+
+#### Troubleshooting: no logs in the “background”
+
+- TopSkip logs from `background.js` only appear in the **extension service worker** DevTools console (`chrome://extensions` → TopSkip → **Service worker**). That is the correct “background” console in MV3, even though there is no separate HTML page.
+- **Manifest V3 has no HTML background page** — only a **service worker**. Those logs do **not** appear in the watch tab’s F12 console and **not** in the popup’s Inspect window.
+- Open **`chrome://extensions` → TopSkip → “Service worker”** (link or button). That opens a **dedicated** DevTools instance for the worker. Keep it open; you should see **`[TopSkip] Service worker started`** whenever the worker starts (e.g. after **Reload** on the extension card).
+- Run **`make build`**, **Reload** the extension, then **navigate** to a **`/watch?v=…`** URL (or change the video in-place). Within about half a second, the **service worker** console should show **`[TopSkip captions]`** lines.
+- If you see random lines like “Content script initialized” with icons, those are **not** from TopSkip (this repo has no such strings).
+
 **Toggle-off sanity check:** With the switch **off**, set playback to **4×** and let time pass 0:30 — there should be **no** jump (confirms `chrome.storage` + `onChanged` in the content script).
 
 ### End-to-end (Playwright)

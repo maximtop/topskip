@@ -24,3 +24,16 @@ export const userPreferencesSchema = v.object({
 });
 
 export type UserPreferences = v.InferOutput<typeof userPreferencesSchema>;
+
+/**
+ * When `false` (default), the extension does **not** request captions or call
+ * timedtext URLs — core skip behavior is unchanged.
+ */
+export const CAPTION_TRANSCRIPT_DEV_ENABLED = true;
+
+/**
+ * When {@link CAPTION_TRANSCRIPT_DEV_ENABLED} is `true`: if in-page
+ * `ytInitialPlayerResponse` is unavailable, allow the legacy path (watch HTML
+ * + InnerTube `player` POST). Default `false` — safer, fewer bot-style calls.
+ */
+export const CAPTION_TRANSCRIPT_ALLOW_INNERTUBE_FALLBACK = false;

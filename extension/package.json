@@ -22,12 +22,14 @@
     "test:e2e:ui": "playwright test --ui",
     "generate:e2e-video": "bash scripts/generate-e2e-fixture-video.sh",
     "openrouter:compare-presets": "tsx scripts/compare-openrouter-presets.ts",
-    "openrouter:extract-log-transcript": "tsx scripts/extract-transcript-from-topskip-console-log.ts"
+    "openrouter:extract-log-transcript": "tsx scripts/extract-transcript-from-topskip-console-log.ts",
+    "locales": "node tasks/translations/index.js"
   },
   "engines": {
     "node": ">=20"
   },
   "dependencies": {
+    "@adguard/translate": "^2.0.1",
     "@mantine/core": "^9.0.1",
     "@mantine/hooks": "^9.0.1",
     "mobx": "^6.15.0",

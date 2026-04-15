@@ -176,7 +176,10 @@ export default defineConfig({
       inject: 'body',
     }),
     new rspack.CopyRspackPlugin({
-      patterns: [{ from: 'src/public', to: '.', noErrorOnMissing: true }],
+      patterns: [
+        { from: 'src/public', to: '.', noErrorOnMissing: true },
+        { from: 'src/_locales', to: '_locales' },
+      ],
     }),
   ],
   optimization: {

@@ -13,6 +13,7 @@ import type { UserPreferences } from '@/shared/constants';
 import browser from '@/shared/browser';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 import type { PromoBlock } from '@/shared/promo-types';
+import { translator } from '@/shared/i18n/translator';
 
 type VideoWithCleanup = HTMLElement & { __topskipCleanup?: () => void };
 
@@ -120,7 +121,7 @@ export class YoutubeWatch {
       ].join(';');
       document.documentElement.appendChild(root);
     }
-    root.textContent = 'Skip applied';
+    root.textContent = translator.getMessage('content_skip_applied');
     root.style.opacity = '1';
 
     const prefersReducedMotion = window.matchMedia(

@@ -7,6 +7,7 @@ import {
 } from '@/background/messaging/register-runtime-messages';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import { i18n } from '@/shared/i18n/i18n';
 
 /**
  * On startup, if the two `enabled` flags (`topskip:prefs` vs
@@ -54,6 +55,7 @@ export class Background {
   static init(): void {
     PrefsPortHub.register();
     console.info('[TopSkip] Service worker started');
+    void i18n.init();
     void PrefsSyncStorage.ready().then(async () => {
       await reconcileDivergentEnabled();
       await ContentScriptsRegistration.syncFromPrefs();

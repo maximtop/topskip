@@ -10,6 +10,7 @@ import {
   type SetPrefsResponse,
   isPrefsPortMessage,
 } from '@/shared/messages';
+import { translator } from '@/shared/i18n/translator';
 
 /**
  * Type guard for a successful GET_PREFS response from the background page.
@@ -105,7 +106,7 @@ export class PreferencesStore {
       const err =
         res && typeof res === 'object' && 'error' in res
           ? String((res as { error: string }).error)
-          : 'failed to load preferences';
+          : translator.getMessage('prefs_error_load');
       throw new Error(err);
     }
     runInAction(() => {
@@ -133,7 +134,7 @@ export class PreferencesStore {
         const err =
           res && typeof res === 'object' && 'error' in res
             ? String((res as { error: string }).error)
-            : 'failed to save preferences';
+            : translator.getMessage('prefs_error_save');
         throw new Error(err);
       }
     } catch (e) {

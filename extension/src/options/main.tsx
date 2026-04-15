@@ -1,3 +1,3 @@
 import { Options } from '@/options/options';
 
-Options.init();
+void Options.init();

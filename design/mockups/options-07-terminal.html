@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Options — Variant 7: Terminal</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+    background: #0d1117; color: #c9d1d9; font-size: 13px;
+  }
+  .page { max-width: 600px; margin: 0 auto; padding: 32px 24px; }
+  .prompt { color: #58a6ff; }
+  .comment { color: #484f58; }
+  .success { color: #238636; }
+  .warn { color: #e3b341; }
+  .err { color: #f85149; }
+  h1 { font-size: 14px; font-weight: 400; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: #484f58; margin-bottom: 24px; }
+  h2 { font-size: 13px; font-weight: 400; color: #58a6ff; margin-bottom: 10px; margin-top: 24px; }
+  .section {
+    border: 1px solid #21262d; border-radius: 6px; padding: 14px;
+    margin-bottom: 12px; background: #161b22;
+  }
+  label { display: block; font-size: 12px; color: #8b949e; margin-bottom: 4px; }
+  .desc { font-size: 11px; color: #484f58; margin-bottom: 6px; }
+  input[type="text"], input[type="password"], select {
+    width: 100%; padding: 8px 10px; border: 1px solid #30363d; border-radius: 4px;
+    font-size: 12px; font-family: inherit; outline: none;
+    background: #0d1117; color: #c9d1d9;
+  }
+  input:focus, select:focus { border-color: #58a6ff; }
+  select option { background: #161b22; }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .checkbox-row input[type="checkbox"] { width: 14px; height: 14px; accent-color: #238636; }
+  .row { display: flex; gap: 8px; align-items: flex-end; }
+  .row .field { flex: 1; }
+  .btn { padding: 7px 16px; border-radius: 4px; font-size: 12px; cursor: pointer; font-family: inherit; border: 1px solid #30363d; }
+  .btn-primary { background: #238636; color: #fff; border-color: #238636; }
+  .btn-secondary { background: #21262d; color: #c9d1d9; }
+  .btn-sm { padding: 5px 10px; font-size: 11px; }
+  .btn-danger { background: #21262d; color: #f85149; border-color: #f85149; }
+  .actions { display: flex; gap: 8px; margin-top: 20px; }
+  .alert { padding: 8px 12px; border-radius: 4px; font-size: 12px; margin-bottom: 12px; border-left: 3px solid; }
+  .alert-success { background: rgba(35,134,54,0.1); color: #238636; border-color: #238636; }
+  .hint { font-size: 11px; color: #484f58; margin-top: 12px; }
+  .model-item { display: flex; justify-content: space-between; align-items: center; padding: 6px 0; border-top: 1px solid #21262d; margin-top: 8px; }
+  .model-slug { font-size: 12px; color: #8b949e; }
+  hr { border: none; border-top: 1px solid #21262d; margin: 16px 0; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1><span class="prompt">$</span> topskip <span class="comment">--config</span></h1>
+  <p class="subtitle"># OpenRouter settings — stored in extension local storage</p>
+
+  <div class="alert alert-success">✓ config written</div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;"># llm</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="enable" checked>
+      <label for="enable" style="margin:0;">enable_llm_detection</label>
+    </div>
+    <label>api_key</label>
+    <div class="desc"># saved: sk-or-…abc</div>
+    <input type="password" placeholder="sk-or-…">
+  </div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;"># model</h2>
+    <label>model_slug</label>
+    <div class="desc"># presets + custom</div>
+    <select>
+      <option>google/gemini-3.1-pro-preview</option>
+      <option>anthropic/claude-sonnet-4</option>
+      <option>openai/gpt-4.1</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;"># custom_models</h2>
+    <div class="desc"># format: vendor/model</div>
+    <label>add_model</label>
+    <div class="row">
+      <div class="field"><input type="text" placeholder="vendor/model"></div>
+      <button class="btn btn-secondary btn-sm">add</button>
+    </div>
+    <div class="model-item">
+      <span class="model-slug">meta/llama-4-scout</span>
+      <button class="btn btn-danger btn-sm">rm</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary">save</button>
+    <button class="btn btn-secondary">reload</button>
+  </div>
+  <p class="hint"># save: toggle + key + model | add: persist custom model ids</p>
+</div>
+</body>
+</html>

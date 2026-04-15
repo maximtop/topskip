@@ -5,6 +5,8 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { PopupApp } from './PopupApp';
+import { ErrorBoundary } from '@/shared/ErrorBoundary';
+import { topskipTheme } from '@/shared/theme';
 
 /**
  * Popup bundle bootstrap; not instantiable.
@@ -23,8 +25,10 @@ export class Popup {
 
     createRoot(rootEl).render(
       <StrictMode>
-        <MantineProvider defaultColorScheme="auto">
-          <PopupApp />
+        <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
+          <ErrorBoundary>
+            <PopupApp />
+          </ErrorBoundary>
         </MantineProvider>
       </StrictMode>,
     );

@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import { test, expect, chromium, type BrowserContext } from '@playwright/test';
+import AxeBuilder from '@axe-core/playwright';
 
 import {
   expectNoCollectedErrors,
@@ -209,6 +210,86 @@ test.describe('TopSkip extension', () => {
 
       expect(t).toBeGreaterThan(40);
       expect(t).toBeLessThan(58);
+
+      expectNoCollectedErrors(errors);
+    } finally {
+      await context.close();
+    }
+  });
+
+  test('popup and options pages pass axe accessibility audit', async () => {
+    const errors: string[] = [];
+    const context = await chromium.launchPersistentContext(
+      '',
+      extensionContextOptions(),
+    );
+
+    try {
+      trackServiceWorkerConsoleErrors(context, errors);
+      const extensionId = await getExtensionId(context);
+
+      // --- Popup page ---
+      const popupPage = await openPopupAndWaitForUi(
+        context,
+        extensionId,
+        errors,
+      );
+      // color-contrast is disabled: known issues with Mantine's
+      // teal-on-light-teal button and dimmed summary text. Fixing
+      // these requires design-level decisions (tracked separately).
+      const popupResults = await new AxeBuilder({ page: popupPage })
+        .withTags([
+          'wcag2a',
+          'wcag2aa',
+          'wcag21a',
+          'wcag21aa',
+        ])
+        .disableRules(['color-contrast'])
+        .analyze();
+      expect(
+        popupResults.violations,
+        'Popup axe violations:\n' +
+          JSON.stringify(
+            popupResults.violations,
+            null,
+            2,
+          ),
+      ).toEqual([]);
+      await popupPage.close();
+
+      // --- Options page ---
+      const optionsPage = await context.newPage();
+      trackPageErrors(optionsPage, 'options', errors);
+      await optionsPage.goto(
+        `chrome-extension://${extensionId}/options.html`,
+        { waitUntil: 'domcontentloaded' },
+      );
+      await optionsPage
+        .getByRole('heading', { level: 2 })
+        .first()
+        .waitFor({ state: 'visible', timeout: 30_000 });
+
+      const optionsResults = await new AxeBuilder({
+        page: optionsPage,
+      })
+        .withTags([
+          'wcag2a',
+          'wcag2aa',
+          'wcag21a',
+          'wcag21aa',
+        ])
+        .disableRules(['color-contrast'])
+        .analyze();
+      expect(
+        optionsResults.violations,
+        'Options axe violations:\n' +
+          JSON.stringify(
+            optionsResults.violations,
+            null,
+            2,
+          ),
+      ).toEqual([]);
+      await optionsPage.close();
 
       expectNoCollectedErrors(errors);
     } finally {

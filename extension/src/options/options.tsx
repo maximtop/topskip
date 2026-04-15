@@ -22,11 +22,13 @@ import { createRoot } from 'react-dom/client';
 
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
+import { PREFS_PORT_NAME } from '@/shared/constants';
 import {
   TOPSKIP_MESSAGE,
   type GetOpenRouterConfigResponse,
   type MutateOpenRouterCustomModelResponse,
   type SetOpenRouterConfigResponse,
+  isPrefsPortMessage,
 } from '@/shared/messages';
 import {
   OPENROUTER_DEFAULT_MODEL_SLUG,
@@ -271,6 +273,18 @@ function OptionsApp(): ReactElement {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const port = browser.runtime.connect({ name: PREFS_PORT_NAME });
+    port.onMessage.addListener((msg: unknown) => {
+      if (isPrefsPortMessage(msg)) {
+        setEnabled(msg.prefs.enabled);
+      }
+    });
+    return () => {
+      port.disconnect();
+    };
+  }, []);
+
   /**
    * Persists OpenRouter settings via the background service worker.
    *
@@ -383,7 +397,12 @@ function OptionsApp(): ReactElement {
         label="Enable LLM promo detection"
         checked={enabled}
         onChange={(e) => {
-          setEnabled(e.currentTarget.checked);
+          const next = e.currentTarget.checked;
+          setEnabled(next);
+          void browser.runtime.sendMessage({
+            type: TOPSKIP_MESSAGE.SET_PREFS,
+            enabled: next,
+          });
         }}
       />
       <TextInput

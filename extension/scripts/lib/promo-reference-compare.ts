@@ -7,9 +7,13 @@ export type HumanRefBlock = {
   id: string;
   startSec: number;
   endSec: number;
-  /** Optional caption snippet at window start (for reviewers) */
+  /**
+   * Optional caption snippet at window start (for reviewers)
+   */
   startCue?: string;
-  /** Optional caption snippet at window end */
+  /**
+   * Optional caption snippet at window end
+   */
   endCue?: string;
 };
 

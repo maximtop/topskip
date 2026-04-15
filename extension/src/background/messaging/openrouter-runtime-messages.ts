@@ -5,6 +5,7 @@ import {
 } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsBroadcast } from
   '@/background/messaging/broadcast-prefs-updated';
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { getErrorMessage } from '@/shared/error';
@@ -104,11 +105,11 @@ export class OpenRouterRuntimeMessages {
       });
 
       // FR-015: propagate enabled to prefs storage + broadcast
+      const newPrefs = { enabled: enabledRaw };
       try {
         await PrefsSyncStorage.ready();
         const prefs = await PrefsSyncStorage.load();
         if (prefs.enabled !== enabledRaw) {
-          const newPrefs = { enabled: enabledRaw };
           await PrefsSyncStorage.save(newPrefs);
           await ContentScriptsRegistration.syncFromPrefs();
           await PrefsBroadcast.sendUpdatedToAllTabs(newPrefs);
@@ -116,6 +117,8 @@ export class OpenRouterRuntimeMessages {
       } catch {
         /* prefs sync is best-effort; OpenRouter save already succeeded */
       }
+      // Always notify connected extension pages (popup, other options tabs)
+      PrefsPortHub.broadcastPrefsUpdate(newPrefs);
 
       return { ok: true };
     } catch (e) {

@@ -13,6 +13,7 @@ import {
   ContentScriptsRegistration,
 } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 
@@ -101,6 +102,7 @@ export class PrefsRuntimeMessages {
 
       await ContentScriptsRegistration.syncFromPrefs();
       await PrefsBroadcast.sendUpdatedToAllTabs(prefs);
+      PrefsPortHub.broadcastPrefsUpdate(prefs);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: getErrorMessage(e) };

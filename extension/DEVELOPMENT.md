@@ -257,6 +257,71 @@ bash scripts/generate-e2e-fixture-video.sh
 
 ---
 
+## Debug logging (cross-context)
+
+Chrome extension contexts (service worker, content scripts, popup, options)
+each have their own DevTools console, making it hard to follow a
+message flow across contexts. The repo includes a lightweight
+**local log server** that collects `POST`ed log lines from any
+context into a single `debug.log` file and echoes them to the
+terminal.
+
+### Files
+
+| File | Purpose |
+|------|---------|
+| `scripts/log-server.ts` | Node.js HTTP server on `127.0.0.1:9222`; writes timestamped lines to `debug.log` and stdout |
+| `src/shared/debug-log.ts` | `debugLog(source, message)` — fire-and-forget `fetch POST` to the log server; safe to call in any context (silently ignores failures when the server is offline) |
+| `debug.log` | Output file created by the server (gitignored) |
+
+### Usage
+
+1. **Start the log server** in a separate terminal:
+
+   ```bash
+   pnpm tsx scripts/log-server.ts
+   ```
+
+   The server clears `debug.log` on startup, listens on
+   `http://127.0.0.1:9222/log`, and prints every incoming line.
+
+2. **Add temporary `debugLog` calls** in the code you are
+   investigating:
+
+   ```ts
+   import { debugLog } from '@/shared/debug-log';
+   debugLog('bg', 'SET_PREFS handler entered');
+   debugLog('popup', `port message: ${JSON.stringify(msg)}`);
+   ```
+
+3. **Rebuild** (`make build`), reload the extension, and reproduce
+   the scenario. All log lines appear in the terminal running
+   the server and in `debug.log`, tagged with ISO timestamp and
+   source label:
+
+   ```text
+   [2026-04-15T22:30:01.123Z] [bg] SET_PREFS handler entered
+   [2026-04-15T22:30:01.200Z] [popup] port message: {"type":"..."}
+   ```
+
+4. **Remove the `debugLog` calls** before committing — the helper
+   is dev-only infrastructure and must not ship in production
+   bundles. `src/shared/debug-log.ts` itself stays in the repo so
+   it is available for the next debugging session.
+
+5. **Stop the server** with `Ctrl-C` or `kill <pid>`.
+
+### Why not `console.log`?
+
+`console.log` goes to whichever DevTools instance owns that
+context. During cross-context debugging (e.g. popup sends a
+message → background handles it → broadcasts to content) you would
+need three DevTools windows open and mentally interleave their
+timestamps. The log server merges everything into one ordered
+stream.
+
+---
+
 ## Common tasks
 
 | Task | Steps |

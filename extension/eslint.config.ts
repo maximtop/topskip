@@ -52,7 +52,7 @@ export default tseslint.config(
     rules: { ...reactHooks.configs.recommended.rules },
   },
   {
-    files: ['src/**/*.{ts,tsx}'],
+    files: ['src/**/*.{ts,tsx}', 'tests/**/*.ts', 'e2e/**/*.ts', 'scripts/**/*.ts'],
     plugins: { jsdoc },
     settings: {
       jsdoc: {
@@ -66,6 +66,17 @@ export default tseslint.config(
           noSingleLineBlocks: true,
         },
       ],
+    },
+  },
+  {
+    files: ['src/**/*.{ts,tsx}'],
+    plugins: { jsdoc },
+    settings: {
+      jsdoc: {
+        mode: 'typescript',
+      },
+    },
+    rules: {
       'jsdoc/require-param': [
         'error',
         {
@@ -98,6 +109,11 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'eslint.config.ts'],
+    ignores: [
+      'dist/**',
+      'node_modules/**',
+      'coverage/**',
+      'eslint.config.ts',
+    ],
   },
 );

@@ -56,6 +56,10 @@ export const PopupApp = observer(function PopupApp() {
 
   useEffect(() => {
     void store.load();
+    store.connectPort();
+    return () => {
+      store.disconnectPort();
+    };
   }, [store]);
 
   useEffect(() => {

@@ -1,6 +1,7 @@
 import {
   ContentScriptsRegistration,
 } from '@/background/lifecycle/content-scripts-registration';
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import {
   registerRuntimeMessages,
 } from '@/background/messaging/register-runtime-messages';
@@ -51,6 +52,7 @@ export class Background {
    * `PrefsSyncStorage.ready()` before prefs work.
    */
   static init(): void {
+    PrefsPortHub.register();
     console.info('[TopSkip] Service worker started');
     void PrefsSyncStorage.ready().then(async () => {
       await reconcileDivergentEnabled();

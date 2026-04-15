@@ -1,5 +1,10 @@
+import * as v from 'valibot';
+
 import type { CaptionSegment } from '@/shared/caption-types';
-import type { UserPreferences } from '@/shared/constants';
+import {
+  userPreferencesSchema,
+  type UserPreferences,
+} from '@/shared/constants';
 import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
 
 /**
@@ -149,3 +154,32 @@ export type SetPrefsResponse = { ok: true } | { ok: false; error: string };
 export type CaptionsFromContentAck =
   | { ok: true }
   | { ok: false; error: string };
+
+/**
+ * Message sent over the long-lived prefs port from the background to
+ * connected extension pages.
+ */
+export type PrefsPortMessage = {
+  type: typeof TOPSKIP_MESSAGE.PREFS_UPDATED;
+  prefs: UserPreferences;
+};
+
+/**
+ * Valibot schema for {@link PrefsPortMessage}.
+ */
+const prefsPortMessageSchema = v.object({
+  type: v.literal(TOPSKIP_MESSAGE.PREFS_UPDATED),
+  prefs: userPreferencesSchema,
+});
+
+/**
+ * Type guard for messages received on a prefs port.
+ *
+ * @param msg Unknown value from `port.onMessage`.
+ * @returns Whether `msg` is a valid {@link PrefsPortMessage}.
+ */
+export function isPrefsPortMessage(
+  msg: unknown,
+): msg is PrefsPortMessage {
+  return v.safeParse(prefsPortMessageSchema, msg).success;
+}

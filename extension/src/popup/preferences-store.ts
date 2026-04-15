@@ -1,11 +1,14 @@
 import { makeAutoObservable, runInAction } from 'mobx';
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
+import { PREFS_PORT_NAME } from '@/shared/constants';
 import {
   TOPSKIP_MESSAGE,
   type GetPrefsResponse,
   type SetPrefsResponse,
+  isPrefsPortMessage,
 } from '@/shared/messages';
 
 /**
@@ -57,6 +60,36 @@ export class PreferencesStore {
    */
   constructor() {
     makeAutoObservable(this);
+  }
+
+  /**
+   * Long-lived port to the background for live preference updates.
+   */
+  private port: Runtime.Port | null = null;
+
+  /**
+   * Opens a long-lived port to the background and listens for preference
+   * updates. Call once on mount; call {@link disconnectPort} on unmount.
+   */
+  connectPort(): void {
+    this.port = browser.runtime.connect({ name: PREFS_PORT_NAME });
+    this.port.onMessage.addListener((msg: unknown) => {
+      if (isPrefsPortMessage(msg)) {
+        runInAction(() => {
+          this.enabled = msg.prefs.enabled;
+        });
+      }
+    });
+  }
+
+  /**
+   * Disconnects the live-update port. Safe to call if not connected.
+   */
+  disconnectPort(): void {
+    if (this.port) {
+      this.port.disconnect();
+      this.port = null;
+    }
   }
 
   /**

@@ -1,10 +1,15 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
-import { LogPromoAnalysis } from '@/background/openrouter/log-promo-analysis';
+import {
+  buildPromoAnalysisLogBundle,
+  LogPromoAnalysis,
+} from '@/background/openrouter/log-promo-analysis';
 import { callOpenRouterChat } from
   '@/background/openrouter/openrouter-client';
 import { parseLlmPromoResponse } from
   '@/background/openrouter/parse-llm-promo-response';
+import { PROMO_DETECTION_SYSTEM_PROMPT } from
+  '@/background/openrouter/promo-detection-system-prompt';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { PromoDetectionStore } from
@@ -20,15 +25,6 @@ import {
   type CaptionsFromContentPayload,
   type PromoDetectionStatePayload,
 } from '@/shared/messages';
-
-const LLM_SYSTEM_PROMPT = [
-  'You analyze YouTube closed-caption transcripts to find sponsor or',
-  'promotional segments. Reply with JSON only, no prose, matching this shape:',
-  '{"hasPromo": boolean}. If hasPromo is true, include "promoBlocks":',
-  '[{ "startSec": number, "endSec"?: number,',
-  '"confidence"?: "low"|"medium"|"high" }]',
-  'with at least one block. Times are seconds from the start of the video.',
-].join(' ');
 
 /**
  * Orchestrates OpenRouter analysis after captions arrive; not instantiable.
@@ -102,14 +98,16 @@ export class PromoAnalysis {
         return;
       }
 
-      setStatus({ videoId, status: 'analyzing' });
       const merged = mergeCaptionSegmentsToTranscript(
         segments,
         MAX_CAPTION_TRANSCRIPT_CHARS,
       );
-      if (merged.truncated) {
-        LogPromoAnalysis.logTranscriptTruncated(videoId, segments.length);
+      if (segments.length === 0 || merged.text.trim().length === 0) {
+        setStatus({ videoId, status: 'no_promo' });
+        return;
       }
+
+      setStatus({ videoId, status: 'analyzing' });
 
       const userContent = [
         `videoId=${videoId}`,
@@ -123,7 +121,7 @@ export class PromoAnalysis {
         model: orConfig.model,
         signal: abort.signal,
         messages: [
-          { role: 'system', content: LLM_SYSTEM_PROMPT },
+          { role: 'system', content: PROMO_DETECTION_SYSTEM_PROMPT },
           { role: 'user', content: userContent },
         ],
       });
@@ -134,6 +132,19 @@ export class PromoAnalysis {
 
       if (!llm.ok) {
         console.error('[TopSkip] OpenRouter error', llm.error);
+        LogPromoAnalysis.logAnalysisBundle(
+          buildPromoAnalysisLogBundle({
+            videoId,
+            languageCode,
+            segmentCount: segments.length,
+            maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
+            mergedText: merged.text,
+            mergedTruncated: merged.truncated,
+            model: orConfig.model,
+            rawAssistant: null,
+            outcome: { type: 'openrouter_error', error: llm.error },
+          }),
+        );
         setStatus({
           videoId,
           status: 'error',
@@ -142,20 +153,22 @@ export class PromoAnalysis {
         return;
       }
 
-      LogPromoAnalysis.logRawAssistant(
-        videoId,
-        orConfig.model,
-        segments.length,
-        llm.rawContent,
-      );
-
       const parsed = parseLlmPromoResponse(llm.rawContent, undefined);
       if (!parsed.ok) {
         console.error('[TopSkip] LLM parse error', parsed.error);
-        LogPromoAnalysis.logValidatedResult(videoId, {
-          ok: false,
-          error: parsed.error,
-        });
+        LogPromoAnalysis.logAnalysisBundle(
+          buildPromoAnalysisLogBundle({
+            videoId,
+            languageCode,
+            segmentCount: segments.length,
+            maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
+            mergedText: merged.text,
+            mergedTruncated: merged.truncated,
+            model: orConfig.model,
+            rawAssistant: llm.rawContent,
+            outcome: { type: 'parse_error', error: parsed.error },
+          }),
+        );
         setStatus({
           videoId,
           status: 'error',
@@ -165,20 +178,37 @@ export class PromoAnalysis {
       }
 
       if (!parsed.hasPromo) {
-        LogPromoAnalysis.logValidatedResult(videoId, {
-          ok: true,
-          hasPromo: false,
-        });
+        LogPromoAnalysis.logAnalysisBundle(
+          buildPromoAnalysisLogBundle({
+            videoId,
+            languageCode,
+            segmentCount: segments.length,
+            maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
+            mergedText: merged.text,
+            mergedTruncated: merged.truncated,
+            model: orConfig.model,
+            rawAssistant: llm.rawContent,
+            outcome: { type: 'no_promo' },
+          }),
+        );
         setStatus({ videoId, status: 'no_promo' });
         return;
       }
 
       const blocks = parsed.blocks;
-      LogPromoAnalysis.logValidatedResult(videoId, {
-        ok: true,
-        hasPromo: true,
-        promoBlocks: blocks,
-      });
+      LogPromoAnalysis.logAnalysisBundle(
+        buildPromoAnalysisLogBundle({
+          videoId,
+          languageCode,
+          segmentCount: segments.length,
+          maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
+          mergedText: merged.text,
+          mergedTruncated: merged.truncated,
+          model: orConfig.model,
+          rawAssistant: llm.rawContent,
+          outcome: { type: 'promo_blocks', blocks },
+        }),
+      );
       setStatus({
         videoId,
         status: 'detected',

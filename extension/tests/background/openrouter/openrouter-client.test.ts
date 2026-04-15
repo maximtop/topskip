@@ -15,7 +15,27 @@ describe('callOpenRouterChat', () => {
       text: (): Promise<string> =>
         Promise.resolve(
           JSON.stringify({
-            choices: [{ message: { content: '{"hasPromo":false}' } }],
+            id: 'gen-123',
+            model: 'openai/gpt-5.4',
+            choices: [
+              {
+                finish_reason: 'stop',
+                native_finish_reason: 'stop',
+                message: { content: '{"hasPromo":false}' },
+              },
+            ],
+            usage: {
+              prompt_tokens: 10,
+              completion_tokens: 4,
+              total_tokens: 14,
+              prompt_tokens_details: {
+                cached_tokens: 2,
+              },
+              completion_tokens_details: {
+                reasoning_tokens: 1,
+              },
+              cost: 0.1234,
+            },
           }),
         ),
     });
@@ -30,6 +50,16 @@ describe('callOpenRouterChat', () => {
     expect(r.ok).toBe(true);
     if (r.ok) {
       expect(r.rawContent).toBe('{"hasPromo":false}');
+      expect(r.responseId).toBe('gen-123');
+      expect(r.responseModel).toBe('openai/gpt-5.4');
+      expect(r.finishReason).toBe('stop');
+      expect(r.nativeFinishReason).toBe('stop');
+      expect(r.usage?.promptTokens).toBe(10);
+      expect(r.usage?.completionTokens).toBe(4);
+      expect(r.usage?.totalTokens).toBe(14);
+      expect(r.usage?.promptTokensDetails?.cachedTokens).toBe(2);
+      expect(r.usage?.completionTokensDetails?.reasoningTokens).toBe(1);
+      expect(r.usage?.cost).toBe(0.1234);
     }
     expect(fetchMock).toHaveBeenCalledWith(
       'https://openrouter.ai/api/v1/chat/completions',

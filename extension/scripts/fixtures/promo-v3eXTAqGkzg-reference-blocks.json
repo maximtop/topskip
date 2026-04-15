@@ -1,0 +1,35 @@
+{
+  "videoId": "v3eXTAqGkzg",
+  "notes": "Human-annotated sponsor windows (caption cue starts/ends). firstRunModel = one production-style OpenRouter reply for side-by-side deltas.",
+  "humanBlocks": [
+    {
+      "id": "first",
+      "startSec": 242.12,
+      "endSec": 329.44,
+      "startCue": ">> Когда я рассказываю про свои запуски,",
+      "endCue": "оставил в описании, так что переходите и"
+    },
+    {
+      "id": "second",
+      "startSec": 826.56,
+      "endSec": 943.519,
+      "startCue": "Галя, у нас отмена. Очередной способ",
+      "endCue": "снова с нами. Ссылка на плати по миру в"
+    },
+    {
+      "id": "third",
+      "startSec": 1583.679,
+      "endSec": 1611.72,
+      "startCue": "база. И вот как раз у партнёра нашего",
+      "endCue": "ну что, ребят, это просто гениально и"
+    }
+  ],
+  "firstRunModel": {
+    "model": "google/gemini-3-flash-preview",
+    "blocks": [
+      { "startSec": 268, "endSec": 331 },
+      { "startSec": 826, "endSec": 945 },
+      { "startSec": 1583, "endSec": 1600 }
+    ]
+  }
+}

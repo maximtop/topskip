@@ -127,8 +127,38 @@ The **popup** and **content** scripts must not call **`storage.sync`** for prefe
 | `pnpm run test:coverage` | Vitest with coverage (thresholds in `vitest.config.ts`) |
 | `pnpm run test:e2e` | Playwright (headless extension; set `PW_EXTENSION_HEADED=1` for headed) |
 | `pnpm run test:e2e:ui` | Playwright UI mode |
+| `pnpm run openrouter:compare-presets` | Maintainer-only: same transcript → every built-in OpenRouter preset (see below) |
+| `pnpm run openrouter:extract-log-transcript` | Rebuild `[sec] text` user message from an exported caption `.log` (see below) |
 
 There is **no** `format` script — formatting is left to the editor; **lint** is the enforced check.
+
+### Maintainer: compare preset models on one transcript
+
+Use this **only** when you deliberately want **N** OpenRouter `chat/completions` calls (one per built-in preset in `src/shared/openrouter-model-presets.ts`). It does **not** run during normal video playback.
+
+1. **Fixture input** — UTF-8 file in one of two shapes:
+   - **Timed lines only**: `[12] caption text` per line (synthetic sample: `scripts/fixtures/promo-compare-110-lines.txt`).
+   - **Full user body** (what the worker sends to OpenRouter): starts with `videoId=…` then `language=…` then a blank line then `[sec] lines`. For a **real** video, export the service worker log (with expanded caption chunk objects, not only `{…}`), then rebuild:
+
+     ```bash
+     pnpm run openrouter:extract-log-transcript -- tmp/logs/your-export.log \
+       -o scripts/fixtures/promo-v3eXTAqGkzg-ru-from-console.log.txt \
+       --video-id v3eXTAqGkzg --language ru
+     ```
+
+     See `scripts/fixtures/README.txt` for how to compare model JSON against a human baseline and notes on segment counts.
+2. Put **`OPENROUTER_API_KEY=sk-or-…`** in **`extension/.env`** (gitignored), or export the variable in your shell. If both are set, the shell value wins.
+3. From the `extension` directory on macOS:
+
+```bash
+pnpm run openrouter:compare-presets -- \
+  --fixture scripts/fixtures/promo-v3eXTAqGkzg-ru-from-console.log.txt \
+  --reference scripts/fixtures/promo-v3eXTAqGkzg-reference-blocks.json
+```
+
+`--reference` is optional; when set, the JSON also includes `firstRunVsHuman` and per-model `rows[].vsHuman` (start/end deltas vs your `humanBlocks`, plus IoU). See `scripts/fixtures/README.txt`.
+
+Stdout is JSON: each preset slug, latency in ms, parsed blocks or a per-model error. **Cost** is approximately **N × (input + output tokens) × model price** on [OpenRouter pricing](https://openrouter.ai/models); N is the number of preset entries (currently the length of `OPENROUTER_MODEL_PRESETS`).
 
 ### First-time Playwright browsers
 

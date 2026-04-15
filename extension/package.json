@@ -20,7 +20,9 @@
     "test:coverage": "vitest run --coverage",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
-    "generate:e2e-video": "bash scripts/generate-e2e-fixture-video.sh"
+    "generate:e2e-video": "bash scripts/generate-e2e-fixture-video.sh",
+    "openrouter:compare-presets": "tsx scripts/compare-openrouter-presets.ts",
+    "openrouter:extract-log-transcript": "tsx scripts/extract-transcript-from-topskip-console-log.ts"
   },
   "engines": {
     "node": ">=20"
@@ -48,6 +50,7 @@
     "@vitest/coverage-v8": "^4.1.4",
     "commander": "^14.0.3",
     "css-loader": "^7.1.4",
+    "dotenv": "^17.4.2",
     "eslint": "^9.39.4",
     "eslint-plugin-jsdoc": "^62.9.0",
     "eslint-plugin-react-hooks": "^7.0.1",

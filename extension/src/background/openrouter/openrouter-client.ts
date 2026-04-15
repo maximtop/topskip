@@ -6,12 +6,224 @@ export type OpenRouterChatMessage = {
   content: string;
 };
 
+export type OpenRouterPromptTokenDetails = {
+  cachedTokens?: number;
+  cacheWriteTokens?: number;
+  audioTokens?: number;
+  videoTokens?: number;
+};
+
+export type OpenRouterCompletionTokenDetails = {
+  reasoningTokens?: number;
+  audioTokens?: number;
+  imageTokens?: number;
+};
+
+export type OpenRouterCostDetails = {
+  upstreamInferenceCost?: number;
+  upstreamInferencePromptCost?: number;
+  upstreamInferenceCompletionsCost?: number;
+};
+
+export type OpenRouterUsage = {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+  promptTokensDetails?: OpenRouterPromptTokenDetails;
+  completionTokensDetails?: OpenRouterCompletionTokenDetails;
+  cost?: number;
+  isByok?: boolean;
+  costDetails?: OpenRouterCostDetails;
+};
+
 export type CallOpenRouterChatParams = {
   apiKey: string;
   model: string;
   messages: OpenRouterChatMessage[];
   signal?: AbortSignal;
 };
+
+/**
+ * @param value - Unknown JSON-like value
+ * @returns Whether the value is a plain object
+ */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * @param value - Unknown field value
+ * @returns Finite number or `undefined`
+ */
+function getFiniteNumber(value: unknown): number | undefined {
+  if (typeof value !== 'number' || !Number.isFinite(value)) {
+    return undefined;
+  }
+  return value;
+}
+
+/**
+ * @param value - Unknown field value
+ * @returns String or `undefined`
+ */
+function getString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * @param value - Unknown field value
+ * @returns String, `null`, or `undefined`
+ */
+function getNullableString(value: unknown): string | null | undefined {
+  if (value === null) {
+    return null;
+  }
+  return getString(value);
+}
+
+/**
+ * @param value - Unknown field value
+ * @returns Boolean or `undefined`
+ */
+function getBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+/**
+ * @param value - Raw `prompt_tokens_details` object
+ * @returns Normalized prompt token details or `undefined`
+ */
+function parsePromptTokenDetails(
+  value: unknown,
+): OpenRouterPromptTokenDetails | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const cachedTokens = getFiniteNumber(value.cached_tokens);
+  const cacheWriteTokens = getFiniteNumber(value.cache_write_tokens);
+  const audioTokens = getFiniteNumber(value.audio_tokens);
+  const videoTokens = getFiniteNumber(value.video_tokens);
+  if (
+    cachedTokens === undefined &&
+    cacheWriteTokens === undefined &&
+    audioTokens === undefined &&
+    videoTokens === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    cachedTokens,
+    cacheWriteTokens,
+    audioTokens,
+    videoTokens,
+  };
+}
+
+/**
+ * @param value - Raw `completion_tokens_details` object
+ * @returns Normalized completion token details or `undefined`
+ */
+function parseCompletionTokenDetails(
+  value: unknown,
+): OpenRouterCompletionTokenDetails | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const reasoningTokens = getFiniteNumber(value.reasoning_tokens);
+  const audioTokens = getFiniteNumber(value.audio_tokens);
+  const imageTokens = getFiniteNumber(value.image_tokens);
+  if (
+    reasoningTokens === undefined &&
+    audioTokens === undefined &&
+    imageTokens === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    reasoningTokens,
+    audioTokens,
+    imageTokens,
+  };
+}
+
+/**
+ * @param value - Raw `cost_details` object
+ * @returns Normalized cost detail breakdown or `undefined`
+ */
+function parseCostDetails(value: unknown): OpenRouterCostDetails | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const upstreamInferenceCost = getFiniteNumber(value.upstream_inference_cost);
+  const upstreamInferencePromptCost = getFiniteNumber(
+    value.upstream_inference_prompt_cost,
+  );
+  const upstreamInferenceCompletionsCost = getFiniteNumber(
+    value.upstream_inference_completions_cost,
+  );
+  if (
+    upstreamInferenceCost === undefined &&
+    upstreamInferencePromptCost === undefined &&
+    upstreamInferenceCompletionsCost === undefined
+  ) {
+    return undefined;
+  }
+  return {
+    upstreamInferenceCost,
+    upstreamInferencePromptCost,
+    upstreamInferenceCompletionsCost,
+  };
+}
+
+/**
+ * @param value - Raw `usage` object from OpenRouter
+ * @returns Normalized usage block or `undefined`
+ */
+function parseUsage(value: unknown): OpenRouterUsage | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+  const promptTokens = getFiniteNumber(value.prompt_tokens);
+  const completionTokens = getFiniteNumber(value.completion_tokens);
+  const totalTokens = getFiniteNumber(value.total_tokens);
+  if (
+    promptTokens === undefined ||
+    completionTokens === undefined ||
+    totalTokens === undefined
+  ) {
+    return undefined;
+  }
+  const usage: OpenRouterUsage = {
+    promptTokens,
+    completionTokens,
+    totalTokens,
+  };
+  const promptTokensDetails = parsePromptTokenDetails(
+    value.prompt_tokens_details,
+  );
+  if (promptTokensDetails !== undefined) {
+    usage.promptTokensDetails = promptTokensDetails;
+  }
+  const completionTokensDetails = parseCompletionTokenDetails(
+    value.completion_tokens_details,
+  );
+  if (completionTokensDetails !== undefined) {
+    usage.completionTokensDetails = completionTokensDetails;
+  }
+  const cost = getFiniteNumber(value.cost);
+  if (cost !== undefined) {
+    usage.cost = cost;
+  }
+  const isByok = getBoolean(value.is_byok);
+  if (isByok !== undefined) {
+    usage.isByok = isByok;
+  }
+  const costDetails = parseCostDetails(value.cost_details);
+  if (costDetails !== undefined) {
+    usage.costDetails = costDetails;
+  }
+  return usage;
+}
 
 /**
  * Calls OpenRouter chat completions (non-streaming). Does not log the API key.
@@ -22,7 +234,16 @@ export type CallOpenRouterChatParams = {
 export async function callOpenRouterChat(
   params: CallOpenRouterChatParams,
 ): Promise<
-  { ok: true; rawContent: string } | { ok: false; error: string }
+  | {
+      ok: true;
+      rawContent: string;
+      usage?: OpenRouterUsage;
+      responseId?: string;
+      responseModel?: string;
+      finishReason?: string | null;
+      nativeFinishReason?: string | null;
+    }
+  | { ok: false; error: string }
 > {
   const { apiKey, model, messages, signal } = params;
   try {
@@ -52,19 +273,34 @@ export async function callOpenRouterChat(
     } catch {
       return { ok: false, error: 'OpenRouter response was not JSON' };
     }
-    if (!json || typeof json !== 'object') {
+    if (!isRecord(json)) {
       return { ok: false, error: 'OpenRouter JSON shape invalid' };
     }
-    const choices = (json as { choices?: unknown }).choices;
-    if (!Array.isArray(choices) || choices.length === 0) {
+    const rawChoices = json.choices;
+    if (!Array.isArray(rawChoices) || rawChoices.length === 0) {
       return { ok: false, error: 'OpenRouter response missing choices' };
     }
-    const first = choices[0] as { message?: { content?: unknown } };
-    const content = first.message?.content;
+    const first = rawChoices[0] as unknown;
+    if (!isRecord(first)) {
+      return { ok: false, error: 'OpenRouter first choice shape invalid' };
+    }
+    const message = first.message;
+    if (!isRecord(message)) {
+      return { ok: false, error: 'OpenRouter response missing message' };
+    }
+    const content = message.content;
     if (typeof content !== 'string') {
       return { ok: false, error: 'OpenRouter assistant content missing' };
     }
-    return { ok: true, rawContent: content };
+    return {
+      ok: true,
+      rawContent: content,
+      usage: parseUsage(json.usage),
+      responseId: getString(json.id),
+      responseModel: getString(json.model),
+      finishReason: getNullableString(first.finish_reason),
+      nativeFinishReason: getNullableString(first.native_finish_reason),
+    };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return { ok: false, error: msg };

@@ -1,0 +1,544 @@
+
+> topskip-extension@0.1.0 openrouter:compare-presets /Volumes/dev/topskip/extension
+> tsx scripts/compare-openrouter-presets.ts -- --fixture scripts/fixtures/promo-v3eXTAqGkzg-ru-from-console.log.txt --reference scripts/fixtures/promo-v3eXTAqGkzg-reference-blocks.json
+
+◇ injected env (1) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+{
+  "presetCount": 8,
+  "rows": [
+    {
+      "model": "google/gemini-3.1-pro-preview",
+      "ms": 21516,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 242.12,
+          "endSec": 333.64,
+          "confidence": "high"
+        },
+        {
+          "startSec": 826.56,
+          "endSec": 947.56,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1581.8,
+          "endSec": 1600.8,
+          "confidence": "high"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 242.12,
+          "predEndSec": 333.64,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": 4.199999999999989,
+          "iouWithHuman": 0.9541083916083917
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 826.56,
+          "predEndSec": 947.56,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": 4.04099999999994,
+          "iouWithHuman": 0.9666033057851244
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1581.8,
+          "predEndSec": 1600.8,
+          "predEndAssumed": false,
+          "startDeltaSec": -1.8790000000001328,
+          "endDeltaSec": -10.920000000000073,
+          "iouWithHuman": 0.5722259358288712
+        }
+      ]
+    },
+    {
+      "model": "google/gemini-3-flash-preview",
+      "ms": 1961,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 266,
+          "endSec": 331,
+          "confidence": "high"
+        },
+        {
+          "startSec": 853,
+          "endSec": 945,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1583,
+          "endSec": 1599,
+          "confidence": "high"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 266,
+          "predEndSec": 331,
+          "predEndAssumed": false,
+          "startDeltaSec": 23.879999999999995,
+          "endDeltaSec": 1.5600000000000023,
+          "iouWithHuman": 0.7137713771377138
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 853,
+          "predEndSec": 945,
+          "predEndAssumed": false,
+          "startDeltaSec": 26.440000000000055,
+          "endDeltaSec": 1.4809999999999945,
+          "iouWithHuman": 0.7642603850050655
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1583,
+          "predEndSec": 1599,
+          "predEndAssumed": false,
+          "startDeltaSec": -0.6790000000000873,
+          "endDeltaSec": -12.720000000000027,
+          "iouWithHuman": 0.5334610027855118
+        }
+      ]
+    },
+    {
+      "model": "openai/gpt-5.4",
+      "ms": 1692,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 242.12,
+          "endSec": 331.6,
+          "confidence": "high"
+        },
+        {
+          "startSec": 826.56,
+          "endSec": 945.72,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1583.679,
+          "endSec": 1598.2,
+          "confidence": "medium"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 242.12,
+          "predEndSec": 331.6,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": 2.160000000000025,
+          "iouWithHuman": 0.9758605274921768
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 826.56,
+          "predEndSec": 945.72,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": 2.201000000000022,
+          "iouWithHuman": 0.9815290365894593
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1583.679,
+          "predEndSec": 1598.2,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": -13.519999999999982,
+          "iouWithHuman": 0.5178488641631892
+        }
+      ]
+    },
+    {
+      "model": "openai/gpt-5.4-mini",
+      "ms": 1167,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 262.72,
+          "endSec": 331.6,
+          "confidence": "high"
+        },
+        {
+          "startSec": 826.56,
+          "endSec": 945.72,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1580.48,
+          "endSec": 1599.2,
+          "confidence": "high"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 262.72,
+          "predEndSec": 331.6,
+          "predEndAssumed": false,
+          "startDeltaSec": 20.600000000000023,
+          "endDeltaSec": 2.160000000000025,
+          "iouWithHuman": 0.7456414841305314
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 826.56,
+          "predEndSec": 945.72,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": 2.201000000000022,
+          "iouWithHuman": 0.9815290365894593
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1580.48,
+          "predEndSec": 1599.2,
+          "predEndAssumed": false,
+          "startDeltaSec": -3.199000000000069,
+          "endDeltaSec": -12.519999999999982,
+          "iouWithHuman": 0.49683098591549146
+        }
+      ]
+    },
+    {
+      "model": "anthropic/claude-sonnet-4.6",
+      "ms": 3741,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 242,
+          "endSec": 331,
+          "confidence": "high"
+        },
+        {
+          "startSec": 826,
+          "endSec": 945,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1583,
+          "endSec": 1598,
+          "confidence": "medium"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 242,
+          "predEndSec": 331,
+          "predEndAssumed": false,
+          "startDeltaSec": -0.12000000000000455,
+          "endDeltaSec": 1.5600000000000023,
+          "iouWithHuman": 0.9811235955056179
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 826,
+          "predEndSec": 945,
+          "predEndAssumed": false,
+          "startDeltaSec": -0.5599999999999454,
+          "endDeltaSec": 1.4809999999999945,
+          "iouWithHuman": 0.9828487394957989
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1583,
+          "predEndSec": 1598,
+          "predEndAssumed": false,
+          "startDeltaSec": -0.6790000000000873,
+          "endDeltaSec": -13.720000000000027,
+          "iouWithHuman": 0.49864206128133354
+        }
+      ]
+    },
+    {
+      "model": "z-ai/glm-5.1",
+      "ms": 57743,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 268.12,
+          "endSec": 331.6,
+          "confidence": "high"
+        },
+        {
+          "startSec": 847.68,
+          "endSec": 945.72,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1583.679,
+          "endSec": 1600.799,
+          "confidence": "high"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 268.12,
+          "predEndSec": 331.6,
+          "predEndAssumed": false,
+          "startDeltaSec": 26,
+          "endDeltaSec": 2.160000000000025,
+          "iouWithHuman": 0.6852928028609743
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 847.68,
+          "predEndSec": 945.72,
+          "predEndAssumed": false,
+          "startDeltaSec": 21.120000000000005,
+          "endDeltaSec": 2.201000000000022,
+          "iouWithHuman": 0.8042883517959046
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1583.679,
+          "predEndSec": 1600.799,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": -10.92100000000005,
+          "iouWithHuman": 0.6105345743732365
+        }
+      ]
+    },
+    {
+      "model": "minimax/minimax-m2.7",
+      "ms": 10186,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 254,
+          "endSec": 331,
+          "confidence": "high"
+        },
+        {
+          "startSec": 826,
+          "endSec": 944,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1580,
+          "endSec": 1598,
+          "confidence": "high"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 254,
+          "predEndSec": 331,
+          "predEndAssumed": false,
+          "startDeltaSec": 11.879999999999995,
+          "endDeltaSec": 1.5600000000000023,
+          "iouWithHuman": 0.8487848784878488
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 826,
+          "predEndSec": 944,
+          "predEndAssumed": false,
+          "startDeltaSec": -0.5599999999999454,
+          "endDeltaSec": 0.48099999999999454,
+          "iouWithHuman": 0.9911779661016954
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1580,
+          "predEndSec": 1598,
+          "predEndAssumed": false,
+          "startDeltaSec": -3.6790000000000873,
+          "endDeltaSec": -13.720000000000027,
+          "iouWithHuman": 0.451481715006302
+        }
+      ]
+    },
+    {
+      "model": "xiaomi/mimo-v2-pro",
+      "ms": 24286,
+      "ok": true,
+      "blocks": [
+        {
+          "startSec": 268.12,
+          "endSec": 331.6,
+          "confidence": "high"
+        },
+        {
+          "startSec": 835.759,
+          "endSec": 945.72,
+          "confidence": "high"
+        },
+        {
+          "startSec": 1583.679,
+          "endSec": 1598.2,
+          "confidence": "high"
+        }
+      ],
+      "vsHuman": [
+        {
+          "id": "first",
+          "humanStartSec": 242.12,
+          "humanEndSec": 329.44,
+          "predStartSec": 268.12,
+          "predEndSec": 331.6,
+          "predEndAssumed": false,
+          "startDeltaSec": 26,
+          "endDeltaSec": 2.160000000000025,
+          "iouWithHuman": 0.6852928028609743
+        },
+        {
+          "id": "second",
+          "humanStartSec": 826.56,
+          "humanEndSec": 943.519,
+          "predStartSec": 835.759,
+          "predEndSec": 945.72,
+          "predEndAssumed": false,
+          "startDeltaSec": 9.19900000000007,
+          "endDeltaSec": 2.201000000000022,
+          "iouWithHuman": 0.9043303121852964
+        },
+        {
+          "id": "third",
+          "humanStartSec": 1583.679,
+          "humanEndSec": 1611.72,
+          "predStartSec": 1583.679,
+          "predEndSec": 1598.2,
+          "predEndAssumed": false,
+          "startDeltaSec": 0,
+          "endDeltaSec": -13.519999999999982,
+          "iouWithHuman": 0.5178488641631892
+        }
+      ]
+    }
+  ],
+  "reference": {
+    "videoId": "v3eXTAqGkzg",
+    "humanBlocks": [
+      {
+        "id": "first",
+        "startSec": 242.12,
+        "endSec": 329.44,
+        "startCue": ">> Когда я рассказываю про свои запуски,",
+        "endCue": "оставил в описании, так что переходите и"
+      },
+      {
+        "id": "second",
+        "startSec": 826.56,
+        "endSec": 943.519,
+        "startCue": "Галя, у нас отмена. Очередной способ",
+        "endCue": "снова с нами. Ссылка на плати по миру в"
+      },
+      {
+        "id": "third",
+        "startSec": 1583.679,
+        "endSec": 1611.72,
+        "startCue": "база. И вот как раз у партнёра нашего",
+        "endCue": "ну что, ребят, это просто гениально и"
+      }
+    ],
+    "firstRunModel": {
+      "model": "google/gemini-3-flash-preview",
+      "blocks": [
+        {
+          "startSec": 268,
+          "endSec": 331
+        },
+        {
+          "startSec": 826,
+          "endSec": 945
+        },
+        {
+          "startSec": 1583,
+          "endSec": 1600
+        }
+      ]
+    }
+  },
+  "firstRunVsHuman": [
+    {
+      "id": "first",
+      "humanStartSec": 242.12,
+      "humanEndSec": 329.44,
+      "predStartSec": 268,
+      "predEndSec": 331,
+      "predEndAssumed": false,
+      "startDeltaSec": 25.879999999999995,
+      "endDeltaSec": 1.5600000000000023,
+      "iouWithHuman": 0.6912691269126913
+    },
+    {
+      "id": "second",
+      "humanStartSec": 826.56,
+      "humanEndSec": 943.519,
+      "predStartSec": 826,
+      "predEndSec": 945,
+      "predEndAssumed": false,
+      "startDeltaSec": -0.5599999999999454,
+      "endDeltaSec": 1.4809999999999945,
+      "iouWithHuman": 0.9828487394957989
+    },
+    {
+      "id": "third",
+      "humanStartSec": 1583.679,
+      "humanEndSec": 1611.72,
+      "predStartSec": 1583,
+      "predEndSec": 1600,
+      "predEndAssumed": false,
+      "startDeltaSec": -0.6790000000000873,
+      "endDeltaSec": -11.720000000000027,
+      "iouWithHuman": 0.56827994428969
+    }
+  ]
+}

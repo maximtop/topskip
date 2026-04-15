@@ -1,6 +1,9 @@
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+
 import {
   logTranscriptForDeveloper,
 } from '@/background/captions/log-transcript-dev';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import type { CaptionSegment } from '@/shared/caption-types';
 import {
   TOPSKIP_MESSAGE,
@@ -84,10 +87,12 @@ export class CaptionRuntimeMessages {
    * Handles `TOPSKIP_CAPTIONS_FROM_CONTENT` from the watch content script.
    *
    * @param message Opaque runtime message.
+   * @param sender Message sender (tab id required for promo analysis).
    * @returns Ack promise, or `undefined` when ignored.
    */
   static handleCaptionsFromContent(
     message: unknown,
+    sender: Runtime.MessageSender,
   ): Promise<CaptionsFromContentAck> | undefined {
     if (!message || typeof message !== 'object') {
       return undefined;
@@ -113,6 +118,7 @@ export class CaptionRuntimeMessages {
       payload.languageCode,
       payload.segments,
     );
+    PromoAnalysis.onCaptionsReady(sender, payload);
     return Promise.resolve({ ok: true });
   }
 }

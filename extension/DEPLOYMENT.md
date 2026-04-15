@@ -8,7 +8,7 @@ This document describes **shipping TopSkip to the Chrome Web Store**. It is not 
 |------|---------------------|
 | **Environment variables** | None. The extension bundle does not read `process.env` or similar at runtime. |
 | **Infrastructure** | None (no database, cache, queue, or object storage). |
-| **External APIs / network** | MVP does not call third-party HTTP APIs from the extension. |
+| **External APIs / network** | Optional: **OpenRouter** `https://openrouter.ai/api/v1/chat/completions` when the user enables LLM promo detection and supplies an API key (declared in `host_permissions`). |
 | **Error reporting** | No Sentry or similar SDK in the shipped code. |
 | **Logging** | No centralized logging; behavior is entirely in the user’s browser. |
 
@@ -22,7 +22,9 @@ Requires **Node.js ≥ 20** (see `package.json` `engines`).
 make build
 ```
 
-Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`, `popup.html`, **`manifest.json`** (from **`src/manifest.json`**), and any files under `src/public/` (e.g. icons when added).
+Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`,
+`options.js`, `popup.html`, `options.html`, **`manifest.json`**
+(from **`src/manifest.json`**), and any files under `src/public/` (e.g. icons when added).
 
 ## Package for Chrome Web Store
 
@@ -38,8 +40,8 @@ Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`, `popup
 ## Pre-submit checklist
 
 - [ ] **Manifest V3** — `manifest_version` is `3`
-- [ ] **Permissions** — `storage`, `tabs` (for delivering preference updates to open tabs), plus YouTube host access. **Remove** `http://127.0.0.1:4173/*` from `host_permissions` and from `content_scripts[0].matches` before a public release if that entry was only for local Playwright fixtures
-- [ ] **Privacy** — Describe access to `browser.storage.sync` (synced preference), **`tabs`** (message fan-out to tabs where the content script runs), and YouTube pages only; no remote servers in MVP
+- [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), optional **OpenRouter** (`https://openrouter.ai/*`); remove dev-only `http://127.0.0.1:4173/*` from `host_permissions` and from programmatic content-script matches before a public release if that entry was only for local Playwright fixtures
+- [ ] **Privacy** — Describe access to `browser.storage` (local prefs + OpenRouter settings), **`tabs`** (messages and detection status), optional **OpenRouter** (user-supplied API key for transcript analysis), and YouTube pages
 - [ ] **Icons** — Add icons under `src/public/` and reference them in `manifest.json` if the listing requires them (the MVP manifest may ship without `icons` until assets exist)
 - [ ] **Version** — Bump `"version"` in `src/manifest.json` for each submission (it is emitted into `dist/`)
 

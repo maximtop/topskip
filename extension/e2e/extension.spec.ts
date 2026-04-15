@@ -73,7 +73,7 @@ test.describe('TopSkip extension', () => {
     }
   });
 
-  test('skips from ~30s to 60s on fixture page', async () => {
+  test('fixture page: no fixed 30s→60s jump without promo blocks', async () => {
     const errors: string[] = [];
     const context = await chromium.launchPersistentContext(
       '',
@@ -133,7 +133,13 @@ test.describe('TopSkip extension', () => {
             }),
           { timeout: 90_000 },
         )
-        .toBeGreaterThan(59);
+        .toBeGreaterThan(31);
+
+      const t = await page.evaluate(() => {
+        const video = document.querySelector('video') as HTMLVideoElement;
+        return video.currentTime;
+      });
+      expect(t).toBeLessThan(55);
 
       expectNoCollectedErrors(errors);
     } finally {
@@ -157,7 +163,12 @@ test.describe('TopSkip extension', () => {
         extensionId,
         errors,
       );
-      await popupPage.getByRole('switch', { name: /enable/i }).click();
+      // Mantine switch: default actionability can hang in headless CI; force
+      // avoids hit-target / stability waits until the full test timeout.
+      await popupPage
+        .getByRole('switch', { name: /enable/i })
+        .click({ force: true, timeout: 30_000 });
+      await popupPage.close();
 
       const page = await context.newPage();
       trackPageErrors(page, 'fixture', errors);

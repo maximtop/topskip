@@ -5,6 +5,9 @@ import { defineConfig } from 'vitest/config';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
+  define: {
+    __TOPSKIP_INCLUDE_DEV_LOCAL__: false,
+  },
   test: {
     environment: 'node',
     include: ['tests/**/*.test.ts'],

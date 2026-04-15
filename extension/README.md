@@ -1,6 +1,10 @@
 # TopSkip (Chrome extension)
 
-MVP Chrome extension that **auto-skips** from **0:30 to 1:00** on YouTube watch pages (when enabled). A popup toggle turns skipping on or off; the choice is stored in `chrome.storage.sync`.
+MVP Chrome extension that **skips sponsor/promo blocks** on YouTube watch pages
+when an **OpenRouter**-backed LLM detects them from captions (no fixed 30s→60s
+window). A popup toggle enables or disables the extension; **OpenRouter API key
+and model** are configured on the **options** page. Preferences use
+`browser.storage` (see `AGENTS.md`).
 
 ## Requirements
 

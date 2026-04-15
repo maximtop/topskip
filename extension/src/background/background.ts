@@ -1,4 +1,7 @@
 import {
+  ContentScriptsRegistration,
+} from '@/background/lifecycle/content-scripts-registration';
+import {
   registerRuntimeMessages,
 } from '@/background/messaging/register-runtime-messages';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
@@ -18,7 +21,9 @@ export class Background {
    */
   static init(): void {
     console.info('[TopSkip] Service worker started');
-    void PrefsSyncStorage.ready();
+    void PrefsSyncStorage.ready().then(() => {
+      void ContentScriptsRegistration.syncFromPrefs();
+    });
     registerRuntimeMessages();
   }
 }

@@ -10,7 +10,10 @@ import {
   sources,
 } from '@rspack/core';
 
-import { TopSkipBuild, type TopSkipBuildMode } from './build-modes.ts';
+import {
+  TopSkipBuild,
+  type TopSkipBuildMode,
+} from './build-modes.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -48,14 +51,17 @@ function applyDevLocalhostToManifest(
     return;
   }
   const hostPermissions = manifest.host_permissions;
-  const firstContentScript = manifest.content_scripts?.[0];
-  if (!hostPermissions || !firstContentScript) {
+  if (!hostPermissions) {
     return;
   }
   if (!hostPermissions.includes(DEV_LOCAL_MATCH)) {
     hostPermissions.push(DEV_LOCAL_MATCH);
   }
-  if (!firstContentScript.matches.includes(DEV_LOCAL_MATCH)) {
+  const firstContentScript = manifest.content_scripts?.[0];
+  if (
+    firstContentScript &&
+    !firstContentScript.matches.includes(DEV_LOCAL_MATCH)
+  ) {
     firstContentScript.matches.push(DEV_LOCAL_MATCH);
   }
 }
@@ -109,6 +115,7 @@ export default defineConfig({
     background: './src/background/index.ts',
     content: './src/content/index.ts',
     popup: './src/popup/main.tsx',
+    options: './src/options/main.tsx',
   },
   output: {
     path: path.resolve(__dirname, 'dist'),
@@ -138,17 +145,34 @@ export default defineConfig({
       },
       {
         test: /\.css$/,
-        use: [{ loader: 'css-loader' }],
+        use: [
+          rspack.CssExtractRspackPlugin.loader,
+          { loader: 'css-loader' },
+        ],
         type: 'javascript/auto',
       },
     ],
   },
   plugins: [
+    new rspack.CssExtractRspackPlugin({
+      filename: '[name].css',
+    }),
+    new rspack.DefinePlugin({
+      __TOPSKIP_INCLUDE_DEV_LOCAL__: JSON.stringify(
+        topSkipBuildMode === TopSkipBuild.Dev,
+      ),
+    }),
     topSkipManifestPlugin(topSkipBuildMode),
     new rspack.HtmlRspackPlugin({
       template: './src/popup/index.html',
       filename: 'popup.html',
       chunks: ['popup'],
+      inject: 'body',
+    }),
+    new rspack.HtmlRspackPlugin({
+      template: './src/options/index.html',
+      filename: 'options.html',
+      chunks: ['options'],
       inject: 'body',
     }),
     new rspack.CopyRspackPlugin({

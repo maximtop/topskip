@@ -1,7 +1,4 @@
-import {
-  evaluateSkipOnTimeUpdate,
-  type SkipDecision,
-} from '@/content/skip-logic';
+import { evaluatePromoBlocksSkip } from '@/content/promo-skip-logic';
 import {
   E2E_HOST,
   getWatchVideoIdFromSearch,
@@ -11,6 +8,7 @@ import { WatchCaptions } from '@/content/watch-captions';
 import type { UserPreferences } from '@/shared/constants';
 import browser from '@/shared/browser';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
+import type { PromoBlock } from '@/shared/promo-types';
 
 type VideoWithCleanup = HTMLElement & { __topskipCleanup?: () => void };
 
@@ -21,11 +19,12 @@ export class YoutubeWatch {
   private constructor() {}
 
   private static enabled = true;
-  private static skipFired = false;
   private static currentVideoId: string | null = null;
   private static lastTime = 0;
   private static isSeeking = false;
   private static boundVideo: HTMLVideoElement | null = null;
+  private static promoBlocks: PromoBlock[] = [];
+  private static firedPromoBlockIndices = new Set<number>();
 
   /**
    * Current page’s watch `v` query param (or e2e fixture id).
@@ -115,18 +114,17 @@ export class YoutubeWatch {
   }
 
   /**
-   * Seeks the video and marks the one-time skip as fired for this playback.
+   * Seeks the video after a promo-block skip decision.
    *
    * @param video Active watch player element.
-   * @param decision Skip target time from `evaluateSkipOnTimeUpdate`.
+   * @param targetTime Seek target in seconds
    */
-  private static applySkip(
+  private static applyPromoSeek(
     video: HTMLVideoElement,
-    decision: Extract<SkipDecision, { action: 'skip' }>,
+    targetTime: number,
   ): void {
-    video.currentTime = decision.targetTime;
-    YoutubeWatch.lastTime = decision.targetTime;
-    YoutubeWatch.skipFired = true;
+    video.currentTime = targetTime;
+    YoutubeWatch.lastTime = targetTime;
     YoutubeWatch.showSkipToast();
   }
 
@@ -150,20 +148,26 @@ export class YoutubeWatch {
 
     const currentTime = video.currentTime;
     const prev = YoutubeWatch.lastTime;
-    const decision = evaluateSkipOnTimeUpdate({
-      prevTime: prev,
-      currentTime,
-      skipFired: YoutubeWatch.skipFired,
-      enabled: YoutubeWatch.enabled,
-      duration,
-      isSeeking: YoutubeWatch.isSeeking,
-    });
 
-    if (decision.action === 'skip') {
-      YoutubeWatch.applySkip(video, decision);
-    } else {
-      YoutubeWatch.lastTime = currentTime;
+    if (YoutubeWatch.promoBlocks.length > 0) {
+      const decision = evaluatePromoBlocksSkip({
+        prevTime: prev,
+        currentTime,
+        duration,
+        isSeeking: YoutubeWatch.isSeeking,
+        firedIndices: YoutubeWatch.firedPromoBlockIndices,
+        blocks: YoutubeWatch.promoBlocks,
+      });
+      if (decision.action === 'skip') {
+        YoutubeWatch.firedPromoBlockIndices.add(decision.blockIndex);
+        YoutubeWatch.applyPromoSeek(video, decision.targetTime);
+      } else {
+        YoutubeWatch.lastTime = currentTime;
+      }
+      return;
     }
+
+    YoutubeWatch.lastTime = currentTime;
   }
 
   /**
@@ -178,7 +182,6 @@ export class YoutubeWatch {
     YoutubeWatch.unbindVideo();
     YoutubeWatch.boundVideo = video;
     YoutubeWatch.lastTime = video.currentTime;
-    YoutubeWatch.skipFired = false;
 
     const onSeeking = (): void => {
       YoutubeWatch.isSeeking = true;
@@ -224,8 +227,9 @@ export class YoutubeWatch {
   private static resetForNewVideo(videoId: string | null): void {
     YoutubeWatch.unbindVideo();
     YoutubeWatch.currentVideoId = videoId;
-    YoutubeWatch.skipFired = false;
     YoutubeWatch.lastTime = 0;
+    YoutubeWatch.promoBlocks = [];
+    YoutubeWatch.firedPromoBlockIndices.clear();
   }
 
   /**
@@ -284,6 +288,38 @@ export class YoutubeWatch {
    *
    * @param message Runtime message payload.
    */
+  /**
+   * Applies promo blocks delivered from the background for the active video.
+   *
+   * @param message Runtime message payload
+   */
+  private static onPromoBlocksMessage(message: unknown): void {
+    if (!message || typeof message !== 'object') {
+      return;
+    }
+    const m = message as {
+      type?: string;
+      videoId?: string;
+      promoBlocks?: PromoBlock[];
+    };
+    if (m.type !== TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED) {
+      return;
+    }
+    if (typeof m.videoId !== 'string' || !Array.isArray(m.promoBlocks)) {
+      return;
+    }
+    if (m.videoId !== YoutubeWatch.currentVideoId) {
+      return;
+    }
+    YoutubeWatch.promoBlocks = m.promoBlocks;
+    YoutubeWatch.firedPromoBlockIndices.clear();
+  }
+
+  /**
+   * Updates `enabled` when the background broadcasts PREFS_UPDATED.
+   *
+   * @param message Runtime message payload.
+   */
   private static onPrefsUpdatedMessage(message: unknown): void {
     if (!message || typeof message !== 'object') {
       return;
@@ -305,6 +341,7 @@ export class YoutubeWatch {
     YoutubeWatch.loadEnabledFromBackground();
     browser.runtime.onMessage.addListener((message: unknown) => {
       YoutubeWatch.onPrefsUpdatedMessage(message);
+      YoutubeWatch.onPromoBlocksMessage(message);
     });
 
     YoutubeWatch.currentVideoId = YoutubeWatch.getWatchVideoId();

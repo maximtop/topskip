@@ -2,8 +2,8 @@
 
 **Validated**: 2026-04-11  
 **Model**: GPT-5.2  
-**Spec**: `specs/mvp/spec.md`  
-**Plan**: `specs/mvp/plan.md`
+**Spec**: `extension/.sdd/001-init-extension/spec.md`  
+**Plan**: `extension/.sdd/001-init-extension/plan.md`
 
 ## Summary
 
@@ -107,7 +107,7 @@
 
 ## Contract Status
 
-**N/A** — No `specs/mvp/contracts/`; internal `browser.storage` + `runtime` messaging (per plan).
+**N/A** — No `contracts/` subfolder for this feature; internal `browser.storage` + `runtime` messaging (per plan).
 
 ---
 
@@ -128,7 +128,7 @@
 
 ## Success Criteria Status
 
-Per **Verification methodology (MVP)** in `specs/mvp/spec.md`:
+Per **Verification methodology (MVP)** in `extension/.sdd/001-init-extension/spec.md`:
 
 | ID | Criterion | Status | Evidence |
 |----|-----------|--------|----------|

@@ -1,9 +1,9 @@
 # Implementation Plan: TopSkip — YouTube Time-Based Auto-Skip (MVP)
 
-**Input**: Feature specification from `/Volumes/dev/topskip/extension/specs/mvp/spec.md`
+**Input**: Feature specification from `extension/.sdd/001-init-extension/spec.md`
 **Model**: Opus 4.6
 **User Input**: None
-**Status**: Validated (see `specs/mvp/validation.md`)
+**Status**: Validated (see `extension/.sdd/001-init-extension/validation.md`)
 
 ## Summary
 
@@ -149,7 +149,7 @@ Pure **skip math** and **seek detection** live in `skip-logic.ts` with injectabl
 | `browser.runtime.sendMessage` | Popup/content ↔ background (`GET_PREFS`, `SET_PREFS`, `PREFS_UPDATED`) |
 | `browser.tabs.sendMessage` | Background → content: push `PREFS_UPDATED` after writes |
 
-No OpenAPI files under `/Volumes/dev/topskip/extension/specs/mvp/contracts/` for this feature.
+No OpenAPI files or `contracts/` subdirectory for this feature.
 
 ## Tasks
 

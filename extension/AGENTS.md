@@ -4,9 +4,18 @@ Guidance for LLM agents and human contributors working on this repository.
 
 ## Project overview
 
-**TopSkip** is a **Chrome Manifest V3** extension (MVP) that, when enabled, **automatically seeks** the main YouTube **watch** player from **0:30 → 1:00** on each video. Users can **disable** the behavior via a **toolbar popup** (React + Mantine + MobX). The on/off preference is persisted in **`browser.storage.sync`** only from the **background service worker**; validated with **Valibot** at read/write boundaries. The **popup** and **content** scripts use **`runtime.sendMessage`** to the background (no direct `storage` access for prefs).
+**TopSkip** is a **Chrome Manifest V3** extension (MVP) that, when enabled,
+injects a **watch** content script on YouTube (via **`scripting.registerContentScripts`**)
+to **skip LLM-detected promo blocks** (captions → OpenRouter → seek). There is
+**no fixed 30s→60s window** when using this path. Users toggle the extension from
+the **toolbar popup** (React + Mantine + MobX) and configure **OpenRouter** (API
+key + model) on the **options** page. Preferences and OpenRouter settings are
+read/written **only in the background** (`browser.storage.local`, **Valibot** at
+boundaries); the **popup**, **options**, and **content** scripts use
+**`runtime.sendMessage`** (no direct storage for those settings).
 
-There is **no backend** and **no `fetch()` to third-party APIs** in MVP — all logic is client-side. Extension APIs use the standardized **`browser.*`** surface via **`webextension-polyfill`** (import from **`src/shared/browser.ts`**, not the global `chrome` object). Feature intent and tasks live under **`specs/mvp/`** (`spec.md`, `plan.md`).
+The service worker may **`fetch` OpenRouter** when the user opts in; otherwise
+network use is limited to extension internals. Extension APIs use the standardized **`browser.*`** surface via **`webextension-polyfill`** (import from **`src/shared/browser.ts`**, not the global `chrome` object). Feature intent and dated feature specs live under **`.sdd/`** (e.g. **`.sdd/001-init-extension/`** for the original MVP `spec.md` / `plan.md`, plus `yyyymmdd-…` folders per feature).
 
 ## Technical context
 
@@ -17,21 +26,21 @@ There is **no backend** and **no `fetch()` to third-party APIs** in MVP — all 
 | **UI** | **React 19.2+** (required by Mantine 9), **Mantine 9.x** (`@mantine/core` / `@mantine/hooks` in `package.json`), **MobX 6** + **mobx-react-lite** (popup only) |
 | **Bundler** | **Rspack** (`@rspack/cli`, `@rspack/core`) — multi-entry build to `dist/` |
 | **Extension platform** | **Chrome** MV3 (`src/manifest.json` → `dist/manifest.json`); load unpacked from **`dist/`** |
-| **Storage** | **`browser.storage.sync`** — **background only** (`webextension-polyfill`); **Valibot** `userPreferencesSchema` in `src/shared/constants.ts`; popup/content use **`runtime` messaging** (`src/shared/messages.ts`) |
+| **Storage** | **`browser.storage.local`** — prefs + OpenRouter config, **background only**; **Valibot** in `src/shared/constants.ts` and OpenRouter schema; popup/options/content use **`runtime` messaging** (`src/shared/messages.ts`) |
 | **Unit tests** | **Vitest** 4.x; coverage thresholds in `vitest.config.ts` (`skip-logic.ts`, `page-guards.ts`, `src/popup/preferences-store.ts`) |
 | **E2E** | **Playwright** — loads unpacked extension + local static fixture (`e2e/`); **headless** Chromium by default (`PW_EXTENSION_HEADED=1` for a visible browser). CI runs **`pnpm run test:e2e`** (see `.github/workflows/ci.yml`) |
 | **Lint** | **`pnpm run lint`** = ESLint + markdownlint + **`tsc --noEmit`** (`lint:types`). **ESLint** does not replace the full TypeScript checker — type errors appear in the editor from **`tsc`**; **`lint:types`** aligns CI/terminal with that. **markdownlint-cli2** (`.markdownlint.json`); **typescript-eslint**, **react-hooks**, **eslint-plugin-jsdoc** on `src/**`; **ESLint 10** exists, but **eslint-plugin-react-hooks** currently peers **ESLint ≤9** only, so the repo stays on **9.x** latest |
 | **CI** | `.github/workflows/ci.yml` — **`pnpm install --frozen-lockfile`** → **lint** → **build** → **test** → **test:coverage** → Playwright Chromium → **`pnpm run test:e2e`** |
 | **Project type** | Single-package repo (not a monorepo) |
 | **Performance goals** | N/A beyond product spec (informal UX: skip soon after crossing 30s) |
-| **Constraints** | Minimal extension permissions (`storage`, `tabs`, YouTube hosts); avoid shipping dev-only host entries (`127.0.0.1`) to the Web Store — see `DEPLOYMENT.md` |
+| **Constraints** | Permissions include `storage`, `tabs`, `scripting`; host access for YouTube and optional **OpenRouter**; avoid shipping dev-only host entries (`127.0.0.1`) to the Web Store — see `DEPLOYMENT.md` |
 
 ## Project structure
 
 ```text
 .
-├── src/manifest.json          # MV3 source; emitted to dist/ by Rspack (service worker + content_scripts + action)
-├── rspack.config.ts           # Entries: background, content, popup; HtmlRspackPlugin for popup.html
+├── src/manifest.json          # MV3 source; emitted to dist/ (options_ui; no static content_scripts)
+├── rspack.config.ts           # Entries: background, content, popup, options; HtmlRspackPlugin ×2
 ├── tsconfig.json              # Strict TS; path alias @/* → src/*
 ├── eslint.config.ts
 ├── vitest.config.ts
@@ -39,7 +48,7 @@ There is **no backend** and **no `fetch()` to third-party APIs** in MVP — all 
 ├── Makefile                   # setup, build, lint, test, test-unit, test-coverage, test-e2e
 ├── package.json
 ├── pnpm-lock.yaml
-├── specs/mvp/            # spec.md, plan.md (feature source of truth)
+├── .sdd/                 # SDD feature specs (dated folders + 001-init-extension MVP)
 ├── src/
 │   ├── background/
 │   │   ├── index.ts         # `Background.init()` only (bundle entry)
@@ -92,7 +101,7 @@ There is **no** repo-wide formatter (no Prettier script). Rely on ESLint + edito
 
 ## Contribution instructions
 
-1. **Read** `specs/mvp/spec.md` and `specs/mvp/plan.md` before large changes; align with them or update the spec in the same PR when behavior changes.
+1. **Read** `.sdd/001-init-extension/spec.md` and `.sdd/001-init-extension/plan.md` (baseline MVP) and any active `.sdd/yyyymmdd-…` spec for the feature you touch; align or update those docs in the same PR when behavior changes.
 2. **Branch / PR**: Conventional practice — small PRs; describe *what* and *why*.
 3. **Before pushing**, run locally (or rely on CI):
    - `pnpm install` (or `pnpm install --frozen-lockfile` to match CI)

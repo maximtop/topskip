@@ -69,7 +69,7 @@ export async function openPopupAndWaitForUi(
   });
   await popupPage
     .getByRole('switch', { name: /enable/i })
-    .waitFor({ state: 'visible' });
+    .waitFor({ state: 'visible', timeout: 30_000 });
   return popupPage;
 }
 

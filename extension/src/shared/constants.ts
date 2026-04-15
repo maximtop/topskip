@@ -17,6 +17,18 @@ export const SKIP_END_SEC = 60;
 export const STORAGE_KEY_PREFS = 'topskip:prefs';
 
 /**
+ * `browser.storage.local` key for OpenRouter / LLM promo settings (background
+ * only).
+ */
+export const STORAGE_KEY_OPENROUTER = 'topskip:openrouter';
+
+/**
+ * Max characters for merged caption transcript sent to OpenRouter (tail
+ * truncated deterministically).
+ */
+export const MAX_CAPTION_TRANSCRIPT_CHARS = 120_000;
+
+/**
  * Validates persisted preference objects from storage.
  */
 export const userPreferencesSchema = v.object({

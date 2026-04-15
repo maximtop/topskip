@@ -2,7 +2,7 @@
 
 **Created**: 2026-04-12
 **Status**: Validated
-**Input**: Feature specification from `specs/20260414-youtube-web-client-captions-dev/spec.md`
+**Input**: Feature specification from `extension/.sdd/20260414-youtube-web-client-captions-dev/spec.md`
 **Model**: Auto (agent-authored)
 **Implemented by**: Auto (sdd-implement)
 **Validated by**: Auto (sdd-validate)

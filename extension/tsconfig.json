@@ -21,6 +21,7 @@
   },
   "include": [
     "build-modes.ts",
+    "src/build-globals.d.ts",
     "src/**/*.ts",
     "src/**/*.tsx",
     "src/**/*.d.ts",

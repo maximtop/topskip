@@ -2,9 +2,12 @@
   "manifest_version": 3,
   "name": "TopSkip",
   "version": "0.1.0",
-  "description": "Auto-skip 30s–1min on YouTube (MVP)",
+  "description": "LLM-assisted promo skip on YouTube (MVP)",
   "permissions": ["storage", "tabs", "scripting"],
-  "host_permissions": ["https://www.youtube.com/*"],
+  "host_permissions": [
+    "https://www.youtube.com/*",
+    "https://openrouter.ai/*"
+  ],
   "background": {
     "service_worker": "background.js"
   },
@@ -12,11 +15,8 @@
     "default_popup": "popup.html",
     "default_title": "TopSkip"
   },
-  "content_scripts": [
-    {
-      "matches": ["https://www.youtube.com/*"],
-      "js": ["content.js"],
-      "run_at": "document_idle"
-    }
-  ]
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
 }

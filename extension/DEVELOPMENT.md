@@ -86,7 +86,7 @@ pnpm run build:watch
 | `dist/` | **Build output** — load this folder as unpacked extension (gitignored) |
 | `e2e/` | Playwright tests and `e2e/fixtures` static HTML |
 | `src/manifest.json` | Source manifest; **emitted into `dist/`** by the build |
-| `specs/mvp/` | Feature **spec.md** / **plan.md** |
+| `.sdd/` | SDD feature **spec.md** / **plan.md** (e.g. `.sdd/001-init-extension/` MVP baseline, dated folders per feature) |
 
 The bundler is **Rspack** (`rspack.config.ts`): three entries (`background`, `content`, `popup`), `HtmlRspackPlugin` for `popup.html`.
 
@@ -156,7 +156,7 @@ pnpm exec playwright install chromium
    ```
 
 3. **CI** (`.github/workflows/ci.yml`) on push/PR: **`pnpm install --frozen-lockfile`** → **lint** → **build** → **test** → **test:coverage** → **Playwright Chromium** → **`pnpm run test:e2e`** (e2e is **headless**; no Xvfb).
-4. **Specs** — Larger behavior changes should align with `specs/mvp/spec.md` / `plan.md` (update those docs in the same change when appropriate).
+4. **Specs** — Larger behavior changes should align with `.sdd/001-init-extension/spec.md` / `plan.md` and relevant `.sdd/yyyymmdd-…` specs (update those docs in the same change when appropriate).
 
 Detailed contribution rules live in [AGENTS.md](./AGENTS.md).
 
@@ -189,7 +189,7 @@ To enable diagnostic logging: set **`CAPTION_TRANSCRIPT_DEV_ENABLED`** to **`tru
 
 **Safer path:** **`fetchYoutubeTranscript`** first parses **`ytInitialPlayerResponse`** from existing **`<script>`** tag text in the DOM (**`page-player-response.ts`** — no inline script injection; YouTube’s CSP blocks injected scripts from extensions). Then it **GET**s only the caption **timedtext** URL. **`CAPTION_TRANSCRIPT_ALLOW_INNERTUBE_FALLBACK`** (default **`false`**) controls whether to fall back to watch HTML + InnerTube **`player`** POST when embedded JSON is not found yet (more bot-like).
 
-Fetches use the same **general class** of YouTube web-client caption flow as common open-source tools; output is for **development / analysis** (see `specs/20260414-youtube-web-client-captions-dev/spec.md`).
+Fetches use the same **general class** of YouTube web-client caption flow as common open-source tools; output is for **development / analysis** (see `.sdd/20260414-youtube-web-client-captions-dev/spec.md`).
 
 **Trigger:** When captions are enabled, the **watch content script** (`WatchCaptions`, wired from `youtube-watch.ts`) **debounces** (~450ms) after the watch **video id** changes. It runs **`fetchYoutubeTranscript`** in **`src/content/captions/youtube-transcript-fetch.ts`**, then sends **`TOPSKIP_CAPTIONS_FROM_CONTENT`** to the background so **`log-transcript-dev.ts`** can print structured cues in the worker — **no keyboard shortcut**.
 

@@ -2,8 +2,8 @@
 
 **Validated**: 2026-04-14
 **Model**: Composer (SDD validate)
-**Spec**: `specs/20260414-youtube-web-client-captions-dev/spec.md`
-**Plan**: `specs/20260414-youtube-web-client-captions-dev/plan.md`
+**Spec**: `extension/.sdd/20260414-youtube-web-client-captions-dev/spec.md`
+**Plan**: `extension/.sdd/20260414-youtube-web-client-captions-dev/plan.md`
 
 ## Summary
 

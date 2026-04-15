@@ -8,6 +8,12 @@ import {
 import {
   CaptionRuntimeMessages,
 } from '@/background/messaging/caption-runtime-messages';
+import {
+  OpenRouterRuntimeMessages,
+} from '@/background/messaging/openrouter-runtime-messages';
+import {
+  PromoDetectionRuntimeMessages,
+} from '@/background/messaging/promo-detection-runtime-messages';
 import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
 
 /**
@@ -23,9 +29,18 @@ export function registerRuntimeMessages(): void {
       }
       const fromContent = CaptionRuntimeMessages.handleCaptionsFromContent(
         message,
+        sender,
       );
       if (fromContent !== undefined) {
         return fromContent;
+      }
+      const openRouter = OpenRouterRuntimeMessages.handle(message, sender);
+      if (openRouter !== undefined) {
+        return openRouter;
+      }
+      const detection = PromoDetectionRuntimeMessages.handle(message, sender);
+      if (detection !== undefined) {
+        return detection;
       }
       return PrefsRuntimeMessages.handle(message, sender);
     },

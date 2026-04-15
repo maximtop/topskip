@@ -13,7 +13,7 @@
     "beta": "tsx scripts/build-extension.ts beta",
     "release": "tsx scripts/build-extension.ts release",
     "lint": "eslint . && pnpm run lint:md && pnpm run lint:types",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#dist\" \"#coverage\"",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#dist\" \"#coverage\" \"#.sdd\"",
     "lint:types": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",

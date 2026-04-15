@@ -1,0 +1,130 @@
+/* eslint-disable no-await-in-loop */
+import { program } from 'commander';
+
+import { downloadAndSave } from './download.js';
+import { uploadBaseLocale } from './upload.js';
+import { addRequiredFields, checkTranslations } from './validate.js';
+import { checkUnusedMessages } from './unused.js';
+import { cliLog } from './helpers.js';
+import { LANGUAGES } from './locales-constants.js';
+
+const LOCALES = Object.keys(LANGUAGES);
+
+const download = async (locales) => {
+    try {
+        await downloadAndSave(locales);
+        cliLog.success('Download was successful');
+    } catch (e) {
+        cliLog.error(e.message);
+        process.exit(1);
+    }
+};
+
+const upload = async () => {
+    try {
+        await checkUnusedMessages();
+        const result = await uploadBaseLocale();
+        cliLog.success(`Upload was successful with response: ${JSON.stringify(result)}`);
+    } catch (e) {
+        cliLog.error(e.message);
+        process.exit(1);
+    }
+};
+
+const validate = async (locales, isMinimum) => {
+    try {
+        await checkTranslations(locales, { isMinimum });
+    } catch (e) {
+        cliLog.error(e.message);
+        process.exit(1);
+    }
+};
+
+const summary = async (isInfo) => {
+    try {
+        await checkTranslations(LOCALES, { isInfo });
+    } catch (e) {
+        cliLog.error(e.message);
+        process.exit(1);
+    }
+};
+
+const unused = async () => {
+    try {
+        await checkUnusedMessages();
+    } catch (e) {
+        cliLog.error(e.message);
+        process.exit(1);
+    }
+};
+
+/**
+ * Checks if required fields exists, if not adds them from base locale
+ * @param {string[]} locales
+ * @returns {Promise<void>}
+ */
+const addRequired = async (locales) => {
+    try {
+        const result = await addRequiredFields(locales);
+        cliLog.info(result);
+    } catch (e) {
+        cliLog.error(`An error during adding required occurred: ${e.message}`);
+        process.exit(1);
+    }
+};
+
+program
+    .command('download')
+    .description('Downloads messages from localization service')
+    .option('-l,--locales [list...]', 'specific list of space-separated locales')
+    .action(async (opts) => {
+        let locales = LOCALES;
+        let isMinimum = true;
+        if (opts.locales && opts.locales.length > 0) {
+            locales = opts.locales;
+            isMinimum = false;
+        }
+        await download(locales);
+        await addRequired(locales);
+        await validate(locales, isMinimum);
+    });
+
+program
+    .command('upload')
+    .description('Uploads base messages to the localization service')
+    .action(upload);
+
+program
+    .command('validate')
+    .description('Validates translations')
+    .option('-R,--min', 'for critical errors of all locales and translations readiness of ours')
+    .option('-l,--locales [list...]', 'for specific list of space-separated locales')
+    .action((opts) => {
+        let locales = LOCALES;
+        let isMinimum;
+        if (opts.min) {
+            isMinimum = true;
+        } else if (opts.locales && opts.locales.length > 0) {
+            locales = opts.locales;
+        }
+        validate(locales, isMinimum);
+    });
+
+program
+    .command('info')
+    .description('Shows locales info')
+    .option('-s,--summary', 'for all locales translations readiness')
+    .option('-N,--unused', 'for unused base-lang strings')
+    .action((opts) => {
+        const IS_INFO = true;
+        if (opts.summary) {
+            summary(IS_INFO);
+        } else if (opts.unused) {
+            unused();
+        } else if (!opts.summary && !opts.unused) {
+            summary(IS_INFO);
+            unused();
+        }
+    });
+
+program.parse(process.argv);

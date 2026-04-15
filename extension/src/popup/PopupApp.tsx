@@ -11,6 +11,8 @@ import {
 } from '@/shared/messages';
 import type { PromoDetectionStatus } from '@/shared/promo-types';
 import { formatPromoBlocksSummary } from '@/shared/promo-range-format';
+import { reactTranslator } from '@/shared/i18n/react-translator';
+import { translator } from '@/shared/i18n/translator';
 
 /**
  * @param res - Untyped runtime response
@@ -34,17 +36,17 @@ function isGetDetectionOk(
 function detectionLabel(s: PromoDetectionStatus): string {
   switch (s) {
     case 'not_configured':
-      return 'LLM not configured';
+      return translator.getMessage('popup_detection_not_configured');
     case 'unavailable':
-      return 'Unavailable';
+      return translator.getMessage('popup_detection_unavailable');
     case 'analyzing':
-      return 'Analyzing…';
+      return translator.getMessage('popup_detection_analyzing');
     case 'detected':
-      return 'Promo blocks detected';
+      return translator.getMessage('popup_detection_detected');
     case 'no_promo':
-      return 'No promo found';
+      return translator.getMessage('popup_detection_no_promo');
     case 'error':
-      return 'Detection error';
+      return translator.getMessage('popup_detection_error');
     default:
       return s;
   }
@@ -120,21 +122,25 @@ export const PopupApp = observer(function PopupApp() {
   return (
     <Stack gap="sm" p="md" maw={320}>
       <Text fw={600} size="sm">
-        TopSkip
+        {reactTranslator.getMessage('popup_heading')}
       </Text>
       <Group justify="space-between" wrap="nowrap" gap="md">
-        <Text size="sm">Enable promo skip (YouTube)</Text>
+        <Text size="sm">
+          {reactTranslator.getMessage(
+            'popup_enable_promo_skip',
+          )}
+        </Text>
         <Switch
           checked={store.enabled}
           onChange={(e) => {
             void store.setEnabled(e.currentTarget.checked);
           }}
-          aria-label="Enable auto-skip"
+          aria-label={translator.getMessage('popup_enable_auto_skip_aria')}
         />
       </Group>
       {detectionLine ? (
         <Text size="xs" c="dimmed" style={{ whiteSpace: 'pre-line' }}>
-          Active tab: {detectionLine}
+          {translator.getMessage('popup_active_tab_prefix')}{detectionLine}
         </Text>
       ) : null}
       <Button
@@ -144,19 +150,20 @@ export const PopupApp = observer(function PopupApp() {
           void browser.runtime.openOptionsPage();
         }}
       >
-        Open settings (OpenRouter)
+        {reactTranslator.getMessage('popup_open_settings')}
       </Button>
-      <Alert color="yellow" title="Reliability notice" variant="light">
+      <Alert
+        color="yellow"
+        title={translator.getMessage(
+          'popup_reliability_notice_title',
+        )}
+        variant="light"
+      >
         <Text size="xs">
-          TopSkip may rely on parts of YouTube’s site that are not a documented
-          public API—the same general area the YouTube web client uses. There is
-          no guarantee that auto-skip will keep working if YouTube changes how
-          the page behaves.
+          {reactTranslator.getMessage('popup_reliability_notice_body_1')}
         </Text>
         <Text size="xs" mt="xs">
-          If it stops working, please report it where you installed this
-          extension (for example the Chrome Web Store support options, if you
-          installed it from there).
+          {reactTranslator.getMessage('popup_reliability_notice_body_2')}
         </Text>
       </Alert>
     </Stack>

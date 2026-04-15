@@ -32,6 +32,9 @@ import {
   OPENROUTER_DEFAULT_MODEL_SLUG,
   OPENROUTER_MODEL_PRESETS,
 } from '@/shared/openrouter-model-presets';
+import { i18n } from '@/shared/i18n/i18n';
+import { reactTranslator } from '@/shared/i18n/react-translator';
+import { translator } from '@/shared/i18n/translator';
 
 type OpenRouterGetOkPayload = Extract<
   GetOpenRouterConfigResponse,
@@ -84,10 +87,7 @@ async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
     throw new Error(getErrorMessage(lastErr));
   }
   throw new Error(
-    [
-      'Extension background did not respond.',
-      'Click Reload or reload the extension on chrome://extensions.',
-    ].join(' '),
+    translator.getMessage('options_error_bg_no_response'),
   );
 }
 
@@ -170,8 +170,11 @@ export class Options {
 
   /**
    * Mounts the options React app under `#root`.
+   *
+   * @returns Promise resolving after i18n init and render
    */
-  static init(): void {
+  static async init(): Promise<void> {
+    await i18n.init();
     const rootEl = document.getElementById('root');
     if (!rootEl) {
       throw new Error('Missing #root');
@@ -244,13 +247,13 @@ function OptionsApp(): ReactElement {
           typeof (res as { error: unknown }).error === 'string';
         const err = hasErr
           ? (res as { error: string }).error
-          : 'Failed to load settings';
+          : translator.getMessage('options_error_load_failed');
         setError(err);
         return;
       }
       const data = parseGetOpenRouterConfigOk(res);
       if (!data) {
-        setError('Failed to load settings');
+        setError(translator.getMessage('options_error_load_failed'));
         return;
       }
       setEnabled(data.enabled);
@@ -293,7 +296,7 @@ function OptionsApp(): ReactElement {
           'error' in res &&
           typeof (res as { error: unknown }).error === 'string'
             ? (res as { error: string }).error
-            : 'Save failed';
+            : translator.getMessage('options_error_save_failed');
         setError(err);
         return;
       }
@@ -325,7 +328,7 @@ function OptionsApp(): ReactElement {
           'error' in res &&
           typeof (res as { error: unknown }).error === 'string'
             ? (res as { error: string }).error
-            : 'Could not add model';
+            : translator.getMessage('options_error_add_model');
         setError(err);
         return;
       }
@@ -360,7 +363,7 @@ function OptionsApp(): ReactElement {
           'error' in res &&
           typeof (res as { error: unknown }).error === 'string'
             ? (res as { error: string }).error
-            : 'Could not remove model';
+            : translator.getMessage('options_error_remove_model');
         setError(err);
         return;
       }
@@ -374,21 +377,20 @@ function OptionsApp(): ReactElement {
 
   return (
     <Stack gap="md" p="lg" maw={520}>
-      <Text fw={600}>TopSkip — LLM promo detection</Text>
+      <Text fw={600}>{reactTranslator.getMessage('options_heading')}</Text>
       <Text size="sm" c="dimmed">
-        Configure OpenRouter for transcript analysis. The API key is stored only
-        in this browser profile (extension local storage).
+        {reactTranslator.getMessage('options_description')}
       </Text>
       <Checkbox
-        label="Enable LLM promo detection"
+        label={translator.getMessage('options_enable_detection')}
         checked={enabled}
         onChange={(e) => {
           setEnabled(e.currentTarget.checked);
         }}
       />
       <TextInput
-        label="OpenRouter API key"
-        placeholder="sk-or-…"
+        label={translator.getMessage('options_api_key_label')}
+        placeholder={translator.getMessage('options_api_key_placeholder')}
         type="password"
         autoComplete="off"
         value={apiKey}
@@ -397,13 +399,15 @@ function OptionsApp(): ReactElement {
         }}
         description={
           savedApiKeyMasked !== null
-            ? `Saved key: ${savedApiKeyMasked} - leave blank to keep it.`
-            : 'No key saved yet.'
+            ? translator.getMessage(
+              'options_api_key_saved',
+            ).replace('%mask%', savedApiKeyMasked)
+            : translator.getMessage('options_api_key_none')
         }
       />
       <Select
-        label="Model"
-        description="Built-in presets and models you added below."
+        label={translator.getMessage('options_model_label')}
+        description={translator.getMessage('options_model_description')}
         data={modelSelectData}
         value={modelChoice}
         onChange={(v) => {
@@ -412,17 +416,18 @@ function OptionsApp(): ReactElement {
       />
       <Stack gap="xs">
         <Text size="sm" fw={500}>
-          Add a model
+          {reactTranslator.getMessage('options_add_model_heading')}
         </Text>
         <Text size="xs" c="dimmed">
-          Type an OpenRouter model id (for example vendor/model), then Add to
-          keep it for later sessions. This is not the same as Save below.
+          {reactTranslator.getMessage('options_add_model_description')}
         </Text>
         <Group align="flex-end" wrap="nowrap" gap="sm">
           <TextInput
             style={{ flex: 1 }}
-            label="Custom model id"
-            placeholder="vendor/model"
+            label={translator.getMessage('options_custom_model_label')}
+            placeholder={translator.getMessage(
+              'options_custom_model_placeholder',
+            )}
             value={newModelDraft}
             onChange={(e) => {
               setNewModelDraft(e.currentTarget.value);
@@ -433,14 +438,14 @@ function OptionsApp(): ReactElement {
             disabled={newModelDraft.trim().length === 0}
             onClick={() => void onAddCustomModel()}
           >
-            Add
+            {reactTranslator.getMessage('options_add_button')}
           </Button>
         </Group>
       </Stack>
       {customModels.length > 0 ? (
         <Stack gap="xs">
           <Text size="sm" fw={500}>
-            Your added models
+            {reactTranslator.getMessage('options_your_models_heading')}
           </Text>
           {customModels.map((slug) => (
             <Group key={slug} justify="space-between" wrap="nowrap">
@@ -455,7 +460,7 @@ function OptionsApp(): ReactElement {
                 disabled={removeBusySlug !== null && removeBusySlug !== slug}
                 onClick={() => void onRemoveCustomModel(slug)}
               >
-                Remove
+                {reactTranslator.getMessage('options_remove_button')}
               </Button>
             </Group>
           ))}
@@ -468,20 +473,19 @@ function OptionsApp(): ReactElement {
       ) : null}
       {saved ? (
         <Text size="sm" c="green">
-          Saved.
+          {reactTranslator.getMessage('options_saved')}
         </Text>
       ) : null}
       <Group>
         <Button loading={loading} onClick={() => void onSave()}>
-          Save
+          {reactTranslator.getMessage('options_save_button')}
         </Button>
         <Button variant="default" onClick={() => void load()}>
-          Reload
+          {reactTranslator.getMessage('options_reload_button')}
         </Button>
       </Group>
       <Text size="xs" c="dimmed">
-        Save applies the detection toggle, API key (if changed), and the
-        selected model. Use Add to store extra model ids in your list.
+        {reactTranslator.getMessage('options_save_help')}
       </Text>
     </Stack>
   );

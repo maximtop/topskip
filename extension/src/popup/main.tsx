@@ -1,3 +1,3 @@
 import { Popup } from '@/popup/popup';
 
-Popup.init();
+void Popup.init();

@@ -1,0 +1,182 @@
+{
+    "name": {
+        "message": "TopSkip",
+        "description": "Extension name displayed in Chrome Web Store and chrome://extensions. Keep short."
+    },
+    "short_name": {
+        "message": "TopSkip",
+        "description": "Short name for the extension. Used in the toolbar."
+    },
+    "description": {
+        "message": "LLM-assisted promo skip on YouTube (MVP)",
+        "description": "Extension description for Chrome Web Store listing. TEXT MAX LENGTH: 132"
+    },
+    "popup_heading": {
+        "message": "TopSkip",
+        "description": "Popup heading text"
+    },
+    "popup_enable_promo_skip": {
+        "message": "Enable promo skip (YouTube)",
+        "description": "Label next to the main enable/disable switch in the popup"
+    },
+    "popup_enable_auto_skip_aria": {
+        "message": "Enable auto-skip",
+        "description": "Accessible label for the enable/disable switch in the popup"
+    },
+    "popup_active_tab_prefix": {
+        "message": "Active tab: ",
+        "description": "Prefix before the detection status line in the popup. Includes trailing space."
+    },
+    "popup_open_settings": {
+        "message": "Open settings (OpenRouter)",
+        "description": "Button in the popup that opens the options page"
+    },
+    "popup_reliability_notice_title": {
+        "message": "Reliability notice",
+        "description": "Title for the yellow alert box in the popup"
+    },
+    "popup_reliability_notice_body_1": {
+        "message": "TopSkip may rely on parts of YouTube's site that are not a documented public API—the same general area the YouTube web client uses. There is no guarantee that auto-skip will keep working if YouTube changes how the page behaves.",
+        "description": "First paragraph of the reliability notice in the popup"
+    },
+    "popup_reliability_notice_body_2": {
+        "message": "If it stops working, please report it where you installed this extension (for example the Chrome Web Store support options, if you installed it from there).",
+        "description": "Second paragraph of the reliability notice in the popup"
+    },
+    "popup_detection_not_configured": {
+        "message": "LLM not configured",
+        "description": "Detection status shown when OpenRouter is not set up"
+    },
+    "popup_detection_unavailable": {
+        "message": "Unavailable",
+        "description": "Detection status shown when detection is unavailable"
+    },
+    "popup_detection_analyzing": {
+        "message": "Analyzing…",
+        "description": "Detection status shown during transcript analysis"
+    },
+    "popup_detection_detected": {
+        "message": "Promo blocks detected",
+        "description": "Detection status shown when promo blocks are found"
+    },
+    "popup_detection_no_promo": {
+        "message": "No promo found",
+        "description": "Detection status shown when no promo blocks are found"
+    },
+    "popup_detection_error": {
+        "message": "Detection error",
+        "description": "Detection status shown when detection fails"
+    },
+    "options_heading": {
+        "message": "TopSkip — LLM promo detection",
+        "description": "Heading on the options page"
+    },
+    "options_description": {
+        "message": "Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).",
+        "description": "Description text below the heading on the options page"
+    },
+    "options_enable_detection": {
+        "message": "Enable LLM promo detection",
+        "description": "Checkbox label on the options page"
+    },
+    "options_api_key_label": {
+        "message": "OpenRouter API key",
+        "description": "Label for the API key input on the options page"
+    },
+    "options_api_key_placeholder": {
+        "message": "sk-or-…",
+        "description": "Placeholder text for the API key input"
+    },
+    "options_api_key_saved": {
+        "message": "Saved key: %mask% - leave blank to keep it.",
+        "description": "Shown below API key input when a key is already saved. %mask% is the masked key value."
+    },
+    "options_api_key_none": {
+        "message": "No key saved yet.",
+        "description": "Shown below API key input when no key has been saved"
+    },
+    "options_model_label": {
+        "message": "Model",
+        "description": "Label for the model select dropdown on the options page"
+    },
+    "options_model_description": {
+        "message": "Built-in presets and models you added below.",
+        "description": "Help text below the model select dropdown"
+    },
+    "options_add_model_heading": {
+        "message": "Add a model",
+        "description": "Heading for the custom model section on the options page"
+    },
+    "options_add_model_description": {
+        "message": "Type an OpenRouter model id (for example vendor/model), then Add to keep it for later sessions. This is not the same as Save below.",
+        "description": "Help text for the custom model input section"
+    },
+    "options_custom_model_label": {
+        "message": "Custom model id",
+        "description": "Label for the custom model text input"
+    },
+    "options_custom_model_placeholder": {
+        "message": "vendor/model",
+        "description": "Placeholder for the custom model text input"
+    },
+    "options_add_button": {
+        "message": "Add",
+        "description": "Button to add a custom model id"
+    },
+    "options_your_models_heading": {
+        "message": "Your added models",
+        "description": "Heading above the list of user-added custom models"
+    },
+    "options_remove_button": {
+        "message": "Remove",
+        "description": "Button to remove a custom model from the list"
+    },
+    "options_saved": {
+        "message": "Saved.",
+        "description": "Success message shown after saving settings"
+    },
+    "options_save_button": {
+        "message": "Save",
+        "description": "Button to save all settings on the options page"
+    },
+    "options_reload_button": {
+        "message": "Reload",
+        "description": "Button to reload settings from storage on the options page"
+    },
+    "options_save_help": {
+        "message": "Save applies the detection toggle, API key (if changed), and the selected model. Use Add to store extra model ids in your list.",
+        "description": "Help text below the Save/Reload buttons"
+    },
+    "options_error_bg_no_response": {
+        "message": "Extension background did not respond. Click Reload or reload the extension on chrome://extensions.",
+        "description": "Error shown when the background service worker is unreachable"
+    },
+    "options_error_load_failed": {
+        "message": "Failed to load settings",
+        "description": "Generic error when loading settings fails"
+    },
+    "options_error_save_failed": {
+        "message": "Save failed",
+        "description": "Generic error when saving settings fails"
+    },
+    "options_error_add_model": {
+        "message": "Could not add model",
+        "description": "Error when adding a custom model fails"
+    },
+    "options_error_remove_model": {
+        "message": "Could not remove model",
+        "description": "Error when removing a custom model fails"
+    },
+    "content_skip_applied": {
+        "message": "Skip applied",
+        "description": "Brief toast notification shown on YouTube after a promo block is skipped"
+    },
+    "prefs_error_load": {
+        "message": "failed to load preferences",
+        "description": "Error fallback in preferences store when loading fails"
+    },
+    "prefs_error_save": {
+        "message": "failed to save preferences",
+        "description": "Error fallback in preferences store when saving fails"
+    }
+}

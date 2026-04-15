@@ -1,6 +1,16 @@
 import { observer } from 'mobx-react-lite';
-import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Group, Stack, Switch, Text } from '@mantine/core';
+import { type ReactElement, useEffect, useMemo, useState } from 'react';
+import {
+  Alert,
+  Badge,
+  Box,
+  Button,
+  Group,
+  Paper,
+  Stack,
+  Switch,
+  Text,
+} from '@mantine/core';
 
 import { PreferencesStore } from '@/popup/preferences-store';
 import { getErrorMessage } from '@/shared/error';
@@ -8,8 +18,9 @@ import browser from '@/shared/browser';
 import {
   TOPSKIP_MESSAGE,
   type GetDetectionStatusResponse,
+  type PromoDetectionStatePayload,
 } from '@/shared/messages';
-import type { PromoDetectionStatus } from '@/shared/promo-types';
+import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
 import { formatPromoBlocksSummary } from '@/shared/promo-range-format';
 
 /**
@@ -50,12 +61,244 @@ function detectionLabel(s: PromoDetectionStatus): string {
   }
 }
 
+function getPromoBlockEndSec(block: PromoBlock): number {
+  if (block.endSec !== undefined && block.endSec > block.startSec) {
+    return block.endSec;
+  }
+  return block.startSec + 30;
+}
+
+type PopupTone = 'brand' | 'success' | 'warning' | 'danger' | 'neutral';
+
+type PopupViewModel = {
+  tone: PopupTone;
+  badgeLabel: string;
+  badgeColor: string;
+  title: string;
+  description: string;
+  statusHeadline: string;
+  statusBody: string | null;
+  settingsLabel: string;
+};
+
+function buildPopupViewModel(args: {
+  enabled: boolean;
+  detectionState: PromoDetectionStatePayload | null;
+  prefsError: string | null;
+  detectionError: string | null;
+}): PopupViewModel {
+  const { enabled, detectionState, prefsError, detectionError } = args;
+
+  if (prefsError !== null || detectionError !== null) {
+    const message = prefsError ?? detectionError ?? 'Status unavailable';
+    return {
+      tone: 'danger',
+      badgeLabel: 'Error',
+      badgeColor: 'error',
+      title: 'Status unavailable',
+      description: 'TopSkip could not refresh its current state.',
+      statusHeadline: message,
+      statusBody: null,
+      settingsLabel: 'Open settings',
+    };
+  }
+
+  if (!enabled) {
+    return {
+      tone: 'neutral',
+      badgeLabel: 'Off',
+      badgeColor: 'gray',
+      title: 'TopSkip is paused',
+      description: 'Auto-skip is disabled for YouTube until you turn it back on.',
+      statusHeadline: 'Automatic sponsor skipping is currently off.',
+      statusBody: 'You can still open settings and review your model setup.',
+      settingsLabel: 'Open settings',
+    };
+  }
+
+  if (detectionState === null) {
+    return {
+      tone: 'neutral',
+      badgeLabel: 'Idle',
+      badgeColor: 'gray',
+      title: 'Open a YouTube video',
+      description: 'TopSkip is ready, but this tab does not have an active watch context yet.',
+      statusHeadline: 'Waiting for a supported watch page.',
+      statusBody: 'Detection details will appear here when a video is available.',
+      settingsLabel: 'Open settings',
+    };
+  }
+
+  switch (detectionState.status) {
+    case 'not_configured':
+      return {
+        tone: 'warning',
+        badgeLabel: 'Setup',
+        badgeColor: 'warning',
+        title: 'Finish setup',
+        description: 'Add your OpenRouter key to enable transcript analysis for promo detection.',
+        statusHeadline: 'LLM detection is not configured yet.',
+        statusBody: 'Save an API key and select a default model to activate analysis.',
+        settingsLabel: 'Continue setup',
+      };
+    case 'unavailable':
+      return {
+        tone: 'neutral',
+        badgeLabel: 'Unavailable',
+        badgeColor: 'gray',
+        title: 'Detection unavailable',
+        description: 'TopSkip is enabled, but detection data is not available for this tab right now.',
+        statusHeadline: 'No detection snapshot is available.',
+        statusBody: 'This can happen before captions are ready or outside supported watch states.',
+        settingsLabel: 'Open settings',
+      };
+    case 'analyzing':
+      return {
+        tone: 'brand',
+        badgeLabel: 'Live',
+        badgeColor: 'brand',
+        title: 'Analyzing captions',
+        description: 'TopSkip is reading the latest transcript slice for this video.',
+        statusHeadline: 'Analysis is in progress.',
+        statusBody: 'Detected sponsor windows will appear here when ready.',
+        settingsLabel: 'Open settings',
+      };
+    case 'detected': {
+      const count = detectionState.promoBlocks?.length ?? 0;
+      return {
+        tone: 'brand',
+        badgeLabel: 'Detected',
+        badgeColor: 'brand',
+        title: `${count} promo ${count === 1 ? 'block' : 'blocks'} found`,
+        description: 'TopSkip has marked the current sponsor windows for this video.',
+        statusHeadline: 'Detected windows',
+        statusBody:
+          detectionState.promoBlocks !== undefined &&
+          detectionState.promoBlocks.length > 0
+            ? formatPromoBlocksSummary(detectionState.promoBlocks)
+            : null,
+        settingsLabel: 'Open settings',
+      };
+    }
+    case 'no_promo':
+      return {
+        tone: 'success',
+        badgeLabel: 'Clear',
+        badgeColor: 'success',
+        title: 'Watching clean',
+        description: 'No sponsor segments were found in the current transcript window.',
+        statusHeadline: 'No promo blocks detected.',
+        statusBody: 'TopSkip will keep monitoring the video as captions update.',
+        settingsLabel: 'Open settings',
+      };
+    case 'error':
+      return {
+        tone: 'danger',
+        badgeLabel: 'Error',
+        badgeColor: 'error',
+        title: 'Detection error',
+        description: 'TopSkip could not analyze the current transcript.',
+        statusHeadline: detectionState.error ?? 'Detection failed for this tab.',
+        statusBody: 'Open settings to verify the API key and selected model.',
+        settingsLabel: 'Open settings',
+      };
+    default:
+      return {
+        tone: 'neutral',
+        badgeLabel: detectionLabel(detectionState.status),
+        badgeColor: 'gray',
+        title: 'Status update',
+        description: 'TopSkip reported a state update for the current tab.',
+        statusHeadline: detectionLabel(detectionState.status),
+        statusBody: null,
+        settingsLabel: 'Open settings',
+      };
+  }
+}
+
+function heroBackground(tone: PopupTone): string {
+  switch (tone) {
+    case 'brand':
+      return 'linear-gradient(180deg, rgba(230,252,245,0.98) 0%, rgba(243,250,247,0.98) 100%)';
+    case 'success':
+      return 'linear-gradient(180deg, rgba(235,251,238,0.98) 0%, rgba(247,252,248,0.98) 100%)';
+    case 'warning':
+      return 'linear-gradient(180deg, rgba(255,249,219,0.98) 0%, rgba(255,252,241,0.98) 100%)';
+    case 'danger':
+      return 'linear-gradient(180deg, rgba(255,245,245,0.98) 0%, rgba(255,250,250,0.98) 100%)';
+    default:
+      return 'linear-gradient(180deg, rgba(248,250,252,0.98) 0%, rgba(255,255,255,0.98) 100%)';
+  }
+}
+
+function PromoTimeline({ blocks }: { blocks: readonly PromoBlock[] }): ReactElement | null {
+  if (blocks.length === 0) {
+    return null;
+  }
+
+  const maxEnd = blocks.reduce((max, block) => {
+    return Math.max(max, getPromoBlockEndSec(block));
+  }, 60);
+
+  return (
+    <Stack gap={6} mt="sm">
+      <Box
+        aria-hidden="true"
+        style={{
+          position: 'relative',
+          height: '0.625rem',
+          borderRadius: '999px',
+          background: 'var(--mantine-color-slate-1)',
+          overflow: 'hidden',
+        }}
+      >
+        {blocks.map((block, index) => {
+          const end = getPromoBlockEndSec(block);
+          const left = `${(block.startSec / maxEnd) * 100}%`;
+          const width = `${(Math.max(end - block.startSec, 4) / maxEnd) * 100}%`;
+          return (
+            <Box
+              key={`${block.startSec}-${end}-${index}`}
+              style={{
+                position: 'absolute',
+                top: 0,
+                bottom: 0,
+                left,
+                width,
+                minWidth: '0.35rem',
+                borderRadius: '999px',
+                background:
+                  index % 2 === 0
+                    ? 'linear-gradient(90deg, var(--mantine-color-brand-6), var(--mantine-color-brand-7))'
+                    : 'linear-gradient(90deg, var(--mantine-color-warning-6), var(--mantine-color-brand-6))',
+              }}
+            />
+          );
+        })}
+      </Box>
+      <Text size="xs" c="dimmed">
+        Visual detection timeline for the current video snapshot.
+      </Text>
+    </Stack>
+  );
+}
+
 export const PopupApp = observer(function PopupApp() {
   const store = useMemo(() => new PreferencesStore(), []);
-  const [detectionLine, setDetectionLine] = useState<string | null>(null);
+  const [prefsError, setPrefsError] = useState<string | null>(null);
+  const [detectionState, setDetectionState] =
+    useState<PromoDetectionStatePayload | null>(null);
+  const [detectionError, setDetectionError] = useState<string | null>(null);
 
   useEffect(() => {
-    void store.load();
+    void store.load().then(
+      () => {
+        setPrefsError(null);
+      },
+      (e: unknown) => {
+        setPrefsError(getErrorMessage(e));
+      },
+    );
   }, [store]);
 
   useEffect(() => {
@@ -70,27 +313,16 @@ export const PopupApp = observer(function PopupApp() {
           return;
         }
         if (!isGetDetectionOk(res)) {
-          setDetectionLine(null);
+          setDetectionState(null);
+          setDetectionError('Could not load detection status.');
           return;
         }
-        if (res.state === null) {
-          setDetectionLine(null);
-          return;
-        }
-        const base = detectionLabel(res.state.status);
-        const err = res.state.error ? ` (${res.state.error})` : '';
-        let line = `${base}${err}`;
-        if (
-          res.state.status === 'detected' &&
-          res.state.promoBlocks !== undefined &&
-          res.state.promoBlocks.length > 0
-        ) {
-          line += `\n${formatPromoBlocksSummary(res.state.promoBlocks)}`;
-        }
-        setDetectionLine(line);
+        setDetectionError(null);
+        setDetectionState(res.state);
       } catch (e) {
         if (!cancelled) {
-          setDetectionLine(getErrorMessage(e));
+          setDetectionState(null);
+          setDetectionError(getErrorMessage(e));
         }
       }
     };
@@ -117,48 +349,122 @@ export const PopupApp = observer(function PopupApp() {
     };
   }, []);
 
+  const view = buildPopupViewModel({
+    enabled: store.enabled,
+    detectionState,
+    prefsError,
+    detectionError,
+  });
+
+  const detectedBlocks =
+    detectionState?.status === 'detected' && detectionState.promoBlocks !== undefined
+      ? detectionState.promoBlocks
+      : [];
+
   return (
-    <Stack gap="sm" p="md" maw={320}>
-      <Text fw={600} size="sm">
-        TopSkip
-      </Text>
-      <Group justify="space-between" wrap="nowrap" gap="md">
-        <Text size="sm">Enable promo skip (YouTube)</Text>
-        <Switch
-          checked={store.enabled}
-          onChange={(e) => {
-            void store.setEnabled(e.currentTarget.checked);
-          }}
-          aria-label="Enable auto-skip"
-        />
-      </Group>
-      {detectionLine ? (
-        <Text size="xs" c="dimmed" style={{ whiteSpace: 'pre-line' }}>
-          Active tab: {detectionLine}
-        </Text>
-      ) : null}
+    <Stack
+      gap="sm"
+      p="md"
+      maw={320}
+      style={{
+        background: 'linear-gradient(180deg, #f8fafc 0%, #f2f7f5 100%)',
+      }}
+    >
+      <Paper p="md" radius="xl" style={{ background: heroBackground(view.tone) }}>
+        <Group justify="space-between" align="flex-start" wrap="nowrap" gap="sm">
+          <Stack gap={2} style={{ flex: 1 }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              TopSkip
+            </Text>
+            <Text fw={700} size="lg">
+              {view.title}
+            </Text>
+            <Text size="sm" c="dimmed" maw={220}>
+              {view.description}
+            </Text>
+          </Stack>
+          <Badge color={view.badgeColor}>{view.badgeLabel}</Badge>
+        </Group>
+        <Paper
+          mt="md"
+          p="sm"
+          radius="lg"
+          style={{ background: 'rgba(255, 255, 255, 0.88)' }}
+        >
+          <Group justify="space-between" wrap="nowrap" gap="md">
+            <Stack gap={1}>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                Quick control
+              </Text>
+              <Text size="sm" fw={600}>
+                Promo skip on YouTube
+              </Text>
+            </Stack>
+            <Switch
+              checked={store.enabled}
+              onChange={(e) => {
+                setPrefsError(null);
+                void store.setEnabled(e.currentTarget.checked).catch((err: unknown) => {
+                  setPrefsError(getErrorMessage(err));
+                });
+              }}
+              aria-label="Enable auto-skip"
+            />
+          </Group>
+        </Paper>
+      </Paper>
+
+      <Paper p="md" radius="xl">
+        <div role="status" aria-live="polite">
+          <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+            Active tab
+          </Text>
+          <Text size="sm" fw={600} mt={4}>
+            {view.statusHeadline}
+          </Text>
+          {view.statusBody !== null ? (
+            <Text size="xs" c="dimmed" mt={4} style={{ whiteSpace: 'pre-line' }}>
+              {view.statusBody}
+            </Text>
+          ) : null}
+        </div>
+        <PromoTimeline blocks={detectedBlocks} />
+      </Paper>
+
       <Button
-        variant="light"
-        size="xs"
+        variant={detectionState?.status === 'not_configured' ? 'filled' : 'light'}
+        size="sm"
         onClick={() => {
           void browser.runtime.openOptionsPage();
         }}
       >
-        Open settings (OpenRouter)
+        {view.settingsLabel}
       </Button>
-      <Alert color="yellow" title="Reliability notice" variant="light">
-        <Text size="xs">
-          TopSkip may rely on parts of YouTube’s site that are not a documented
-          public API—the same general area the YouTube web client uses. There is
-          no guarantee that auto-skip will keep working if YouTube changes how
-          the page behaves.
-        </Text>
-        <Text size="xs" mt="xs">
-          If it stops working, please report it where you installed this
-          extension (for example the Chrome Web Store support options, if you
-          installed it from there).
-        </Text>
-      </Alert>
+
+      <details>
+        <summary
+          style={{
+            cursor: 'pointer',
+            fontSize: 'var(--mantine-font-size-xs)',
+            color: 'var(--mantine-color-dimmed)',
+          }}
+        >
+          Reliability notice
+        </summary>
+        <Alert color="warning" title="Reliability notice" mt="xs">
+          <Text size="xs">
+            TopSkip may rely on parts of YouTube&apos;s site that are not a
+            documented public API—the same general area the YouTube web client
+            uses. There is no guarantee that auto-skip will keep working if
+            YouTube changes how the page behaves.
+          </Text>
+          <Text size="xs" mt="xs">
+            If it stops working, please report it where you installed this
+            extension (for example the Chrome Web Store support options, if you
+            installed it from there).
+          </Text>
+        </Alert>
+      </details>
     </Stack>
   );
 });

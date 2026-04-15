@@ -85,6 +85,12 @@ export class YoutubeWatch {
 
   /**
    * Brief on-screen confirmation after a skip seek is applied.
+   *
+   * Uses `role="status"` and `aria-live="polite"` so screen readers announce
+   * the skip. Respects `prefers-reduced-motion` by skipping the fade-out
+   * transition. Design token values (colors, radius, font) are aligned with
+   * the shared theme but hardcoded here because the content bundle must not
+   * import Mantine (see AGENTS.md).
    */
   private static showSkipToast(): void {
     const id = 'topskip-toast';
@@ -92,28 +98,45 @@ export class YoutubeWatch {
     if (!root) {
       root = document.createElement('div');
       root.id = id;
+      root.setAttribute('role', 'status');
+      root.setAttribute('aria-live', 'polite');
       root.style.cssText = [
         'position:fixed',
         'bottom:88px',
         'left:50%',
         'transform:translateX(-50%)',
         'z-index:10000',
-        'background:rgba(0,0,0,0.82)',
+        'background:rgba(15,23,42,0.92)',
         'color:#fff',
-        'padding:8px 14px',
-        'border-radius:8px',
-        'font:14px/1.3 system-ui,sans-serif',
+        'padding:0.625rem 1rem',
+        'border-radius:0.5rem',
+        'border:1px solid rgba(255,255,255,0.12)',
+        'box-shadow:0 14px 30px rgba(15,23,42,0.35)',
+        'font:0.8125rem/1.4 system-ui,' +
+          '-apple-system,"Segoe UI",Roboto,' +
+          'Helvetica,Arial,sans-serif',
         'pointer-events:none',
+        'transition:opacity 200ms ease-out',
       ].join(';');
       document.documentElement.appendChild(root);
     }
     root.textContent = 'Skip applied';
     root.style.opacity = '1';
+
+    const prefersReducedMotion = window.matchMedia(
+      '(prefers-reduced-motion: reduce)',
+    ).matches;
+
     window.setTimeout(() => {
-      root.style.opacity = '0';
-      window.setTimeout(() => {
+      if (prefersReducedMotion) {
+        root.style.opacity = '0';
         root.remove();
-      }, 200);
+      } else {
+        root.style.opacity = '0';
+        window.setTimeout(() => {
+          root.remove();
+        }, 200);
+      }
     }, 2500);
   }
 

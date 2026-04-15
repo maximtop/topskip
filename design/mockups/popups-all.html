@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip UX Concepts</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1b2230;
+    --muted: #647089;
+    --line: rgba(27, 34, 48, 0.1);
+    --card: rgba(255,255,255,0.76);
+    --bg1: #f6fbf8;
+    --bg2: #eef3ff;
+    --brand: #12b886;
+  }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--ink);
+    background:
+      radial-gradient(circle at top left, rgba(18,184,134,0.14), transparent 30%),
+      radial-gradient(circle at top right, rgba(50,86,255,0.12), transparent 28%),
+      linear-gradient(180deg, var(--bg1) 0%, var(--bg2) 100%);
+    padding: 32px;
+  }
+  .shell { max-width: 1320px; margin: 0 auto; }
+  .hero {
+    background: rgba(255,255,255,0.72);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    padding: 28px;
+    backdrop-filter: blur(10px);
+    box-shadow: 0 18px 44px rgba(17, 26, 45, 0.08);
+    margin-bottom: 24px;
+  }
+  h1 { font-size: 40px; margin-bottom: 10px; letter-spacing: -0.03em; }
+  .hero p { max-width: 860px; line-height: 1.65; color: var(--muted); font-size: 16px; }
+  .meta { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+  .meta span {
+    display: inline-flex; align-items: center; padding: 8px 12px; border-radius: 999px;
+    background: rgba(255,255,255,0.8); border: 1px solid var(--line); font-size: 13px; color: var(--muted);
+  }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(330px, 1fr)); gap: 18px; }
+  .concept {
+    background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 20px;
+    backdrop-filter: blur(10px); box-shadow: 0 14px 30px rgba(17,26,45,0.06);
+    display: grid; gap: 16px;
+  }
+  .concept-head { display: flex; justify-content: space-between; gap: 12px; align-items: start; }
+  .concept h2 { font-size: 24px; line-height: 1.1; }
+  .num {
+    min-width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+    background: linear-gradient(135deg, #ffffff, #e8f2ff); border: 1px solid var(--line); font-weight: 700;
+  }
+  .concept p { color: var(--muted); line-height: 1.6; font-size: 14px; }
+  .axes { display: flex; flex-wrap: wrap; gap: 8px; }
+  .axes span {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; padding: 6px 9px;
+    border-radius: 999px; background: rgba(255,255,255,0.85); border: 1px solid var(--line); color: var(--muted);
+  }
+  .mini-popup {
+    border-radius: 20px; overflow: hidden; border: 1px solid var(--line); background: white;
+  }
+  .mini-bar { padding: 8px 12px; font-size: 10px; color: #8290aa; background: #f6f9fd; border-bottom: 1px solid var(--line); }
+  .mini-body { padding: 14px; }
+  .mini-card {
+    border-radius: 16px; padding: 14px; color: white; margin-bottom: 10px;
+    background: linear-gradient(145deg, #19a47a, #128d67);
+  }
+  .mini-card.blue { background: linear-gradient(145deg, #2846dd, #5473ff); }
+  .mini-card.amber { background: linear-gradient(145deg, #f59f00, #dd7a00); }
+  .mini-card.neutral { background: linear-gradient(145deg, #44506c, #657492); }
+  .mini-title { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; opacity: 0.82; }
+  .mini-big { font-size: 22px; margin-top: 6px; font-weight: 700; }
+  .mini-line { display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: #24324d; padding: 10px 12px; border: 1px solid var(--line); border-radius: 14px; margin-bottom: 8px; background: #fbfdff; }
+  .pill { display: inline-flex; padding: 5px 8px; border-radius: 999px; background: #ebfff8; color: #0a7c58; font-size: 11px; }
+  .timeline { height: 10px; border-radius: 999px; background: #e8edf6; overflow: hidden; display: flex; gap: 5px; padding: 0 0; }
+  .timeline span { display: block; height: 100%; background: #d0d9e8; }
+  .timeline .hit { background: linear-gradient(90deg, #f59f00, #12b886); }
+  .footer { display: flex; gap: 10px; flex-wrap: wrap; }
+  .footer a {
+    text-decoration: none; font-size: 13px; padding: 10px 13px; border-radius: 12px;
+    border: 1px solid var(--line); color: var(--ink); background: rgba(255,255,255,0.85);
+  }
+  .footer a.primary { background: var(--ink); color: white; border-color: var(--ink); }
+  .notes {
+    margin-top: 24px; background: rgba(255,255,255,0.72); border: 1px solid var(--line); border-radius: 24px; padding: 22px;
+  }
+  .notes h3 { font-size: 22px; margin-bottom: 8px; }
+  .notes p { color: var(--muted); line-height: 1.65; max-width: 920px; }
+  @media (max-width: 720px) {
+    body { padding: 18px; }
+    h1 { font-size: 32px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <section class="hero">
+    <h1>TopSkip UX Concepts</h1>
+    <p>This board replaces the old popup skin gallery. Each direction changes the product model, not just the paint: what the popup is for, what stays in options, and how the user understands status, setup, and detection.</p>
+    <div class="meta">
+      <span>320px popup constraint preserved</span>
+      <span>Popup + options flow redesigned together</span>
+      <span>5 strong concepts instead of 20 reskins</span>
+      <span>See concept notes in ux-concepts.md</span>
+    </div>
+  </section>
+
+  <section class="grid">
+    <article class="concept">
+      <div class="concept-head">
+        <div>
+          <h2>Quick Status Tap</h2>
+          <p>Popup becomes a near-single-action instrument. Details move out of the way until explicitly requested.</p>
+        </div>
+        <div class="num">01</div>
+      </div>
+      <div class="axes"><span>One-action popup</span><span>Deferred detail</span><span>Options as control room</span></div>
+      <div class="mini-popup">
+        <div class="mini-bar">TopSkip popup</div>
+        <div class="mini-body">
+          <div class="mini-card">
+            <div class="mini-title">Current tab</div>
+            <div class="mini-big">Ready</div>
+          </div>
+          <div class="mini-line"><strong>Promo skip is on</strong><span class="pill">2 blocks</span></div>
+          <div class="mini-line">Details stay collapsed</div>
+        </div>
+      </div>
+      <div class="footer">
+        <a class="primary" href="concept-01-quick-status-tap.html">Open concept page</a>
+      </div>
+    </article>
+
+    <article class="concept">
+      <div class="concept-head">
+        <div>
+          <h2>Smart Context</h2>
+          <p>Popup layout changes with state: unsupported page, setup missing, ready without detections, ready with detections.</p>
+        </div>
+        <div class="num">02</div>
+      </div>
+      <div class="axes"><span>State-driven UI</span><span>Different CTAs</span><span>Recovery-first</span></div>
+      <div class="mini-popup">
+        <div class="mini-bar">Popup state</div>
+        <div class="mini-body">
+          <div class="mini-card neutral">
+            <div class="mini-title">Context</div>
+            <div class="mini-big">Finish setup</div>
+          </div>
+          <div class="mini-line">Missing API key</div>
+          <div class="mini-line">CTA changes per state</div>
+        </div>
+      </div>
+      <div class="footer">
+        <a class="primary" href="concept-02-smart-context.html">Open concept page</a>
+      </div>
+    </article>
+
+    <article class="concept">
+      <div class="concept-head">
+        <div>
+          <h2>Detection Timeline</h2>
+          <p>Detection becomes spatial. The popup leads with segment visualization instead of plain time strings.</p>
+        </div>
+        <div class="num">03</div>
+      </div>
+      <div class="axes"><span>Visual inspection</span><span>Segment timeline</span><span>Evidence-oriented</span></div>
+      <div class="mini-popup">
+        <div class="mini-bar">Detection mode</div>
+        <div class="mini-body">
+          <div class="mini-line"><strong>2 blocks found</strong><span>9:14</span></div>
+          <div class="timeline"><span style="width: 16%"></span><span class="hit" style="width: 22%"></span><span style="width: 22%"></span><span class="hit" style="width: 14%"></span><span style="width: 26%"></span></div>
+          <div class="mini-line">Inspector explains each block</div>
+        </div>
+      </div>
+      <div class="footer">
+        <a class="primary" href="concept-03-detection-timeline.html">Open concept page</a>
+      </div>
+    </article>
+
+    <article class="concept">
+      <div class="concept-head">
+        <div>
+          <h2>Inline Model Switcher</h2>
+          <p>Model choice moves into the popup because it is part of active use, not just advanced setup.</p>
+        </div>
+        <div class="num">04</div>
+      </div>
+      <div class="axes"><span>Popup owns switching</span><span>Power-user flow</span><span>Options shrink</span></div>
+      <div class="mini-popup">
+        <div class="mini-bar">Control center</div>
+        <div class="mini-body">
+          <div class="mini-card blue">
+            <div class="mini-title">Active and adjustable</div>
+            <div class="mini-big">Gemini</div>
+          </div>
+          <div class="mini-line">Claude</div>
+          <div class="mini-line">GPT-4.1</div>
+        </div>
+      </div>
+      <div class="footer">
+        <a class="primary" href="concept-04-inline-model-switcher.html">Open concept page</a>
+      </div>
+    </article>
+
+    <article class="concept">
+      <div class="concept-head">
+        <div>
+          <h2>Guided Wizard</h2>
+          <p>Setup becomes a short assistant flow. The steady-state popup only appears after onboarding is complete.</p>
+        </div>
+        <div class="num">05</div>
+      </div>
+      <div class="axes"><span>Lifecycle-aware</span><span>Step flow</span><span>Setup summary options</span></div>
+      <div class="mini-popup">
+        <div class="mini-bar">First-run flow</div>
+        <div class="mini-body">
+          <div class="mini-card amber">
+            <div class="mini-title">Step 3 of 4</div>
+            <div class="mini-big">Pick model</div>
+          </div>
+          <div class="mini-line">Gemini</div>
+          <div class="mini-line">Claude</div>
+        </div>
+      </div>
+      <div class="footer">
+        <a class="primary" href="concept-05-guided-wizard.html">Open concept page</a>
+      </div>
+    </article>
+  </section>
+
+  <section class="notes">
+    <h3>What changed from the previous mockups</h3>
+    <p>The old page compared visual themes wrapped around the same exact workflow. This new set compares five different product structures. If one of these directions is right, the next step is to refine that single concept visually and then port it into the real popup and options implementation.</p>
+  </section>
+</div>
+</body>
+</html>
+      <div style="height: 1px; background: #e9e9e7; margin: 8px 0;"></div>
+      <div style="display: flex; align-items: center; gap: 6px; margin-bottom: 4px;">
+        <span style="font-size: 13px;">🟢</span>
+        <span style="font-size: 13px; color: #37352f;">Promo blocks detected</span>
+      </div>
+      <div style="font-size: 12px; color: #9b9a97; margin-bottom: 12px; padding-left: 22px;">0:32–1:05 · 4:12–4:44</div>
+      <div style="height: 1px; background: #e9e9e7; margin: 8px 0;"></div>
+      <button style="width: 100%; padding: 8px; background: transparent; color: #2eaadc; border: none; font-size: 13px; cursor: pointer; text-align: left;">→ Open settings (OpenRouter)</button>
+      <details style="margin-top: 8px;"><summary style="font-size: 12px; color: #9b9a97; cursor: pointer;">⚠️ Reliability notice</summary><div style="margin-top: 6px; font-size: 12px; color: #9b9a97; background: #fbf3db; padding: 10px 12px; border-radius: 4px; line-height: 1.6;">May break if YouTube changes their site.</div></details>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 10: Stripe-inspired ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">10 — Stripe-inspired</div>
+  <div class="chrome-frame" style="border-color: #e3e8ee;">
+    <div class="chrome-bar" style="background: #f6f9fc; border-color: #e3e8ee;"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="padding: 20px; font-family: system-ui; background: #fff;">
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 18px;">
+        <div style="width: 28px; height: 28px; background: linear-gradient(135deg, #12b886, #099268); border-radius: 6px; display: flex; align-items: center; justify-content: center;">
+          <span style="color: #fff; font-weight: 800; font-size: 13px;">T</span>
+        </div>
+        <span style="font-size: 15px; font-weight: 600; color: #1a1f36;">TopSkip</span>
+      </div>
+      <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #f6f9fc; border-radius: 8px; border: 1px solid #e3e8ee; margin-bottom: 14px;">
+        <div>
+          <div style="font-size: 13px; color: #1a1f36; font-weight: 500;">Promo skip</div>
+          <div style="font-size: 11px; color: #697386;">YouTube auto-skip</div>
+        </div>
+        <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px; padding: 10px 14px; background: #f0fdf4; border-radius: 8px; border: 1px solid #bbf7d0; margin-bottom: 14px; font-size: 12px; color: #166534;">
+        <span>●</span> Promo detected · <span style="color: #697386;">0:32–1:05</span>
+      </div>
+      <button style="width: 100%; padding: 10px; background: #fff; color: #1a1f36; border: 1px solid #e3e8ee; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 500;">Open settings →</button>
+      <details style="margin-top: 10px;"><summary style="font-size: 11px; color: #697386; cursor: pointer;">Reliability notice</summary><div style="margin-top: 6px; font-size: 11px; color: #697386; line-height: 1.6; padding: 10px 14px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px;">May break if YouTube changes their site.</div></details>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 11: Header Toolbar ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">11 — Header Toolbar</div>
+  <div class="chrome-frame">
+    <div class="chrome-bar"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="font-family: system-ui;">
+      <!-- Top toolbar with logo + icon buttons -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 12px 16px; border-bottom: 1px solid #eee;">
+        <div style="display: flex; align-items: center; gap: 8px;">
+          <div style="width: 26px; height: 26px; background: #12b886; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 12px;">T</div>
+          <span style="font-size: 15px; font-weight: 700; color: #222;">TopSkip</span>
+        </div>
+        <div style="display: flex; gap: 4px;">
+          <button style="width: 32px; height: 32px; background: #f5f5f5; border: none; border-radius: 8px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center;" title="Settings">⚙️</button>
+        </div>
+      </div>
+      <!-- Body -->
+      <div style="padding: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <div>
+            <div style="font-size: 13px; color: #333; font-weight: 500;">Promo skip</div>
+            <div style="font-size: 11px; color: #aaa;">Auto-skip on YouTube</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+        </div>
+        <div style="background: #f0fdf4; border-radius: 10px; padding: 10px 14px; display: flex; align-items: center; gap: 8px;">
+          <div style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; flex-shrink: 0;"></div>
+          <div>
+            <div style="font-size: 12px; color: #166534; font-weight: 500;">2 promo blocks detected</div>
+            <div style="font-size: 11px; color: #15803d;">0:32–1:05 · 4:12–4:44</div>
+          </div>
+        </div>
+        <div style="margin-top: 14px; font-size: 10px; color: #bbb; text-align: center;">May rely on undocumented YouTube APIs</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 12: Floating Gear FAB ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">12 — Floating Gear FAB</div>
+  <div class="chrome-frame">
+    <div class="chrome-bar"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="font-family: system-ui; position: relative; min-height: 200px; padding: 20px;">
+      <div style="font-size: 20px; font-weight: 800; color: #12b886; margin-bottom: 18px;">TopSkip</div>
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+        <span style="font-size: 14px; color: #333;">Enable promo skip</span>
+        <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+      </div>
+      <div style="background: #e6fcf5; border-radius: 12px; padding: 12px; margin-bottom: 16px;">
+        <div style="font-size: 12px; color: #087f5b; font-weight: 600;">● 2 promo blocks found</div>
+        <div style="font-size: 11px; color: #0ca678; margin-top: 2px;">0:32–1:05 · 4:12–4:44</div>
+      </div>
+      <div style="font-size: 10px; color: #bbb;">May rely on undocumented YouTube APIs.</div>
+      <!-- FAB gear icon -->
+      <button style="position: absolute; bottom: 16px; right: 16px; width: 44px; height: 44px; background: linear-gradient(135deg, #12b886, #099268); color: #fff; border: none; border-radius: 50%; font-size: 20px; cursor: pointer; box-shadow: 0 4px 14px rgba(18,184,134,0.35); display: flex; align-items: center; justify-content: center;" title="Open settings">⚙</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 13: Sidebar Icon Rail ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">13 — Sidebar Icon Rail</div>
+  <div class="chrome-frame">
+    <div class="chrome-bar"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="display: flex; font-family: system-ui;">
+      <!-- Left icon rail -->
+      <div style="width: 44px; background: #f8f9fa; border-right: 1px solid #eee; display: flex; flex-direction: column; align-items: center; padding: 12px 0; gap: 8px; flex-shrink: 0;">
+        <div style="width: 28px; height: 28px; background: #12b886; border-radius: 7px; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 800; font-size: 11px;">T</div>
+        <div style="width: 1px; height: 1px;"></div>
+        <button style="width: 30px; height: 30px; background: #e6fcf5; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; color: #12b886; display: flex; align-items: center; justify-content: center;" title="Settings">⚙</button>
+        <button style="width: 30px; height: 30px; background: transparent; border: none; border-radius: 8px; cursor: pointer; font-size: 14px; color: #ccc; display: flex; align-items: center; justify-content: center;" title="Info">ⓘ</button>
+      </div>
+      <!-- Main content -->
+      <div style="flex: 1; padding: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <span style="font-size: 14px; color: #333; font-weight: 600;">Promo skip</span>
+          <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+        </div>
+        <div style="font-size: 12px; color: #40c057; font-weight: 500; margin-bottom: 2px;">● Detected</div>
+        <div style="font-size: 11px; color: #adb5bd; margin-bottom: 10px;">0:32–1:05 · 4:12–4:44</div>
+        <div style="font-size: 10px; color: #ccc;">May rely on undocumented APIs.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 14: Neumorphic ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">14 — Neumorphic</div>
+  <div class="chrome-frame" style="background: #e0e5ec; border-color: #e0e5ec;">
+    <div class="chrome-bar" style="background: #e0e5ec; border-color: #d1d9e6;"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="padding: 20px; font-family: system-ui; background: #e0e5ec;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px;">
+        <div style="font-size: 17px; font-weight: 700; color: #555;">TopSkip</div>
+        <button style="width: 40px; height: 40px; background: #e0e5ec; border: none; border-radius: 12px; box-shadow: 6px 6px 12px #b8bec7, -6px -6px 12px #ffffff; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; color: #12b886;" title="Settings">⚙</button>
+      </div>
+      <div style="background: #e0e5ec; border-radius: 14px; padding: 14px 16px; box-shadow: inset 4px 4px 8px #b8bec7, inset -4px -4px 8px #ffffff; margin-bottom: 14px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <span style="font-size: 13px; color: #555;">Promo skip</span>
+          <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+        </div>
+      </div>
+      <div style="background: #e0e5ec; border-radius: 14px; padding: 12px 16px; box-shadow: 4px 4px 8px #b8bec7, -4px -4px 8px #ffffff; margin-bottom: 14px;">
+        <div style="font-size: 12px; color: #40c057; font-weight: 500;">● Promo blocks detected</div>
+        <div style="font-size: 11px; color: #888; margin-top: 2px;">0:32–1:05 · 4:12–4:44</div>
+      </div>
+      <div style="font-size: 10px; color: #aaa; text-align: center;">May rely on undocumented YouTube APIs.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 15: Glassmorphism ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">15 — Glassmorphism</div>
+  <div class="chrome-frame" style="border: none;">
+    <div class="chrome-bar" style="background: rgba(255,255,255,0.3); border-color: rgba(255,255,255,0.2);"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="font-family: system-ui; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 20px; position: relative;">
+      <!-- Glass card -->
+      <div style="background: rgba(255,255,255,0.15); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.25); border-radius: 16px; padding: 18px;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+          <div style="font-size: 18px; font-weight: 700; color: #fff;">TopSkip</div>
+          <button style="width: 36px; height: 36px; background: rgba(255,255,255,0.2); border: 1px solid rgba(255,255,255,0.3); border-radius: 10px; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; color: #fff; backdrop-filter: blur(4px);" title="Settings">⚙</button>
+        </div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px;">
+          <span style="font-size: 13px; color: rgba(255,255,255,0.9);">Enable promo skip</span>
+          <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: rgba(255,255,255,0.5);"></span></label>
+        </div>
+        <div style="background: rgba(255,255,255,0.1); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px;">
+          <div style="font-size: 12px; color: rgba(255,255,255,0.95); font-weight: 500;">● 2 promo blocks</div>
+          <div style="font-size: 11px; color: rgba(255,255,255,0.6); margin-top: 2px;">0:32–1:05 · 4:12–4:44</div>
+        </div>
+      </div>
+      <div style="font-size: 10px; color: rgba(255,255,255,0.4); text-align: center; margin-top: 10px;">May rely on undocumented YouTube APIs.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 16: Status Bar Bottom ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">16 — Status Bar Bottom</div>
+  <div class="chrome-frame">
+    <div class="chrome-bar"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="font-family: system-ui; display: flex; flex-direction: column; min-height: 210px;">
+      <!-- Main content -->
+      <div style="flex: 1; padding: 20px;">
+        <div style="font-size: 18px; font-weight: 800; color: #1a1a2e; margin-bottom: 16px;">TopSkip</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+          <span style="font-size: 13px; color: #333;">Enable promo skip</span>
+          <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+        </div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <span style="display: inline-flex; align-items: center; gap: 4px; background: #e6fcf5; color: #087f5b; font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 500;">● 0:32–1:05</span>
+          <span style="display: inline-flex; align-items: center; gap: 4px; background: #e6fcf5; color: #087f5b; font-size: 11px; padding: 4px 10px; border-radius: 20px; font-weight: 500;">● 4:12–4:44</span>
+        </div>
+        <div style="font-size: 10px; color: #ccc; margin-top: 12px;">May rely on undocumented APIs.</div>
+      </div>
+      <!-- Bottom bar with settings icon -->
+      <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px 16px; background: #f8f9fa; border-top: 1px solid #eee;">
+        <span style="font-size: 10px; color: #aaa;">v1.0</span>
+        <div style="display: flex; gap: 6px;">
+          <button style="width: 30px; height: 30px; background: transparent; border: 1px solid #e0e0e0; border-radius: 8px; cursor: pointer; font-size: 14px; display: flex; align-items: center; justify-content: center; color: #888;" title="Settings">⚙</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 17: Compact Chip ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">17 — Compact Chip</div>
+  <div class="chrome-frame">
+    <div class="chrome-bar"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="padding: 14px; font-family: system-ui;">
+      <!-- Header row: name + toggle + gear all in one line -->
+      <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 14px;">
+        <span style="font-size: 15px; font-weight: 700; color: #12b886; flex: 1;">TopSkip</span>
+        <label class="toggle" style="width: 38px; height: 20px;"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+        <button style="width: 28px; height: 28px; background: none; border: 1px solid #eee; border-radius: 6px; cursor: pointer; font-size: 14px; color: #aaa; display: flex; align-items: center; justify-content: center;" title="Settings">⚙</button>
+      </div>
+      <!-- Detection chips -->
+      <div style="display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px;">
+        <div style="display: flex; align-items: center; gap: 4px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 5px 10px; border-radius: 20px;">
+          <span style="width: 6px; height: 6px; background: #22c55e; border-radius: 50; display: inline-block;"></span>
+          <span style="font-size: 11px; color: #166534; font-weight: 500;">0:32–1:05</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 4px; background: #f0fdf4; border: 1px solid #bbf7d0; padding: 5px 10px; border-radius: 20px;">
+          <span style="width: 6px; height: 6px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+          <span style="font-size: 11px; color: #166534; font-weight: 500;">4:12–4:44</span>
+        </div>
+      </div>
+      <div style="font-size: 10px; color: #ccc;">Undocumented YouTube APIs · may break.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 18: Big Toggle Hero ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">18 — Big Toggle Hero</div>
+  <div class="chrome-frame">
+    <div class="chrome-bar"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="font-family: system-ui; text-align: center; padding: 24px 20px 20px;">
+      <!-- Settings icon top-right -->
+      <div style="display: flex; justify-content: flex-end; margin-bottom: 8px;">
+        <button style="width: 32px; height: 32px; background: transparent; border: none; cursor: pointer; font-size: 18px; color: #ccc;" title="Settings">⚙</button>
+      </div>
+      <!-- Big centered toggle -->
+      <div style="margin-bottom: 8px;">
+        <label style="position: relative; display: inline-block; width: 72px; height: 40px; cursor: pointer;">
+          <input type="checkbox" checked style="opacity: 0; width: 0; height: 0;">
+          <span style="position: absolute; inset: 0; background: #12b886; border-radius: 40px; transition: background 0.2s;"></span>
+          <span style="position: absolute; width: 32px; height: 32px; background: #fff; border-radius: 50%; top: 4px; left: 36px; transition: transform 0.2s; box-shadow: 0 2px 6px rgba(0,0,0,0.15);"></span>
+        </label>
+      </div>
+      <div style="font-size: 15px; font-weight: 700; color: #12b886; margin-bottom: 2px;">Skipping promos</div>
+      <div style="font-size: 11px; color: #aaa; margin-bottom: 18px;">YouTube · Active</div>
+      <!-- Detected ranges as a timeline-like bar -->
+      <div style="background: #f5f5f5; border-radius: 6px; height: 6px; position: relative; margin-bottom: 6px;">
+        <div style="position: absolute; left: 5%; width: 8%; height: 100%; background: #12b886; border-radius: 6px;" title="0:32–1:05"></div>
+        <div style="position: absolute; left: 60%; width: 8%; height: 100%; background: #12b886; border-radius: 6px;" title="4:12–4:44"></div>
+      </div>
+      <div style="font-size: 10px; color: #ccc;">0:32–1:05 · 4:12–4:44</div>
+      <div style="font-size: 10px; color: #ddd; margin-top: 14px;">May rely on undocumented YouTube APIs.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 19: Conversation / Chat ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">19 — Chat Bubble</div>
+  <div class="chrome-frame" style="background: #f0f2f5;">
+    <div class="chrome-bar" style="background: #12b886; border: none; color: rgba(255,255,255,0.8);">
+      <span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span>
+      <span style="flex: 1; text-align: center; color: #fff; font-weight: 600; font-size: 13px;">TopSkip</span>
+      <button style="width: 26px; height: 26px; background: rgba(255,255,255,0.2); border: none; border-radius: 50%; cursor: pointer; font-size: 13px; color: #fff; display: flex; align-items: center; justify-content: center;" title="Settings">⚙</button>
+    </div>
+    <div style="padding: 14px; font-family: system-ui;">
+      <!-- Bot bubble -->
+      <div style="background: #fff; border-radius: 0 16px 16px 16px; padding: 12px 14px; margin-bottom: 10px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); max-width: 85%;">
+        <div style="font-size: 12px; color: #333; line-height: 1.5;">I found <strong>2 promo blocks</strong> in this video.</div>
+        <div style="font-size: 11px; color: #888; margin-top: 4px;">0:32–1:05 · 4:12–4:44</div>
+      </div>
+      <!-- Status bubble -->
+      <div style="background: #fff; border-radius: 0 16px 16px 16px; padding: 12px 14px; margin-bottom: 14px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); max-width: 85%;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="width: 8px; height: 8px; background: #22c55e; border-radius: 50%; display: inline-block;"></span>
+          <span style="font-size: 12px; color: #333;">Auto-skip is <strong>ON</strong></span>
+        </div>
+      </div>
+      <!-- Toggle as user action -->
+      <div style="display: flex; justify-content: flex-end;">
+        <div style="background: #12b886; border-radius: 16px 16px 0 16px; padding: 10px 16px; display: flex; align-items: center; gap: 8px;">
+          <span style="font-size: 12px; color: #fff;">Skip promos</span>
+          <label class="toggle" style="width: 38px; height: 20px;"><input type="checkbox" checked><span class="slider" style="background: rgba(255,255,255,0.4);"></span></label>
+        </div>
+      </div>
+      <div style="font-size: 9px; color: #bbb; text-align: center; margin-top: 12px;">May rely on undocumented YouTube APIs.</div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ VARIANT 20: Kanban Card ============ -->
+<div class="variant-wrapper">
+  <div class="variant-label">20 — Kanban Card</div>
+  <div class="chrome-frame" style="background: #f4f5f7;">
+    <div class="chrome-bar" style="background: #fff; border-color: #dfe1e6;"><span class="chrome-dot r"></span><span class="chrome-dot y"></span><span class="chrome-dot g"></span> TopSkip</div>
+    <div style="padding: 12px; font-family: system-ui; background: #f4f5f7;">
+      <!-- Column header -->
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; padding: 0 4px;">
+        <div style="display: flex; align-items: center; gap: 6px;">
+          <span style="font-size: 12px; font-weight: 700; color: #5e6c84; text-transform: uppercase; letter-spacing: 0.5px;">TopSkip</span>
+          <span style="font-size: 10px; background: #dfe1e6; color: #5e6c84; padding: 1px 6px; border-radius: 10px;">2</span>
+        </div>
+        <button style="width: 28px; height: 28px; background: transparent; border: none; cursor: pointer; font-size: 16px; color: #97a0af; display: flex; align-items: center; justify-content: center;" title="Settings">⚙</button>
+      </div>
+      <!-- Card 1: Toggle -->
+      <div style="background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(9,30,66,0.12); border-left: 3px solid #12b886;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+          <div>
+            <div style="font-size: 13px; color: #172b4d; font-weight: 500;">Promo skip</div>
+            <div style="font-size: 10px; color: #97a0af; margin-top: 2px;">YouTube auto-skip</div>
+          </div>
+          <label class="toggle"><input type="checkbox" checked><span class="slider" style="background: #12b886;"></span></label>
+        </div>
+      </div>
+      <!-- Card 2: Detection -->
+      <div style="background: #fff; border-radius: 8px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(9,30,66,0.12); border-left: 3px solid #36b37e;">
+        <div style="font-size: 13px; color: #172b4d; font-weight: 500; margin-bottom: 6px;">Detected promos</div>
+        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+          <span style="font-size: 10px; background: #e3fcef; color: #006644; padding: 3px 8px; border-radius: 4px; font-weight: 500;">0:32–1:05</span>
+          <span style="font-size: 10px; background: #e3fcef; color: #006644; padding: 3px 8px; border-radius: 4px; font-weight: 500;">4:12–4:44</span>
+        </div>
+      </div>
+      <!-- Card 3: Notice -->
+      <div style="background: #fff; border-radius: 8px; padding: 10px 12px; box-shadow: 0 1px 2px rgba(9,30,66,0.12); border-left: 3px solid #ffab00;">
+        <div style="font-size: 10px; color: #97a0af;">May rely on undocumented YouTube APIs.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

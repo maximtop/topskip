@@ -1,15 +1,22 @@
 import '@mantine/core/styles.css';
 
 import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Box,
   Button,
-  Checkbox,
   Group,
   MantineProvider,
+  Paper,
   Select,
   Stack,
+  Switch,
   Text,
   TextInput,
+  Title,
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import {
   type ReactElement,
   StrictMode,
@@ -32,6 +39,8 @@ import {
   OPENROUTER_DEFAULT_MODEL_SLUG,
   OPENROUTER_MODEL_PRESETS,
 } from '@/shared/openrouter-model-presets';
+import { topskipTheme } from '@/shared/theme';
+import { ErrorBoundary } from '@/shared/ErrorBoundary';
 
 type OpenRouterGetOkPayload = Extract<
   GetOpenRouterConfigResponse,
@@ -179,8 +188,10 @@ export class Options {
 
     createRoot(rootEl).render(
       <StrictMode>
-        <MantineProvider defaultColorScheme="auto">
-          <OptionsApp />
+        <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
+          <ErrorBoundary>
+            <OptionsApp />
+          </ErrorBoundary>
         </MantineProvider>
       </StrictMode>,
     );
@@ -208,6 +219,10 @@ function OptionsApp(): ReactElement {
   const [savedApiKeyMasked, setSavedApiKeyMasked] = useState<string | null>(
     null,
   );
+  const [apiKeyVisible, { toggle: toggleApiKeyVisibility }] =
+    useDisclosure(false);
+
+  const setupReady = savedApiKeyMasked !== null;
 
   const modelSelectData = useMemo(() => {
     const seen = new Set<string>();
@@ -373,116 +388,296 @@ function OptionsApp(): ReactElement {
   };
 
   return (
-    <Stack gap="md" p="lg" maw={520}>
-      <Text fw={600}>TopSkip — LLM promo detection</Text>
-      <Text size="sm" c="dimmed">
-        Configure OpenRouter for transcript analysis. The API key is stored only
-        in this browser profile (extension local storage).
-      </Text>
-      <Checkbox
-        label="Enable LLM promo detection"
-        checked={enabled}
-        onChange={(e) => {
-          setEnabled(e.currentTarget.checked);
-        }}
-      />
-      <TextInput
-        label="OpenRouter API key"
-        placeholder="sk-or-…"
-        type="password"
-        autoComplete="off"
-        value={apiKey}
-        onChange={(e) => {
-          setApiKey(e.currentTarget.value);
-        }}
-        description={
-          savedApiKeyMasked !== null
-            ? `Saved key: ${savedApiKeyMasked} - leave blank to keep it.`
-            : 'No key saved yet.'
-        }
-      />
-      <Select
-        label="Model"
-        description="Built-in presets and models you added below."
-        data={modelSelectData}
-        value={modelChoice}
-        onChange={(v) => {
-          setModelChoice(v ?? OPENROUTER_DEFAULT_MODEL_SLUG);
-        }}
-      />
-      <Stack gap="xs">
-        <Text size="sm" fw={500}>
-          Add a model
-        </Text>
-        <Text size="xs" c="dimmed">
-          Type an OpenRouter model id (for example vendor/model), then Add to
-          keep it for later sessions. This is not the same as Save below.
-        </Text>
-        <Group align="flex-end" wrap="nowrap" gap="sm">
-          <TextInput
-            style={{ flex: 1 }}
-            label="Custom model id"
-            placeholder="vendor/model"
-            value={newModelDraft}
-            onChange={(e) => {
-              setNewModelDraft(e.currentTarget.value);
-            }}
-          />
-          <Button
-            loading={addBusy}
-            disabled={newModelDraft.trim().length === 0}
-            onClick={() => void onAddCustomModel()}
-          >
-            Add
+    <Box
+      style={{
+        minHeight: '100vh',
+        background: 'linear-gradient(180deg, #f8fafc 0%, #f5f8fb 100%)',
+      }}
+    >
+      <Stack gap="lg" p="lg" maw={880} mx="auto">
+        <Paper
+          p="xl"
+          radius="xl"
+          style={{ background: 'linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)' }}
+        >
+          <Group justify="space-between" align="flex-start" wrap="wrap" gap="md">
+            <Stack gap={4} maw={560}>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                TopSkip settings
+              </Text>
+              <Title order={2} size="h2">
+                Transcript detection control room
+              </Title>
+              <Text size="sm" c="dimmed">
+                Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).
+              </Text>
+            </Stack>
+            <Group gap="xs">
+              <Badge color={enabled ? 'brand' : 'gray'}>
+                {enabled ? 'Detection enabled' : 'Detection paused'}
+              </Badge>
+              <Badge color={setupReady ? 'success' : 'warning'}>
+                {setupReady ? 'API key saved' : 'Setup needed'}
+              </Badge>
+            </Group>
+          </Group>
+        </Paper>
+
+        <Group align="stretch" wrap="wrap" gap="md">
+          <Paper p="md" radius="xl" style={{ flex: '1 1 180px', minWidth: 180 }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Current state
+            </Text>
+            <Text fw={700} mt={6}>
+              {enabled ? 'Ready to analyze' : 'Paused'}
+            </Text>
+            <Text size="xs" c="dimmed" mt={4}>
+              The popup will show a quick status card for the current YouTube tab.
+            </Text>
+          </Paper>
+          <Paper p="md" radius="xl" style={{ flex: '1 1 180px', minWidth: 180 }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Connection
+            </Text>
+            <Text fw={700} mt={6}>
+              {setupReady ? savedApiKeyMasked : 'No API key saved'}
+            </Text>
+            <Text size="xs" c="dimmed" mt={4}>
+              Keep the field blank below if you want to preserve the saved key.
+            </Text>
+          </Paper>
+          <Paper p="md" radius="xl" style={{ flex: '1 1 180px', minWidth: 180 }}>
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              Default model
+            </Text>
+            <Text fw={700} mt={6} ff="monospace">
+              {modelChoice}
+            </Text>
+            <Text size="xs" c="dimmed" mt={4}>
+              This is the starting model the popup will use for transcript analysis.
+            </Text>
+          </Paper>
+        </Group>
+
+        {error ? (
+          <Alert color="error" role="alert">
+            {error}
+          </Alert>
+        ) : null}
+        {saved ? (
+          <Alert color="success" role="status">
+            Settings saved successfully.
+          </Alert>
+        ) : null}
+
+        <Paper p="lg" radius="xl">
+          <Stack gap="md">
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                Core controls
+              </Text>
+              <Title order={3} size="h3">
+                Detection behavior
+              </Title>
+              <Text size="sm" c="dimmed">
+                The popup stays intentionally simple. Enable or pause transcript analysis here, then choose the default model it should use.
+              </Text>
+            </Stack>
+            <Paper p="md" radius="lg" style={{ background: '#fbfdff' }}>
+              <Group justify="space-between" wrap="nowrap" gap="md" align="flex-start">
+                <Stack gap={2} style={{ flex: 1 }}>
+                  <Text fw={600}>Enable LLM promo detection</Text>
+                  <Text size="xs" c="dimmed">
+                    When enabled, TopSkip analyzes available captions and marks promo windows for skipping.
+                  </Text>
+                </Stack>
+                <Switch
+                  checked={enabled}
+                  onChange={(e) => {
+                    setEnabled(e.currentTarget.checked);
+                  }}
+                />
+              </Group>
+            </Paper>
+            <Select
+              label="Default model"
+              description="Built-in presets and models you added below."
+              data={modelSelectData}
+              value={modelChoice}
+              onChange={(v) => {
+                setModelChoice(v ?? OPENROUTER_DEFAULT_MODEL_SLUG);
+              }}
+            />
+          </Stack>
+        </Paper>
+
+        <Paper p="lg" radius="xl">
+          <Stack gap="md">
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                Secure connection
+              </Text>
+              <Title order={3} size="h3">
+                OpenRouter API key
+              </Title>
+            </Stack>
+            <TextInput
+              label="API key"
+              placeholder="sk-or-…"
+              type={apiKeyVisible ? 'text' : 'password'}
+              autoComplete="off"
+              value={apiKey}
+              onChange={(e) => {
+                setApiKey(e.currentTarget.value);
+              }}
+              description={
+                savedApiKeyMasked !== null
+                  ? `Saved key: ${savedApiKeyMasked} - leave blank to keep it.`
+                  : 'No key saved yet.'
+              }
+              rightSection={
+                <ActionIcon
+                  variant="subtle"
+                  aria-label={apiKeyVisible ? 'Hide API key' : 'Show API key'}
+                  onClick={toggleApiKeyVisibility}
+                >
+                  {apiKeyVisible ? (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                      <line x1="1" y1="1" x2="23" y2="23" />
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="16"
+                      height="16"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                      <circle cx="12" cy="12" r="3" />
+                    </svg>
+                  )}
+                </ActionIcon>
+              }
+            />
+          </Stack>
+        </Paper>
+
+        <Paper p="lg" radius="xl">
+          <Stack gap="md">
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                Model inventory
+              </Text>
+              <Title order={3} size="h3">
+                Custom models
+              </Title>
+              <Text size="sm" c="dimmed">
+                Add OpenRouter model ids for quick reuse. This inventory is separate from Save and updates immediately.
+              </Text>
+            </Stack>
+            <Group align="flex-end" wrap="nowrap" gap="sm">
+              <TextInput
+                style={{ flex: 1 }}
+                label="Custom model id"
+                placeholder="vendor/model"
+                value={newModelDraft}
+                onChange={(e) => {
+                  setNewModelDraft(e.currentTarget.value);
+                }}
+              />
+              <Button
+                loading={addBusy}
+                disabled={newModelDraft.trim().length === 0}
+                onClick={() => void onAddCustomModel()}
+              >
+                Add
+              </Button>
+            </Group>
+            {customModels.length > 0 ? (
+              <Stack gap="xs">
+                {customModels.map((slug) => (
+                  <Paper
+                    key={slug}
+                    p="sm"
+                    radius="lg"
+                    style={{ background: '#fbfdff' }}
+                  >
+                    <Group justify="space-between" wrap="nowrap" gap="md">
+                      <Stack gap={1} style={{ flex: 1 }}>
+                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                          Saved model
+                        </Text>
+                        <Text size="sm" ff="monospace">
+                          {slug}
+                        </Text>
+                      </Stack>
+                      <Button
+                        size="xs"
+                        variant="light"
+                        color="error"
+                        loading={removeBusySlug === slug}
+                        disabled={
+                          removeBusySlug !== null && removeBusySlug !== slug
+                        }
+                        onClick={() => void onRemoveCustomModel(slug)}
+                      >
+                        Remove
+                      </Button>
+                    </Group>
+                  </Paper>
+                ))}
+              </Stack>
+            ) : (
+              <Text size="sm" c="dimmed">
+                No custom models saved yet.
+              </Text>
+            )}
+          </Stack>
+        </Paper>
+
+        <Paper p="lg" radius="xl">
+          <Stack gap="sm">
+            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+              What the popup will show
+            </Text>
+            <Title order={3} size="h3">
+              Status-first behavior
+            </Title>
+            <Text size="sm" c="dimmed">
+              The popup now favors quick control and context. It shows a dominant status card, adapts its message when setup is incomplete or the tab is unsupported, and renders a lightweight detection timeline when promo blocks exist.
+            </Text>
+            <Text size="sm" c="dimmed">
+              Save applies the detection toggle, API key (if changed), and the selected model. Use Add only for storing extra model ids in your reusable list.
+            </Text>
+          </Stack>
+        </Paper>
+
+        <Group>
+          <Button loading={loading} onClick={() => void onSave()}>
+            Save
+          </Button>
+          <Button variant="default" onClick={() => void load()}>
+            Reload
           </Button>
         </Group>
       </Stack>
-      {customModels.length > 0 ? (
-        <Stack gap="xs">
-          <Text size="sm" fw={500}>
-            Your added models
-          </Text>
-          {customModels.map((slug) => (
-            <Group key={slug} justify="space-between" wrap="nowrap">
-              <Text size="sm" ff="monospace">
-                {slug}
-              </Text>
-              <Button
-                size="xs"
-                variant="light"
-                color="red"
-                loading={removeBusySlug === slug}
-                disabled={removeBusySlug !== null && removeBusySlug !== slug}
-                onClick={() => void onRemoveCustomModel(slug)}
-              >
-                Remove
-              </Button>
-            </Group>
-          ))}
-        </Stack>
-      ) : null}
-      {error ? (
-        <Text size="sm" c="red">
-          {error}
-        </Text>
-      ) : null}
-      {saved ? (
-        <Text size="sm" c="green">
-          Saved.
-        </Text>
-      ) : null}
-      <Group>
-        <Button loading={loading} onClick={() => void onSave()}>
-          Save
-        </Button>
-        <Button variant="default" onClick={() => void load()}>
-          Reload
-        </Button>
-      </Group>
-      <Text size="xs" c="dimmed">
-        Save applies the detection toggle, API key (if changed), and the
-        selected model. Use Add to store extra model ids in your list.
-      </Text>
-    </Stack>
+    </Box>
   );
 }

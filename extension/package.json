@@ -13,7 +13,7 @@
     "beta": "tsx scripts/build-extension.ts beta",
     "release": "tsx scripts/build-extension.ts release",
     "lint": "eslint . && pnpm run lint:md && pnpm run lint:types",
-    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#dist\" \"#coverage\" \"#.sdd\"",
+    "lint:md": "markdownlint-cli2 \"**/*.md\" \"#node_modules\" \"#dist\" \"#coverage\" \"#.sdd\" \"#test-results\"",
     "lint:types": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
@@ -38,6 +38,7 @@
     "webextension-polyfill": "^0.12.0"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.11.1",
     "@eslint/js": "^9.39.4",
     "@playwright/test": "^1.59.1",
     "@rspack/cli": "^1.7.11",

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Concept 05 — Guided Wizard</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #fff8f0;
+    --ink: #2d2417;
+    --muted: #766754;
+    --line: #eadac5;
+    --card: #fffdf8;
+    --brand: #e67700;
+    --brand-soft: #fff0db;
+    --ok: #e7f8ee;
+  }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: linear-gradient(180deg, #fffdf8 0%, var(--bg) 100%); color: var(--ink); padding: 32px; }
+  h1 { font-size: 34px; margin-bottom: 8px; }
+  .subtitle { max-width: 940px; color: var(--muted); line-height: 1.6; margin-bottom: 28px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 28px; max-width: 1180px; }
+  .frame { width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; box-shadow: 0 18px 34px rgba(45,36,23,0.08); }
+  .bar { padding: 10px 14px; background: #fffaf1; border-bottom: 1px solid var(--line); color: #8c7a64; font-size: 11px; }
+  .popup { padding: 18px; }
+  .stepper { display: flex; gap: 8px; margin-bottom: 16px; }
+  .step { height: 8px; flex: 1; border-radius: 999px; background: #f0e3d1; }
+  .step.done, .step.active { background: linear-gradient(90deg, #f59f00, #e67700); }
+  .card { background: var(--brand-soft); border-radius: 18px; padding: 18px; margin-bottom: 14px; }
+  .card h2 { font-size: 24px; margin-bottom: 6px; }
+  .card p { font-size: 13px; line-height: 1.55; color: #8a6731; }
+  .field { background: white; border: 1px solid var(--line); border-radius: 14px; padding: 12px 14px; font-size: 13px; margin-bottom: 10px; }
+  .actions { display: grid; gap: 10px; }
+  .primary, .secondary { text-align: center; text-decoration: none; padding: 11px 14px; border-radius: 14px; font-size: 13px; }
+  .primary { background: var(--brand); color: white; }
+  .secondary { border: 1px solid var(--line); color: var(--ink); background: white; }
+  .steady { background: var(--ok); border-radius: 16px; padding: 12px; font-size: 12px; line-height: 1.5; margin-top: 12px; }
+  .panel { background: rgba(255,253,248,0.78); border: 1px solid rgba(45,36,23,0.08); border-radius: 24px; padding: 24px; }
+  .panel h2 { font-size: 28px; margin-bottom: 8px; }
+  .panel p { color: var(--muted); line-height: 1.7; }
+  .grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; margin-top: 18px; }
+  .mini { background: white; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  .summary { margin-top: 20px; background: white; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; }
+  .summary-head { padding: 18px 22px; background: #fffaf1; border-bottom: 1px solid var(--line); }
+  .summary-body { padding: 22px; display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 12px; }
+  .summary-card { background: #fffdf8; border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+  @media (max-width: 980px) {
+    .layout, .grid, .summary-body { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Concept 05 — Guided Wizard</h1>
+<p class="subtitle">This concept acknowledges that the hardest moment is setup, not steady-state use. Instead of dumping the user into a form, the popup acts like a short assistant: enable the feature, connect the API, choose a model, and confirm readiness. Only after that does the compact steady-state UI appear.</p>
+<div class="layout">
+  <div class="frame">
+    <div class="bar">TopSkip popup · first-run flow</div>
+    <div class="popup">
+      <div class="stepper">
+        <div class="step done"></div>
+        <div class="step done"></div>
+        <div class="step active"></div>
+        <div class="step"></div>
+      </div>
+      <div class="card">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px;">Step 3 of 4</div>
+        <h2>Pick your model</h2>
+        <p>Choose the default model TopSkip should use when it analyzes captions for sponsor segments.</p>
+      </div>
+      <div class="field">google/gemini-3.1-pro-preview</div>
+      <div class="field">anthropic/claude-sonnet-4</div>
+      <div class="field">openai/gpt-4.1</div>
+      <div class="actions">
+        <a class="primary" href="#">Use Gemini and continue</a>
+        <a class="secondary" href="#">Back</a>
+      </div>
+      <div class="steady">After setup, the popup collapses into a simpler “ready / detected / off” interface. Wizard UI is for onboarding and recovery only.</div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Options become setup summary, not raw form</h2>
+    <p>The options page mirrors the wizard outcome. It reads like a checklist of what is configured, what can be edited, and what still needs attention. That makes the product less intimidating for first-time users.</p>
+    <div class="grid">
+      <div class="mini"><strong>Why it differs</strong><br/><span style="color: var(--muted);">The same product has distinct onboarding and steady-state layouts. The popup is not static across the lifecycle.</span></div>
+      <div class="mini"><strong>Best fit</strong><br/><span style="color: var(--muted);">Users who are unsure how OpenRouter, models, and automated skipping relate to each other.</span></div>
+    </div>
+    <div class="summary">
+      <div class="summary-head">
+        <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 6px;">Options page</div>
+        <h2 style="font-size: 28px; margin: 0;">Setup Summary</h2>
+      </div>
+      <div class="summary-body">
+        <div class="summary-card"><strong>1. Extension enabled</strong><br/><span style="color: var(--muted);">Auto skip is on for YouTube.</span></div>
+        <div class="summary-card"><strong>2. API connected</strong><br/><span style="color: var(--muted);">OpenRouter key saved and verified.</span></div>
+        <div class="summary-card"><strong>3. Model chosen</strong><br/><span style="color: var(--muted);">Gemini is the default starting model.</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

@@ -16,6 +16,7 @@ export default defineConfig({
       reporter: ['text', 'html'],
       include: [
         'src/content/skip-logic.ts',
+        'src/content/promo-skip-logic.ts',
         'src/content/page-guards.ts',
         'src/popup/preferences-store.ts',
       ],

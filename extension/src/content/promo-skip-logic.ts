@@ -84,3 +84,32 @@ export function evaluatePromoBlocksSkip(
 
   return { action: 'none' };
 }
+
+export type ResetFiredInput = {
+  currentTime: number;
+  prevTime: number;
+  blocks: ReadonlyArray<PromoBlock>;
+  firedIndices: Set<number>;
+};
+
+/**
+ * Clears fired indices for blocks whose `startSec` is now ahead of
+ * `currentTime` after a backward seek, so they can fire again on replay
+ * (FR-004).
+ *
+ * @param input - Current playback state and fired set to mutate
+ */
+export function resetFiredIndicesOnBackwardSeek(
+  input: ResetFiredInput,
+): void {
+  const { currentTime, prevTime, blocks, firedIndices } = input;
+  if (currentTime >= prevTime || firedIndices.size === 0) {
+    return;
+  }
+  for (const i of firedIndices) {
+    const block = blocks[i];
+    if (block !== undefined && block.startSec > currentTime) {
+      firedIndices.delete(i);
+    }
+  }
+}

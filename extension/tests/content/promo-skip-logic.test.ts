@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   computePromoBlockTargetTime,
   evaluatePromoBlocksSkip,
+  resetFiredIndicesOnBackwardSeek,
 } from '@/content/promo-skip-logic';
 
 describe('computePromoBlockTargetTime', () => {
@@ -20,6 +21,18 @@ describe('computePromoBlockTargetTime', () => {
     expect(
       computePromoBlockTargetTime({ startSec: 1, endSec: 999 }, 50),
     ).toBe(50);
+  });
+
+  it('falls back to start + 30 when endSec equals startSec (FR-012)', () => {
+    expect(
+      computePromoBlockTargetTime({ startSec: 100, endSec: 100 }, 200),
+    ).toBe(130);
+  });
+
+  it('falls back to start + 30 when endSec < startSec (FR-012)', () => {
+    expect(
+      computePromoBlockTargetTime({ startSec: 100, endSec: 50 }, 200),
+    ).toBe(130);
   });
 });
 
@@ -62,5 +75,63 @@ describe('evaluatePromoBlocksSkip', () => {
       blocks: [{ startSec: 10, endSec: 20 }],
     });
     expect(d.action).toBe('none');
+  });
+});
+
+describe('resetFiredIndicesOnBackwardSeek', () => {
+  it('removes fired index when currentTime is before block startSec', () => {
+    const blocks = [
+      { startSec: 10, endSec: 20 },
+      { startSec: 50, endSec: 60 },
+    ];
+    const fired = new Set([0, 1]);
+    resetFiredIndicesOnBackwardSeek({
+      currentTime: 5,
+      prevTime: 55,
+      blocks,
+      firedIndices: fired,
+    });
+    expect(fired.has(0)).toBe(false);
+    expect(fired.has(1)).toBe(false);
+  });
+
+  it('keeps fired index when currentTime is still past block startSec', () => {
+    const blocks = [
+      { startSec: 10, endSec: 20 },
+      { startSec: 50, endSec: 60 },
+    ];
+    const fired = new Set([0, 1]);
+    resetFiredIndicesOnBackwardSeek({
+      currentTime: 30,
+      prevTime: 55,
+      blocks,
+      firedIndices: fired,
+    });
+    expect(fired.has(0)).toBe(true);
+    expect(fired.has(1)).toBe(false);
+  });
+
+  it('is a no-op when currentTime >= prevTime (forward playback)', () => {
+    const blocks = [{ startSec: 10, endSec: 20 }];
+    const fired = new Set([0]);
+    resetFiredIndicesOnBackwardSeek({
+      currentTime: 25,
+      prevTime: 20,
+      blocks,
+      firedIndices: fired,
+    });
+    expect(fired.has(0)).toBe(true);
+  });
+
+  it('is a no-op when firedIndices is empty', () => {
+    const blocks = [{ startSec: 10, endSec: 20 }];
+    const fired = new Set<number>();
+    resetFiredIndicesOnBackwardSeek({
+      currentTime: 5,
+      prevTime: 25,
+      blocks,
+      firedIndices: fired,
+    });
+    expect(fired.size).toBe(0);
   });
 });

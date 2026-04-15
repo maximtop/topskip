@@ -13,6 +13,7 @@ import {
   ContentScriptsRegistration,
 } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
+import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 
 /**
@@ -83,6 +84,21 @@ export class PrefsRuntimeMessages {
         enabled: enabledRaw,
       });
       await PrefsSyncStorage.save(prefs);
+
+      // FR-014: propagate enabled to OpenRouter storage
+      try {
+        const orConfig = await OpenRouterStorage.load();
+        if (orConfig.enabled !== prefs.enabled) {
+          await OpenRouterStorage.save({
+            ...orConfig,
+            enabled: prefs.enabled,
+          });
+        }
+      } catch {
+        /* OpenRouter storage may reject if key/model empty + enabled=true;
+           that is fine — the prefs save already succeeded. */
+      }
+
       await ContentScriptsRegistration.syncFromPrefs();
       await PrefsBroadcast.sendUpdatedToAllTabs(prefs);
       return { ok: true };

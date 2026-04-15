@@ -1,9 +1,13 @@
-import { evaluatePromoBlocksSkip } from '@/content/promo-skip-logic';
+import {
+  evaluatePromoBlocksSkip,
+  resetFiredIndicesOnBackwardSeek,
+} from '@/content/promo-skip-logic';
 import {
   E2E_HOST,
   getWatchVideoIdFromSearch,
   shouldActivateTopSkip,
 } from '@/content/page-guards';
+import { contentLog } from '@/content/content-log';
 import { WatchCaptions } from '@/content/watch-captions';
 import type { UserPreferences } from '@/shared/constants';
 import browser from '@/shared/browser';
@@ -150,6 +154,27 @@ export class YoutubeWatch {
     const prev = YoutubeWatch.lastTime;
 
     if (YoutubeWatch.promoBlocks.length > 0) {
+      // Log significant jumps that didn't come through
+      // seeking/seeked (video element swap or MSE).
+      const delta = currentTime - prev;
+      if (Math.abs(delta) > 2) {
+        contentLog.info(
+          'timeupdate jump',
+          prev.toFixed(2),
+          '→',
+          currentTime.toFixed(2),
+          'seeking=',
+          YoutubeWatch.isSeeking,
+        );
+      }
+
+      resetFiredIndicesOnBackwardSeek({
+        currentTime,
+        prevTime: prev,
+        blocks: YoutubeWatch.promoBlocks,
+        firedIndices: YoutubeWatch.firedPromoBlockIndices,
+      });
+
       const decision = evaluatePromoBlocksSkip({
         prevTime: prev,
         currentTime,
@@ -159,7 +184,23 @@ export class YoutubeWatch {
         blocks: YoutubeWatch.promoBlocks,
       });
       if (decision.action === 'skip') {
-        YoutubeWatch.firedPromoBlockIndices.add(decision.blockIndex);
+        contentLog.info(
+          'SKIP block',
+          decision.blockIndex,
+          'at',
+          currentTime.toFixed(2),
+          '→',
+          decision.targetTime.toFixed(2),
+          'prev=',
+          prev.toFixed(2),
+          'fired=',
+          JSON.stringify([
+            ...YoutubeWatch.firedPromoBlockIndices,
+          ]),
+        );
+        YoutubeWatch.firedPromoBlockIndices.add(
+          decision.blockIndex,
+        );
         YoutubeWatch.applyPromoSeek(video, decision.targetTime);
       } else {
         YoutubeWatch.lastTime = currentTime;
@@ -181,13 +222,57 @@ export class YoutubeWatch {
     }
     YoutubeWatch.unbindVideo();
     YoutubeWatch.boundVideo = video;
+    YoutubeWatch.isSeeking = false;
     YoutubeWatch.lastTime = video.currentTime;
 
     const onSeeking = (): void => {
       YoutubeWatch.isSeeking = true;
+      if (YoutubeWatch.promoBlocks.length > 0) {
+        contentLog.info(
+          'seeking started at',
+          video.currentTime.toFixed(2),
+          'lastTime=',
+          YoutubeWatch.lastTime.toFixed(2),
+        );
+      }
     };
     const onSeeked = (): void => {
       YoutubeWatch.isSeeking = false;
+      if (
+        YoutubeWatch.promoBlocks.length > 0 &&
+        video.currentTime < YoutubeWatch.lastTime
+      ) {
+        contentLog.info(
+          'backward seeked:',
+          YoutubeWatch.lastTime.toFixed(2),
+          '→',
+          video.currentTime.toFixed(2),
+          'fired=',
+          JSON.stringify([
+            ...YoutubeWatch.firedPromoBlockIndices,
+          ]),
+        );
+        resetFiredIndicesOnBackwardSeek({
+          currentTime: video.currentTime,
+          prevTime: YoutubeWatch.lastTime,
+          blocks: YoutubeWatch.promoBlocks,
+          firedIndices:
+            YoutubeWatch.firedPromoBlockIndices,
+        });
+        contentLog.info(
+          'after reset fired=',
+          JSON.stringify([
+            ...YoutubeWatch.firedPromoBlockIndices,
+          ]),
+        );
+      } else if (YoutubeWatch.promoBlocks.length > 0) {
+        contentLog.info(
+          'forward seeked:',
+          YoutubeWatch.lastTime.toFixed(2),
+          '→',
+          video.currentTime.toFixed(2),
+        );
+      }
       YoutubeWatch.lastTime = video.currentTime;
     };
     const onTu = (): void => {
@@ -254,6 +339,9 @@ export class YoutubeWatch {
     }
 
     if (video && YoutubeWatch.boundVideo !== video) {
+      contentLog.info(
+        'video element swap detected, rebinding',
+      );
       YoutubeWatch.bindVideo(video);
     }
   }
@@ -306,11 +394,26 @@ export class YoutubeWatch {
       return;
     }
     if (typeof m.videoId !== 'string' || !Array.isArray(m.promoBlocks)) {
+      contentLog.warn(
+        'PROMO_BLOCKS_DETECTED: bad payload',
+        { videoId: m.videoId, blocks: m.promoBlocks },
+      );
       return;
     }
     if (m.videoId !== YoutubeWatch.currentVideoId) {
+      contentLog.warn(
+        'PROMO_BLOCKS_DETECTED: videoId mismatch',
+        { msg: m.videoId, current: YoutubeWatch.currentVideoId },
+      );
       return;
     }
+    contentLog.info(
+      'blocks received',
+      m.promoBlocks.length,
+      'blocks for',
+      m.videoId,
+      JSON.stringify(m.promoBlocks),
+    );
     YoutubeWatch.promoBlocks = m.promoBlocks;
     YoutubeWatch.firedPromoBlockIndices.clear();
   }

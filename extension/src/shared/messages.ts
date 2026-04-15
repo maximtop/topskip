@@ -27,6 +27,11 @@ export const TOPSKIP_MESSAGE = {
   GET_DETECTION_STATUS: 'TOPSKIP_GET_DETECTION_STATUS',
   PROMO_DETECTION_UPDATED: 'TOPSKIP_PROMO_DETECTION_UPDATED',
   PROMO_BLOCKS_DETECTED: 'TOPSKIP_PROMO_BLOCKS_DETECTED',
+  /**
+   * Content script forwards a log line to the background
+   * service worker console for easier debugging.
+   */
+  CONTENT_LOG: 'TOPSKIP_CONTENT_LOG',
 } as const;
 
 /**
@@ -87,6 +92,11 @@ export type GetDetectionStatusResponse =
   | { ok: true; state: PromoDetectionStatePayload | null }
   | { ok: false; error: string };
 
+/**
+ * Log level for content-to-background log forwarding.
+ */
+export type ContentLogLevel = 'info' | 'warn' | 'error';
+
 export type TopSkipRuntimeMessage =
   | { type: typeof TOPSKIP_MESSAGE.GET_PREFS }
   | { type: typeof TOPSKIP_MESSAGE.SET_PREFS; enabled: boolean }
@@ -120,6 +130,11 @@ export type TopSkipRuntimeMessage =
       type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
       videoId: string;
       promoBlocks: PromoBlock[];
+    }
+  | {
+      type: typeof TOPSKIP_MESSAGE.CONTENT_LOG;
+      level: ContentLogLevel;
+      args: unknown[];
     };
 
 export type GetPrefsResponse =

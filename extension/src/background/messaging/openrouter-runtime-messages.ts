@@ -1,6 +1,12 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
+import {
+  ContentScriptsRegistration,
+} from '@/background/lifecycle/content-scripts-registration';
+import { PrefsBroadcast } from
+  '@/background/messaging/broadcast-prefs-updated';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { getErrorMessage } from '@/shared/error';
 import {
   isOpenRouterBuiltinModelSlug,
@@ -96,6 +102,21 @@ export class OpenRouterRuntimeMessages {
         model: modelRaw,
         customModels: current.customModels,
       });
+
+      // FR-015: propagate enabled to prefs storage + broadcast
+      try {
+        await PrefsSyncStorage.ready();
+        const prefs = await PrefsSyncStorage.load();
+        if (prefs.enabled !== enabledRaw) {
+          const newPrefs = { enabled: enabledRaw };
+          await PrefsSyncStorage.save(newPrefs);
+          await ContentScriptsRegistration.syncFromPrefs();
+          await PrefsBroadcast.sendUpdatedToAllTabs(newPrefs);
+        }
+      } catch {
+        /* prefs sync is best-effort; OpenRouter save already succeeded */
+      }
+
       return { ok: true };
     } catch (e) {
       return { ok: false, error: getErrorMessage(e) };

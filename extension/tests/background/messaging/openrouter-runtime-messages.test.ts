@@ -11,6 +11,50 @@ const loadMock = vi.fn();
 const saveMock = vi.fn();
 const maskMock = vi.fn();
 
+/* FR-015 added transitive imports of PrefsSyncStorage / PrefsBroadcast /
+   ContentScriptsRegistration, all of which import @/shared/browser.
+   Mock the polyfill + the three modules so this file stays focused on
+   OpenRouterRuntimeMessages behaviour only. */
+vi.mock('@/shared/browser', () => ({
+  default: {
+    runtime: { sendMessage: vi.fn() },
+    storage: {
+      local: {
+        get: vi.fn().mockResolvedValue({}),
+        set: vi.fn().mockResolvedValue(undefined),
+      },
+    },
+    tabs: {
+      query: vi.fn().mockResolvedValue([]),
+      sendMessage: vi.fn().mockResolvedValue(undefined),
+    },
+    scripting: {
+      registerContentScripts: vi.fn().mockResolvedValue(undefined),
+      unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
+    },
+  },
+}));
+
+vi.mock('@/background/storage/prefs-sync', () => ({
+  PrefsSyncStorage: {
+    ready: vi.fn().mockResolvedValue(undefined),
+    load: vi.fn().mockResolvedValue({ enabled: true }),
+    save: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('@/background/messaging/broadcast-prefs-updated', () => ({
+  PrefsBroadcast: {
+    sendUpdatedToAllTabs: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
+vi.mock('@/background/lifecycle/content-scripts-registration', () => ({
+  ContentScriptsRegistration: {
+    syncFromPrefs: vi.fn().mockResolvedValue(undefined),
+  },
+}));
+
 vi.mock('@/background/storage/openrouter-storage', () => ({
   OpenRouterStorage: {
     /**

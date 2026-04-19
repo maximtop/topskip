@@ -1,21 +1,15 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import {
   buildPromoAnalysisLogBundle,
   LogPromoAnalysis,
 } from '@/background/openrouter/log-promo-analysis';
-import { callOpenRouterChat } from
-  '@/background/openrouter/openrouter-client';
-import { parseLlmPromoResponse } from
-  '@/background/openrouter/parse-llm-promo-response';
-import { PROMO_DETECTION_SYSTEM_PROMPT } from
-  '@/background/openrouter/promo-detection-system-prompt';
-import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { PromoDetectionStore } from
   '@/background/promo-detection-store';
-import { mergeCaptionSegmentsToTranscript } from
-  '@/shared/captions/merge-transcript';
+import {
+  mergeCaptionSegmentsToTranscript,
+} from '@/shared/captions/merge-transcript';
 import {
   MAX_CAPTION_TRANSCRIPT_CHARS,
 } from '@/shared/constants';
@@ -25,17 +19,58 @@ import {
   type CaptionsFromContentPayload,
   type PromoDetectionStatePayload,
 } from '@/shared/messages';
+import { defaultRegistry } from
+  '@/background/providers/default-registry';
+import type { ProviderRegistry } from
+  '@/background/providers/provider-registry';
 
 /**
- * Orchestrates OpenRouter analysis after captions arrive; not instantiable.
+ * Orchestrates LLM analysis after captions arrive; not instantiable.
  */
 export class PromoAnalysis {
   private constructor() {}
 
   private static readonly inflight = new Map<
     number,
-    { videoId: string; abort: AbortController }
+    { videoId: string; abort: AbortController; providerId: string | null }
   >();
+
+  private static registry: ProviderRegistry = defaultRegistry;
+
+  /**
+   * @param registry - Provider registry used for subsequent analysis runs
+   */
+  static setRegistry(registry: ProviderRegistry): void {
+    PromoAnalysis.registry = registry;
+  }
+
+  /**
+   * @param tabId - Target tab whose current analysis should be aborted
+   */
+  static abortForTab(tabId: number): void {
+    const inflight = PromoAnalysis.inflight.get(tabId);
+    if (!inflight) {
+      return;
+    }
+    inflight.abort.abort();
+    PromoAnalysis.inflight.delete(tabId);
+  }
+
+  /**
+   * Aborts any in-flight work that was started under a different provider.
+   *
+   * @param providerId - Newly selected provider identifier
+   */
+  static abortForProviderChange(providerId: string): void {
+    for (const [tabId, inflight] of PromoAnalysis.inflight.entries()) {
+      if (
+        inflight.providerId === null ||
+        inflight.providerId !== providerId
+      ) {
+        PromoAnalysis.abortForTab(tabId);
+      }
+    }
+  }
 
   /**
    * Runs after successful captions from the watch content script (non-blocking
@@ -66,20 +101,21 @@ export class PromoAnalysis {
   ): Promise<void> {
     const { videoId, languageCode, segments } = payload;
 
-    const prev = PromoAnalysis.inflight.get(tabId);
-    if (prev) {
-      prev.abort.abort();
-    }
+    PromoAnalysis.abortForTab(tabId);
     const abort = new AbortController();
-    PromoAnalysis.inflight.set(tabId, { videoId, abort });
+    PromoAnalysis.inflight.set(tabId, {
+      videoId,
+      abort,
+      providerId: null,
+    });
 
     const setStatus = (state: PromoDetectionStatePayload): void => {
       PromoDetectionStore.set(tabId, state);
     };
 
     try {
-      await PrefsSyncStorage.ready();
-      const prefs = await PrefsSyncStorage.load();
+      const prefs = await PrefsSyncStorage.ready()
+        .then(() => PrefsSyncStorage.load());
       if (!prefs.enabled) {
         setStatus({
           videoId,
@@ -88,12 +124,21 @@ export class PromoAnalysis {
         return;
       }
 
-      const orConfig = await OpenRouterStorage.load();
-      if (!orConfig.enabled) {
-        setStatus({ videoId, status: 'unavailable' });
+      const providerId = prefs.providerId;
+      PromoAnalysis.inflight.set(tabId, {
+        videoId,
+        abort,
+        providerId,
+      });
+
+      const adapter = PromoAnalysis.registry.get(providerId);
+      if (!adapter) {
+        setStatus({ videoId, status: 'not_configured' });
         return;
       }
-      if (orConfig.apiKey.length === 0 || orConfig.model.length === 0) {
+
+      const avail = await adapter.availability();
+      if (avail === 'unavailable') {
         setStatus({ videoId, status: 'not_configured' });
         return;
       }
@@ -109,29 +154,20 @@ export class PromoAnalysis {
 
       setStatus({ videoId, status: 'analyzing' });
 
-      const userContent = [
-        `videoId=${videoId}`,
-        `language=${languageCode}`,
-        '',
-        merged.text,
-      ].join('\n');
-
-      const llm = await callOpenRouterChat({
-        apiKey: orConfig.apiKey,
-        model: orConfig.model,
+      const result = await adapter.analyzeTranscript({
+        transcript: merged.text,
+        videoId,
+        languageCode,
+        durationSec: undefined,
         signal: abort.signal,
-        messages: [
-          { role: 'system', content: PROMO_DETECTION_SYSTEM_PROMPT },
-          { role: 'user', content: userContent },
-        ],
       });
 
       if (PromoAnalysis.inflight.get(tabId)?.abort !== abort) {
         return;
       }
 
-      if (!llm.ok) {
-        console.error('[TopSkip] OpenRouter error', llm.error);
+      if (!result.ok) {
+        console.error('[TopSkip] LLM adapter error', result.error);
         LogPromoAnalysis.logAnalysisBundle(
           buildPromoAnalysisLogBundle({
             videoId,
@@ -140,22 +176,21 @@ export class PromoAnalysis {
             maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
             mergedText: merged.text,
             mergedTruncated: merged.truncated,
-            model: orConfig.model,
+            providerId,
+            model: 'unknown',
             rawAssistant: null,
-            outcome: { type: 'openrouter_error', error: llm.error },
+            outcome: { type: 'adapter_error', error: result.error },
           }),
         );
         setStatus({
           videoId,
           status: 'error',
-          error: llm.error,
+          error: result.error,
         });
         return;
       }
 
-      const parsed = parseLlmPromoResponse(llm.rawContent, undefined);
-      if (!parsed.ok) {
-        console.error('[TopSkip] LLM parse error', parsed.error);
+      if (!result.hasPromo) {
         LogPromoAnalysis.logAnalysisBundle(
           buildPromoAnalysisLogBundle({
             videoId,
@@ -164,30 +199,9 @@ export class PromoAnalysis {
             maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
             mergedText: merged.text,
             mergedTruncated: merged.truncated,
-            model: orConfig.model,
-            rawAssistant: llm.rawContent,
-            outcome: { type: 'parse_error', error: parsed.error },
-          }),
-        );
-        setStatus({
-          videoId,
-          status: 'error',
-          error: parsed.error,
-        });
-        return;
-      }
-
-      if (!parsed.hasPromo) {
-        LogPromoAnalysis.logAnalysisBundle(
-          buildPromoAnalysisLogBundle({
-            videoId,
-            languageCode,
-            segmentCount: segments.length,
-            maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
-            mergedText: merged.text,
-            mergedTruncated: merged.truncated,
-            model: orConfig.model,
-            rawAssistant: llm.rawContent,
+            providerId,
+            model: result.providerMeta.model,
+            rawAssistant: null,
             outcome: { type: 'no_promo' },
           }),
         );
@@ -195,7 +209,7 @@ export class PromoAnalysis {
         return;
       }
 
-      const blocks = parsed.blocks;
+      const blocks = result.blocks;
       LogPromoAnalysis.logAnalysisBundle(
         buildPromoAnalysisLogBundle({
           videoId,
@@ -204,8 +218,9 @@ export class PromoAnalysis {
           maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
           mergedText: merged.text,
           mergedTruncated: merged.truncated,
-          model: orConfig.model,
-          rawAssistant: llm.rawContent,
+          providerId,
+          model: result.providerMeta.model,
+          rawAssistant: null,
           outcome: { type: 'promo_blocks', blocks },
         }),
       );

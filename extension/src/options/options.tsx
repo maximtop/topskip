@@ -1,7 +1,6 @@
 import '@mantine/core/styles.css';
 
 import {
-  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -9,11 +8,10 @@ import {
   Group,
   MantineProvider,
   Paper,
-  Select,
+  SegmentedControl,
   Stack,
   Switch,
   Text,
-  TextInput,
   Title,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
@@ -29,12 +27,17 @@ import { createRoot } from 'react-dom/client';
 
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
-import { PREFS_PORT_NAME } from '@/shared/constants';
+import { DEFAULT_PROVIDER_ID, PREFS_PORT_NAME } from '@/shared/constants';
 import {
   TOPSKIP_MESSAGE,
+  type GetActiveProviderResponse,
   type GetOpenRouterConfigResponse,
+  type GetProviderListResponse,
   type MutateOpenRouterCustomModelResponse,
+  type ProviderAvailabilityMessage,
+  type ProviderListItem,
   type SetOpenRouterConfigResponse,
+  type ValidateOpenRouterModelResponse,
   isPrefsPortMessage,
 } from '@/shared/messages';
 import {
@@ -46,9 +49,21 @@ import { ErrorBoundary } from '@/shared/ErrorBoundary';
 import { i18n } from '@/shared/i18n/i18n';
 import { reactTranslator } from '@/shared/i18n/react-translator';
 import { translator } from '@/shared/i18n/translator';
+import { ChromeBuiltinInlineStatus } from '@/options/ChromeBuiltinInlineStatus';
+import { OpenRouterConfigPanel } from '@/options/OpenRouterConfigPanel';
 
 type OpenRouterGetOkPayload = Extract<
   GetOpenRouterConfigResponse,
+  { ok: true }
+>;
+
+type ActiveProviderGetOkPayload = Extract<
+  GetActiveProviderResponse,
+  { ok: true }
+>;
+
+type ProviderListGetOkPayload = Extract<
+  GetProviderListResponse,
   { ok: true }
 >;
 
@@ -75,6 +90,7 @@ async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
   let lastErr: unknown;
   for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
     try {
+      // FIXME we should rely more on the messages from background page, catch errors with types
       const res: unknown = await browser.runtime.sendMessage({
         type: TOPSKIP_MESSAGE.GET_OPENROUTER_CONFIG,
       });
@@ -102,6 +118,7 @@ async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
   );
 }
 
+// FIXME why not using valibot for validation types? improve also agents.md about this
 /**
  * @param res - Untyped runtime response
  * @returns Parsed success payload, or `null` if shape is unusable
@@ -116,7 +133,7 @@ function parseGetOpenRouterConfigOk(
     return null;
   }
   const o = res as Record<string, unknown>;
-  if (typeof o.enabled !== 'boolean' || typeof o.model !== 'string') {
+  if (typeof o.model !== 'string') {
     return null;
   }
   if (!('apiKeyMasked' in o)) {
@@ -134,10 +151,79 @@ function parseGetOpenRouterConfigOk(
   }
   return {
     ok: true,
-    enabled: o.enabled,
     model: o.model,
     apiKeyMasked: masked,
     customModels,
+  };
+}
+
+/**
+ * @param res - Untyped runtime response
+ * @returns Parsed active provider payload, or `null` if shape is unusable
+ */
+function parseGetActiveProviderOk(
+  res: unknown,
+): ActiveProviderGetOkPayload | null {
+  if (typeof res !== 'object' || res === null || !('ok' in res)) {
+    return null;
+  }
+  if ((res as { ok: boolean }).ok !== true) {
+    return null;
+  }
+  const payload = res as Record<string, unknown>;
+  if (
+    typeof payload.providerId !== 'string' ||
+    typeof payload.displayName !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    ok: true,
+    providerId: payload.providerId,
+    displayName: payload.displayName,
+    modelName:
+      typeof payload.modelName === 'string' ? payload.modelName : '',
+  };
+}
+
+/**
+ * @param res - Untyped runtime response
+ * @returns Parsed provider list payload, or `null` if shape is unusable
+ */
+function parseGetProviderListOk(
+  res: unknown,
+): ProviderListGetOkPayload | null {
+  if (typeof res !== 'object' || res === null || !('ok' in res)) {
+    return null;
+  }
+  if ((res as { ok: boolean }).ok !== true) {
+    return null;
+  }
+  const payload = res as Record<string, unknown>;
+  if (!Array.isArray(payload.providers)) {
+    return null;
+  }
+  const providers = payload.providers.flatMap((item) => {
+    if (typeof item !== 'object' || item === null) {
+      return [];
+    }
+    const row = item as Record<string, unknown>;
+    if (
+      typeof row.id !== 'string' ||
+      typeof row.displayName !== 'string' ||
+      typeof row.availability !== 'string'
+    ) {
+      return [];
+    }
+    return [{
+      id: row.id,
+      displayName: row.displayName,
+      availability: row.availability as ProviderAvailabilityMessage,
+    } satisfies ProviderListItem];
+  });
+  return {
+    ok: true,
+    providers,
   };
 }
 
@@ -170,6 +256,23 @@ function isMutateOpenRouterCustomModelOk(
     (res as { ok: boolean }).ok === true &&
     'customModels' in res &&
     Array.isArray((res as { customModels: unknown }).customModels)
+  );
+}
+
+/**
+ * @param res - Untyped runtime response
+ * @returns Whether the payload is a successful validation response
+ */
+function isValidateOpenRouterModelOk(
+  res: unknown,
+): res is Extract<ValidateOpenRouterModelResponse, { ok: true }> {
+  return (
+    typeof res === 'object' &&
+    res !== null &&
+    'ok' in res &&
+    (res as { ok: boolean }).ok === true &&
+    'valid' in res &&
+    typeof (res as { valid: unknown }).valid === 'boolean'
   );
 }
 
@@ -209,14 +312,25 @@ export class Options {
  * @returns Options page React tree
  */
 function OptionsApp(): ReactElement {
+  // FIXME why this states are not handled in the mobx?
   const [loading, setLoading] = useState(true);
   const [enabled, setEnabled] = useState(false);
+  const [providers, setProviders] = useState<ProviderListItem[]>([]);
+  const [activeProviderId, setActiveProviderId] = useState(
+    DEFAULT_PROVIDER_ID,
+  );
+  const [activeProviderDisplayName, setActiveProviderDisplayName] = useState(
+    'OpenRouter',
+  );
   const [apiKey, setApiKey] = useState('');
   const [modelChoice, setModelChoice] = useState<string>(
     OPENROUTER_DEFAULT_MODEL_SLUG,
   );
   const [customModels, setCustomModels] = useState<string[]>([]);
   const [newModelDraft, setNewModelDraft] = useState('');
+  const [unverifiedModels, setUnverifiedModels] = useState<Set<string>>(
+    new Set(),
+  );
   const [addBusy, setAddBusy] = useState(false);
   const [removeBusySlug, setRemoveBusySlug] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -228,6 +342,19 @@ function OptionsApp(): ReactElement {
     useDisclosure(false);
 
   const setupReady = savedApiKeyMasked !== null;
+  const activeProviderLabel = useMemo(
+    () =>
+      providers.find((provider) => provider.id === activeProviderId)
+        ?.displayName ?? activeProviderDisplayName,
+    [activeProviderDisplayName, activeProviderId, providers],
+  );
+  const chromeAvailability = useMemo(
+    () =>
+      providers.find(
+        (provider) => provider.id === 'chrome-prompt-api',
+      )?.availability ?? 'unavailable',
+    [providers],
+  );
 
   const modelSelectData = useMemo(() => {
     const seen = new Set<string>();
@@ -252,7 +379,48 @@ function OptionsApp(): ReactElement {
     setLoading(true);
     setError(null);
     try {
-      const res: unknown = await sendGetOpenRouterConfigWithRetry();
+      const [prefsRes, providerListRes, activeProviderRes, res] =
+      // FIXME I prefer sending less messages, this could be wrapped in one message
+        await Promise.all([
+          browser.runtime.sendMessage({
+            type: TOPSKIP_MESSAGE.GET_PREFS,
+          }),
+          browser.runtime.sendMessage({
+            type: TOPSKIP_MESSAGE.GET_PROVIDER_LIST,
+          }),
+          browser.runtime.sendMessage({
+            type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
+          }),
+          sendGetOpenRouterConfigWithRetry(),
+        ]);
+      if (
+        prefsRes &&
+        typeof prefsRes === 'object' &&
+        'ok' in prefsRes &&
+        (prefsRes as { ok: boolean }).ok === true &&
+        'prefs' in prefsRes
+      ) {
+        const prefs = (prefsRes as { prefs: { enabled?: boolean } }).prefs;
+        if (typeof prefs.enabled === 'boolean') {
+          setEnabled(prefs.enabled);
+        }
+      }
+
+      const providerList = parseGetProviderListOk(providerListRes);
+      if (!providerList) {
+        setError('Failed to load provider list');
+        return;
+      }
+      setProviders(providerList.providers);
+
+      const activeProvider = parseGetActiveProviderOk(activeProviderRes);
+      if (!activeProvider) {
+        setError('Failed to load active provider');
+        return;
+      }
+      setActiveProviderId(activeProvider.providerId);
+      setActiveProviderDisplayName(activeProvider.displayName);
+
       if (
         res &&
         typeof res === 'object' &&
@@ -273,7 +441,6 @@ function OptionsApp(): ReactElement {
         setError(translator.getMessage('options_error_load_failed'));
         return;
       }
-      setEnabled(data.enabled);
       setCustomModels([...data.customModels]);
       const nextModel =
         data.model.length > 0 ? data.model : OPENROUTER_DEFAULT_MODEL_SLUG;
@@ -296,12 +463,72 @@ function OptionsApp(): ReactElement {
     port.onMessage.addListener((msg: unknown) => {
       if (isPrefsPortMessage(msg)) {
         setEnabled(msg.prefs.enabled);
+        if (typeof msg.prefs.providerId === 'string') {
+          setActiveProviderId(msg.prefs.providerId);
+        }
       }
     });
     return () => {
       port.disconnect();
     };
   }, []);
+
+  /**
+   * Persists the active provider choice immediately when the segmented control
+   * changes.
+   *
+   * @param nextProviderId - Newly selected provider identifier
+   * @returns Promise that resolves when the switch attempt finishes
+   */
+  const onProviderChange = async (nextProviderId: string): Promise<void> => {
+    const previousProviderId = activeProviderId;
+    const nextProvider = providers.find(
+      (provider) => provider.id === nextProviderId,
+    );
+
+    setError(null);
+    setSaved(false);
+    setActiveProviderId(nextProviderId);
+    if (nextProvider) {
+      setActiveProviderDisplayName(nextProvider.displayName);
+    }
+
+    try {
+      const res: unknown = await browser.runtime.sendMessage({
+        type: TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER,
+        providerId: nextProviderId,
+      });
+      if (
+        !res ||
+        typeof res !== 'object' ||
+        !('ok' in res) ||
+        (res as { ok: boolean }).ok !== true
+      ) {
+        const err =
+          res &&
+          typeof res === 'object' &&
+          'error' in res &&
+          typeof (res as { error: unknown }).error === 'string'
+            ? (res as { error: string }).error
+            : 'Failed to switch provider';
+        setActiveProviderId(previousProviderId);
+        setActiveProviderDisplayName(
+          providers.find((provider) => provider.id === previousProviderId)
+            ?.displayName ?? activeProviderDisplayName,
+        );
+        setError(err);
+        return;
+      }
+      setSaved(true);
+    } catch (e) {
+      setActiveProviderId(previousProviderId);
+      setActiveProviderDisplayName(
+        providers.find((provider) => provider.id === previousProviderId)
+          ?.displayName ?? activeProviderDisplayName,
+      );
+      setError(getErrorMessage(e));
+    }
+  };
 
   /**
    * Persists OpenRouter settings via the background service worker.
@@ -311,10 +538,13 @@ function OptionsApp(): ReactElement {
   const onSave = async (): Promise<void> => {
     setError(null);
     setSaved(false);
+    if (activeProviderId !== 'openrouter') {
+      setSaved(true);
+      return;
+    }
     try {
       const res: unknown = await browser.runtime.sendMessage({
         type: TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG,
-        enabled,
         apiKey: apiKey.trim(),
         model: modelChoice,
       });
@@ -338,6 +568,7 @@ function OptionsApp(): ReactElement {
 
   /**
    * Adds a custom model slug to storage (separate from Save).
+   * First validates the slug format and (if API key present) existence.
    *
    * @returns Promise that resolves when the add attempt finishes
    */
@@ -346,17 +577,59 @@ function OptionsApp(): ReactElement {
     setSaved(false);
     setAddBusy(true);
     try {
-      const res: unknown = await browser.runtime.sendMessage({
+      // Validate slug first
+      const validationRes: unknown = await browser.runtime.sendMessage({
+        type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
+        slug: newModelDraft.trim(),
+        apiKey,
+      });
+
+      if (!isValidateOpenRouterModelOk(validationRes)) {
+        const err =
+          validationRes &&
+          typeof validationRes === 'object' &&
+          'error' in validationRes &&
+          typeof (validationRes as { error: unknown }).error === 'string'
+            ? (validationRes as { error: string }).error
+            : 'Validation failed';
+        setError(err);
+        return;
+      }
+
+      const validation = validationRes as {
+        ok: true;
+        valid: boolean;
+        error?: string;
+        unverified?: boolean;
+      };
+
+      if (!validation.valid) {
+        setError(
+          validation.error ?? translator.getMessage('options_error_add_model'),
+        );
+        return;
+      }
+
+      // Track unverified models
+      if (validation.unverified) {
+        setUnverifiedModels(
+          (prev) =>
+            new Set([...prev, newModelDraft.trim()]),
+        );
+      }
+
+      // Proceed with adding the model
+      const addRes: unknown = await browser.runtime.sendMessage({
         type: TOPSKIP_MESSAGE.ADD_OPENROUTER_CUSTOM_MODEL,
         slug: newModelDraft,
       });
-      if (!isMutateOpenRouterCustomModelOk(res)) {
+      if (!isMutateOpenRouterCustomModelOk(addRes)) {
         const err =
-          res &&
-          typeof res === 'object' &&
-          'error' in res &&
-          typeof (res as { error: unknown }).error === 'string'
-            ? (res as { error: string }).error
+          addRes &&
+          typeof addRes === 'object' &&
+          'error' in addRes &&
+          typeof (addRes as { error: unknown }).error === 'string'
+            ? (addRes as { error: string }).error
             : translator.getMessage('options_error_add_model');
         setError(err);
         return;
@@ -446,11 +719,17 @@ function OptionsApp(): ReactElement {
                   : 'Detection paused'}
               </Badge>
               <Badge
-                color={setupReady ? 'success' : 'warning'}
+                color={
+                  activeProviderId === 'openrouter'
+                    ? setupReady
+                      ? 'success'
+                      : 'warning'
+                    : chromeAvailability === 'available'
+                      ? 'success'
+                      : 'gray'
+                }
               >
-                {setupReady
-                  ? 'API key saved'
-                  : 'Setup needed'}
+                {activeProviderLabel}
               </Badge>
             </Group>
           </Group>
@@ -488,13 +767,18 @@ function OptionsApp(): ReactElement {
               Connection
             </Text>
             <Text fw={700} mt={6}>
-              {setupReady
-                ? savedApiKeyMasked
-                : 'No API key saved'}
+              {activeProviderId === 'openrouter'
+                ? setupReady
+                  ? savedApiKeyMasked
+                  : 'No API key saved'
+                : 'Runs on your device'}
             </Text>
             <Text size="xs" c="dimmed" mt={4}>
-              Keep the field blank below if you want to
-              preserve the saved key.
+              {activeProviderId === 'openrouter'
+                ? 'Keep the field blank below if you want to preserve the '
+                  + 'saved key.'
+                : 'Chrome Built-in uses the local browser model instead of '
+                  + 'a cloud API key.'}
             </Text>
           </Paper>
           <Paper
@@ -506,14 +790,15 @@ function OptionsApp(): ReactElement {
             }}
           >
             <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-              Default model
+              Active provider
             </Text>
-            <Text fw={700} mt={6} ff="monospace">
-              {modelChoice}
+            <Text fw={700} mt={6}>
+              {activeProviderLabel}
             </Text>
             <Text size="xs" c="dimmed" mt={4}>
-              This is the starting model the popup
-              will use for transcript analysis.
+              {activeProviderId === 'openrouter'
+                ? `Model: ${modelChoice}`
+                : `Availability: ${chromeAvailability}`}
             </Text>
           </Paper>
         </Group>
@@ -533,6 +818,58 @@ function OptionsApp(): ReactElement {
           <Stack gap="md">
             <Stack gap={4}>
               <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
+                LLM provider
+              </Text>
+              <Title order={3} size="h3">
+                Choose the analysis backend
+              </Title>
+              <Text size="sm" c="dimmed">
+                Switch between the existing OpenRouter flow and the upcoming
+                Chrome Built-in provider. The selected provider takes effect as
+                soon as you switch tabs.
+              </Text>
+            </Stack>
+            <SegmentedControl
+              data-testid="provider-selector"
+              fullWidth
+              value={activeProviderId}
+              onChange={(nextId) => {
+                void onProviderChange(nextId);
+              }}
+              data={providers.map((provider) => ({
+                value: provider.id,
+                label: provider.displayName,
+              }))}
+            />
+            <Group gap="xs">
+              {providers.map((provider) => (
+                <Badge
+                  key={provider.id}
+                  color={
+                    provider.availability === 'available'
+                      ? 'success'
+                      : provider.availability === 'unavailable'
+                        ? 'gray'
+                        : 'brand'
+                  }
+                  variant={
+                    provider.id === activeProviderId ? 'filled' : 'light'
+                  }
+                >
+                  {provider.displayName}: {provider.availability}
+                </Badge>
+              ))}
+            </Group>
+            {activeProviderId === 'chrome-prompt-api' && (
+              <ChromeBuiltinInlineStatus />
+            )}
+          </Stack>
+        </Paper>
+
+        <Paper p="lg" radius="xl">
+          <Stack gap="md">
+            <Stack gap={4}>
+              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
                 Core controls
               </Text>
               <Title order={3} size="h3">
@@ -541,8 +878,8 @@ function OptionsApp(): ReactElement {
               <Text size="sm" c="dimmed">
                 The popup stays intentionally simple.
                 Enable or pause transcript analysis
-                here, then choose the default model
-                it should use.
+                here. Provider-specific settings live
+                below.
               </Text>
             </Stack>
             <Paper
@@ -571,7 +908,12 @@ function OptionsApp(): ReactElement {
                 <Switch
                   checked={enabled}
                   onChange={(e) => {
-                    setEnabled(e.currentTarget.checked);
+                    const val = e.currentTarget.checked;
+                    setEnabled(val);
+                    void browser.runtime.sendMessage({
+                      type: TOPSKIP_MESSAGE.SET_PREFS,
+                      enabled: val,
+                    });
                   }}
                   aria-label={translator.getMessage(
                     'options_enable_detection',
@@ -579,182 +921,36 @@ function OptionsApp(): ReactElement {
                 />
               </Group>
             </Paper>
-            <Select
-              label={translator.getMessage('options_model_label')}
-              description={translator.getMessage(
-                'options_model_description',
-              )}
-              data={modelSelectData}
-              value={modelChoice}
-              onChange={(v) => {
-                setModelChoice(v ?? OPENROUTER_DEFAULT_MODEL_SLUG);
-              }}
-            />
           </Stack>
         </Paper>
 
-        <Paper p="lg" radius="xl">
-          <Stack gap="md">
-            <Stack gap={4}>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                Secure connection
-              </Text>
-              <Title order={3} size="h3">
-                {translator.getMessage('options_api_key_label')}
-              </Title>
-            </Stack>
-            <TextInput
-              label={translator.getMessage('options_api_key_label')}
-              placeholder={translator.getMessage(
-                'options_api_key_placeholder',
-              )}
-              type={apiKeyVisible ? 'text' : 'password'}
-              autoComplete="off"
-              value={apiKey}
-              onChange={(e) => {
-                setApiKey(e.currentTarget.value);
-              }}
-              description={
-                savedApiKeyMasked !== null
-                  ? translator.getMessage(
-                    'options_api_key_saved',
-                  ).replace('%mask%', savedApiKeyMasked)
-                  : translator.getMessage(
-                    'options_api_key_none',
-                  )
-              }
-              rightSection={
-                <ActionIcon
-                  variant="subtle"
-                  aria-label={
-                    apiKeyVisible
-                      ? 'Hide API key'
-                      : 'Show API key'
-                  }
-                  onClick={toggleApiKeyVisibility}
-                >
-                  {apiKeyVisible ? (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      {/* eslint-disable-next-line max-len */}
-                      <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
-                      {/* eslint-disable-next-line max-len */}
-                      <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
-                      <line x1="1" y1="1" x2="23" y2="23" />
-                    </svg>
-                  ) : (
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      width="16"
-                      height="16"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="2"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                      <circle cx="12" cy="12" r="3" />
-                    </svg>
-                  )}
-                </ActionIcon>
-              }
-            />
-          </Stack>
-        </Paper>
-
-        <Paper p="lg" radius="xl">
-          <Stack gap="md">
-            <Stack gap={4}>
-              <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                {reactTranslator.getMessage(
-                  'options_add_model_heading',
-                )}
-              </Text>
-              <Title order={3} size="h3">
-                Custom models
-              </Title>
-              <Text size="sm" c="dimmed">
-                {reactTranslator.getMessage(
-                  'options_add_model_description',
-                )}
-              </Text>
-            </Stack>
-            <Group align="flex-end" wrap="nowrap" gap="sm">
-              <TextInput
-                style={{ flex: 1 }}
-                label={translator.getMessage(
-                  'options_custom_model_label',
-                )}
-                placeholder={translator.getMessage(
-                  'options_custom_model_placeholder',
-                )}
-                value={newModelDraft}
-                onChange={(e) => {
-                  setNewModelDraft(e.currentTarget.value);
-                }}
-              />
-              <Button
-                loading={addBusy}
-                disabled={newModelDraft.trim().length === 0}
-                onClick={() => void onAddCustomModel()}
-              >
-                {reactTranslator.getMessage('options_add_button')}
-              </Button>
-            </Group>
-            {customModels.length > 0 ? (
-              <Stack gap="xs">
-                {customModels.map((slug) => (
-                  <Paper
-                    key={slug}
-                    p="sm"
-                    radius="lg"
-                    style={{ background: '#fbfdff' }}
-                  >
-                    <Group justify="space-between" wrap="nowrap" gap="md">
-                      <Stack gap={1} style={{ flex: 1 }}>
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                          Saved model
-                        </Text>
-                        <Text size="sm" ff="monospace">
-                          {slug}
-                        </Text>
-                      </Stack>
-                      <Button
-                        size="xs"
-                        variant="light"
-                        color="error"
-                        loading={removeBusySlug === slug}
-                        disabled={
-                          removeBusySlug !== null && removeBusySlug !== slug
-                        }
-                        onClick={() => void onRemoveCustomModel(slug)}
-                      >
-                        {reactTranslator.getMessage(
-                          'options_remove_button',
-                        )}
-                      </Button>
-                    </Group>
-                  </Paper>
-                ))}
-              </Stack>
-            ) : (
-              <Text size="sm" c="dimmed">
-                No custom models saved yet.
-              </Text>
-            )}
-          </Stack>
-        </Paper>
+        {activeProviderId === 'openrouter' && (
+          <OpenRouterConfigPanel
+            apiKey={apiKey}
+            apiKeyVisible={apiKeyVisible}
+            savedApiKeyMasked={savedApiKeyMasked}
+            modelChoice={modelChoice}
+            modelSelectData={modelSelectData}
+            customModels={customModels}
+            newModelDraft={newModelDraft}
+            addBusy={addBusy}
+            removeBusySlug={removeBusySlug}
+            validationError={error}
+            unverifiedModels={unverifiedModels}
+            onApiKeyChange={setApiKey}
+            onToggleApiKeyVisibility={toggleApiKeyVisibility}
+            onModelChoiceChange={(value) => {
+              setModelChoice(value ?? OPENROUTER_DEFAULT_MODEL_SLUG);
+            }}
+            onNewModelDraftChange={setNewModelDraft}
+            onAddCustomModel={() => {
+              void onAddCustomModel();
+            }}
+            onRemoveCustomModel={(slug) => {
+              void onRemoveCustomModel(slug);
+            }}
+          />
+        )}
 
         <Paper p="lg" radius="xl">
           <Stack gap="sm">

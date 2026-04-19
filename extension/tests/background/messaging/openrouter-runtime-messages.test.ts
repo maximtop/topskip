@@ -10,50 +10,10 @@ import { OPENROUTER_DEFAULT_MODEL_SLUG } from
 const loadMock = vi.fn();
 const saveMock = vi.fn();
 const maskMock = vi.fn();
+const fetchModelsMock = vi.fn();
 
-/* FR-015 added transitive imports of PrefsSyncStorage / PrefsBroadcast /
-   ContentScriptsRegistration, all of which import @/shared/browser.
-   Mock the polyfill + the three modules so this file stays focused on
-   OpenRouterRuntimeMessages behaviour only. */
-vi.mock('@/shared/browser', () => ({
-  default: {
-    runtime: { sendMessage: vi.fn() },
-    storage: {
-      local: {
-        get: vi.fn().mockResolvedValue({}),
-        set: vi.fn().mockResolvedValue(undefined),
-      },
-    },
-    tabs: {
-      query: vi.fn().mockResolvedValue([]),
-      sendMessage: vi.fn().mockResolvedValue(undefined),
-    },
-    scripting: {
-      registerContentScripts: vi.fn().mockResolvedValue(undefined),
-      unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
-    },
-  },
-}));
-
-vi.mock('@/background/storage/prefs-sync', () => ({
-  PrefsSyncStorage: {
-    ready: vi.fn().mockResolvedValue(undefined),
-    load: vi.fn().mockResolvedValue({ enabled: true }),
-    save: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-vi.mock('@/background/messaging/broadcast-prefs-updated', () => ({
-  PrefsBroadcast: {
-    sendUpdatedToAllTabs: vi.fn().mockResolvedValue(undefined),
-  },
-}));
-
-vi.mock('@/background/lifecycle/content-scripts-registration', () => ({
-  ContentScriptsRegistration: {
-    syncFromPrefs: vi.fn().mockResolvedValue(undefined),
-  },
-}));
+/* No longer needs transitive browser/prefs/broadcast mocks since FR-015
+   sync was removed from handleSet. */
 
 vi.mock('@/background/storage/openrouter-storage', () => ({
   OpenRouterStorage: {
@@ -81,16 +41,22 @@ vi.mock('@/background/storage/openrouter-storage', () => ({
   },
 }));
 
+vi.mock('@/background/openrouter/openrouter-models-api', () => ({
+  fetchOpenRouterModelList: async (apiKey: string): Promise<string[]> => {
+    return fetchModelsMock(apiKey) as Promise<string[]>;
+  },
+}));
+
 describe('OpenRouterRuntimeMessages', () => {
   beforeEach(() => {
     loadMock.mockReset();
     saveMock.mockReset();
     maskMock.mockReset();
+    fetchModelsMock.mockReset();
   });
 
   it('handleGet returns customModels', async () => {
     loadMock.mockResolvedValue({
-      enabled: true,
       apiKey: 'k',
       model: OPENROUTER_DEFAULT_MODEL_SLUG,
       customModels: ['x/y'],
@@ -102,7 +68,6 @@ describe('OpenRouterRuntimeMessages', () => {
     );
     expect(r).toEqual({
       ok: true,
-      enabled: true,
       model: OPENROUTER_DEFAULT_MODEL_SLUG,
       apiKeyMasked: '****',
       customModels: ['x/y'],
@@ -111,7 +76,6 @@ describe('OpenRouterRuntimeMessages', () => {
 
   it('handleSet merges customModels from current storage', async () => {
     loadMock.mockResolvedValue({
-      enabled: false,
       apiKey: '',
       model: '',
       customModels: ['saved/custom'],
@@ -120,7 +84,6 @@ describe('OpenRouterRuntimeMessages', () => {
     const r = await OpenRouterRuntimeMessages.handle(
       {
         type: TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG,
-        enabled: false,
         apiKey: '',
         model: OPENROUTER_DEFAULT_MODEL_SLUG,
       },
@@ -163,7 +126,6 @@ describe('OpenRouterRuntimeMessages', () => {
 
   it('handleAddCustomModel appends and selects model', async () => {
     loadMock.mockResolvedValue({
-      enabled: false,
       apiKey: '',
       model: OPENROUTER_DEFAULT_MODEL_SLUG,
       customModels: [],
@@ -187,7 +149,6 @@ describe('OpenRouterRuntimeMessages', () => {
 
   it('handleRemoveCustomModel resets active model when removed', async () => {
     loadMock.mockResolvedValue({
-      enabled: false,
       apiKey: '',
       model: 'vendor/foo',
       customModels: ['vendor/foo'],
@@ -207,5 +168,87 @@ describe('OpenRouterRuntimeMessages', () => {
         customModels: [],
       }),
     );
+  });
+
+  it('handleValidateModelSlug rejects invalid format slug', async () => {
+    const r = await OpenRouterRuntimeMessages.handle(
+      {
+        type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
+        slug: 'invalid-format',
+        apiKey: 'sk-test',
+      },
+      {} as never,
+    );
+    expect(r).toEqual({
+      ok: true,
+      valid: false,
+      error: 'Invalid format. Use owner/model-name.',
+    });
+  });
+
+  it('slug valid with empty key is unverified', async () => {
+    const r = await OpenRouterRuntimeMessages.handle(
+      {
+        type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
+        slug: 'google/gemini-2.5-flash',
+        apiKey: '',
+      },
+      {} as never,
+    );
+    expect(r).toEqual({
+      ok: true,
+      valid: true,
+      unverified: true,
+    });
+  });
+
+  it('checks API when key is present slug found', async () => {
+    fetchModelsMock.mockResolvedValue([
+      'google/gemini-2.5-flash',
+      'openai/gpt-4o',
+    ]);
+    const r = await OpenRouterRuntimeMessages.handle(
+      {
+        type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
+        slug: 'google/gemini-2.5-flash',
+        apiKey: 'sk-test',
+      },
+      {} as never,
+    );
+    expect(r).toEqual({ ok: true, valid: true });
+  });
+
+  it('rejects slug not found in API', async () => {
+    fetchModelsMock.mockResolvedValue(['google/gemini-2.5-flash']);
+    const r = await OpenRouterRuntimeMessages.handle(
+      {
+        type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
+        slug: 'nonexistent/model',
+        apiKey: 'sk-test',
+      },
+      {} as never,
+    );
+    expect(r).toEqual({
+      ok: true,
+      valid: false,
+      error: 'Model not found on OpenRouter.',
+    });
+  });
+
+  it('gracefully handles API fetch error', async () => {
+    fetchModelsMock.mockResolvedValue([]);
+    const r = await OpenRouterRuntimeMessages.handle(
+      {
+        type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
+        slug: 'google/gemini-2.5-flash',
+        apiKey: 'sk-test',
+      },
+      {} as never,
+    );
+    expect(r).toEqual({
+      ok: true,
+      valid: true,
+      unverified: true,
+    });
   });
 });

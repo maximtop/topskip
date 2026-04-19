@@ -37,233 +37,122 @@ import { OpenRouterRuntimeMessages } from
 import { STORAGE_KEY_PREFS, STORAGE_KEY_OPENROUTER } from
   '@/shared/constants';
 
-describe('SET_PREFS propagates enabled to OpenRouter storage (FR-014)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    // PrefsSyncStorage.ready() — seed prefs
-    storageGet.mockImplementation((key: string) => {
-      if (key === STORAGE_KEY_PREFS) {
-        return Promise.resolve({
-          [STORAGE_KEY_PREFS]: { enabled: true },
-        });
-      }
-      if (key === STORAGE_KEY_OPENROUTER) {
-        return Promise.resolve({
-          [STORAGE_KEY_OPENROUTER]: {
-            enabled: false,
-            apiKey: 'sk-test',
-            model: 'test/model',
-            customModels: [],
-          },
-        });
-      }
-      return Promise.resolve({});
-    });
-    storageSet.mockResolvedValue(undefined);
-  });
-
-  it('updates OpenRouter enabled when popup sets enabled=false', async () => {
-    const result = await PrefsRuntimeMessages.handle(
-      { type: 'TOPSKIP_SET_PREFS', enabled: false },
-      { id: 'test' },
-    );
-    expect(result).toEqual({ ok: true });
-
-    // Verify that storage.set was called for BOTH keys
-    const prefsSetCall = storageSet.mock.calls.find(
-      (call: unknown[]) => {
-        const arg = call[0] as Record<string, unknown>;
-        return STORAGE_KEY_PREFS in arg;
-      },
-    );
-    expect(prefsSetCall).toBeDefined();
-
-    const orSetCall = storageSet.mock.calls.find(
-      (call: unknown[]) => {
-        const arg = call[0] as Record<string, unknown>;
-        return STORAGE_KEY_OPENROUTER in arg;
-      },
-    );
-    expect(orSetCall).toBeDefined();
-    const orValue = (orSetCall![0] as Record<string, Record<string, unknown>>)[
-      STORAGE_KEY_OPENROUTER
-    ];
-    expect(orValue.enabled).toBe(false);
-  });
-});
-
-describe('SET_OPENROUTER_CONFIG propagates enabled to prefs (FR-015)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    storageGet.mockImplementation((key: string) => {
-      if (key === STORAGE_KEY_PREFS) {
-        return Promise.resolve({
-          [STORAGE_KEY_PREFS]: { enabled: true },
-        });
-      }
-      if (key === STORAGE_KEY_OPENROUTER) {
-        return Promise.resolve({
-          [STORAGE_KEY_OPENROUTER]: {
-            enabled: true,
-            apiKey: 'sk-test',
-            model: 'test/model',
-            customModels: [],
-          },
-        });
-      }
-      return Promise.resolve({});
-    });
-    storageSet.mockResolvedValue(undefined);
-    tabsQuery.mockResolvedValue([]);
-  });
-
-  it('updates prefs enabled and broadcasts when options' +
-    ' sets enabled=false', async () => {
-    const result = await OpenRouterRuntimeMessages.handle(
-      {
-        type: 'TOPSKIP_SET_OPENROUTER_CONFIG',
-        enabled: false,
-        apiKey: '',
-        model: 'test/model',
-      },
-      { id: 'test' },
-    );
-    expect(result).toEqual({ ok: true });
-
-    // Verify prefs storage was updated
-    const prefsSetCall = storageSet.mock.calls.find(
-      (call: unknown[]) => {
-        const arg = call[0] as Record<string, unknown>;
-        return STORAGE_KEY_PREFS in arg;
-      },
-    );
-    expect(prefsSetCall).toBeDefined();
-    const prefsValue = (
-      prefsSetCall![0] as Record<
-        string, Record<string, unknown>
-      >
-    )[STORAGE_KEY_PREFS];
-    expect(prefsValue.enabled).toBe(false);
-
-    // Verify broadcast was sent to all tabs
-    expect(tabsQuery).toHaveBeenCalled();
-  });
-});
-
 /* -------------------------------------------------------------- */
-/*  FR-016: reconcile divergent enabled flags on init              */
+/*  FR-014 removed: SET_PREFS no longer touches OpenRouter storage */
 /* -------------------------------------------------------------- */
 
-import { reconcileDivergentEnabled } from '@/background/background';
-
-describe('reconcileDivergentEnabled (FR-016)', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-    storageSet.mockResolvedValue(undefined);
-  });
-
-  it('resolves to true when prefs=true but openrouter=false', async () => {
-    storageGet.mockImplementation((key: string) => {
-      if (key === STORAGE_KEY_PREFS) {
-        return Promise.resolve({
-          [STORAGE_KEY_PREFS]: { enabled: true },
-        });
-      }
-      if (key === STORAGE_KEY_OPENROUTER) {
-        return Promise.resolve({
-          [STORAGE_KEY_OPENROUTER]: {
-            enabled: false,
-            apiKey: 'sk-test',
-            model: 'test/model',
-            customModels: ['test/model'],
-          },
-        });
-      }
-      return Promise.resolve({});
+describe('SET_PREFS does NOT propagate to OpenRouter storage (FR-014 removed)',
+  () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      storageGet.mockImplementation((key: string) => {
+        if (key === STORAGE_KEY_PREFS) {
+          return Promise.resolve({
+            [STORAGE_KEY_PREFS]: { enabled: true, providerId: 'openrouter' },
+          });
+        }
+        if (key === STORAGE_KEY_OPENROUTER) {
+          return Promise.resolve({
+            [STORAGE_KEY_OPENROUTER]: {
+              apiKey: 'sk-test',
+              model: 'test/model',
+              customModels: [],
+            },
+          });
+        }
+        return Promise.resolve({});
+      });
+      storageSet.mockResolvedValue(undefined);
     });
 
-    await reconcileDivergentEnabled();
+    it(
+      'SET_PREFS saves prefs but does not write OpenRouter storage',
+      async () => {
+      const result = await PrefsRuntimeMessages.handle(
+        { type: 'TOPSKIP_SET_PREFS', enabled: false },
+        { id: 'test' },
+      );
+      expect(result).toEqual({ ok: true });
 
-    const orSetCall = storageSet.mock.calls.find(
-      (call: unknown[]) => {
-        const arg = call[0] as Record<string, unknown>;
-        return STORAGE_KEY_OPENROUTER in arg;
-      },
-    );
-    expect(orSetCall).toBeDefined();
-    const orValue = (orSetCall![0] as Record<string, Record<string, unknown>>)[
-      STORAGE_KEY_OPENROUTER
-    ];
-    expect(orValue.enabled).toBe(true);
+      // Prefs key must be written
+      const prefsSetCall = storageSet.mock.calls.find(
+        (call: unknown[]) => {
+          const arg = call[0] as Record<string, unknown>;
+          return STORAGE_KEY_PREFS in arg;
+        },
+      );
+      expect(prefsSetCall).toBeDefined();
+
+      // OpenRouter key must NOT be written
+      const orSetCall = storageSet.mock.calls.find(
+        (call: unknown[]) => {
+          const arg = call[0] as Record<string, unknown>;
+          return STORAGE_KEY_OPENROUTER in arg;
+        },
+      );
+      expect(orSetCall).toBeUndefined();
+    });
   });
 
-  it('resolves to true when prefs=false but openrouter=true', async () => {
-    storageGet.mockImplementation((key: string) => {
-      if (key === STORAGE_KEY_PREFS) {
-        return Promise.resolve({
-          [STORAGE_KEY_PREFS]: { enabled: false },
-        });
-      }
-      if (key === STORAGE_KEY_OPENROUTER) {
-        return Promise.resolve({
-          [STORAGE_KEY_OPENROUTER]: {
-            enabled: true,
-            apiKey: 'sk-test',
-            model: 'test/model',
-            customModels: ['test/model'],
-          },
-        });
-      }
-      return Promise.resolve({});
+/* -------------------------------------------------------------- */
+/*  FR-015 removed: SET_OPENROUTER_CONFIG no longer touches prefs  */
+/* -------------------------------------------------------------- */
+
+describe(
+  'SET_OPENROUTER_CONFIG does NOT propagate to prefs (FR-015 removed)',
+  () => {
+    beforeEach(() => {
+      vi.clearAllMocks();
+      storageGet.mockImplementation((key: string) => {
+        if (key === STORAGE_KEY_PREFS) {
+          return Promise.resolve({
+            [STORAGE_KEY_PREFS]: { enabled: true, providerId: 'openrouter' },
+          });
+        }
+        if (key === STORAGE_KEY_OPENROUTER) {
+          return Promise.resolve({
+            [STORAGE_KEY_OPENROUTER]: {
+              apiKey: 'sk-test',
+              model: 'test/model',
+              customModels: [],
+            },
+          });
+        }
+        return Promise.resolve({});
+      });
+      storageSet.mockResolvedValue(undefined);
+      tabsQuery.mockResolvedValue([]);
     });
 
-    await reconcileDivergentEnabled();
+    it(
+      'SET_OPENROUTER_CONFIG saves OR config but does not write prefs',
+      async () => {
+      const result = await OpenRouterRuntimeMessages.handle(
+        {
+          type: 'TOPSKIP_SET_OPENROUTER_CONFIG',
+          apiKey: '',
+          model: 'test/model',
+        },
+        { id: 'test' },
+      );
+      expect(result).toEqual({ ok: true });
 
-    const prefsSetCall = storageSet.mock.calls.find(
-      (call: unknown[]) => {
-        const arg = call[0] as Record<string, unknown>;
-        return STORAGE_KEY_PREFS in arg;
-      },
-    );
-    expect(prefsSetCall).toBeDefined();
-    const prefsValue = (
-      prefsSetCall![0] as Record<
-        string, Record<string, unknown>
-      >
-    )[STORAGE_KEY_PREFS];
-    expect(prefsValue.enabled).toBe(true);
-  });
+      // OpenRouter key must be written
+      const orSetCall = storageSet.mock.calls.find(
+        (call: unknown[]) => {
+          const arg = call[0] as Record<string, unknown>;
+          return STORAGE_KEY_OPENROUTER in arg;
+        },
+      );
+      expect(orSetCall).toBeDefined();
 
-  it('does nothing when both agree', async () => {
-    storageGet.mockImplementation((key: string) => {
-      if (key === STORAGE_KEY_PREFS) {
-        return Promise.resolve({
-          [STORAGE_KEY_PREFS]: { enabled: true },
-        });
-      }
-      if (key === STORAGE_KEY_OPENROUTER) {
-        return Promise.resolve({
-          [STORAGE_KEY_OPENROUTER]: {
-            enabled: true,
-            apiKey: 'sk-test',
-            model: 'test/model',
-            customModels: ['test/model'],
-          },
-        });
-      }
-      return Promise.resolve({});
+      // Prefs key must NOT be written
+      const prefsSetCall = storageSet.mock.calls.find(
+        (call: unknown[]) => {
+          const arg = call[0] as Record<string, unknown>;
+          return STORAGE_KEY_PREFS in arg;
+        },
+      );
+      expect(prefsSetCall).toBeUndefined();
     });
-
-    await reconcileDivergentEnabled();
-
-    // Only PrefsSyncStorage.ready() seed calls — no extra writes
-    // to unify since they already agree.
-    const orSetCalls = storageSet.mock.calls.filter(
-      (call: unknown[]) => {
-        const arg = call[0] as Record<string, unknown>;
-        return STORAGE_KEY_OPENROUTER in arg;
-      },
-    );
-    expect(orSetCalls.length).toBe(0);
   });
-});

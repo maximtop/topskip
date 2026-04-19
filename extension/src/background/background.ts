@@ -5,39 +5,10 @@ import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import {
   registerRuntimeMessages,
 } from '@/background/messaging/register-runtime-messages';
-import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
+import { defaultRegistry } from
+  '@/background/providers/default-registry';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { i18n } from '@/shared/i18n/i18n';
-
-/**
- * On startup, if the two `enabled` flags (`topskip:prefs` vs
- * `topskip:openrouter`) disagree, resolve to `true` (opt-in wins) and
- * write the unified value to both storage keys (FR-016).
- *
- * @returns Promise that settles after reconciliation (or no-op)
- */
-export async function reconcileDivergentEnabled(): Promise<void> {
-  await PrefsSyncStorage.ready();
-  const prefs = await PrefsSyncStorage.load();
-  const orConfig = await OpenRouterStorage.load();
-
-  if (prefs.enabled === orConfig.enabled) {
-    return; // already in sync
-  }
-
-  const unified = true; // opt-in wins per FR-016
-
-  if (!prefs.enabled) {
-    await PrefsSyncStorage.save({ enabled: unified });
-  }
-  if (!orConfig.enabled) {
-    try {
-      await OpenRouterStorage.save({ ...orConfig, enabled: unified });
-    } catch {
-      /* OpenRouter may reject if key/model empty; prefs is authoritative */
-    }
-  }
-}
 
 /**
  * Background service worker: wires lifecycle hooks and messaging (no work at
@@ -57,9 +28,8 @@ export class Background {
     console.info('[TopSkip] Service worker started');
     void i18n.init();
     void PrefsSyncStorage.ready().then(async () => {
-      await reconcileDivergentEnabled();
       await ContentScriptsRegistration.syncFromPrefs();
     });
-    registerRuntimeMessages();
+    registerRuntimeMessages(defaultRegistry);
   }
 }

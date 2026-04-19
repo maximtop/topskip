@@ -1,16 +1,12 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
-import {
-  ContentScriptsRegistration,
-} from '@/background/lifecycle/content-scripts-registration';
-import { PrefsBroadcast } from
-  '@/background/messaging/broadcast-prefs-updated';
-import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
+import { fetchOpenRouterModelList } from
+  '@/background/openrouter/openrouter-models-api';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { getErrorMessage } from '@/shared/error';
 import {
   isOpenRouterBuiltinModelSlug,
+  isValidOpenRouterModelSlug,
   OPENROUTER_DEFAULT_MODEL_SLUG,
 } from '@/shared/openrouter-model-presets';
 import {
@@ -18,6 +14,7 @@ import {
   type GetOpenRouterConfigResponse,
   type MutateOpenRouterCustomModelResponse,
   type SetOpenRouterConfigResponse,
+  type ValidateOpenRouterModelResponse,
 } from '@/shared/messages';
 
 /**
@@ -39,6 +36,7 @@ export class OpenRouterRuntimeMessages {
         | GetOpenRouterConfigResponse
         | SetOpenRouterConfigResponse
         | MutateOpenRouterCustomModelResponse
+        | ValidateOpenRouterModelResponse
       >
     | undefined {
     if (!message || typeof message !== 'object') {
@@ -57,6 +55,9 @@ export class OpenRouterRuntimeMessages {
     if (typeRaw === TOPSKIP_MESSAGE.REMOVE_OPENROUTER_CUSTOM_MODEL) {
       return OpenRouterRuntimeMessages.handleRemoveCustomModel(message);
     }
+    if (typeRaw === TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL) {
+      return OpenRouterRuntimeMessages.handleValidateModelSlug(message);
+    }
     return undefined;
   }
 
@@ -68,7 +69,6 @@ export class OpenRouterRuntimeMessages {
       const c = await OpenRouterStorage.load();
       return {
         ok: true,
-        enabled: c.enabled,
         model: c.model,
         apiKeyMasked: OpenRouterStorage.maskApiKey(c.apiKey),
         customModels: c.customModels,
@@ -86,39 +86,18 @@ export class OpenRouterRuntimeMessages {
     message: object,
   ): Promise<SetOpenRouterConfigResponse> {
     try {
-      const enabledRaw: unknown = Reflect.get(message, 'enabled');
       const apiKeyRaw: unknown = Reflect.get(message, 'apiKey');
       const modelRaw: unknown = Reflect.get(message, 'model');
-      if (typeof enabledRaw !== 'boolean') {
-        return { ok: false, error: 'Invalid enabled' };
-      }
       if (typeof apiKeyRaw !== 'string' || typeof modelRaw !== 'string') {
         return { ok: false, error: 'Invalid apiKey or model' };
       }
       const current = await OpenRouterStorage.load();
       const apiKey = apiKeyRaw.length > 0 ? apiKeyRaw : current.apiKey;
       await OpenRouterStorage.save({
-        enabled: enabledRaw,
         apiKey,
         model: modelRaw,
         customModels: current.customModels,
       });
-
-      // FR-015: propagate enabled to prefs storage + broadcast
-      const newPrefs = { enabled: enabledRaw };
-      try {
-        await PrefsSyncStorage.ready();
-        const prefs = await PrefsSyncStorage.load();
-        if (prefs.enabled !== enabledRaw) {
-          await PrefsSyncStorage.save(newPrefs);
-          await ContentScriptsRegistration.syncFromPrefs();
-          await PrefsBroadcast.sendUpdatedToAllTabs(newPrefs);
-        }
-      } catch {
-        /* prefs sync is best-effort; OpenRouter save already succeeded */
-      }
-      // Always notify connected extension pages (popup, other options tabs)
-      PrefsPortHub.broadcastPrefsUpdate(newPrefs);
 
       return { ok: true };
     } catch (e) {
@@ -192,6 +171,58 @@ export class OpenRouterRuntimeMessages {
         customModels,
       });
       return { ok: true, customModels };
+    } catch (e) {
+      return { ok: false, error: getErrorMessage(e) };
+    }
+  }
+
+  /**
+   * Validates a custom OpenRouter model slug at save time.
+   * 1. Format check: always enforced
+   * 2. API check: only if API key is present
+   * 3. Graceful degradation: network/API errors return unverified (valid: true)
+   *
+   * @param message - VALIDATE payload with `slug` and `apiKey`
+   * @returns Validation result
+   */
+  private static async handleValidateModelSlug(
+    message: object,
+  ): Promise<ValidateOpenRouterModelResponse> {
+    try {
+      const slugRaw: unknown = Reflect.get(message, 'slug');
+      const apiKeyRaw: unknown = Reflect.get(message, 'apiKey');
+      if (typeof slugRaw !== 'string' || typeof apiKeyRaw !== 'string') {
+        return { ok: false, error: 'Invalid parameters' };
+      }
+
+      const slug = slugRaw.trim();
+      if (!isValidOpenRouterModelSlug(slug)) {
+        return {
+          ok: true,
+          valid: false,
+          error: 'Invalid format. Use owner/model-name.',
+        };
+      }
+
+      if (apiKeyRaw.length === 0) {
+        return { ok: true, valid: true, unverified: true };
+      }
+
+      const models = await fetchOpenRouterModelList(apiKeyRaw);
+      if (models.length === 0) {
+        /* API fetch failed or returned empty; graceful: mark as unverified */
+        return { ok: true, valid: true, unverified: true };
+      }
+
+      if (!models.includes(slug)) {
+        return {
+          ok: true,
+          valid: false,
+          error: 'Model not found on OpenRouter.',
+        };
+      }
+
+      return { ok: true, valid: true };
     } catch (e) {
       return { ok: false, error: getErrorMessage(e) };
     }

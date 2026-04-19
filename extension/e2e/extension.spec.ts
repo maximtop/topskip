@@ -217,6 +217,43 @@ test.describe('TopSkip extension', () => {
     }
   });
 
+  test('options page switches between provider panels', async () => {
+    const errors: string[] = [];
+    const context = await chromium.launchPersistentContext(
+      '',
+      extensionContextOptions(),
+    );
+
+    try {
+      trackServiceWorkerConsoleErrors(context, errors);
+      const extensionId = await getExtensionId(context);
+
+      const page = await context.newPage();
+      trackPageErrors(page, 'options', errors);
+      await page.goto(`chrome-extension://${extensionId}/options.html`, {
+        waitUntil: 'domcontentloaded',
+      });
+
+      await page.getByTestId('provider-selector').waitFor();
+      await expect(
+        page.getByRole('heading', { name: 'Custom models' }),
+      ).toBeVisible();
+
+      await page
+        .getByTestId('provider-selector')
+        .getByText('Chrome Built-in')
+        .click({ force: true, timeout: 30_000 });
+      await expect(
+        page.getByText('not available').first(),
+      ).toBeVisible();
+      await expect(page.getByRole('switch', { name: /enable/i })).toBeVisible();
+
+      expectNoCollectedErrors(errors);
+    } finally {
+      await context.close();
+    }
+  });
+
   test('popup and options pages pass axe accessibility audit', async () => {
     const errors: string[] = [];
     const context = await chromium.launchPersistentContext(

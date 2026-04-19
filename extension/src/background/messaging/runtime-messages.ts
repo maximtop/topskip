@@ -1,7 +1,4 @@
-import * as v from 'valibot';
-
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
-import { userPreferencesSchema } from '@/shared/constants';
 import { getErrorMessage } from '@/shared/error';
 import {
   TOPSKIP_MESSAGE,
@@ -14,7 +11,6 @@ import {
 } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
-import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 
 /**
@@ -81,24 +77,12 @@ export class PrefsRuntimeMessages {
     await PrefsSyncStorage.ready();
     try {
       const enabledRaw: unknown = Reflect.get(message, 'enabled');
-      const prefs = v.parse(userPreferencesSchema, {
-        enabled: enabledRaw,
-      });
-      await PrefsSyncStorage.save(prefs);
-
-      // FR-014: propagate enabled to OpenRouter storage
-      try {
-        const orConfig = await OpenRouterStorage.load();
-        if (orConfig.enabled !== prefs.enabled) {
-          await OpenRouterStorage.save({
-            ...orConfig,
-            enabled: prefs.enabled,
-          });
-        }
-      } catch {
-        /* OpenRouter storage may reject if key/model empty + enabled=true;
-           that is fine — the prefs save already succeeded. */
+      if (typeof enabledRaw !== 'boolean') {
+        return { ok: false, error: 'Invalid enabled' };
       }
+      const current = await PrefsSyncStorage.load();
+      const prefs = { ...current, enabled: enabledRaw };
+      await PrefsSyncStorage.save(prefs);
 
       await ContentScriptsRegistration.syncFromPrefs();
       await PrefsBroadcast.sendUpdatedToAllTabs(prefs);

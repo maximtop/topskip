@@ -11,7 +11,7 @@
     "noEmit": true,
     "isolatedModules": true,
     "resolveJsonModule": true,
-    "types": ["chrome", "node"],
+    "types": ["chrome", "node", "dom-chromium-ai"],
     "noUnusedLocals": true,
     "noUnusedParameters": true,
     "noFallthroughCasesInSwitch": true,

@@ -117,11 +117,13 @@ describe('PrefsPortHub', () => {
     onConnectListeners[0](m1.port);
     onConnectListeners[0](m2.port);
 
-    PrefsPortHub.broadcastPrefsUpdate({ enabled: false });
+    PrefsPortHub.broadcastPrefsUpdate(
+      { enabled: false, providerId: 'openrouter' },
+    );
 
     const expected = {
       type: TOPSKIP_MESSAGE.PREFS_UPDATED,
-      prefs: { enabled: false },
+      prefs: { enabled: false, providerId: 'openrouter' },
     };
     expect(m1.port.postMessage).toHaveBeenCalledWith(expected);
     expect(m2.port.postMessage).toHaveBeenCalledWith(expected);
@@ -134,7 +136,9 @@ describe('PrefsPortHub', () => {
     onConnectListeners[0](m2.port);
     m2.simulateDisconnect();
 
-    PrefsPortHub.broadcastPrefsUpdate({ enabled: true });
+    PrefsPortHub.broadcastPrefsUpdate(
+      { enabled: true, providerId: 'openrouter' },
+    );
     expect(m1.port.postMessage).toHaveBeenCalledOnce();
     expect(m2.port.postMessage).not.toHaveBeenCalled();
   });

@@ -30,7 +30,6 @@ describe('OpenRouterStorage', () => {
   it('loads defaults when storage empty', async () => {
     mocks.get.mockResolvedValue({});
     const c = await OpenRouterStorage.load();
-    expect(c.enabled).toBe(false);
     expect(c.apiKey).toBe('');
     expect(c.model).toBe('');
     expect(c.customModels).toEqual([]);
@@ -39,14 +38,12 @@ describe('OpenRouterStorage', () => {
   it('loads persisted config', async () => {
     mocks.get.mockResolvedValue({
       [STORAGE_KEY_OPENROUTER]: {
-        enabled: true,
         apiKey: 'secret',
         model: OPENROUTER_DEFAULT_MODEL_SLUG,
         customModels: ['vendor/custom'],
       },
     });
     const c = await OpenRouterStorage.load();
-    expect(c.enabled).toBe(true);
     expect(c.apiKey).toBe('secret');
     expect(c.model).toBe(OPENROUTER_DEFAULT_MODEL_SLUG);
     expect(c.customModels).toEqual(['vendor/custom']);
@@ -55,7 +52,6 @@ describe('OpenRouterStorage', () => {
   it('loads legacy row without customModels key as empty array', async () => {
     mocks.get.mockResolvedValue({
       [STORAGE_KEY_OPENROUTER]: {
-        enabled: false,
         apiKey: '',
         model: OPENROUTER_DEFAULT_MODEL_SLUG,
       },
@@ -67,7 +63,6 @@ describe('OpenRouterStorage', () => {
   it('migrates custom-only active model into customModels list', async () => {
     mocks.get.mockResolvedValue({
       [STORAGE_KEY_OPENROUTER]: {
-        enabled: false,
         apiKey: '',
         model: 'acme/promo-model',
         customModels: [],
@@ -79,7 +74,6 @@ describe('OpenRouterStorage', () => {
     expect(mocks.set).toHaveBeenCalledTimes(1);
     expect(mocks.set.mock.calls[0]?.[0]).toEqual({
       [STORAGE_KEY_OPENROUTER]: {
-        enabled: false,
         apiKey: '',
         model: 'acme/promo-model',
         customModels: ['acme/promo-model'],
@@ -87,28 +81,15 @@ describe('OpenRouterStorage', () => {
     });
   });
 
-  it('save rejects enabled without key and model', async () => {
-    await expect(
-      OpenRouterStorage.save({
-        enabled: true,
-        apiKey: '',
-        model: 'm',
-        customModels: [],
-      }),
-    ).rejects.toThrow();
-  });
-
   it('save persists customModels', async () => {
     mocks.set.mockResolvedValue(undefined);
     await OpenRouterStorage.save({
-      enabled: false,
       apiKey: '',
       model: OPENROUTER_DEFAULT_MODEL_SLUG,
       customModels: ['a/b'],
     });
     expect(mocks.set.mock.calls[0]?.[0]).toEqual({
       [STORAGE_KEY_OPENROUTER]: {
-        enabled: false,
         apiKey: '',
         model: OPENROUTER_DEFAULT_MODEL_SLUG,
         customModels: ['a/b'],

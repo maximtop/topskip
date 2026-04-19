@@ -2,6 +2,7 @@ import * as v from 'valibot';
 
 import browser from '@/shared/browser';
 import {
+  DEFAULT_PROVIDER_ID,
   STORAGE_KEY_PREFS,
   userPreferencesSchema,
   type UserPreferences,
@@ -14,7 +15,10 @@ import {
 export class PrefsSyncStorage {
   private constructor() {}
 
-  private static readonly defaultPrefs: UserPreferences = { enabled: true };
+  private static readonly defaultPrefs: UserPreferences = {
+    enabled: true,
+    providerId: DEFAULT_PROVIDER_ID,
+  };
 
   private static initPromise: Promise<void> | null = null;
 

@@ -7,3 +7,4 @@
 - [ ] add centry for error reporting
 - [ ] add logger
 - [ ] translate to 20 locales
+- [ ] LRU cache for promo-detection results (capacity ~100 entries, keyed by videoId + provider): avoid re-analyzing the same video repeatedly. Add an advanced-settings toggle to enable/disable caching and a button to clear the cache.

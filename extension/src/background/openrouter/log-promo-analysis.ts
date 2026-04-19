@@ -7,6 +7,7 @@ const MAX_RAW_ASSISTANT_IN_BUNDLE = 20_000;
 export type PromoAnalysisBundleOutcome =
   | { type: 'openrouter_error'; error: string }
   | { type: 'parse_error'; error: string }
+  | { type: 'adapter_error'; error: string }
   | { type: 'no_promo' }
   | { type: 'promo_blocks'; blocks: PromoBlock[] };
 
@@ -131,6 +132,11 @@ function formatOutcomeLines(outcome: PromoAnalysisBundleOutcome): string[] {
         'outcome: assistant output failed validation',
         `error: ${outcome.error}`,
       ];
+    case 'adapter_error':
+      return [
+        'outcome: adapter request failed',
+        `error: ${outcome.error}`,
+      ];
     case 'no_promo':
       return ['outcome: hasPromo false (no blocks)'];
     case 'promo_blocks':
@@ -178,6 +184,7 @@ export function buildPromoAnalysisLogBundle(params: {
   maxTranscriptChars: number;
   mergedText: string;
   mergedTruncated: boolean;
+  providerId: string;
   model: string;
   rawAssistant: string | null;
   outcome: PromoAnalysisBundleOutcome;
@@ -187,11 +194,12 @@ export function buildPromoAnalysisLogBundle(params: {
     BUNDLE_TITLE,
     `videoId: ${params.videoId}`,
     `language: ${params.languageCode}`,
+    `providerId: ${params.providerId}`,
     `captionSegmentCount: ${String(params.segmentCount)}`,
     `mergedTranscriptChars: ${String(used)} / ` +
       `${String(params.maxTranscriptChars)} (budget)`,
     `mergedTruncated: ${params.mergedTruncated ? 'yes' : 'no'}`,
-    `openRouterModel: ${params.model}`,
+    `model: ${params.model}`,
     '',
     ...formatOutcomeLines(params.outcome),
     '',

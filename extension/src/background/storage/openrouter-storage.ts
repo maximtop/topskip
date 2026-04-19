@@ -6,14 +6,11 @@ import {
   isOpenRouterBuiltinModelSlug,
 } from '@/shared/openrouter-model-presets';
 
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
-
 /**
  * Persisted OpenRouter / LLM settings (`browser.storage.local`, background
  * only).
  */
 export type OpenRouterConfig = {
-  enabled: boolean;
   apiKey: string;
   model: string;
   /**
@@ -23,7 +20,6 @@ export type OpenRouterConfig = {
 };
 
 const openRouterConfigSchema = v.object({
-  enabled: v.boolean(),
   apiKey: v.string(),
   model: v.string(),
   customModels: v.fallback(v.array(v.string()), []),
@@ -36,7 +32,6 @@ export class OpenRouterStorage {
   private constructor() {}
 
   private static readonly defaultConfig: OpenRouterConfig = {
-    enabled: false,
     apiKey: '',
     model: '',
     customModels: [],
@@ -97,22 +92,13 @@ export class OpenRouterStorage {
   }
 
   /**
-   * Persists config after validation. When `enabled` is true, `apiKey` and
-   * `model` MUST be non-empty (FR-006).
+   * Persists config after validation.
    *
    * @param config - Config to save
    * @returns Promise that resolves when storage write completes
    */
   static async save(config: OpenRouterConfig): Promise<void> {
     const c = v.parse(openRouterConfigSchema, config);
-    if (c.enabled && (c.apiKey.length === 0 || c.model.length === 0)) {
-      throw new Error(
-        [
-          'OpenRouter API key and model are required when',
-          'LLM detection is enabled',
-        ].join(' '),
-      );
-    }
     await browser.storage.local.set({ [STORAGE_KEY_OPENROUTER]: c });
   }
 
@@ -128,19 +114,5 @@ export class OpenRouterStorage {
       return '****';
     }
     return `****${apiKey.slice(-4)}`;
-  }
-
-  /**
-   * @returns Whether LLM analysis may run (main prefs on + OpenRouter on +
-   * key)
-   */
-  static async canRunPromoAnalysis(): Promise<boolean> {
-    await PrefsSyncStorage.ready();
-    const prefs = await PrefsSyncStorage.load();
-    if (!prefs.enabled) {
-      return false;
-    }
-    const or = await OpenRouterStorage.load();
-    return or.enabled && or.apiKey.length > 0 && or.model.length > 0;
   }
 }

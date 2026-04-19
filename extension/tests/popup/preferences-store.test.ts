@@ -34,13 +34,37 @@ vi.mock('@/shared/browser', () => ({
   },
 }));
 
+/**
+ * Default mock implementation that dispatches by message type.
+ * GET_PREFS → prefs response; GET_ACTIVE_PROVIDER → provider response.
+ *
+ * @param msg - Inbound message from sendMessage.
+ * @returns Mock response promise.
+ */
+function defaultSendMessage(msg: unknown): Promise<unknown> {
+  const type: unknown =
+    msg && typeof msg === 'object'
+      ? Reflect.get(msg, 'type')
+      : undefined;
+  if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+    return Promise.resolve({
+      ok: true,
+      providerId: 'openrouter',
+      displayName: 'OpenRouter',
+      modelName: 'google/gemini-2.0-flash',
+    });
+  }
+  // Default: prefs response
+  return Promise.resolve({
+    ok: true,
+    prefs: { enabled: false, providerId: 'openrouter' },
+  });
+}
+
 describe('PreferencesStore', () => {
   beforeEach(() => {
     mocks.sendMessage.mockReset();
-    mocks.sendMessage.mockResolvedValue({
-      ok: true,
-      prefs: { enabled: false },
-    });
+    mocks.sendMessage.mockImplementation(defaultSendMessage);
   });
 
   afterEach(() => {
@@ -56,6 +80,31 @@ describe('PreferencesStore', () => {
     });
   });
 
+  it('load applies stored enabled flag and providerId', async () => {
+    mocks.sendMessage.mockImplementation((msg: unknown) => {
+      const type: unknown =
+        msg && typeof msg === 'object'
+          ? Reflect.get(msg, 'type')
+          : undefined;
+      if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+        return Promise.resolve({
+          ok: true,
+          providerId: 'chrome-prompt-api',
+          displayName: 'Chrome Built-in',
+          modelName: 'Gemini Nano',
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        prefs: { enabled: false, providerId: 'chrome-prompt-api' },
+      });
+    });
+    const store = new PreferencesStore();
+    await store.load();
+    expect(store.enabled).toBe(false);
+    expect(store.providerId).toBe('chrome-prompt-api');
+  });
+
   it('setEnabled sends SET_PREFS to background', async () => {
     mocks.sendMessage.mockResolvedValue({ ok: true });
     const store = new PreferencesStore();
@@ -67,9 +116,15 @@ describe('PreferencesStore', () => {
   });
 
   it('load rejects when background returns error', async () => {
-    mocks.sendMessage.mockResolvedValueOnce({
-      ok: false,
-      error: 'storage failure',
+    mocks.sendMessage.mockImplementation((msg: unknown) => {
+      const type: unknown =
+        msg && typeof msg === 'object'
+          ? Reflect.get(msg, 'type')
+          : undefined;
+      if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+        return Promise.resolve({ ok: false, error: 'unavailable' });
+      }
+      return Promise.resolve({ ok: false, error: 'storage failure' });
     });
 
     const store = new PreferencesStore();
@@ -105,17 +160,19 @@ describe('PreferencesStore', () => {
     // Simulate a message from the background
     listener({
       type: 'TOPSKIP_PREFS_UPDATED',
-      prefs: { enabled: false },
+      prefs: { enabled: false, providerId: 'openrouter' },
     });
 
     expect(store.enabled).toBe(false);
+    expect(store.providerId).toBe('openrouter');
 
     listener({
       type: 'TOPSKIP_PREFS_UPDATED',
-      prefs: { enabled: true },
+      prefs: { enabled: true, providerId: 'chrome-prompt-api' },
     });
 
     expect(store.enabled).toBe(true);
+    expect(store.providerId).toBe('chrome-prompt-api');
   });
 
   it('ignores invalid messages on the port', () => {
@@ -138,5 +195,194 @@ describe('PreferencesStore', () => {
     store.connectPort();
     store.disconnectPort();
     expect(mocks.connectDisconnect).toHaveBeenCalledOnce();
+  });
+
+  it(
+    'load populates providerDisplayName and modelDisplayName',
+    async () => {
+    const store = new PreferencesStore();
+    await store.load();
+    expect(store.providerDisplayName).toBe('OpenRouter');
+    expect(store.modelDisplayName).toBe('google/gemini-2.0-flash');
+    expect(mocks.sendMessage).toHaveBeenCalledWith({
+      type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
+    });
+  });
+
+  it(
+    'load sets empty display names when GET_ACTIVE_PROVIDER fails',
+    async () => {
+    mocks.sendMessage.mockImplementation((msg: unknown) => {
+      const type: unknown =
+        msg && typeof msg === 'object'
+          ? Reflect.get(msg, 'type')
+          : undefined;
+      if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+        return Promise.resolve({ ok: false, error: 'unavailable' });
+      }
+      return Promise.resolve({
+        ok: true,
+        prefs: { enabled: true, providerId: 'openrouter' },
+      });
+    });
+    const store = new PreferencesStore();
+    await store.load();
+    expect(store.providerDisplayName).toBe('');
+    expect(store.modelDisplayName).toBe('');
+  });
+
+  it(
+    'port message with changed providerId triggers refreshProviderDisplay',
+    async () => {
+    const store = new PreferencesStore();
+    await store.load();
+
+    // Seed refresh response for the provider change
+    mocks.sendMessage.mockImplementation((msg: unknown) => {
+      const type: unknown =
+        msg && typeof msg === 'object'
+          ? Reflect.get(msg, 'type')
+          : undefined;
+      if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+        return Promise.resolve({
+          ok: true,
+          providerId: 'chrome-prompt-api',
+          displayName: 'Chrome Built-in',
+          modelName: 'Gemini Nano',
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    store.connectPort();
+
+    const listener = mocks.connectOnMessage.addListener.mock
+      .calls[0][0] as (msg: unknown) => void;
+
+    // Simulate provider change arriving on port
+    listener({
+      type: 'TOPSKIP_PREFS_UPDATED',
+      prefs: { enabled: true, providerId: 'chrome-prompt-api' },
+    });
+
+    // refreshProviderDisplay is async — flush microtasks
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.providerDisplayName).toBe('Chrome Built-in');
+    expect(store.modelDisplayName).toBe('Gemini Nano');
+  });
+
+  it(
+    'port message with same providerId does NOT call GET_ACTIVE_PROVIDER',
+    async () => {
+    const store = new PreferencesStore();
+    await store.load();
+    const callsBefore = mocks.sendMessage.mock.calls.length;
+
+    store.connectPort();
+    const listener = mocks.connectOnMessage.addListener.mock
+      .calls[0][0] as (msg: unknown) => void;
+
+    // Same provider as loaded ('openrouter')
+    listener({
+      type: 'TOPSKIP_PREFS_UPDATED',
+      prefs: { enabled: false, providerId: 'openrouter' },
+    });
+
+    await Promise.resolve();
+
+    // No extra sendMessage call for GET_ACTIVE_PROVIDER
+    expect(mocks.sendMessage.mock.calls.length).toBe(callsBefore);
+  });
+
+  it('load fetches chrome model availability for chrome provider', async () => {
+    mocks.sendMessage.mockImplementation((msg: unknown) => {
+      const type: unknown =
+        msg && typeof msg === 'object'
+          ? Reflect.get(msg, 'type')
+          : undefined;
+
+      if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+        return Promise.resolve({
+          ok: true,
+          providerId: 'chrome-prompt-api',
+          displayName: 'Chrome Built-in',
+          modelName: 'Gemini Nano',
+        });
+      }
+      if (type === TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS) {
+        return Promise.resolve({
+          ok: true,
+          availability: 'downloading',
+          downloadProgress: 25,
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        prefs: { enabled: true, providerId: 'chrome-prompt-api' },
+      });
+    });
+
+    const store = new PreferencesStore();
+    await store.load();
+
+    expect(store.chromeModelAvailability).toBe('downloading');
+    expect(mocks.sendMessage).toHaveBeenCalledWith({
+      type: TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS,
+    });
+  });
+
+  it('load skips chrome model availability for openrouter', async () => {
+    const store = new PreferencesStore();
+    await store.load();
+
+    expect(store.chromeModelAvailability).toBeNull();
+    expect(mocks.sendMessage).not.toHaveBeenCalledWith({
+      type: TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS,
+    });
+  });
+
+  it('provider switch to chrome refreshes model availability', async () => {
+    const store = new PreferencesStore();
+    await store.load();
+
+    mocks.sendMessage.mockImplementation((msg: unknown) => {
+      const type: unknown =
+        msg && typeof msg === 'object'
+          ? Reflect.get(msg, 'type')
+          : undefined;
+
+      if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+        return Promise.resolve({
+          ok: true,
+          providerId: 'chrome-prompt-api',
+          displayName: 'Chrome Built-in',
+          modelName: 'Gemini Nano',
+        });
+      }
+      if (type === TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS) {
+        return Promise.resolve({
+          ok: true,
+          availability: 'downloadable',
+          downloadProgress: null,
+        });
+      }
+      return Promise.resolve({ ok: true });
+    });
+
+    store.connectPort();
+    const listener = mocks.connectOnMessage.addListener.mock
+      .calls[0][0] as (msg: unknown) => void;
+
+    listener({
+      type: TOPSKIP_MESSAGE.PREFS_UPDATED,
+      prefs: { enabled: true, providerId: 'chrome-prompt-api' },
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(store.chromeModelAvailability).toBe('downloadable');
   });
 });

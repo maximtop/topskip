@@ -40,6 +40,7 @@ describe('buildPromoAnalysisLogBundle', () => {
       maxTranscriptChars: 100,
       mergedText: '[0] hello',
       mergedTruncated: false,
+      providerId: 'openrouter',
       model: 'm/x',
       rawAssistant: '{"hasPromo":false}',
       outcome: { type: 'no_promo' },
@@ -61,6 +62,7 @@ describe('buildPromoAnalysisLogBundle', () => {
       maxTranscriptChars: 500,
       mergedText: ['[10] before', '[20] promo read', '[30] after'].join('\n'),
       mergedTruncated: false,
+      providerId: 'openrouter',
       model: 'm',
       rawAssistant: '{}',
       outcome: {
@@ -81,6 +83,7 @@ describe('buildPromoAnalysisLogBundle', () => {
       maxTranscriptChars: 10,
       mergedText: '',
       mergedTruncated: false,
+      providerId: 'openrouter',
       model: 'm',
       rawAssistant: null,
       outcome: { type: 'openrouter_error', error: 'HTTP 500' },

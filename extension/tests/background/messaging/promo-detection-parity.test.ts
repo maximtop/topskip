@@ -89,13 +89,12 @@ describe(
       storageGet.mockImplementation((key: string) => {
         if (key === STORAGE_KEY_PREFS) {
           return Promise.resolve({
-            [STORAGE_KEY_PREFS]: { enabled: true },
+            [STORAGE_KEY_PREFS]: { enabled: true, providerId: 'openrouter' },
           });
         }
         if (key === STORAGE_KEY_OPENROUTER) {
           return Promise.resolve({
             [STORAGE_KEY_OPENROUTER]: {
-              enabled: true,
               apiKey: 'sk-test',
               model: 'test/model',
               customModels: ['test/model'],

@@ -18,6 +18,7 @@ import browser from '@/shared/browser';
 import {
   TOPSKIP_MESSAGE,
   type GetDetectionStatusResponse,
+  type ProviderAvailabilityMessage,
   type PromoDetectionStatePayload,
 } from '@/shared/messages';
 import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
@@ -46,6 +47,7 @@ function isGetDetectionOk(
  */
 function detectionLabel(s: PromoDetectionStatus): string {
   switch (s) {
+    // FIXME why not enums are used here? or map?
     case 'not_configured':
       return translator.getMessage('popup_detection_not_configured');
     case 'unavailable':
@@ -88,6 +90,7 @@ type PopupViewModel = {
   statusHeadline: string;
   statusBody: string | null;
   settingsLabel: string;
+  providerLabel: string;
 };
 
 /**
@@ -97,13 +100,30 @@ type PopupViewModel = {
  * @param args - Current prefs and detection state.
  * @returns The resolved view-model.
  */
-function buildPopupViewModel(args: {
+export function buildPopupViewModel(args: {
   enabled: boolean;
   detectionState: PromoDetectionStatePayload | null;
   prefsError: string | null;
   detectionError: string | null;
+  providerId: string;
+  providerDisplayName: string;
+  modelDisplayName: string;
+  chromeModelAvailability: ProviderAvailabilityMessage | null;
 }): PopupViewModel {
-  const { enabled, detectionState, prefsError, detectionError } = args;
+  const {
+    enabled,
+    detectionState,
+    prefsError,
+    detectionError,
+    providerId,
+    providerDisplayName,
+    modelDisplayName,
+    chromeModelAvailability,
+  } = args;
+
+  const providerLabel = modelDisplayName
+    ? `${providerDisplayName} · ${modelDisplayName}`
+    : providerDisplayName;
 
   if (prefsError !== null || detectionError !== null) {
     const message = prefsError ?? detectionError ?? 'Status unavailable';
@@ -116,6 +136,7 @@ function buildPopupViewModel(args: {
       statusHeadline: message,
       statusBody: null,
       settingsLabel: 'Open settings',
+      providerLabel,
     };
   }
 
@@ -134,6 +155,7 @@ function buildPopupViewModel(args: {
         'You can still open settings and ' +
         'review your model setup.',
       settingsLabel: 'Open settings',
+      providerLabel,
     };
   }
 
@@ -152,6 +174,58 @@ function buildPopupViewModel(args: {
         'Detection details will appear here ' +
         'when a video is available.',
       settingsLabel: 'Open settings',
+      providerLabel,
+    };
+  }
+
+  if (
+    providerId === 'chrome-prompt-api' &&
+    chromeModelAvailability !== null &&
+    chromeModelAvailability !== 'available'
+  ) {
+    if (chromeModelAvailability === 'downloading') {
+      return {
+        tone: 'brand',
+        badgeLabel: 'Downloading',
+        badgeColor: 'brand',
+        title: 'Preparing Chrome Built-in model',
+        description: 'Gemini Nano is downloading on this device.',
+        statusHeadline: 'Model downloading...',
+        statusBody:
+          'Keep this popup open or check settings for progress.',
+        settingsLabel: 'Open settings',
+        providerLabel,
+      };
+    }
+
+    if (chromeModelAvailability === 'unavailable') {
+      return {
+        tone: 'warning',
+        badgeLabel: 'Unavailable',
+        badgeColor: 'warning',
+        title: 'Chrome model unavailable',
+        description:
+          'This device does not currently meet Chrome Built-in requirements.',
+        statusHeadline: 'Model unavailable - check settings',
+        statusBody:
+          'Open settings to see compatibility requirements and setup guidance.',
+        settingsLabel: 'Open settings',
+        providerLabel,
+      };
+    }
+
+    return {
+      tone: 'neutral',
+      badgeLabel: 'Setup',
+      badgeColor: 'gray',
+      title: 'Download required',
+      description:
+        'Chrome Built-in is selected but Gemini Nano is not downloaded yet.',
+      statusHeadline: 'Model not downloaded yet',
+      statusBody:
+        'Open settings to download the model and enable on-device analysis.',
+      settingsLabel: 'Open settings',
+      providerLabel,
     };
   }
 
@@ -163,14 +237,15 @@ function buildPopupViewModel(args: {
         badgeColor: 'warning',
         title: 'Finish setup',
         description:
-          'Add your OpenRouter key to enable ' +
-          'transcript analysis for promo detection.',
+          `Configure ${providerDisplayName || 'your LLM provider'} ` +
+          'to enable transcript analysis for promo detection.',
         statusHeadline:
           'LLM detection is not configured yet.',
         statusBody:
           'Save an API key and select a default ' +
           'model to activate analysis.',
         settingsLabel: 'Continue setup',
+        providerLabel,
       };
     case 'unavailable':
       return {
@@ -188,6 +263,7 @@ function buildPopupViewModel(args: {
           'This can happen before captions are ' +
           'ready or outside supported watch states.',
         settingsLabel: 'Open settings',
+        providerLabel,
       };
     case 'analyzing':
       return {
@@ -203,6 +279,7 @@ function buildPopupViewModel(args: {
           'Detected sponsor windows will appear ' +
           'here when ready.',
         settingsLabel: 'Open settings',
+        providerLabel,
       };
     case 'detected': {
       const count = detectionState.promoBlocks?.length ?? 0;
@@ -222,6 +299,7 @@ function buildPopupViewModel(args: {
             ? formatPromoBlocksSummary(detectionState.promoBlocks)
             : null,
         settingsLabel: 'Open settings',
+        providerLabel,
       };
     }
     case 'no_promo':
@@ -238,6 +316,7 @@ function buildPopupViewModel(args: {
           'TopSkip will keep monitoring the ' +
           'video as captions update.',
         settingsLabel: 'Open settings',
+        providerLabel,
       };
     case 'error':
       return {
@@ -255,6 +334,7 @@ function buildPopupViewModel(args: {
           'Open settings to verify the API key ' +
           'and selected model.',
         settingsLabel: 'Open settings',
+        providerLabel,
       };
     default:
       return {
@@ -269,6 +349,7 @@ function buildPopupViewModel(args: {
           detectionLabel(detectionState.status),
         statusBody: null,
         settingsLabel: 'Open settings',
+        providerLabel,
       };
   }
 }
@@ -454,6 +535,10 @@ export const PopupApp = observer(function PopupApp() {
     detectionState,
     prefsError,
     detectionError,
+    providerId: store.providerId,
+    providerDisplayName: store.providerDisplayName,
+    modelDisplayName: store.modelDisplayName,
+    chromeModelAvailability: store.chromeModelAvailability,
   });
 
   const detectedBlocks =
@@ -528,6 +613,13 @@ export const PopupApp = observer(function PopupApp() {
             />
           </Group>
         </Paper>
+        {view.providerLabel ? (
+          <Group gap={4} mt={8} align="center">
+            <Text size="xs" c="dimmed">
+              {`⚡ ${view.providerLabel}`}
+            </Text>
+          </Group>
+        ) : null}
       </Paper>
 
       <Paper p="md" radius="xl">

@@ -14,6 +14,9 @@ import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
 export const TOPSKIP_MESSAGE = {
   GET_PREFS: 'TOPSKIP_GET_PREFS',
   SET_PREFS: 'TOPSKIP_SET_PREFS',
+  GET_ACTIVE_PROVIDER: 'TOPSKIP_GET_ACTIVE_PROVIDER',
+  SET_ACTIVE_PROVIDER: 'TOPSKIP_SET_ACTIVE_PROVIDER',
+  GET_PROVIDER_LIST: 'TOPSKIP_GET_PROVIDER_LIST',
   PREFS_UPDATED: 'TOPSKIP_PREFS_UPDATED',
   /**
    * Watch content script fetched captions and forwards them for service worker
@@ -29,9 +32,12 @@ export const TOPSKIP_MESSAGE = {
   SET_OPENROUTER_CONFIG: 'TOPSKIP_SET_OPENROUTER_CONFIG',
   ADD_OPENROUTER_CUSTOM_MODEL: 'TOPSKIP_ADD_OPENROUTER_CUSTOM_MODEL',
   REMOVE_OPENROUTER_CUSTOM_MODEL: 'TOPSKIP_REMOVE_OPENROUTER_CUSTOM_MODEL',
+  VALIDATE_OPENROUTER_MODEL: 'TOPSKIP_VALIDATE_OPENROUTER_MODEL',
   GET_DETECTION_STATUS: 'TOPSKIP_GET_DETECTION_STATUS',
   PROMO_DETECTION_UPDATED: 'TOPSKIP_PROMO_DETECTION_UPDATED',
   PROMO_BLOCKS_DETECTED: 'TOPSKIP_PROMO_BLOCKS_DETECTED',
+  GET_CHROME_PROMPT_API_STATUS: 'TOPSKIP_GET_CHROME_PROMPT_API_STATUS',
+  TRIGGER_CHROME_MODEL_DOWNLOAD: 'TOPSKIP_TRIGGER_CHROME_MODEL_DOWNLOAD',
   /**
    * Content script forwards a log line to the background
    * service worker console for easier debugging.
@@ -65,7 +71,6 @@ export type CaptionsFromContentPayload =
 export type GetOpenRouterConfigResponse =
   | {
       ok: true;
-      enabled: boolean;
       model: string;
       apiKeyMasked: string | null;
       customModels: string[];
@@ -97,6 +102,49 @@ export type GetDetectionStatusResponse =
   | { ok: true; state: PromoDetectionStatePayload | null }
   | { ok: false; error: string };
 
+export type ProviderAvailabilityMessage =
+  | 'available'
+  | 'downloadable'
+  | 'downloading'
+  | 'unavailable';
+
+export type ProviderListItem = {
+  id: string;
+  displayName: string;
+  availability: ProviderAvailabilityMessage;
+};
+
+export type GetActiveProviderResponse =
+  | { ok: true; providerId: string; displayName: string; modelName: string }
+  | { ok: false; error: string };
+
+export type SetActiveProviderResponse =
+  | { ok: true }
+  | { ok: false; error: string };
+
+export type GetProviderListResponse =
+  | { ok: true; providers: ProviderListItem[] }
+  | { ok: false; error: string };
+
+export type GetChromePromptApiStatusResponse =
+  | {
+      ok: true;
+      availability: ProviderAvailabilityMessage;
+      downloadProgress: number | null;
+    }
+  | { ok: false; error: string };
+
+export type TriggerChromeModelDownloadResponse =
+  | { ok: true }
+  | { ok: false; error: string };
+
+/**
+ * Response from slug validation: format check + optional API check.
+ */
+export type ValidateOpenRouterModelResponse =
+  | { ok: true; valid: boolean; error?: string; unverified?: boolean }
+  | { ok: false; error: string };
+
 /**
  * Log level for content-to-background log forwarding.
  */
@@ -105,6 +153,12 @@ export type ContentLogLevel = 'info' | 'warn' | 'error';
 export type TopSkipRuntimeMessage =
   | { type: typeof TOPSKIP_MESSAGE.GET_PREFS }
   | { type: typeof TOPSKIP_MESSAGE.SET_PREFS; enabled: boolean }
+  | { type: typeof TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER }
+  | {
+      type: typeof TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER;
+      providerId: string;
+    }
+  | { type: typeof TOPSKIP_MESSAGE.GET_PROVIDER_LIST }
   | { type: typeof TOPSKIP_MESSAGE.PREFS_UPDATED; prefs: UserPreferences }
   | {
       type: typeof TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT;
@@ -114,7 +168,6 @@ export type TopSkipRuntimeMessage =
   | { type: typeof TOPSKIP_MESSAGE.GET_OPENROUTER_CONFIG }
   | {
       type: typeof TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG;
-      enabled: boolean;
       apiKey: string;
       model: string;
     }
@@ -126,6 +179,11 @@ export type TopSkipRuntimeMessage =
       type: typeof TOPSKIP_MESSAGE.REMOVE_OPENROUTER_CUSTOM_MODEL;
       slug: string;
     }
+  | {
+      type: typeof TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL;
+      slug: string;
+      apiKey: string;
+    }
   | { type: typeof TOPSKIP_MESSAGE.GET_DETECTION_STATUS }
   | {
       type: typeof TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED;
@@ -136,6 +194,8 @@ export type TopSkipRuntimeMessage =
       videoId: string;
       promoBlocks: PromoBlock[];
     }
+  | { type: typeof TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS }
+  | { type: typeof TOPSKIP_MESSAGE.TRIGGER_CHROME_MODEL_DOWNLOAD }
   | {
       type: typeof TOPSKIP_MESSAGE.CONTENT_LOG;
       level: ContentLogLevel;

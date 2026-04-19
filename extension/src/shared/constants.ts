@@ -29,10 +29,16 @@ export const STORAGE_KEY_OPENROUTER = 'topskip:openrouter';
 export const MAX_CAPTION_TRANSCRIPT_CHARS = 120_000;
 
 /**
+ * Default provider ID for new installs.
+ */
+export const DEFAULT_PROVIDER_ID = 'openrouter';
+
+/**
  * Validates persisted preference objects from storage.
  */
 export const userPreferencesSchema = v.object({
   enabled: v.boolean(),
+  providerId: v.string(),
 });
 
 export type UserPreferences = v.InferOutput<typeof userPreferencesSchema>;

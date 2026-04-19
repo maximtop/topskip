@@ -45,3 +45,14 @@ export const OPENROUTER_DEFAULT_MODEL_SLUG: string =
 export function isOpenRouterBuiltinModelSlug(slug: string): boolean {
   return OPENROUTER_BUILTIN_MODEL_SLUGS.includes(slug);
 }
+
+/**
+ * Validates that a slug matches the `owner/model-name` format.
+ * Format regex: `/^[a-z0-9_-]+\/[a-z0-9._-]+$/i`
+ *
+ * @param slug - Model slug to validate
+ * @returns Whether the slug matches the required format
+ */
+export function isValidOpenRouterModelSlug(slug: string): boolean {
+  return /^[a-z0-9_-]+\/[a-z0-9._-]+$/i.test(slug);
+}

@@ -10,13 +10,13 @@ import { extractMessageFromValiError } from '@/shared/valibot';
  * @returns Message suitable for logging or API error fields.
  */
 export function getErrorMessage(error: unknown): string {
-  if (isValiError(error)) {
-    return extractMessageFromValiError(error);
-  }
+    if (isValiError(error)) {
+        return extractMessageFromValiError(error);
+    }
 
-  if (error instanceof Error) {
-    return error.message;
-  }
+    if (error instanceof Error) {
+        return error.message;
+    }
 
-  return String(error);
+    return String(error);
 }

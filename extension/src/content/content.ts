@@ -8,15 +8,13 @@ import { YoutubeWatch } from '@/content/youtube-watch';
  * reads `_locales/` without fetch).
  */
 export class Content {
-  private constructor() {}
-
-  /**
-   * Runs YouTube watch logic when the current URL matches TopSkip rules.
-   */
-  static init(): void {
-    if (!YoutubeWatch.shouldActivateForPage()) {
-      return;
+    /**
+     * Runs YouTube watch logic when the current URL matches TopSkip rules.
+     */
+    static init(): void {
+        if (!YoutubeWatch.shouldActivateForPage()) {
+            return;
+        }
+        YoutubeWatch.init();
     }
-    YoutubeWatch.init();
-  }
 }

@@ -1,68 +1,38 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
-import {
-  TOPSKIP_MESSAGE,
-  type ContentLogLevel,
-} from '@/shared/messages';
+import { safeParse } from 'valibot';
 
-const LEVEL_FN: Record<
-  ContentLogLevel,
-  (...a: unknown[]) => void
-> = {
-  info: console.info,
-  warn: console.warn,
-  error: console.error,
-};
+import { contentLogMessageSchema } from '@/shared/messages';
+import { LOG_PREFIX_CONTENT } from '@/shared/constants';
 
 /**
  * Handles `TOPSKIP_CONTENT_LOG` messages from the content
  * script and replays them to the service worker console.
  */
 export class ContentLogMessages {
-  private constructor() {}
+    /**
+     * If `message` is a valid content-log message, prints it and returns
+     * `undefined` (no response needed).  Otherwise returns `undefined` so the
+     * next handler in the chain can try.
+     *
+     * @param message - Opaque runtime message.
+     * @param sender - Extension message sender metadata.
+     * @returns `undefined` always (fire-and-forget).
+     */
+    static handle(message: unknown, sender: Runtime.MessageSender): undefined {
+        const parsed = safeParse(contentLogMessageSchema, message);
+        if (!parsed.success) {
+            return undefined;
+        }
 
-  /**
-   * If `message` is a content-log message, prints it and
-   * returns `undefined` (no response needed).  Otherwise
-   * returns `undefined` so the next handler in the chain
-   * can try.
-   *
-   * @param message - Opaque runtime message.
-   * @param sender - Extension message sender metadata.
-   * @returns `undefined` always (fire-and-forget).
-   */
-  static handle(
-    message: unknown,
-    sender: Runtime.MessageSender,
-  ): undefined {
-    if (!message || typeof message !== 'object') {
-      return undefined;
+        const { level, args } = parsed.output;
+        const tabId = sender.tab?.id;
+        const tag =
+            tabId !== undefined
+                ? `[TopSkip content t${tabId}]`
+                : LOG_PREFIX_CONTENT;
+
+        console[level](tag, ...args);
+
+        return undefined;
     }
-    const type: unknown = Reflect.get(message, 'type');
-    if (type !== TOPSKIP_MESSAGE.CONTENT_LOG) {
-      return undefined;
-    }
-
-    const levelRaw: unknown = Reflect.get(message, 'level');
-    const argsRaw: unknown = Reflect.get(message, 'args');
-
-    const level: ContentLogLevel =
-      typeof levelRaw === 'string' &&
-      levelRaw in LEVEL_FN
-        ? (levelRaw as ContentLogLevel)
-        : 'info';
-
-    const args: unknown[] = Array.isArray(argsRaw)
-      ? argsRaw
-      : [];
-
-    const tabId = sender.tab?.id;
-    const tag =
-      tabId !== undefined
-        ? `[TopSkip content t${tabId}]`
-        : '[TopSkip content]';
-
-    LEVEL_FN[level](tag, ...args);
-
-    return undefined;
-  }
 }

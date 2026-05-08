@@ -24,7 +24,9 @@ const upload = async () => {
     try {
         await checkUnusedMessages();
         const result = await uploadBaseLocale();
-        cliLog.success(`Upload was successful with response: ${JSON.stringify(result)}`);
+        cliLog.success(
+            `Upload was successful with response: ${JSON.stringify(result)}`,
+        );
     } catch (e) {
         cliLog.error(e.message);
         process.exit(1);
@@ -76,7 +78,10 @@ const addRequired = async (locales) => {
 program
     .command('download')
     .description('Downloads messages from localization service')
-    .option('-l,--locales [list...]', 'specific list of space-separated locales')
+    .option(
+        '-l,--locales [list...]',
+        'specific list of space-separated locales',
+    )
     .action(async (opts) => {
         let locales = LOCALES;
         let isMinimum = true;
@@ -97,8 +102,14 @@ program
 program
     .command('validate')
     .description('Validates translations')
-    .option('-R,--min', 'for critical errors of all locales and translations readiness of ours')
-    .option('-l,--locales [list...]', 'for specific list of space-separated locales')
+    .option(
+        '-R,--min',
+        'for critical errors of all locales and translations readiness of ours',
+    )
+    .option(
+        '-l,--locales [list...]',
+        'for specific list of space-separated locales',
+    )
     .action((opts) => {
         let locales = LOCALES;
         let isMinimum;

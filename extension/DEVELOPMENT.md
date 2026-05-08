@@ -6,17 +6,17 @@ This document explains how to set up a local environment, run builds and tests, 
 
 ## Prerequisites
 
-| Tool | Version / notes |
-|------|------------------|
-| **Node.js** | **20.x or newer** (`package.json` → `"engines": { "node": ">=20" }`) |
-| **pnpm** | Package manager (`packageManager` in `package.json`; [install](https://pnpm.io/installation)) |
-| **Git** | For cloning and version control |
-| **Google Chrome** (or Chromium) | Required to load the **unpacked** extension from `dist/` during development |
+| Tool                            | Version / notes                                                                               |
+| ------------------------------- | --------------------------------------------------------------------------------------------- |
+| **Node.js**                     | **20.x or newer** (`package.json` → `"engines": { "node": ">=20" }`)                          |
+| **pnpm**                        | Package manager (`packageManager` in `package.json`; [install](https://pnpm.io/installation)) |
+| **Git**                         | For cloning and version control                                                               |
+| **Google Chrome** (or Chromium) | Required to load the **unpacked** extension from `dist/` during development                   |
 
 Optional:
 
-| Tool | When |
-|------|------|
+| Tool         | When                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------- |
 | **GNU Make** | Optional convenience; all `make` targets call `pnpm run` (see [Makefile](./Makefile)) |
 
 No `.env` file or database is required — the MVP uses only `chrome.storage.sync` in the browser.
@@ -76,17 +76,17 @@ pnpm run build:watch
 
 ## Project layout
 
-| Path | Role |
-|------|------|
-| `src/background/` | MV3 **service worker** — sole **`sync` storage** access for prefs; Valibot; **`runtime.onMessage`**; broadcasts updates via **`tabs.sendMessage`** |
-| `src/content/` | **Content script** — `Content.init()` → `YoutubeWatch`; `skip-logic.ts` / `page-guards.ts` (pure); `youtube-watch.ts` (orchestration + runtime messaging, no storage for prefs) |
-| `src/popup/` | **React + Mantine + MobX** toolbar popup; **`preferences-store.ts`** (messaging to background only) |
-| `src/shared/` | **`browser.ts`**, **Valibot** schema + constants, **`messages.ts`**, **`error.ts`** / **`valibot.ts`** (`getErrorMessage`, `extractMessageFromValiError`) |
-| `src/public/` | Static files copied into `dist/` (e.g. icons) |
-| `dist/` | **Build output** — load this folder as unpacked extension (gitignored) |
-| `e2e/` | Playwright tests and `e2e/fixtures` static HTML |
-| `src/manifest.json` | Source manifest; **emitted into `dist/`** by the build |
-| `.sdd/` | SDD feature **spec.md** / **plan.md** (e.g. `.sdd/001-init-extension/` MVP baseline, dated folders per feature) |
+| Path                | Role                                                                                                                                                                            |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/background/`   | MV3 **service worker** — sole **`sync` storage** access for prefs; Valibot; **`runtime.onMessage`**; broadcasts updates via **`tabs.sendMessage`**                              |
+| `src/content/`      | **Content script** — `Content.init()` → `YoutubeWatch`; `skip-logic.ts` / `page-guards.ts` (pure); `youtube-watch.ts` (orchestration + runtime messaging, no storage for prefs) |
+| `src/popup/`        | **React + Mantine + MobX** toolbar popup; **`preferences-store.ts`** (messaging to background only)                                                                             |
+| `src/shared/`       | **`browser.ts`**, **Valibot** schema + constants, **`messages.ts`**, **`error.ts`** / **`valibot.ts`** (`getErrorMessage`, `extractMessageFromValiError`)                       |
+| `src/public/`       | Static files copied into `dist/` (e.g. icons)                                                                                                                                   |
+| `dist/`             | **Build output** — load this folder as unpacked extension (gitignored)                                                                                                          |
+| `e2e/`              | Playwright tests and `e2e/fixtures` static HTML                                                                                                                                 |
+| `src/manifest.json` | Source manifest; **emitted into `dist/`** by the build                                                                                                                          |
+| `.sdd/`             | SDD feature **spec.md** / **plan.md** (e.g. `.sdd/001-init-extension/` MVP baseline, dated folders per feature)                                                                 |
 
 The bundler is **Rspack** (`rspack.config.ts`): three entries (`background`, `content`, `popup`), `HtmlRspackPlugin` for `popup.html`.
 
@@ -102,51 +102,56 @@ The **popup** and **content** scripts must not call **`storage.sync`** for prefe
 
 ### Makefile targets
 
-| Command | What it runs |
-|---------|----------------|
-| `make setup` | `pnpm install` |
-| `make build` | `pnpm run build` |
-| `make lint` | `pnpm run lint` |
-| `make test` | `pnpm run test:coverage` then `pnpm run test:e2e` (full suite) |
-| `make test-unit` | `pnpm run test` (Vitest, no coverage) |
-| `make test-coverage` | `pnpm run test:coverage` |
-| `make test-e2e` | `pnpm run test:e2e` |
+| Command              | What it runs                                                   |
+| -------------------- | -------------------------------------------------------------- |
+| `make setup`         | `pnpm install`                                                 |
+| `make build`         | `pnpm run build`                                               |
+| `make lint`          | `pnpm run lint`                                                |
+| `make test`          | `pnpm run test:coverage` then `pnpm run test:e2e` (full suite) |
+| `make test-unit`     | `pnpm run test` (Vitest, no coverage)                          |
+| `make test-coverage` | `pnpm run test:coverage`                                       |
+| `make test-e2e`      | `pnpm run test:e2e`                                            |
 
 ### pnpm scripts
 
-| Script | Description |
-|--------|-------------|
-| `pnpm run setup` | Same as `pnpm install` |
-| `pnpm run build` | Production build to `dist/` |
-| `pnpm run build:watch` | Rspack watch mode |
-| `pnpm run lint` | ESLint + **markdownlint** + **`tsc --noEmit`** (`eslint.config.ts`, `.markdownlint.json`, `tsconfig.json`) |
-| `pnpm run lint:md` | **markdownlint-cli2** on `**/*.md` (excludes `node_modules`, `dist`, `coverage`) |
-| `pnpm run lint:types` | **TypeScript** — full project typecheck (`tsc --noEmit`, same as editor diagnostics) |
-| `pnpm run test` | Vitest once (`vitest run`) |
-| `pnpm run test:watch` | Vitest watch mode |
-| `pnpm run test:coverage` | Vitest with coverage (thresholds in `vitest.config.ts`) |
-| `pnpm run test:e2e` | Playwright (headless extension; set `PW_EXTENSION_HEADED=1` for headed) |
-| `pnpm run test:e2e:ui` | Playwright UI mode |
-| `pnpm run openrouter:compare-presets` | Maintainer-only: same transcript → every built-in OpenRouter preset (see below) |
-| `pnpm run openrouter:extract-log-transcript` | Rebuild `[sec] text` user message from an exported caption `.log` (see below) |
+| Script                                       | Description                                                                          |
+| -------------------------------------------- | ------------------------------------------------------------------------------------ |
+| `pnpm run setup`                             | Same as `pnpm install`                                                               |
+| `pnpm run build`                             | Production build to `dist/`                                                          |
+| `pnpm run build:watch`                       | Rspack watch mode                                                                    |
+| `pnpm run format`                            | Apply **oxfmt** formatting (`.oxfmtrc.json`)                                         |
+| `pnpm run format:check`                      | Check **oxfmt** formatting without writing                                           |
+| `pnpm run lint`                              | **oxfmt** check + **oxlint** + ESLint parity + **markdownlint** + **`tsc --noEmit`** |
+| `pnpm run lint:eslint`                       | ESLint parity checks that oxlint does not fully replace yet (`eslint.config.ts`)     |
+| `pnpm run lint:md`                           | **markdownlint-cli2** on `**/*.md` (excludes `node_modules`, `dist`, `coverage`)     |
+| `pnpm run lint:ox`                           | **oxlint** checks (`.oxlintrc.json`)                                                 |
+| `pnpm run lint:types`                        | **TypeScript** — full project typecheck (`tsc --noEmit`, same as editor diagnostics) |
+| `pnpm run test`                              | Vitest once (`vitest run`)                                                           |
+| `pnpm run test:watch`                        | Vitest watch mode                                                                    |
+| `pnpm run test:coverage`                     | Vitest with coverage (thresholds in `vitest.config.ts`)                              |
+| `pnpm run test:e2e`                          | Playwright (headless extension; set `PW_EXTENSION_HEADED=1` for headed)              |
+| `pnpm run test:e2e:ui`                       | Playwright UI mode                                                                   |
+| `pnpm run openrouter:compare-presets`        | Maintainer-only: same transcript → every built-in OpenRouter preset (see below)      |
+| `pnpm run openrouter:extract-log-transcript` | Rebuild `[sec] text` user message from an exported caption `.log` (see below)        |
 
-There is **no** `format` script — formatting is left to the editor; **lint** is the enforced check.
+`pnpm run format` is the repo-wide formatter. `pnpm run lint` includes `format:check`, so CI enforces the same formatting as local development.
 
 ### Maintainer: compare preset models on one transcript
 
 Use this **only** when you deliberately want **N** OpenRouter `chat/completions` calls (one per built-in preset in `src/shared/openrouter-model-presets.ts`). It does **not** run during normal video playback.
 
 1. **Fixture input** — UTF-8 file in one of two shapes:
-   - **Timed lines only**: `[12] caption text` per line (synthetic sample: `scripts/fixtures/promo-compare-110-lines.txt`).
-   - **Full user body** (what the worker sends to OpenRouter): starts with `videoId=…` then `language=…` then a blank line then `[sec] lines`. For a **real** video, export the service worker log (with expanded caption chunk objects, not only `{…}`), then rebuild:
+    - **Timed lines only**: `[12] caption text` per line (synthetic sample: `scripts/fixtures/promo-compare-110-lines.txt`).
+    - **Full user body** (what the worker sends to OpenRouter): starts with `videoId=…` then `language=…` then a blank line then `[sec] lines`. For a **real** video, export the service worker log (with expanded caption chunk objects, not only `{…}`), then rebuild:
 
-     ```bash
-     pnpm run openrouter:extract-log-transcript -- tmp/logs/your-export.log \
-       -o scripts/fixtures/promo-v3eXTAqGkzg-ru-from-console.log.txt \
-       --video-id v3eXTAqGkzg --language ru
-     ```
+        ```bash
+        pnpm run openrouter:extract-log-transcript -- tmp/logs/your-export.log \
+          -o scripts/fixtures/promo-v3eXTAqGkzg-ru-from-console.log.txt \
+          --video-id v3eXTAqGkzg --language ru
+        ```
 
-     See `scripts/fixtures/README.txt` for how to compare model JSON against a human baseline and notes on segment counts.
+        See `scripts/fixtures/README.txt` for how to compare model JSON against a human baseline and notes on segment counts.
+
 2. Put **`OPENROUTER_API_KEY=sk-or-…`** in **`extension/.env`** (gitignored), or export the variable in your shell. If both are set, the shell value wins.
 3. From the `extension` directory on macOS:
 
@@ -175,15 +180,15 @@ pnpm exec playwright install chromium
 1. **Branch** — Use a short-lived branch per change; open a **PR** into your main branch when ready.
 2. **Before pushing**, run the same checks as CI (see below) locally:
 
-   ```bash
-   pnpm install --frozen-lockfile
-   pnpm run lint
-   pnpm run build
-   pnpm run test
-   pnpm run test:coverage
-   pnpm exec playwright install chromium   # once per machine, if needed
-   pnpm run test:e2e
-   ```
+    ```bash
+    pnpm install --frozen-lockfile
+    pnpm run lint
+    pnpm run build
+    pnpm run test
+    pnpm run test:coverage
+    pnpm exec playwright install chromium   # once per machine, if needed
+    pnpm run test:e2e
+    ```
 
 3. **CI** (`.github/workflows/ci.yml`) on push/PR: **`pnpm install --frozen-lockfile`** → **lint** → **build** → **test** → **test:coverage** → **Playwright Chromium** → **`pnpm run test:e2e`** (e2e is **headless**; no Xvfb).
 4. **Specs** — Larger behavior changes should align with `.sdd/001-init-extension/spec.md` / `plan.md` and relevant `.sdd/yyyymmdd-…` specs (update those docs in the same change when appropriate).
@@ -268,41 +273,41 @@ terminal.
 
 ### Files
 
-| File | Purpose |
-|------|---------|
-| `scripts/log-server.ts` | Node.js HTTP server on `127.0.0.1:9222`; writes timestamped lines to `debug.log` and stdout |
+| File                      | Purpose                                                                                                                                                          |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `scripts/log-server.ts`   | Node.js HTTP server on `127.0.0.1:9222`; writes timestamped lines to `debug.log` and stdout                                                                      |
 | `src/shared/debug-log.ts` | `debugLog(source, message)` — fire-and-forget `fetch POST` to the log server; safe to call in any context (silently ignores failures when the server is offline) |
-| `debug.log` | Output file created by the server (gitignored) |
+| `debug.log`               | Output file created by the server (gitignored)                                                                                                                   |
 
 ### Usage
 
 1. **Start the log server** in a separate terminal:
 
-   ```bash
-   pnpm tsx scripts/log-server.ts
-   ```
+    ```bash
+    pnpm tsx scripts/log-server.ts
+    ```
 
-   The server clears `debug.log` on startup, listens on
-   `http://127.0.0.1:9222/log`, and prints every incoming line.
+    The server clears `debug.log` on startup, listens on
+    `http://127.0.0.1:9222/log`, and prints every incoming line.
 
 2. **Add temporary `debugLog` calls** in the code you are
    investigating:
 
-   ```ts
-   import { debugLog } from '@/shared/debug-log';
-   debugLog('bg', 'SET_PREFS handler entered');
-   debugLog('popup', `port message: ${JSON.stringify(msg)}`);
-   ```
+    ```ts
+    import { debugLog } from '@/shared/debug-log';
+    debugLog('bg', 'SET_PREFS handler entered');
+    debugLog('popup', `port message: ${JSON.stringify(msg)}`);
+    ```
 
 3. **Rebuild** (`make build`), reload the extension, and reproduce
    the scenario. All log lines appear in the terminal running
    the server and in `debug.log`, tagged with ISO timestamp and
    source label:
 
-   ```text
-   [2026-04-15T22:30:01.123Z] [bg] SET_PREFS handler entered
-   [2026-04-15T22:30:01.200Z] [popup] port message: {"type":"..."}
-   ```
+    ```text
+    [2026-04-15T22:30:01.123Z] [bg] SET_PREFS handler entered
+    [2026-04-15T22:30:01.200Z] [popup] port message: {"type":"..."}
+    ```
 
 4. **Remove the `debugLog` calls** before committing — the helper
    is dev-only infrastructure and must not ship in production
@@ -324,34 +329,34 @@ stream.
 
 ## Common tasks
 
-| Task | Steps |
-|------|--------|
-| **Iterate on UI (popup)** | Edit `src/popup/*`, `make build`, reload extension on `chrome://extensions` |
-| **Iterate on content script** | Edit `src/content/*`, `make build`, reload extension **and** the YouTube tab |
-| **Add a unit test** | Add `tests/.../*.test.ts` mirroring the `src/` path; run `pnpm run test` |
-| **Debug failing CI locally** | Run `pnpm install --frozen-lockfile`, then the same commands as `.github/workflows/ci.yml` |
-| **Clean install** | Remove `node_modules`, run `pnpm install --frozen-lockfile` |
+| Task                          | Steps                                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------ |
+| **Iterate on UI (popup)**     | Edit `src/popup/*`, `make build`, reload extension on `chrome://extensions`                |
+| **Iterate on content script** | Edit `src/content/*`, `make build`, reload extension **and** the YouTube tab               |
+| **Add a unit test**           | Add `tests/.../*.test.ts` mirroring the `src/` path; run `pnpm run test`                   |
+| **Debug failing CI locally**  | Run `pnpm install --frozen-lockfile`, then the same commands as `.github/workflows/ci.yml` |
+| **Clean install**             | Remove `node_modules`, run `pnpm install --frozen-lockfile`                                |
 
 ---
 
 ## Troubleshooting
 
-| Issue | What to try |
-|--------|-------------|
-| **`make build` fails** | Ensure Node **≥ 20**; run `pnpm install`; check Rspack/TypeScript errors in the terminal |
-| **Extension doesn’t update after edits** | Run `make build` again; on `chrome://extensions`, click **Reload** on the extension; for content scripts, **reload the tab** (or close/reopen YouTube) |
-| **Lint errors in IDE but not terminal** | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service. |
-| **`pnpm run test:e2e` fails (browser)** | Run `pnpm exec playwright install chromium` |
-| **`pnpm run test:e2e` times out / video never plays** | Confirm `e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed |
-| **Port 4173 already in use** | Stop the other process using the port, or adjust `playwright.config.ts` `webServer` + manifest host if you must (keep them in sync) |
-| **Coverage fails after changes** | Run `pnpm run test:coverage` and add tests or adjust coverage scope in `vitest.config.ts` deliberately |
+| Issue                                                 | What to try                                                                                                                                                                |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`make build` fails**                                | Ensure Node **≥ 20**; run `pnpm install`; check Rspack/TypeScript errors in the terminal                                                                                   |
+| **Extension doesn’t update after edits**              | Run `make build` again; on `chrome://extensions`, click **Reload** on the extension; for content scripts, **reload the tab** (or close/reopen YouTube)                     |
+| **Lint errors in IDE but not terminal**               | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service. |
+| **`pnpm run test:e2e` fails (browser)**               | Run `pnpm exec playwright install chromium`                                                                                                                                |
+| **`pnpm run test:e2e` times out / video never plays** | Confirm `e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed                                                                 |
+| **Port 4173 already in use**                          | Stop the other process using the port, or adjust `playwright.config.ts` `webServer` + manifest host if you must (keep them in sync)                                        |
+| **Coverage fails after changes**                      | Run `pnpm run test:coverage` and add tests or adjust coverage scope in `vitest.config.ts` deliberately                                                                     |
 
 ---
 
 ## Additional resources
 
-| Document | Purpose |
-|----------|---------|
-| [README.md](./README.md) | Quick start and command table |
-| [AGENTS.md](./AGENTS.md) | Architecture, conventions, what agents should not do |
+| Document                         | Purpose                                                             |
+| -------------------------------- | ------------------------------------------------------------------- |
+| [README.md](./README.md)         | Quick start and command table                                       |
+| [AGENTS.md](./AGENTS.md)         | Architecture, conventions, what agents should not do                |
 | [DEPLOYMENT.md](./DEPLOYMENT.md) | Zipping `dist/` and Chrome Web Store checklist (not day-to-day dev) |

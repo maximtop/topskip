@@ -16,7 +16,11 @@ const API_UPLOAD_URL = `${API_URL}/upload`;
  * Entry point for uploading base locale translations
  */
 export const uploadBaseLocale = async () => {
-    const filePath = path.join(LOCALES_ABSOLUTE_PATH, BASE_LOCALE, LOCALE_DATA_FILENAME);
+    const filePath = path.join(
+        LOCALES_ABSOLUTE_PATH,
+        BASE_LOCALE,
+        LOCALE_DATA_FILENAME,
+    );
     const fileContent = await fs.promises.readFile(filePath);
     const blob = new Blob([fileContent], { type: 'application/json' });
 
@@ -34,12 +38,16 @@ export const uploadBaseLocale = async () => {
             body: formData,
         });
     } catch (e) {
-        throw new Error(`Error: ${e.message}, while uploading: ${API_UPLOAD_URL}`);
+        throw new Error(
+            `Error: ${e.message}, while uploading: ${API_UPLOAD_URL}`,
+        );
     }
 
     if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Error: ${errorText}, while uploading: ${API_UPLOAD_URL}`);
+        throw new Error(
+            `Error: ${errorText}, while uploading: ${API_UPLOAD_URL}`,
+        );
     }
 
     return response.json();

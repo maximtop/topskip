@@ -4,8 +4,8 @@ import type { AvailableLocale } from '@/shared/i18n/locale-constants';
  * Result of matching a locale code against available locales.
  */
 export type CheckLocaleResult =
-  | { suitable: true; locale: AvailableLocale }
-  | { suitable: false; locale: string };
+    | { suitable: true; locale: AvailableLocale }
+    | { suitable: false; locale: string };
 
 /**
  * Matches a browser locale code to one of the supported locales.
@@ -22,53 +22,53 @@ export type CheckLocaleResult =
  * @returns Result indicating whether a match was found
  */
 export function checkLocale(
-  availableLocales: readonly AvailableLocale[],
-  locale: string | null,
+    availableLocales: readonly AvailableLocale[],
+    locale: string | null,
 ): CheckLocaleResult {
-  if (!locale) {
-    return { suitable: false, locale: '' };
-  }
-
-  const normalized = locale.toLowerCase().replace(/-/g, '_');
-
-  const lookupMap = new Map<string, AvailableLocale>();
-  for (const available of availableLocales) {
-    lookupMap.set(available.toLowerCase(), available);
-  }
-
-  const exactMatch = lookupMap.get(normalized);
-  if (exactMatch) {
-    return { suitable: true, locale: exactMatch };
-  }
-
-  const parts = normalized.split('_');
-
-  if (parts.length >= 3) {
-    const firstSecond = `${parts[0]}_${parts[1]}`;
-    const firstSecondMatch = lookupMap.get(firstSecond);
-    if (firstSecondMatch) {
-      return { suitable: true, locale: firstSecondMatch };
+    if (!locale) {
+        return { suitable: false, locale: '' };
     }
 
-    const firstLast = `${parts[0]}_${parts[parts.length - 1]}`;
-    const firstLastMatch = lookupMap.get(firstLast);
-    if (firstLastMatch) {
-      return { suitable: true, locale: firstLastMatch };
+    const normalized = locale.toLowerCase().replace(/-/g, '_');
+
+    const lookupMap = new Map<string, AvailableLocale>();
+    for (const available of availableLocales) {
+        lookupMap.set(available.toLowerCase(), available);
     }
-  }
 
-  const baseMatch = lookupMap.get(parts[0]);
-  if (baseMatch) {
-    return { suitable: true, locale: baseMatch };
-  }
+    const exactMatch = lookupMap.get(normalized);
+    if (exactMatch) {
+        return { suitable: true, locale: exactMatch };
+    }
 
-  const prefix = `${parts[0]}_`;
-  const prefixMatch = availableLocales.find(
-    (available) => available.toLowerCase().startsWith(prefix),
-  );
-  if (prefixMatch) {
-    return { suitable: true, locale: prefixMatch };
-  }
+    const parts = normalized.split('_');
 
-  return { suitable: false, locale: normalized };
+    if (parts.length >= 3) {
+        const firstSecond = `${parts[0]}_${parts[1]}`;
+        const firstSecondMatch = lookupMap.get(firstSecond);
+        if (firstSecondMatch) {
+            return { suitable: true, locale: firstSecondMatch };
+        }
+
+        const firstLast = `${parts[0]}_${parts[parts.length - 1]}`;
+        const firstLastMatch = lookupMap.get(firstLast);
+        if (firstLastMatch) {
+            return { suitable: true, locale: firstLastMatch };
+        }
+    }
+
+    const baseMatch = lookupMap.get(parts[0]);
+    if (baseMatch) {
+        return { suitable: true, locale: baseMatch };
+    }
+
+    const prefix = `${parts[0]}_`;
+    const prefixMatch = availableLocales.find((available) =>
+        available.toLowerCase().startsWith(prefix),
+    );
+    if (prefixMatch) {
+        return { suitable: true, locale: prefixMatch };
+    }
+
+    return { suitable: false, locale: normalized };
 }

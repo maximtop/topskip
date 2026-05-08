@@ -1,8 +1,8 @@
 import {
-  expect,
-  type BrowserContext,
-  type Page,
-  type Worker,
+    expect,
+    type BrowserContext,
+    type Page,
+    type Worker,
 } from '@playwright/test';
 
 /**
@@ -12,7 +12,7 @@ import {
 const FAIL_CONSOLE_TYPES = new Set(['error', 'assert']);
 
 function isBackgroundWorker(worker: Worker): boolean {
-  return worker.url().includes('background');
+    return worker.url().includes('background');
 }
 
 /**
@@ -21,21 +21,21 @@ function isBackgroundWorker(worker: Worker): boolean {
  * existing workers are hooked too.
  */
 export function trackServiceWorkerConsoleErrors(
-  context: BrowserContext,
-  errors: string[],
+    context: BrowserContext,
+    errors: string[],
 ): void {
-  const attach = (worker: Worker) => {
-    if (!isBackgroundWorker(worker)) return;
-    worker.on('console', (msg) => {
-      if (FAIL_CONSOLE_TYPES.has(msg.type())) {
-        errors.push(`[service worker] ${msg.type()}: ${msg.text()}`);
-      }
-    });
-  };
-  context.on('serviceworker', attach);
-  for (const w of context.serviceWorkers()) {
-    attach(w);
-  }
+    const attach = (worker: Worker) => {
+        if (!isBackgroundWorker(worker)) return;
+        worker.on('console', (msg) => {
+            if (FAIL_CONSOLE_TYPES.has(msg.type())) {
+                errors.push(`[service worker] ${msg.type()}: ${msg.text()}`);
+            }
+        });
+    };
+    context.on('serviceworker', attach);
+    for (const w of context.serviceWorkers()) {
+        attach(w);
+    }
 }
 
 /**
@@ -43,37 +43,37 @@ export function trackServiceWorkerConsoleErrors(
  * normal Page (popup, fixture tab, etc.).
  */
 export function trackPageErrors(
-  page: Page,
-  label: string,
-  errors: string[],
+    page: Page,
+    label: string,
+    errors: string[],
 ): void {
-  page.on('console', (msg) => {
-    if (FAIL_CONSOLE_TYPES.has(msg.type())) {
-      errors.push(`[${label}] ${msg.type()}: ${msg.text()}`);
-    }
-  });
-  page.on('pageerror', (err) => {
-    errors.push(`[${label}] pageerror: ${err.message}`);
-  });
+    page.on('console', (msg) => {
+        if (FAIL_CONSOLE_TYPES.has(msg.type())) {
+            errors.push(`[${label}] ${msg.type()}: ${msg.text()}`);
+        }
+    });
+    page.on('pageerror', (err) => {
+        errors.push(`[${label}] pageerror: ${err.message}`);
+    });
 }
 
 export async function openPopupAndWaitForUi(
-  context: BrowserContext,
-  extensionId: string,
-  errors: string[],
+    context: BrowserContext,
+    extensionId: string,
+    errors: string[],
 ): Promise<Page> {
-  const popupPage = await context.newPage();
-  trackPageErrors(popupPage, 'popup', errors);
-  await popupPage.goto(`chrome-extension://${extensionId}/popup.html`, {
-    waitUntil: 'domcontentloaded',
-  });
-  await popupPage
-    .getByRole('switch', { name: /enable/i })
-    .waitFor({ state: 'visible', timeout: 30_000 });
-  return popupPage;
+    const popupPage = await context.newPage();
+    trackPageErrors(popupPage, 'popup', errors);
+    await popupPage.goto(`chrome-extension://${extensionId}/popup.html`, {
+        waitUntil: 'domcontentloaded',
+    });
+    await popupPage
+        .getByRole('switch', { name: /enable/i })
+        .waitFor({ state: 'visible', timeout: 30_000 });
+    return popupPage;
 }
 
 export function expectNoCollectedErrors(errors: string[]): void {
-  const msg = `Unexpected console/page errors:\n${errors.join('\n')}`;
-  expect(errors, msg).toEqual([]);
+    const msg = `Unexpected console/page errors:\n${errors.join('\n')}`;
+    expect(errors, msg).toEqual([]);
 }

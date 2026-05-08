@@ -2,7 +2,10 @@
 import fs from 'fs';
 import path from 'path';
 
-import { LOCALES_ABSOLUTE_PATH, LOCALE_DATA_FILENAME } from './locales-constants.js';
+import {
+    LOCALES_ABSOLUTE_PATH,
+    LOCALE_DATA_FILENAME,
+} from './locales-constants.js';
 
 // ANSI color helpers (no chalk dependency)
 const RESET = '\x1b[0m';
@@ -32,7 +35,11 @@ export const cliLog = {
  * @returns {Promise<Object>}
  */
 export const readMessagesByLocale = async (locale) => {
-    const filePath = path.join(LOCALES_ABSOLUTE_PATH, locale, LOCALE_DATA_FILENAME);
+    const filePath = path.join(
+        LOCALES_ABSOLUTE_PATH,
+        locale,
+        LOCALE_DATA_FILENAME,
+    );
     const fileContent = await fs.promises.readFile(filePath, 'utf-8');
     return JSON.parse(fileContent);
 };
@@ -43,7 +50,11 @@ export const readMessagesByLocale = async (locale) => {
  * @param {string} locale
  */
 export const writeMessagesByLocale = async (messages, locale) => {
-    const localePath = path.join(LOCALES_ABSOLUTE_PATH, locale, LOCALE_DATA_FILENAME);
+    const localePath = path.join(
+        LOCALES_ABSOLUTE_PATH,
+        locale,
+        LOCALE_DATA_FILENAME,
+    );
     const messagesString = JSON.stringify(messages, null, 4);
     await fs.promises.writeFile(localePath, messagesString);
 };

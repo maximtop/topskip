@@ -1,14 +1,10 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 import { getErrorMessage } from '@/shared/error';
 import {
-  TOPSKIP_MESSAGE,
-  type GetPrefsResponse,
-  type SetPrefsResponse,
+    type GetPrefsResponse,
+    type SetPrefsResponse,
 } from '@/shared/messages';
 
-import {
-  ContentScriptsRegistration,
-} from '@/background/lifecycle/content-scripts-registration';
+import { ContentScriptsRegistration } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
@@ -17,79 +13,40 @@ import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
  * Namespace for `runtime.onMessage` prefs handling; not instantiable.
  */
 export class PrefsRuntimeMessages {
-  private constructor() {}
-
-  /**
-   * Handles `runtime` messages from the popup or content scripts (preferences
-   * read/write). Uses the Promise return form so the channel stays open until
-   * the async work finishes.
-   *
-   * @param message Opaque message from `runtime.sendMessage`.
-   * @param _sender Extension message sender (required by the API; unused here).
-   * @returns Response payload for known types, or `undefined` when the message
-   * is ignored (synchronously).
-   */
-  static handle(
-    message: unknown,
-    _sender: Runtime.MessageSender,
-  ): Promise<GetPrefsResponse | SetPrefsResponse> | undefined {
-    if (!message || typeof message !== 'object') {
-      return undefined;
+    /**
+     * Loads validated prefs from storage for the popup GET handler.
+     *
+     * @returns Current preferences
+     */
+    static async handleGet(): Promise<GetPrefsResponse> {
+        await PrefsSyncStorage.ready();
+        try {
+            const prefs = await PrefsSyncStorage.load();
+            return { ok: true, prefs };
+        } catch (e) {
+            return { ok: false, error: getErrorMessage(e) };
+        }
     }
 
-    const typeRaw: unknown = Reflect.get(message, 'type');
-    if (typeof typeRaw !== 'string') {
-      return undefined;
+    /**
+     * Writes prefs, resyncs content scripts, and broadcasts updates.
+     *
+     * @param enabled - New enabled state from the SET payload.
+     * @returns Save result
+     */
+    static async handleSet(enabled: boolean): Promise<SetPrefsResponse> {
+        await PrefsSyncStorage.ready();
+        try {
+            const current = await PrefsSyncStorage.load();
+            const prefs = { ...current, enabled };
+            await PrefsSyncStorage.save(prefs);
+
+            await ContentScriptsRegistration.syncFromPrefs();
+            await PrefsBroadcast.sendUpdatedToAllTabs(prefs);
+            PrefsPortHub.broadcastPrefsUpdate(prefs);
+            return { ok: true };
+        } catch (e) {
+            return { ok: false, error: getErrorMessage(e) };
+        }
     }
-    const type = typeRaw;
-
-    if (type === TOPSKIP_MESSAGE.GET_PREFS) {
-      return PrefsRuntimeMessages.handleGet();
-    }
-
-    if (type === TOPSKIP_MESSAGE.SET_PREFS) {
-      return PrefsRuntimeMessages.handleSet(message);
-    }
-
-    return undefined;
-  }
-
-  /**
-   * @returns Current preferences
-   */
-  private static async handleGet(): Promise<GetPrefsResponse> {
-    await PrefsSyncStorage.ready();
-    try {
-      const prefs = await PrefsSyncStorage.load();
-      return { ok: true, prefs };
-    } catch (e) {
-      return { ok: false, error: getErrorMessage(e) };
-    }
-  }
-
-  /**
-   * @param message - SET payload
-   * @returns Save result
-   */
-  private static async handleSet(
-    message: object,
-  ): Promise<SetPrefsResponse> {
-    await PrefsSyncStorage.ready();
-    try {
-      const enabledRaw: unknown = Reflect.get(message, 'enabled');
-      if (typeof enabledRaw !== 'boolean') {
-        return { ok: false, error: 'Invalid enabled' };
-      }
-      const current = await PrefsSyncStorage.load();
-      const prefs = { ...current, enabled: enabledRaw };
-      await PrefsSyncStorage.save(prefs);
-
-      await ContentScriptsRegistration.syncFromPrefs();
-      await PrefsBroadcast.sendUpdatedToAllTabs(prefs);
-      PrefsPortHub.broadcastPrefsUpdate(prefs);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: getErrorMessage(e) };
-    }
-  }
 }

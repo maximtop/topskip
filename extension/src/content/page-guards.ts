@@ -1,3 +1,5 @@
+import { YOUTUBE_WATCH_VIDEO_ID_PARAM } from '@/shared/constants';
+
 /**
  * Local static server host used by Playwright e2e (see `e2e/fixtures`).
  */
@@ -13,13 +15,13 @@ export const E2E_HOST = '127.0.0.1';
  * @returns The watch video id, a fixture placeholder, or `null` when absent.
  */
 export function getWatchVideoIdFromSearch(
-  hostname: string,
-  search: string,
+    hostname: string,
+    search: string,
 ): string | null {
-  if (hostname === E2E_HOST) {
-    return 'e2e-fixture';
-  }
-  return new URLSearchParams(search).get('v');
+    if (hostname === E2E_HOST) {
+        return 'e2e-fixture';
+    }
+    return new URLSearchParams(search).get(YOUTUBE_WATCH_VIDEO_ID_PARAM);
 }
 
 /**
@@ -30,19 +32,19 @@ export function getWatchVideoIdFromSearch(
  * @returns `true` when the script should activate on this page.
  */
 export function shouldActivateTopSkip(input: {
-  hostname: string;
-  pathname: string;
-  search: string;
+    hostname: string;
+    pathname: string;
+    search: string;
 }): boolean {
-  const { hostname, pathname, search } = input;
-  if (hostname === E2E_HOST) {
-    return true;
-  }
-  if (pathname.startsWith('/shorts/')) {
-    return false;
-  }
-  return (
-    pathname === '/watch' &&
-    getWatchVideoIdFromSearch(hostname, search) !== null
-  );
+    const { hostname, pathname, search } = input;
+    if (hostname === E2E_HOST) {
+        return true;
+    }
+    if (pathname.startsWith('/shorts/')) {
+        return false;
+    }
+    return (
+        pathname === '/watch' &&
+        getWatchVideoIdFromSearch(hostname, search) !== null
+    );
 }

@@ -4,9 +4,9 @@ import { ChromeBuiltinOnboarding } from '@/options/ChromeBuiltinOnboarding';
 import type { ProviderAvailabilityMessage } from '@/shared/messages';
 
 type ChromeBuiltinPanelProps = {
-  availability: ProviderAvailabilityMessage;
-  downloadProgress: number | null;
-  onDownload: () => void;
+    availability: ProviderAvailabilityMessage;
+    downloadProgress: number | null;
+    onDownload: () => void;
 };
 
 /**
@@ -17,13 +17,13 @@ type ChromeBuiltinPanelProps = {
  * @returns Chrome Built-in provider panel
  */
 export function ChromeBuiltinPanel(
-  props: ChromeBuiltinPanelProps,
+    props: ChromeBuiltinPanelProps,
 ): ReactElement {
-  return (
-    <ChromeBuiltinOnboarding
-      availability={props.availability}
-      downloadProgress={props.downloadProgress}
-      onDownload={props.onDownload}
-    />
-  );
+    return (
+        <ChromeBuiltinOnboarding
+            availability={props.availability}
+            downloadProgress={props.downloadProgress}
+            onDownload={props.onDownload}
+        />
+    );
 }

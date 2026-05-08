@@ -1,6 +1,10 @@
 import { validator } from '@adguard/translate';
 
-import { cliLog, readMessagesByLocale, writeMessagesByLocale } from './helpers.js';
+import {
+    cliLog,
+    readMessagesByLocale,
+    writeMessagesByLocale,
+} from './helpers.js';
 import {
     BASE_LOCALE,
     LANGUAGES,
@@ -95,7 +99,9 @@ const validateTranslatedLength = (baseDescriptionValue, localeMessageValue) => {
         return null;
     }
 
-    const lengthStr = baseDescriptionValue.slice(markerIndex + TEXT_MAX_LENGTH_MARKER.length).trim();
+    const lengthStr = baseDescriptionValue
+        .slice(markerIndex + TEXT_MAX_LENGTH_MARKER.length)
+        .trim();
     const maxLength = Number(lengthStr);
     if (Number.isNaN(maxLength)) {
         return `Invalid max length value: ${lengthStr}`;
@@ -118,12 +124,20 @@ const validateTranslatedLength = (baseDescriptionValue, localeMessageValue) => {
  *
  * @returns {object|undefined} Validation result if error occurred, otherwise undefined.
  */
-const validateMessage = (baseKey, baseLocaleTranslations, locale, localeTranslations) => {
+const validateMessage = (
+    baseKey,
+    baseLocaleTranslations,
+    locale,
+    localeTranslations,
+) => {
     const baseMessageValue = baseLocaleTranslations[baseKey].message;
     const baseDescriptionValue = baseLocaleTranslations[baseKey].description;
     const localeMessageValue = localeTranslations[baseKey].message;
 
-    const lengthValidationError = validateTranslatedLength(baseDescriptionValue, localeMessageValue);
+    const lengthValidationError = validateTranslatedLength(
+        baseDescriptionValue,
+        localeMessageValue,
+    );
     if (lengthValidationError) {
         return {
             key: baseKey,
@@ -133,12 +147,14 @@ const validateMessage = (baseKey, baseLocaleTranslations, locale, localeTranslat
 
     let validation;
     try {
-        if (!validator.isTranslationValid(
-            baseMessageValue,
-            localeMessageValue,
-            // locale should be lowercase, e.g. 'pt_br', not 'pt_BR'
-            locale.toLowerCase().replace('-', '_'),
-        )) {
+        if (
+            !validator.isTranslationValid(
+                baseMessageValue,
+                localeMessageValue,
+                // locale should be lowercase, e.g. 'pt_br', not 'pt_BR'
+                locale.toLowerCase().replace('-', '_'),
+            )
+        ) {
             throw new Error('Invalid translation');
         }
     } catch (error) {
@@ -165,38 +181,46 @@ export const checkTranslations = async (locales, flags) => {
     const baseMessages = Object.keys(baseLocaleTranslations);
     const baseMessagesCount = baseMessages.length;
 
-    const translationResults = await Promise.all(locales.map(async (locale) => {
-        const localeTranslations = await readMessagesByLocale(locale);
-        const localeMessages = Object.keys(localeTranslations);
-        const localeMessagesCount = localeMessages.length;
+    const translationResults = await Promise.all(
+        locales.map(async (locale) => {
+            const localeTranslations = await readMessagesByLocale(locale);
+            const localeMessages = Object.keys(localeTranslations);
+            const localeMessagesCount = localeMessages.length;
 
-        const untranslatedStrings = [];
-        const invalidTranslations = [];
-        baseMessages.forEach((baseKey) => {
-            if (!localeMessages.includes(baseKey)) {
-                untranslatedStrings.push(baseKey);
-            } else {
-                const validationError = validateMessage(
-                    baseKey,
-                    baseLocaleTranslations,
-                    locale,
-                    localeTranslations,
-                );
-                if (validationError) {
-                    invalidTranslations.push(validationError);
+            const untranslatedStrings = [];
+            const invalidTranslations = [];
+            baseMessages.forEach((baseKey) => {
+                if (!localeMessages.includes(baseKey)) {
+                    untranslatedStrings.push(baseKey);
+                } else {
+                    const validationError = validateMessage(
+                        baseKey,
+                        baseLocaleTranslations,
+                        locale,
+                        localeTranslations,
+                    );
+                    if (validationError) {
+                        invalidTranslations.push(validationError);
+                    }
                 }
-            }
-        });
+            });
 
-        const validLocaleMessagesCount = localeMessagesCount - invalidTranslations.length;
+            const validLocaleMessagesCount =
+                localeMessagesCount - invalidTranslations.length;
 
-        const strictLevel = ((validLocaleMessagesCount / baseMessagesCount) * 100);
-        const level = Math.round((strictLevel + Number.EPSILON) * 100) / 100;
+            const strictLevel =
+                (validLocaleMessagesCount / baseMessagesCount) * 100;
+            const level =
+                Math.round((strictLevel + Number.EPSILON) * 100) / 100;
 
-        return {
-            locale, level, untranslatedStrings, invalidTranslations,
-        };
-    }));
+            return {
+                locale,
+                level,
+                untranslatedStrings,
+                invalidTranslations,
+            };
+        }),
+    );
 
     const filteredCriticalResults = translationResults.filter((result) => {
         return result.invalidTranslations.length > 0;
@@ -204,7 +228,8 @@ export const checkTranslations = async (locales, flags) => {
 
     const filteredReadinessResults = translationResults.filter((result) => {
         return isMinimum
-            ? result.level < THRESHOLD_PERCENTAGE && REQUIRED_LOCALES.includes(result.locale)
+            ? result.level < THRESHOLD_PERCENTAGE &&
+                  REQUIRED_LOCALES.includes(result.locale)
             : result.level < THRESHOLD_PERCENTAGE;
     });
 
@@ -222,7 +247,9 @@ export const checkTranslations = async (locales, flags) => {
                 cliLog.error('Locales above should not have invalid strings');
             }
             if (filteredReadinessResults.length === 0) {
-                cliLog.success('Our locales have required level of translations');
+                cliLog.success(
+                    'Our locales have required level of translations',
+                );
             } else {
                 isSuccess = false;
                 printTranslationsResults(filteredReadinessResults, isMinimum);
@@ -234,8 +261,9 @@ export const checkTranslations = async (locales, flags) => {
         }
         // common translations check
         if (filteredReadinessResults.length === 0) {
-            const arraysEqual = locales.length === ALL_LOCALES.length
-                && locales.every((l, i) => l === ALL_LOCALES[i]);
+            const arraysEqual =
+                locales.length === ALL_LOCALES.length &&
+                locales.every((l, i) => l === ALL_LOCALES[i]);
             let message = `Level of translations is required for locales: ${locales.join(', ')}`;
             if (arraysEqual) {
                 message = 'All locales have required level of translations';
@@ -261,20 +289,25 @@ export const addRequiredFields = async (locales) => {
 
     const baseLocaleMessages = await readMessagesByLocale(BASE_LOCALE);
 
-    const result = await Promise.all(nonBaseLocales.map(async (locale) => {
-        const localeMessages = await readMessagesByLocale(locale);
-        const additions = [];
-        requiredFields.forEach((requiredField) => {
-            if (!localeMessages?.[requiredField]) {
-                additions.push(`From base locale to ${locale} copied: "${requiredField}"`);
-                localeMessages[requiredField] = baseLocaleMessages[requiredField];
-            }
-        });
+    const result = await Promise.all(
+        nonBaseLocales.map(async (locale) => {
+            const localeMessages = await readMessagesByLocale(locale);
+            const additions = [];
+            requiredFields.forEach((requiredField) => {
+                if (!localeMessages?.[requiredField]) {
+                    additions.push(
+                        `From base locale to ${locale} copied: "${requiredField}"`,
+                    );
+                    localeMessages[requiredField] =
+                        baseLocaleMessages[requiredField];
+                }
+            });
 
-        await writeMessagesByLocale(localeMessages, locale);
+            await writeMessagesByLocale(localeMessages, locale);
 
-        return additions.join('\n');
-    }));
+            return additions.join('\n');
+        }),
+    );
 
     return result.filter((i) => i).join('\n');
 };

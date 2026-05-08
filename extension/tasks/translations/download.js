@@ -59,11 +59,17 @@ export const downloadAndSave = async (locales) => {
                 throw new Error(errorText);
             }
             const data = await response.text();
-            const filePath = path.join(LOCALES_ABSOLUTE_PATH, lang, LOCALE_DATA_FILENAME);
+            const filePath = path.join(
+                LOCALES_ABSOLUTE_PATH,
+                lang,
+                LOCALE_DATA_FILENAME,
+            );
             await saveFile(filePath, data);
             cliLog.info(`Successfully saved in: ${filePath}`);
         } catch (e) {
-            throw new Error(`Error occurred: ${e.message}, while downloading: ${downloadUrl}`);
+            throw new Error(
+                `Error occurred: ${e.message}, while downloading: ${downloadUrl}`,
+            );
         }
     }
 };

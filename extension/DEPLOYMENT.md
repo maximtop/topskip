@@ -4,13 +4,13 @@ This document describes **shipping TopSkip to the Chrome Web Store**. It is not 
 
 ## Production configuration (reference)
 
-| Area | Production behavior |
-|------|---------------------|
-| **Environment variables** | None. The extension bundle does not read `process.env` or similar at runtime. |
-| **Infrastructure** | None (no database, cache, queue, or object storage). |
+| Area                        | Production behavior                                                                                                                                                          |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Environment variables**   | None. The extension bundle does not read `process.env` or similar at runtime.                                                                                                |
+| **Infrastructure**          | None (no database, cache, queue, or object storage).                                                                                                                         |
 | **External APIs / network** | Optional: **OpenRouter** `https://openrouter.ai/api/v1/chat/completions` when the user enables LLM promo detection and supplies an API key (declared in `host_permissions`). |
-| **Error reporting** | No Sentry or similar SDK in the shipped code. |
-| **Logging** | No centralized logging; behavior is entirely in the user’s browser. |
+| **Error reporting**         | No Sentry or similar SDK in the shipped code.                                                                                                                                |
+| **Logging**                 | No centralized logging; behavior is entirely in the user’s browser.                                                                                                          |
 
 User data: the on/off preference is stored in **`browser.storage.sync`** (written only by the extension’s **background** service worker) on the user’s Google account (Chrome sync), not on TopSkip servers—state this clearly in the store’s privacy fields.
 
@@ -31,9 +31,9 @@ Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`,
 1. Run a clean build: `make build`
 2. Zip **only** the contents of `dist/` (not the parent repo). On macOS:
 
-   ```bash
-   (cd dist && zip -r ../topskip-extension.zip .)
-   ```
+    ```bash
+    (cd dist && zip -r ../topskip-extension.zip .)
+    ```
 
 3. Upload `topskip-extension.zip` in the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole).
 

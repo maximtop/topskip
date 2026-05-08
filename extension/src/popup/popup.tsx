@@ -14,28 +14,26 @@ import { topskipTheme } from '@/shared/theme';
  * Popup bundle bootstrap; not instantiable.
  */
 export class Popup {
-  private constructor() {}
+    /**
+     * Mounts the React app under `#root`.
+     *
+     * @returns Promise resolving after i18n init and render
+     */
+    static async init(): Promise<void> {
+        await i18n.init();
+        const rootEl = document.getElementById('root');
+        if (!rootEl) {
+            throw new Error('Missing #root');
+        }
 
-  /**
-   * Mounts the React app under `#root`.
-   *
-   * @returns Promise resolving after i18n init and render
-   */
-  static async init(): Promise<void> {
-    await i18n.init();
-    const rootEl = document.getElementById('root');
-    if (!rootEl) {
-      throw new Error('Missing #root');
+        createRoot(rootEl).render(
+            <StrictMode>
+                <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
+                    <ErrorBoundary>
+                        <PopupApp />
+                    </ErrorBoundary>
+                </MantineProvider>
+            </StrictMode>,
+        );
     }
-
-    createRoot(rootEl).render(
-      <StrictMode>
-        <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
-          <ErrorBoundary>
-            <PopupApp />
-          </ErrorBoundary>
-        </MantineProvider>
-      </StrictMode>,
-    );
-  }
 }

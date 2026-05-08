@@ -1,3 +1,4 @@
+import { MS_PER_SECOND } from '@/shared/constants';
 import type { CaptionSegment } from '@/shared/caption-types';
 
 import { isPlayerRecord } from '@/shared/captions/player-json';
@@ -10,31 +11,28 @@ import { isPlayerRecord } from '@/shared/captions/player-json';
  * @param depth Recursion guard.
  * @returns All candidate `params` strings.
  */
-function collectParamsStringsDeep(
-  track: unknown,
-  depth = 0,
-): string[] {
-  if (depth > 28 || track === null || track === undefined) {
-    return [];
-  }
-  if (Array.isArray(track)) {
-    const out: string[] = [];
-    for (const x of track) {
-      out.push(...collectParamsStringsDeep(x, depth + 1));
+function collectParamsStringsDeep(track: unknown, depth = 0): string[] {
+    if (depth > 28 || track === null || track === undefined) {
+        return [];
     }
-    return out;
-  }
-  if (!isPlayerRecord(track)) {
-    return [];
-  }
-  const own = track['params'];
-  const head =
-    typeof own === 'string' && own.length > 0 ? [own] : ([] as string[]);
-  const rest: string[] = [];
-  for (const v of Object.values(track)) {
-    rest.push(...collectParamsStringsDeep(v, depth + 1));
-  }
-  return [...head, ...rest];
+    if (Array.isArray(track)) {
+        const out: string[] = [];
+        for (const x of track) {
+            out.push(...collectParamsStringsDeep(x, depth + 1));
+        }
+        return out;
+    }
+    if (!isPlayerRecord(track)) {
+        return [];
+    }
+    const own = track['params'];
+    const head: string[] =
+        typeof own === 'string' && own.length > 0 ? [own] : [];
+    const rest: string[] = [];
+    for (const v of Object.values(track)) {
+        rest.push(...collectParamsStringsDeep(v, depth + 1));
+    }
+    return [...head, ...rest];
 }
 
 /**
@@ -46,15 +44,15 @@ function collectParamsStringsDeep(
  * @returns Params string or `null`.
  */
 export function findParamsOnCaptionTracks(tracks: unknown[]): string | null {
-  let best: string | null = null;
-  for (const t of tracks) {
-    for (const p of collectParamsStringsDeep(t)) {
-      if (!best || p.length > best.length) {
-        best = p;
-      }
+    let best: string | null = null;
+    for (const t of tracks) {
+        for (const p of collectParamsStringsDeep(t)) {
+            if (!best || p.length > best.length) {
+                best = p;
+            }
+        }
     }
-  }
-  return best;
+    return best;
 }
 
 /**
@@ -65,35 +63,35 @@ export function findParamsOnCaptionTracks(tracks: unknown[]): string | null {
  * @returns Base64 `params`, or `null`.
  */
 export function findGetTranscriptParams(data: unknown): string | null {
-  if (data === null || data === undefined) {
-    return null;
-  }
-  if (Array.isArray(data)) {
-    for (const x of data) {
-      const r = findGetTranscriptParams(x);
-      if (r) {
-        return r;
-      }
+    if (data === null || data === undefined) {
+        return null;
+    }
+    if (Array.isArray(data)) {
+        for (const x of data) {
+            const r = findGetTranscriptParams(x);
+            if (r) {
+                return r;
+            }
+        }
+        return null;
+    }
+    if (!isPlayerRecord(data)) {
+        return null;
+    }
+    const ep = data['getTranscriptEndpoint'];
+    if (isPlayerRecord(ep)) {
+        const p = ep['params'];
+        if (typeof p === 'string' && p.length > 0) {
+            return p;
+        }
+    }
+    for (const v of Object.values(data)) {
+        const r = findGetTranscriptParams(v);
+        if (r) {
+            return r;
+        }
     }
     return null;
-  }
-  if (!isPlayerRecord(data)) {
-    return null;
-  }
-  const ep = data['getTranscriptEndpoint'];
-  if (isPlayerRecord(ep)) {
-    const p = ep['params'];
-    if (typeof p === 'string' && p.length > 0) {
-      return p;
-    }
-  }
-  for (const v of Object.values(data)) {
-    const r = findGetTranscriptParams(v);
-    if (r) {
-      return r;
-    }
-  }
-  return null;
 }
 
 /**
@@ -103,14 +101,14 @@ export function findGetTranscriptParams(data: unknown): string | null {
  * @returns Milliseconds or `null`.
  */
 function numMs(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v)) {
-    return v;
-  }
-  if (typeof v === 'string') {
-    const n = Number.parseFloat(v);
-    return Number.isFinite(n) ? n : null;
-  }
-  return null;
+    if (typeof v === 'number' && Number.isFinite(v)) {
+        return v;
+    }
+    if (typeof v === 'string') {
+        const n = Number.parseFloat(v);
+        return Number.isFinite(n) ? n : null;
+    }
+    return null;
 }
 
 /**
@@ -120,28 +118,27 @@ function numMs(v: unknown): number | null {
  * @returns Plain text.
  */
 function snippetText(snippet: unknown): string {
-  if (!snippet || typeof snippet !== 'object') {
-    return '';
-  }
-  const s = snippet as Record<string, unknown>;
-  const simple = s['simpleText'];
-  if (typeof simple === 'string') {
-    return simple;
-  }
-  const runs = s['runs'];
-  if (!Array.isArray(runs)) {
-    return '';
-  }
-  let t = '';
-  for (const run of runs) {
-    if (run && typeof run === 'object') {
-      const u = (run as { text?: unknown }).text;
-      if (typeof u === 'string') {
-        t += u;
-      }
+    if (!snippet || typeof snippet !== 'object') {
+        return '';
     }
-  }
-  return t.trim();
+    const simple: unknown = Reflect.get(snippet, 'simpleText');
+    if (typeof simple === 'string') {
+        return simple;
+    }
+    const runs: unknown = Reflect.get(snippet, 'runs');
+    if (!Array.isArray(runs)) {
+        return '';
+    }
+    let t = '';
+    for (const run of runs) {
+        if (run && typeof run === 'object') {
+            const u: unknown = Reflect.get(run, 'text');
+            if (typeof u === 'string') {
+                t += u;
+            }
+        }
+    }
+    return t.trim();
 }
 
 /**
@@ -151,44 +148,46 @@ function snippetText(snippet: unknown): string {
  * @returns Segments or `null` if none found.
  */
 export function segmentsFromGetTranscriptJson(
-  data: unknown,
+    data: unknown,
 ): CaptionSegment[] | null {
-  const out: CaptionSegment[] = [];
+    const out: CaptionSegment[] = [];
 
-  const walk = (node: unknown): void => {
-    if (node === null || node === undefined) {
-      return;
-    }
-    if (Array.isArray(node)) {
-      for (const x of node) {
-        walk(x);
-      }
-      return;
-    }
-    if (typeof node !== 'object') {
-      return;
-    }
-    const o = node as Record<string, unknown>;
-    const seg = o['transcriptSegmentRenderer'];
-    if (seg && typeof seg === 'object') {
-      const r = seg as Record<string, unknown>;
-      const startMs = numMs(r['startMs'] ?? r['startTimeMs']);
-      const endMs = numMs(r['endMs'] ?? r['endTimeMs']);
-      const text = snippetText(r['snippet']);
-      if (text.length > 0 && startMs !== null) {
-        const startSec = startMs / 1000;
-        const durationSec =
-          endMs !== null && endMs >= startMs
-            ? (endMs - startMs) / 1000
-            : 0;
-        out.push({ startSec, durationSec, text });
-      }
-    }
-    for (const v of Object.values(o)) {
-      walk(v);
-    }
-  };
+    const walk = (node: unknown): void => {
+        if (node === null || node === undefined) {
+            return;
+        }
+        if (Array.isArray(node)) {
+            for (const x of node) {
+                walk(x);
+            }
+            return;
+        }
+        if (typeof node !== 'object') {
+            return;
+        }
+        const seg: unknown = Reflect.get(node, 'transcriptSegmentRenderer');
+        if (seg && typeof seg === 'object') {
+            const startMs = numMs(
+                Reflect.get(seg, 'startMs') ?? Reflect.get(seg, 'startTimeMs'),
+            );
+            const endMs = numMs(
+                Reflect.get(seg, 'endMs') ?? Reflect.get(seg, 'endTimeMs'),
+            );
+            const text = snippetText(Reflect.get(seg, 'snippet'));
+            if (text.length > 0 && startMs !== null) {
+                const startSec = startMs / MS_PER_SECOND;
+                const durationSec =
+                    endMs !== null && endMs >= startMs
+                        ? (endMs - startMs) / MS_PER_SECOND
+                        : 0;
+                out.push({ startSec, durationSec, text });
+            }
+        }
+        for (const v of Object.values(node)) {
+            walk(v);
+        }
+    };
 
-  walk(data);
-  return out.length > 0 ? out : null;
+    walk(data);
+    return out.length > 0 ? out : null;
 }

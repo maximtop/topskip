@@ -15,31 +15,31 @@ export const BASE_LOCALE: AvailableLocale = 'en';
  * Sorted alphabetically.
  */
 export const AVAILABLE_LOCALES: AvailableLocale[] = (
-  Object.keys(twosky[0].languages) as AvailableLocale[]
+    Object.keys(twosky[0].languages) as AvailableLocale[]
 ).sort();
 
 /**
  * Maps each supported locale code to its native language name.
  */
 export const LANGUAGE_NAMES: Record<AvailableLocale, string> = {
-  ar: 'العربية',
-  de: 'Deutsch',
-  en: 'English',
-  es: 'Español',
-  fr: 'Français',
-  hi: 'हिन्दी',
-  id: 'Bahasa Indonesia',
-  it: 'Italiano',
-  ja: '日本語',
-  ko: '한국어',
-  nl: 'Nederlands',
-  pl: 'Polski',
-  pt_BR: 'Português (Brasil)',
-  ru: 'Русский',
-  th: 'ไทย',
-  tr: 'Türkçe',
-  uk: 'Українська',
-  vi: 'Tiếng Việt',
-  zh_CN: '简体中文',
-  zh_TW: '繁體中文',
+    ar: 'العربية',
+    de: 'Deutsch',
+    en: 'English',
+    es: 'Español',
+    fr: 'Français',
+    hi: 'हिन्दी',
+    id: 'Bahasa Indonesia',
+    it: 'Italiano',
+    ja: '日本語',
+    ko: '한국어',
+    nl: 'Nederlands',
+    pl: 'Polski',
+    pt_BR: 'Português (Brasil)',
+    ru: 'Русский',
+    th: 'ไทย',
+    tr: 'Türkçe',
+    uk: 'Українська',
+    vi: 'Tiếng Việt',
+    zh_CN: '简体中文',
+    zh_TW: '繁體中文',
 };

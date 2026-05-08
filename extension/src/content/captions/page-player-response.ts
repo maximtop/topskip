@@ -13,46 +13,46 @@
  * @returns Slice of `text` or `null` if not closed.
  */
 function extractBalancedJsonObject(
-  text: string,
-  openBraceIndex: number,
+    text: string,
+    openBraceIndex: number,
 ): string | null {
-  if (text[openBraceIndex] !== '{') {
+    if (text[openBraceIndex] !== '{') {
+        return null;
+    }
+    let depth = 0;
+    let inString = false;
+    let escape = false;
+    const start = openBraceIndex;
+    for (let i = openBraceIndex; i < text.length; i++) {
+        const c = text[i];
+        if (inString) {
+            if (escape) {
+                escape = false;
+                continue;
+            }
+            if (c === '\\') {
+                escape = true;
+                continue;
+            }
+            if (c === '"') {
+                inString = false;
+            }
+            continue;
+        }
+        if (c === '"') {
+            inString = true;
+            continue;
+        }
+        if (c === '{') {
+            depth++;
+        } else if (c === '}') {
+            depth--;
+            if (depth === 0) {
+                return text.slice(start, i + 1);
+            }
+        }
+    }
     return null;
-  }
-  let depth = 0;
-  let inString = false;
-  let escape = false;
-  const start = openBraceIndex;
-  for (let i = openBraceIndex; i < text.length; i++) {
-    const c = text[i];
-    if (inString) {
-      if (escape) {
-        escape = false;
-        continue;
-      }
-      if (c === '\\') {
-        escape = true;
-        continue;
-      }
-      if (c === '"') {
-        inString = false;
-      }
-      continue;
-    }
-    if (c === '"') {
-      inString = true;
-      continue;
-    }
-    if (c === '{') {
-      depth++;
-    } else if (c === '}') {
-      depth--;
-      if (depth === 0) {
-        return text.slice(start, i + 1);
-      }
-    }
-  }
-  return null;
 }
 
 /**
@@ -62,36 +62,36 @@ function extractBalancedJsonObject(
  * @returns Parsed player JSON, or `null`.
  */
 function parseYtInitialPlayerResponseFromDom(): unknown {
-  if (typeof document === 'undefined') {
+    if (typeof document === 'undefined') {
+        return null;
+    }
+    const scripts = document.querySelectorAll('script');
+    for (const el of scripts) {
+        const text = el.textContent ?? '';
+        const marker = /ytInitialPlayerResponse\s*[:=]\s*/.exec(text);
+        if (!marker) {
+            continue;
+        }
+        const afterKey = text.slice(marker.index + marker[0].length);
+        if (/^null\b/.test(afterKey.trimStart())) {
+            continue;
+        }
+        const braceRel = afterKey.search(/\{/);
+        if (braceRel === -1) {
+            continue;
+        }
+        const absOpen = marker.index + marker[0].length + braceRel;
+        const jsonStr = extractBalancedJsonObject(text, absOpen);
+        if (!jsonStr) {
+            continue;
+        }
+        try {
+            return JSON.parse(jsonStr) as unknown;
+        } catch {
+            continue;
+        }
+    }
     return null;
-  }
-  const scripts = document.querySelectorAll('script');
-  for (const el of scripts) {
-    const text = el.textContent ?? '';
-    const marker = /ytInitialPlayerResponse\s*[:=]\s*/.exec(text);
-    if (!marker) {
-      continue;
-    }
-    const afterKey = text.slice(marker.index + marker[0].length);
-    if (/^null\b/.test(afterKey.trimStart())) {
-      continue;
-    }
-    const braceRel = afterKey.search(/\{/);
-    if (braceRel === -1) {
-      continue;
-    }
-    const absOpen = marker.index + marker[0].length + braceRel;
-    const jsonStr = extractBalancedJsonObject(text, absOpen);
-    if (!jsonStr) {
-      continue;
-    }
-    try {
-      return JSON.parse(jsonStr) as unknown;
-    } catch {
-      continue;
-    }
-  }
-  return null;
 }
 
 /**
@@ -100,13 +100,13 @@ function parseYtInitialPlayerResponseFromDom(): unknown {
  * @returns Promise for compatibility with async fetch orchestration.
  */
 export function readYtInitialPlayerResponseFromPage(): Promise<unknown> {
-  return Promise.resolve(parseYtInitialPlayerResponseFromDom());
+    return Promise.resolve(parseYtInitialPlayerResponseFromDom());
 }
 
 const INNERTUBE_API_KEY_RE = /"INNERTUBE_API_KEY":\s*"([a-zA-Z0-9_-]+)"/;
 
 const INNERTUBE_CLIENT_VERSION_RE =
-  /"INNERTUBE_CONTEXT_CLIENT_VERSION"\s*:\s*"([^"]+)"/;
+    /"INNERTUBE_CONTEXT_CLIENT_VERSION"\s*:\s*"([^"]+)"/;
 
 /**
  * Reads InnerTube API key from inline `<script>` sources (same pattern as the
@@ -115,17 +115,17 @@ const INNERTUBE_CLIENT_VERSION_RE =
  * @returns API key or `null`.
  */
 export function readInnertubeApiKeyFromPage(): string | null {
-  if (typeof document === 'undefined') {
-    return null;
-  }
-  const scripts = document.querySelectorAll('script');
-  for (const el of scripts) {
-    const m = INNERTUBE_API_KEY_RE.exec(el.textContent ?? '');
-    if (m?.[1]) {
-      return m[1];
+    if (typeof document === 'undefined') {
+        return null;
     }
-  }
-  return null;
+    const scripts = document.querySelectorAll('script');
+    for (const el of scripts) {
+        const m = INNERTUBE_API_KEY_RE.exec(el.textContent ?? '');
+        if (m?.[1]) {
+            return m[1];
+        }
+    }
+    return null;
 }
 
 /**
@@ -135,15 +135,15 @@ export function readInnertubeApiKeyFromPage(): string | null {
  * @returns Semver-like client version or `null`.
  */
 export function readInnertubeClientVersionFromPage(): string | null {
-  if (typeof document === 'undefined') {
-    return null;
-  }
-  const scripts = document.querySelectorAll('script');
-  for (const el of scripts) {
-    const m = INNERTUBE_CLIENT_VERSION_RE.exec(el.textContent ?? '');
-    if (m?.[1]) {
-      return m[1];
+    if (typeof document === 'undefined') {
+        return null;
     }
-  }
-  return null;
+    const scripts = document.querySelectorAll('script');
+    for (const el of scripts) {
+        const m = INNERTUBE_CLIENT_VERSION_RE.exec(el.textContent ?? '');
+        if (m?.[1]) {
+            return m[1];
+        }
+    }
+    return null;
 }

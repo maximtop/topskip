@@ -27,15 +27,15 @@ Load the extension in Chrome:
 
 ## Commands
 
-| Command | Description |
-|--------|-------------|
-| `make setup` | Install dependencies (pnpm) |
-| `make build` | Production build into `dist/` |
-| `make lint` | ESLint + markdownlint + TypeScript (`tsc --noEmit`) |
-| `make test` | Vitest with coverage, then Playwright E2E |
-| `make test-unit` | Vitest unit tests only (no coverage) |
-| `make test-coverage` | Vitest with coverage thresholds |
-| `make test-e2e` | Playwright only (headless; extension + local fixture MP4) |
+| Command              | Description                                               |
+| -------------------- | --------------------------------------------------------- |
+| `make setup`         | Install dependencies (pnpm)                               |
+| `make build`         | Production build into `dist/`                             |
+| `make lint`          | Oxfmt + oxlint + ESLint + markdownlint + TypeScript       |
+| `make test`          | Vitest with coverage, then Playwright E2E                 |
+| `make test-unit`     | Vitest unit tests only (no coverage)                      |
+| `make test-coverage` | Vitest with coverage thresholds                           |
+| `make test-e2e`      | Playwright only (headless; extension + local fixture MP4) |
 
 ## Project docs
 

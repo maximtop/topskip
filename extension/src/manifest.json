@@ -1,23 +1,23 @@
 {
-  "manifest_version": 3,
-  "name": "__MSG_name__",
-  "version": "0.1.0",
-  "description": "__MSG_description__",
-  "default_locale": "en",
-  "permissions": ["storage", "tabs", "scripting"],
-  "host_permissions": [
-    "https://www.youtube.com/*",
-    "https://openrouter.ai/*"
-  ],
-  "background": {
-    "service_worker": "background.js"
-  },
-  "action": {
-    "default_popup": "popup.html",
-    "default_title": "__MSG_short_name__"
-  },
-  "options_ui": {
-    "page": "options.html",
-    "open_in_tab": true
-  }
+    "manifest_version": 3,
+    "name": "__MSG_name__",
+    "version": "0.1.0",
+    "description": "__MSG_description__",
+    "default_locale": "en",
+    "permissions": ["storage", "tabs", "scripting"],
+    "host_permissions": [
+        "https://www.youtube.com/*",
+        "https://openrouter.ai/*"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "__MSG_short_name__"
+    },
+    "options_ui": {
+        "page": "options.html",
+        "open_in_tab": true
+    }
 }

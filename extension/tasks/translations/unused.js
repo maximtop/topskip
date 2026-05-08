@@ -16,7 +16,9 @@ import {
  * @returns {boolean}
  */
 const canContainLocalesStrings = (filePath) => {
-    const isSrcFile = SRC_FILENAME_EXTENSIONS.some((ext) => filePath.endsWith(ext));
+    const isSrcFile = SRC_FILENAME_EXTENSIONS.some((ext) =>
+        filePath.endsWith(ext),
+    );
     return isSrcFile && !filePath.includes(LOCALES_ABSOLUTE_PATH);
 };
 
@@ -52,8 +54,10 @@ export const checkUnusedMessages = async () => {
     };
 
     const isMessageUnused = (message) => {
-        return !PERSISTENT_MESSAGES.includes(message)
-            && !filesContents.some((file) => isPresentInFile(message, file));
+        return (
+            !PERSISTENT_MESSAGES.includes(message) &&
+            !filesContents.some((file) => isPresentInFile(message, file))
+        );
     };
 
     const unusedMessages = baseMessages.filter(isMessageUnused);

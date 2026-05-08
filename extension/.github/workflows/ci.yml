@@ -1,42 +1,42 @@
 name: CI
 
 on:
-  push:
-    branches: [main, master]
-  pull_request:
+    push:
+        branches: [main, master]
+    pull_request:
 
 jobs:
-  build:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v5
 
-      - uses: pnpm/action-setup@v5
-        with:
-          version: 10
+            - uses: pnpm/action-setup@v5
+              with:
+                  version: 10
 
-      - uses: actions/setup-node@v5
-        with:
-          node-version: '24'
-          cache: pnpm
+            - uses: actions/setup-node@v5
+              with:
+                  node-version: '24'
+                  cache: pnpm
 
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
 
-      - name: Lint
-        run: pnpm run lint
+            - name: Lint
+              run: pnpm run lint
 
-      - name: Build
-        run: pnpm run build
+            - name: Build
+              run: pnpm run build
 
-      - name: Unit tests
-        run: pnpm run test
+            - name: Unit tests
+              run: pnpm run test
 
-      - name: Coverage
-        run: pnpm run test:coverage
+            - name: Coverage
+              run: pnpm run test:coverage
 
-      - name: Install Playwright Chromium
-        run: pnpm exec playwright install chromium --with-deps
+            - name: Install Playwright Chromium
+              run: pnpm exec playwright install chromium --with-deps
 
-      - name: E2E tests
-        run: pnpm run test:e2e
+            - name: E2E tests
+              run: pnpm run test:e2e

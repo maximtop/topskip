@@ -96,6 +96,11 @@ export function registerRuntimeMessages(registry: ProviderRegistry): void {
                     );
                 case TOPSKIP_MESSAGE.GET_DETECTION_STATUS:
                     return PromoDetectionRuntimeMessages.handleGet();
+                case TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS:
+                    return PromoDetectionRuntimeMessages.handleDevSet(
+                        msg.state,
+                        sender.tab?.id,
+                    );
                 default:
                     return undefined;
             }

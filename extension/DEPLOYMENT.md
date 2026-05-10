@@ -42,7 +42,7 @@ Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`,
 - [ ] **Manifest V3** — `manifest_version` is `3`
 - [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), optional **OpenRouter** (`https://openrouter.ai/*`); remove dev-only `http://127.0.0.1:4173/*` from `host_permissions` and from programmatic content-script matches before a public release if that entry was only for local Playwright fixtures
 - [ ] **Privacy** — Describe access to `browser.storage` (local prefs + OpenRouter settings), **`tabs`** (messages and detection status), optional **OpenRouter** (user-supplied API key for transcript analysis), and YouTube pages
-- [ ] **Icons** — Add icons under `src/public/` and reference them in `manifest.json` if the listing requires them (the MVP manifest may ship without `icons` until assets exist)
+- [ ] **Icons** — Verify `src/public/icons/topskip.svg` and generated PNG sizes are copied into `dist/` and referenced by `manifest.json`
 - [ ] **Version** — Bump `"version"` in `src/manifest.json` for each submission (it is emitted into `dist/`)
 
 ## Notes

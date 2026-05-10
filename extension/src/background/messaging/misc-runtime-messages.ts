@@ -4,8 +4,10 @@ import { getErrorMessage } from '@/shared/error';
 import {
     type ContentLogLevel,
     type GetDetectionStatusResponse,
+    type PromoDetectionStatePayload,
 } from '@/shared/messages';
 import { LOG_PREFIX_CONTENT } from '@/shared/constants';
+import { PromoDetectionBroadcast } from '@/background/messaging/broadcast-promo-detection-updated';
 
 /**
  * Handles `TOPSKIP_CONTENT_LOG` messages from the content
@@ -58,5 +60,40 @@ export class PromoDetectionRuntimeMessages {
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
         }
+    }
+
+    /**
+     * Seeds popup detection state for dev/e2e visual checks only.
+     *
+     * @param state - Detection state to store, or `null` to clear it.
+     * @param tabId - Sender tab id whose popup state should be seeded.
+     * @returns Ack response for the dev-only mutation.
+     */
+    static handleDevSet(
+        state: PromoDetectionStatePayload | null,
+        tabId: number | undefined,
+    ): Promise<{ ok: true } | { ok: false; error: string }> {
+        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+            return Promise.resolve({
+                ok: false,
+                error: 'Dev detection seeding is disabled.',
+            });
+        }
+
+        if (tabId === undefined) {
+            return Promise.resolve({
+                ok: false,
+                error: 'Missing sender tab id.',
+            });
+        }
+
+        if (state === null) {
+            PromoDetectionStore.clear(tabId);
+            return Promise.resolve({ ok: true });
+        }
+
+        PromoDetectionStore.set(tabId, state);
+        PromoDetectionBroadcast.notify(state);
+        return Promise.resolve({ ok: true });
     }
 }

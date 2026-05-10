@@ -141,4 +141,49 @@ describe('buildPopupViewModel', () => {
 
         expect(vm.statusHeadline).toBe('Analysis is in progress.');
     });
+
+    it('detected state exposes block count title for compact popup summary', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'v1',
+                status: 'detected',
+                promoBlocks: [
+                    { startSec: 92, endSec: 125 },
+                    { startSec: 490, endSec: 522 },
+                ],
+            },
+        });
+
+        expect(vm.badgeLabel).toBe('Detected');
+        expect(vm.title).toBe('2 promo blocks found');
+        expect(vm.statusHeadline).toBe('Detected windows');
+        expect(vm.statusBody).toContain('1:32');
+        expect(vm.statusBody).toContain('8:10');
+    });
+
+    it('no promo state remains positive without detected block wording', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: { videoId: 'v1', status: 'no_promo' },
+        });
+
+        expect(vm.tone).toBe('success');
+        expect(vm.badgeLabel).toBe('Clear');
+        expect(vm.title).toBe('Watching clean');
+        expect(vm.statusHeadline).toBe('No promo blocks detected.');
+    });
+
+    it('detected block summary formats exact start and end timecodes', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'v1',
+                status: 'detected',
+                promoBlocks: [{ startSec: 92, endSec: 125 }],
+            },
+        });
+
+        expect(vm.statusBody).toBe('1:32–2:05');
+    });
 });

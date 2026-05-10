@@ -1,7 +1,7 @@
 import { observer } from 'mobx-react-lite';
 import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import {
-    Alert,
+    ActionIcon,
     Badge,
     Box,
     Button,
@@ -22,8 +22,10 @@ import {
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
 import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
-import { formatPromoBlocksSummary } from '@/shared/promo-range-format';
-import { reactTranslator } from '@/shared/i18n/react-translator';
+import {
+    formatPromoBlocksSummary,
+    formatSecondsAsTimecode,
+} from '@/shared/promo-range-format';
 import { translator } from '@/shared/i18n/translator';
 import {
     POPUP_DETECTION_POLL_INTERVAL_MS,
@@ -32,6 +34,55 @@ import {
 import { PERCENT_SCALE } from '@/shared/constants';
 import { PROVIDER_ID } from '@/shared/providers';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
+import {
+    CheckIcon,
+    ExternalLinkIcon,
+    PromoBlocksIcon,
+    SettingsIcon,
+    TopSkipLogoIcon,
+} from '@/shared/topskip-icons';
+
+const POPUP_BLUE = '#2563eb';
+const POPUP_BLUE_DARK = '#1d4ed8';
+const POPUP_BLUE_SOFT = '#eff6ff';
+const POPUP_SUCCESS = '#10b981';
+const POPUP_SUCCESS_SOFT = '#ecfdf5';
+const POPUP_WARNING = '#f59e0b';
+const POPUP_WARNING_SOFT = '#fffbeb';
+const POPUP_DANGER = '#ef4444';
+const POPUP_DANGER_SOFT = '#fef2f2';
+const POPUP_SLATE_BORDER = '#dbe3ee';
+
+const POPUP_TONE_STYLES: Record<
+    PopupTone,
+    { surface: string; icon: string; iconText: string }
+> = {
+    brand: {
+        surface: POPUP_BLUE_SOFT,
+        icon: POPUP_BLUE,
+        iconText: '#ffffff',
+    },
+    success: {
+        surface: POPUP_SUCCESS_SOFT,
+        icon: POPUP_SUCCESS,
+        iconText: '#ffffff',
+    },
+    warning: {
+        surface: POPUP_WARNING_SOFT,
+        icon: POPUP_WARNING,
+        iconText: '#ffffff',
+    },
+    danger: {
+        surface: POPUP_DANGER_SOFT,
+        icon: POPUP_DANGER,
+        iconText: '#ffffff',
+    },
+    neutral: {
+        surface: POPUP_SUCCESS_SOFT,
+        icon: POPUP_SUCCESS,
+        iconText: '#ffffff',
+    },
+};
 
 /**
  * Type guard for successful GET_DETECTION_STATUS responses.
@@ -356,47 +407,6 @@ export function buildPopupViewModel(args: {
 }
 
 /**
- * Returns a CSS gradient string matching the popup tone.
- *
- * @param tone - The semantic tone of the popup.
- * @returns CSS linear-gradient value.
- */
-function heroBackground(tone: PopupTone): string {
-    switch (tone) {
-        case 'brand':
-            return (
-                'linear-gradient(180deg, ' +
-                'rgba(230,252,245,0.98) 0%, ' +
-                'rgba(243,250,247,0.98) 100%)'
-            );
-        case 'success':
-            return (
-                'linear-gradient(180deg, ' +
-                'rgba(235,251,238,0.98) 0%, ' +
-                'rgba(247,252,248,0.98) 100%)'
-            );
-        case 'warning':
-            return (
-                'linear-gradient(180deg, ' +
-                'rgba(255,249,219,0.98) 0%, ' +
-                'rgba(255,252,241,0.98) 100%)'
-            );
-        case 'danger':
-            return (
-                'linear-gradient(180deg, ' +
-                'rgba(255,245,245,0.98) 0%, ' +
-                'rgba(255,250,250,0.98) 100%)'
-            );
-        default:
-            return (
-                'linear-gradient(180deg, ' +
-                'rgba(248,250,252,0.98) 0%, ' +
-                'rgba(255,255,255,0.98) 100%)'
-            );
-    }
-}
-
-/**
  * Renders a visual timeline bar of detected promo blocks.
  *
  * @param props - Contains the blocks to display.
@@ -417,13 +427,25 @@ function PromoTimeline({
 
     return (
         <Stack gap={6} mt="sm">
+            <Group justify="space-between" wrap="nowrap">
+                <Text size="xs" c="dimmed">
+                    0:00
+                </Text>
+                <Text size="xs" c="dimmed">
+                    {formatSecondsAsTimecode(maxEnd)}
+                </Text>
+            </Group>
             <Box
                 aria-hidden="true"
                 style={{
                     position: 'relative',
                     height: '0.625rem',
                     borderRadius: '999px',
-                    background: 'var(--mantine-color-slate-1)',
+                    background:
+                        'repeating-linear-gradient(90deg, ' +
+                        'var(--mantine-color-slate-3) 0 1px, ' +
+                        'var(--mantine-color-slate-1) 1px 20%), ' +
+                        'var(--mantine-color-slate-1)',
                     overflow: 'hidden',
                 }}
             >
@@ -459,9 +481,6 @@ function PromoTimeline({
                     );
                 })}
             </Box>
-            <Text size="xs" c="dimmed">
-                Visual detection timeline for the current video snapshot.
-            </Text>
         </Stack>
     );
 }
@@ -553,57 +572,136 @@ export const PopupApp = observer(function PopupApp() {
         detectionState.promoBlocks !== undefined
             ? detectionState.promoBlocks
             : [];
+    const toneStyle = POPUP_TONE_STYLES[view.tone];
 
     return (
         <Stack
-            gap="sm"
-            p="md"
-            maw={320}
+            data-testid="popup-shell"
+            gap={0}
+            w={320}
+            maw="100vw"
             style={{
-                background: 'linear-gradient(180deg, #f8fafc 0%, #f2f7f5 100%)',
+                background: '#ffffff',
+                overflowX: 'hidden',
+                border: `1px solid ${POPUP_SLATE_BORDER}`,
+                borderRadius: '0.625rem',
+                boxShadow: '0 12px 32px rgba(15, 23, 42, 0.14)',
             }}
         >
             <Paper
-                p="md"
-                radius="xl"
-                style={{ background: heroBackground(view.tone) }}
+                data-testid="popup-current-video"
+                p={0}
+                radius={0}
+                style={{
+                    background: '#ffffff',
+                    borderBottom: `1px solid ${POPUP_SLATE_BORDER}`,
+                }}
             >
                 <Group
                     justify="space-between"
-                    align="flex-start"
+                    align="center"
                     wrap="nowrap"
                     gap="sm"
+                    px="md"
+                    py={12}
                 >
-                    <Stack gap={2} style={{ flex: 1 }}>
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                            {reactTranslator.getMessage('popup_heading')}
+                    <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
+                        <TopSkipLogoIcon size={28} />
+                        <Text c="#0f172a" fw={800} size="lg" aria-hidden="true">
+                            TopSkip
                         </Text>
-                        <Text fw={700} size="lg">
+                    </Group>
+                    <ActionIcon
+                        variant="subtle"
+                        color="gray"
+                        size="lg"
+                        aria-label={view.settingsLabel}
+                        onClick={() => {
+                            void browser.runtime.openOptionsPage();
+                        }}
+                    >
+                        <SettingsIcon size={18} color="currentColor" />
+                    </ActionIcon>
+                </Group>
+
+                <Group
+                    gap="sm"
+                    wrap="nowrap"
+                    align="flex-start"
+                    px="md"
+                    py={14}
+                    style={{ background: toneStyle.surface }}
+                >
+                    <Box
+                        aria-hidden="true"
+                        style={{
+                            width: '1.125rem',
+                            height: '1.125rem',
+                            borderRadius: '999px',
+                            background: toneStyle.icon,
+                            color: toneStyle.iconText,
+                            display: 'grid',
+                            placeItems: 'center',
+                            flex: '0 0 auto',
+                            fontWeight: 900,
+                        }}
+                    >
+                        {view.tone === 'danger' ? (
+                            '!'
+                        ) : view.tone === 'warning' ? (
+                            'i'
+                        ) : (
+                            <CheckIcon size={12} color={toneStyle.iconText} />
+                        )}
+                    </Box>
+                    <Stack gap={3} style={{ minWidth: 0 }}>
+                        <Text size="sm" fw={700} c="#15803d">
                             {view.title}
                         </Text>
-                        <Text size="sm" c="dimmed" maw={220}>
+                        <Text size="xs" c="#64748b">
                             {view.description}
                         </Text>
+                        <Group gap={6} wrap="nowrap">
+                            <Box
+                                aria-hidden="true"
+                                style={{
+                                    width: '0.35rem',
+                                    height: '0.35rem',
+                                    borderRadius: '999px',
+                                    background: '#16a34a',
+                                }}
+                            />
+                            <Text size="xs" c="#334155">
+                                Promo detection active
+                            </Text>
+                        </Group>
                     </Stack>
-                    <Badge color={view.badgeColor}>{view.badgeLabel}</Badge>
                 </Group>
-                <Paper
-                    mt="md"
-                    p="sm"
-                    radius="lg"
-                    style={{ background: 'rgba(255, 255, 255, 0.88)' }}
+            </Paper>
+
+            <Paper
+                data-testid="popup-auto-skip"
+                p="md"
+                radius={0}
+                style={{
+                    borderBottom: `1px solid ${POPUP_SLATE_BORDER}`,
+                }}
+            >
+                <Group
+                    justify="space-between"
+                    wrap="nowrap"
+                    align="center"
+                    gap="md"
                 >
-                    <Group justify="space-between" wrap="nowrap" gap="md">
-                        <Stack gap={1}>
-                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                                Quick control
-                            </Text>
-                            <Text size="sm" fw={600}>
-                                {reactTranslator.getMessage(
-                                    'popup_enable_promo_skip',
-                                )}
-                            </Text>
-                        </Stack>
+                    <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
+                        <Text fw={700} size="sm">
+                            Auto-skip promo segments
+                        </Text>
+                        <Text size="xs" c="dimmed">
+                            Automatically skip detected sponsor & promo segments
+                        </Text>
+                    </Stack>
+                    <Stack gap={4} align="center">
                         <Switch
                             checked={store.enabled}
                             onChange={(e) => {
@@ -617,26 +715,54 @@ export const PopupApp = observer(function PopupApp() {
                             aria-label={translator.getMessage(
                                 'popup_enable_auto_skip_aria',
                             )}
+                            color="blue"
+                            size="md"
                         />
-                    </Group>
-                </Paper>
-                {view.providerLabel ? (
-                    <Group gap={4} mt={8} align="center">
-                        <Text size="xs" c="dimmed">
-                            {`⚡ ${view.providerLabel}`}
+                        <Text
+                            size="xs"
+                            c={store.enabled ? POPUP_BLUE_DARK : 'dimmed'}
+                            fw={700}
+                        >
+                            {store.enabled ? 'ON' : 'OFF'}
                         </Text>
-                    </Group>
-                ) : null}
+                    </Stack>
+                </Group>
             </Paper>
 
-            <Paper p="md" radius="xl">
+            <Paper
+                data-testid="popup-promo-blocks"
+                p="md"
+                radius={0}
+                style={{
+                    borderBottom: `1px solid ${POPUP_SLATE_BORDER}`,
+                }}
+            >
                 <div role="status" aria-live="polite">
-                    <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                        {translator.getMessage('popup_active_tab_prefix')}
-                    </Text>
-                    <Text size="sm" fw={600} mt={4}>
-                        {view.statusHeadline}
-                    </Text>
+                    <Group justify="space-between" wrap="nowrap" gap="sm">
+                        <Stack gap={2} style={{ minWidth: 0 }}>
+                            <Group gap="xs" wrap="nowrap">
+                                <PromoBlocksIcon size={16} color="#475569" />
+                                <Text fw={700} size="sm">
+                                    Promo blocks detected
+                                </Text>
+                            </Group>
+                            <Text size="xs" c="dimmed">
+                                {view.statusHeadline}
+                            </Text>
+                        </Stack>
+                        <Badge
+                            color="blue"
+                            variant="light"
+                            style={{
+                                flex: '0 0 auto',
+                                textTransform: 'none',
+                            }}
+                        >
+                            {`${detectedBlocks.length} ${
+                                detectedBlocks.length === 1 ? 'block' : 'blocks'
+                            }`}
+                        </Badge>
+                    </Group>
                     {view.statusBody !== null ? (
                         <Text
                             size="xs"
@@ -649,51 +775,82 @@ export const PopupApp = observer(function PopupApp() {
                     ) : null}
                 </div>
                 <PromoTimeline blocks={detectedBlocks} />
+                {detectedBlocks.length > 0 ? (
+                    <Stack gap="sm" mt="md">
+                        {detectedBlocks.map((block, index) => {
+                            const end = getPromoBlockEndSec(block);
+                            const duration = Math.max(0, end - block.startSec);
+                            return (
+                                <Group
+                                    key={`${block.startSec}-${end}-${index}`}
+                                    justify="space-between"
+                                    wrap="nowrap"
+                                    gap="sm"
+                                >
+                                    <Group
+                                        gap="sm"
+                                        wrap="nowrap"
+                                        style={{ minWidth: 0 }}
+                                    >
+                                        <Badge
+                                            radius="xl"
+                                            variant="filled"
+                                            color="blue"
+                                        >
+                                            {index + 1}
+                                        </Badge>
+                                        <Text
+                                            size="sm"
+                                            fw={600}
+                                            style={{ whiteSpace: 'nowrap' }}
+                                        >
+                                            {`${formatSecondsAsTimecode(
+                                                block.startSec,
+                                            )} - ${formatSecondsAsTimecode(end)}`}
+                                        </Text>
+                                    </Group>
+                                    <Text
+                                        size="xs"
+                                        c="dimmed"
+                                        style={{ whiteSpace: 'nowrap' }}
+                                    >
+                                        {`${Math.round(duration)}s`}
+                                    </Text>
+                                </Group>
+                            );
+                        })}
+                    </Stack>
+                ) : null}
             </Paper>
 
-            <Button
-                variant={
-                    detectionState?.status === 'not_configured'
-                        ? 'filled'
-                        : 'light'
-                }
-                size="sm"
-                onClick={() => {
-                    void browser.runtime.openOptionsPage();
-                }}
+            <Group
+                data-testid="popup-footer"
+                justify="space-between"
+                p="md"
+                wrap="nowrap"
             >
-                {reactTranslator.getMessage('popup_open_settings')}
-            </Button>
-
-            <details>
-                <summary
-                    style={{
-                        cursor: 'pointer',
-                        fontSize: 'var(--mantine-font-size-xs)',
-                        color: 'var(--mantine-color-dimmed)',
+                <Button
+                    variant={
+                        detectionState?.status === 'not_configured'
+                            ? 'filled'
+                            : 'light'
+                    }
+                    color="blue"
+                    size="sm"
+                    radius="md"
+                    leftSection={
+                        <ExternalLinkIcon size={14} color="currentColor" />
+                    }
+                    onClick={() => {
+                        void browser.runtime.openOptionsPage();
                     }}
                 >
-                    {translator.getMessage('popup_reliability_notice_title')}
-                </summary>
-                <Alert
-                    color="warning"
-                    title={translator.getMessage(
-                        'popup_reliability_notice_title',
-                    )}
-                    mt="xs"
-                >
-                    <Text size="xs">
-                        {reactTranslator.getMessage(
-                            'popup_reliability_notice_body_1',
-                        )}
-                    </Text>
-                    <Text size="xs" mt="xs">
-                        {reactTranslator.getMessage(
-                            'popup_reliability_notice_body_2',
-                        )}
-                    </Text>
-                </Alert>
-            </details>
+                    Open Options
+                </Button>
+                <Text size="xs" c="dimmed">
+                    v0.1.0
+                </Text>
+            </Group>
         </Stack>
     );
 });

@@ -2,15 +2,12 @@ import '@mantine/core/styles.css';
 
 import {
     Alert,
-    Badge,
     Box,
     Button,
     Group,
     MantineProvider,
     Paper,
-    SegmentedControl,
     Stack,
-    Switch,
     Text,
     Title,
 } from '@mantine/core';
@@ -29,7 +26,6 @@ import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
 import { DEFAULT_PROVIDER_ID, PREFS_PORT_NAME } from '@/shared/constants';
 import { PROVIDER_ID } from '@/shared/providers';
-import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import {
     TOPSKIP_MESSAGE,
     type GetActiveProviderResponse,
@@ -49,10 +45,17 @@ import {
 import { topskipTheme } from '@/shared/theme';
 import { ErrorBoundary } from '@/shared/ErrorBoundary';
 import { i18n } from '@/shared/i18n/i18n';
-import { reactTranslator } from '@/shared/i18n/react-translator';
 import { translator } from '@/shared/i18n/translator';
 import { ChromeBuiltinInlineStatus } from '@/options/ChromeBuiltinInlineStatus';
 import { OpenRouterConfigPanel } from '@/options/OpenRouterConfigPanel';
+import {
+    HomeIcon,
+    InfoIcon,
+    KeyboardIcon,
+    PaletteIcon,
+    TargetIcon,
+    TopSkipLogoIcon,
+} from '@/shared/topskip-icons';
 
 type OpenRouterGetOkPayload = Extract<
     GetOpenRouterConfigResponse,
@@ -65,6 +68,212 @@ type ActiveProviderGetOkPayload = Extract<
 >;
 
 type ProviderListGetOkPayload = Extract<GetProviderListResponse, { ok: true }>;
+
+export type OptionsSectionId =
+    | 'general'
+    | 'detection'
+    | 'appearance'
+    | 'shortcuts'
+    | 'about';
+
+const OPTIONS_SECTIONS: { id: OptionsSectionId; label: string }[] = [
+    { id: 'general', label: 'General' },
+    { id: 'detection', label: 'Detection' },
+    { id: 'appearance', label: 'Appearance' },
+    { id: 'shortcuts', label: 'Shortcuts' },
+    { id: 'about', label: 'About' },
+];
+
+const OPTIONS_BLUE = '#2563eb';
+const OPTIONS_BLUE_SOFT = '#eff6ff';
+const OPTIONS_BORDER = '#dbe3ee';
+const OPTIONS_TEXT = '#0f172a';
+const OPTIONS_MUTED = '#64748b';
+
+/**
+ * Sidebar icons keep navigation recognizable without adding an icon package.
+ *
+ * @param props - Section identity plus active state.
+ * @returns SVG icon for the section.
+ */
+function OptionsSectionIcon(props: {
+    sectionId: OptionsSectionId;
+    active: boolean;
+}): ReactElement {
+    const color = props.active ? OPTIONS_BLUE : '#94a3b8';
+
+    switch (props.sectionId) {
+        case 'general':
+            return <HomeIcon size={16} color={color} />;
+        case 'detection':
+            return <TargetIcon size={16} color={color} />;
+        case 'appearance':
+            return <PaletteIcon size={16} color={color} />;
+        case 'shortcuts':
+            return <KeyboardIcon size={16} color={color} />;
+        case 'about':
+            return <InfoIcon size={16} color={color} />;
+    }
+}
+
+/**
+ * Sidebar navigation for the options page sections.
+ *
+ * @param props - Active section and navigation callback.
+ * @returns Options sidebar navigation.
+ */
+export function OptionsSidebar(props: {
+    activeSection: OptionsSectionId;
+    onSectionChange(sectionId: OptionsSectionId): void;
+}): ReactElement {
+    return (
+        <Stack gap="xl" p="md" data-testid="options-sidebar" h="100%">
+            <Group gap="sm" wrap="nowrap">
+                <TopSkipLogoIcon size={26} />
+                <Text c={OPTIONS_TEXT} fw={800} size="md" aria-hidden="true">
+                    TopSkip
+                </Text>
+            </Group>
+            <Stack gap={4} component="nav" aria-label="Settings sections">
+                {OPTIONS_SECTIONS.map((section) => {
+                    const active = section.id === props.activeSection;
+                    return (
+                        <Button
+                            key={section.id}
+                            variant={active ? 'light' : 'subtle'}
+                            justify="flex-start"
+                            color={active ? 'blue' : 'gray'}
+                            radius="sm"
+                            aria-current={active ? 'page' : undefined}
+                            onClick={() => props.onSectionChange(section.id)}
+                            leftSection={
+                                <OptionsSectionIcon
+                                    sectionId={section.id}
+                                    active={active}
+                                />
+                            }
+                            styles={{
+                                root: {
+                                    height: '2.25rem',
+                                    paddingInline: '0.75rem',
+                                },
+                                label: {
+                                    fontSize: '0.8125rem',
+                                    fontWeight: 600,
+                                },
+                            }}
+                        >
+                            {section.label}
+                        </Button>
+                    );
+                })}
+            </Stack>
+            <Box style={{ flex: 1 }} />
+        </Stack>
+    );
+}
+
+/**
+ * Safe placeholder for future settings sections.
+ *
+ * @param props - Future section id to describe.
+ * @returns Placeholder settings content.
+ */
+export function PlaceholderSettingsSection(props: {
+    sectionId: Exclude<OptionsSectionId, 'general'>;
+}): ReactElement {
+    const title =
+        OPTIONS_SECTIONS.find((section) => section.id === props.sectionId)
+            ?.label ?? 'Settings';
+    return (
+        <Stack gap="md" maw={640} data-testid="options-placeholder-section">
+            <Title order={2}>{title}</Title>
+            <Alert color="slate" role="status">
+                {`${title} settings are visible for navigation preview, but not configurable yet.`}
+            </Alert>
+        </Stack>
+    );
+}
+
+/**
+ * Accessible provider selection cards.
+ *
+ * @param props - Provider list, active id, and selection callback.
+ * @returns Provider choice card group.
+ */
+export function ProviderChoiceCards(props: {
+    providers: ProviderListItem[];
+    activeProviderId: string;
+    onProviderChange(providerId: string): void;
+}): ReactElement {
+    return (
+        <Group
+            data-testid="provider-selector"
+            role="radiogroup"
+            gap="md"
+            align="stretch"
+            wrap="wrap"
+        >
+            {props.providers.map((provider) => {
+                const selected = provider.id === props.activeProviderId;
+                const isOpenRouter = provider.id === PROVIDER_ID.OpenRouter;
+                const title = isOpenRouter
+                    ? 'OpenRouter BYOK'
+                    : 'Chrome Built-in Prompt API';
+                const description = isOpenRouter
+                    ? 'Use OpenRouter with your own API key. Supports many leading models.'
+                    : 'Use Chrome built-in on-device Prompt API. No external key required.';
+                return (
+                    <Paper
+                        key={provider.id}
+                        component="button"
+                        type="button"
+                        role="radio"
+                        aria-label={title}
+                        aria-checked={selected}
+                        onClick={() => props.onProviderChange(provider.id)}
+                        p="md"
+                        radius="md"
+                        style={{
+                            flex: '1 1 14.5rem',
+                            textAlign: 'left',
+                            border: selected
+                                ? `2px solid ${OPTIONS_BLUE}`
+                                : `1px solid ${OPTIONS_BORDER}`,
+                            background: selected ? OPTIONS_BLUE_SOFT : '#fff',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        <Group align="flex-start" wrap="nowrap" gap="sm">
+                            <Box
+                                aria-hidden="true"
+                                style={{
+                                    width: '0.875rem',
+                                    height: '0.875rem',
+                                    borderRadius: '999px',
+                                    border: selected
+                                        ? `4px solid ${OPTIONS_BLUE}`
+                                        : `1px solid ${OPTIONS_BORDER}`,
+                                    marginTop: '0.15rem',
+                                    background: '#fff',
+                                    flex: '0 0 auto',
+                                }}
+                            />
+                            <Stack gap={3} style={{ minWidth: 0 }}>
+                                <Text fw={700} size="sm" c={OPTIONS_TEXT}>
+                                    {title}
+                                </Text>
+                                <Text size="xs" c={OPTIONS_MUTED}>
+                                    {description}
+                                </Text>
+                            </Stack>
+                        </Group>
+                    </Paper>
+                );
+            })}
+        </Group>
+    );
+}
 
 /**
  * Detects errors where retrying `sendMessage` after SW wake-up may succeed.
@@ -323,8 +532,7 @@ export class Options {
  */
 function OptionsApp(): ReactElement {
     // FIXME why this states are not handled in the mobx?
-    const [loading, setLoading] = useState(true);
-    const [enabled, setEnabled] = useState(false);
+    const [, setLoading] = useState(true);
     const [providers, setProviders] = useState<ProviderListItem[]>([]);
     const [activeProviderId, setActiveProviderId] =
         useState<string>(DEFAULT_PROVIDER_ID);
@@ -340,29 +548,22 @@ function OptionsApp(): ReactElement {
         new Set(),
     );
     const [addBusy, setAddBusy] = useState(false);
+    const [saving, setSaving] = useState(false);
     const [removeBusySlug, setRemoveBusySlug] = useState<string | null>(null);
+    const [editingModelSlug, setEditingModelSlug] = useState<string | null>(
+        null,
+    );
+    const [editingModelDraft, setEditingModelDraft] = useState('');
+    const [updateBusySlug, setUpdateBusySlug] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [saved, setSaved] = useState(false);
+    const [, setSaved] = useState(false);
     const [savedApiKeyMasked, setSavedApiKeyMasked] = useState<string | null>(
         null,
     );
     const [apiKeyVisible, { toggle: toggleApiKeyVisibility }] =
         useDisclosure(false);
-
-    const setupReady = savedApiKeyMasked !== null;
-    const activeProviderLabel = useMemo(
-        () =>
-            providers.find((provider) => provider.id === activeProviderId)
-                ?.displayName ?? activeProviderDisplayName,
-        [activeProviderDisplayName, activeProviderId, providers],
-    );
-    const chromeAvailability = useMemo(
-        () =>
-            providers.find(
-                (provider) => provider.id === PROVIDER_ID.ChromePromptApi,
-            )?.availability ?? PROVIDER_AVAILABILITY.UNAVAILABLE,
-        [providers],
-    );
+    const [activeSection, setActiveSection] =
+        useState<OptionsSectionId>('general');
 
     const modelSelectData = useMemo(() => {
         const seen = new Set<string>();
@@ -387,12 +588,9 @@ function OptionsApp(): ReactElement {
         setLoading(true);
         setError(null);
         try {
-            // FIXME batch prefs + providers into one background message.
-            const [prefsRes, providerListRes, activeProviderRes, res] =
-                await Promise.all([
-                    browser.runtime.sendMessage({
-                        type: TOPSKIP_MESSAGE.GET_PREFS,
-                    }),
+            // FIXME batch provider state into one background message.
+            const [providerListRes, activeProviderRes, res] = await Promise.all(
+                [
                     browser.runtime.sendMessage({
                         type: TOPSKIP_MESSAGE.GET_PROVIDER_LIST,
                     }),
@@ -400,20 +598,8 @@ function OptionsApp(): ReactElement {
                         type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
                     }),
                     sendGetOpenRouterConfigWithRetry(),
-                ]);
-            if (
-                prefsRes &&
-                typeof prefsRes === 'object' &&
-                'ok' in prefsRes &&
-                (prefsRes as { ok: boolean }).ok === true &&
-                'prefs' in prefsRes
-            ) {
-                const prefs = (prefsRes as { prefs: { enabled?: boolean } })
-                    .prefs;
-                if (typeof prefs.enabled === 'boolean') {
-                    setEnabled(prefs.enabled);
-                }
-            }
+                ],
+            );
 
             const providerList = parseGetProviderListOk(providerListRes);
             if (!providerList) {
@@ -473,7 +659,6 @@ function OptionsApp(): ReactElement {
         const port = browser.runtime.connect({ name: PREFS_PORT_NAME });
         port.onMessage.addListener((msg: unknown) => {
             if (isPrefsPortMessage(msg)) {
-                setEnabled(msg.prefs.enabled);
                 if (typeof msg.prefs.providerId === 'string') {
                     setActiveProviderId(msg.prefs.providerId);
                 }
@@ -551,8 +736,10 @@ function OptionsApp(): ReactElement {
     const onSave = async (): Promise<void> => {
         setError(null);
         setSaved(false);
+        setSaving(true);
         if (activeProviderId !== PROVIDER_ID.OpenRouter) {
             setSaved(true);
+            setSaving(false);
             return;
         }
         try {
@@ -576,6 +763,8 @@ function OptionsApp(): ReactElement {
             await load();
         } catch (e) {
             setError(getErrorMessage(e));
+        } finally {
+            setSaving(false);
         }
     };
 
@@ -691,312 +880,277 @@ function OptionsApp(): ReactElement {
         }
     };
 
+    /**
+     * Starts inline editing for a saved custom model row.
+     *
+     * @param slug - Existing model id to edit.
+     * @returns Nothing.
+     */
+    const onStartCustomModelEdit = (slug: string): void => {
+        setError(null);
+        setEditingModelSlug(slug);
+        setEditingModelDraft(slug);
+    };
+
+    /**
+     * Cancels inline custom model editing without mutating storage.
+     *
+     * @returns Nothing.
+     */
+    const onCancelCustomModelEdit = (): void => {
+        setEditingModelSlug(null);
+        setEditingModelDraft('');
+    };
+
+    /**
+     * Replaces a custom model by validating and adding the new slug first.
+     *
+     * @param slug - Existing model id to replace.
+     * @returns Promise that resolves when the edit attempt finishes.
+     */
+    const onSaveCustomModelEdit = async (slug: string): Promise<void> => {
+        const nextSlug = editingModelDraft.trim();
+        setError(null);
+        setSaved(false);
+
+        if (nextSlug.length === 0) {
+            setError(translator.getMessage('options_error_add_model'));
+            return;
+        }
+
+        if (nextSlug === slug) {
+            onCancelCustomModelEdit();
+            return;
+        }
+
+        setUpdateBusySlug(slug);
+        try {
+            const validationRes: unknown = await browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
+                slug: nextSlug,
+                apiKey,
+            });
+
+            if (!isValidateOpenRouterModelOk(validationRes)) {
+                const err =
+                    validationRes &&
+                    typeof validationRes === 'object' &&
+                    'error' in validationRes &&
+                    typeof (validationRes as { error: unknown }).error ===
+                        'string'
+                        ? (validationRes as { error: string }).error
+                        : 'Validation failed';
+                setError(err);
+                return;
+            }
+
+            const validation = validationRes as {
+                ok: true;
+                valid: boolean;
+                error?: string;
+                unverified?: boolean;
+            };
+
+            if (!validation.valid) {
+                setError(
+                    validation.error ??
+                        translator.getMessage('options_error_add_model'),
+                );
+                return;
+            }
+
+            if (validation.unverified) {
+                setUnverifiedModels((prev) => new Set([...prev, nextSlug]));
+            }
+
+            if (!customModels.includes(nextSlug)) {
+                const addRes: unknown = await browser.runtime.sendMessage({
+                    type: TOPSKIP_MESSAGE.ADD_OPENROUTER_CUSTOM_MODEL,
+                    slug: nextSlug,
+                });
+                if (!isMutateOpenRouterCustomModelOk(addRes)) {
+                    const err =
+                        addRes &&
+                        typeof addRes === 'object' &&
+                        'error' in addRes &&
+                        typeof (addRes as { error: unknown }).error === 'string'
+                            ? (addRes as { error: string }).error
+                            : translator.getMessage('options_error_add_model');
+                    setError(err);
+                    return;
+                }
+            }
+
+            const removeRes: unknown = await browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.REMOVE_OPENROUTER_CUSTOM_MODEL,
+                slug,
+            });
+            if (!isMutateOpenRouterCustomModelOk(removeRes)) {
+                const err =
+                    removeRes &&
+                    typeof removeRes === 'object' &&
+                    'error' in removeRes &&
+                    typeof (removeRes as { error: unknown }).error === 'string'
+                        ? (removeRes as { error: string }).error
+                        : translator.getMessage('options_error_remove_model');
+                setError(err);
+                return;
+            }
+
+            setModelChoice(nextSlug);
+            setEditingModelSlug(null);
+            setEditingModelDraft('');
+            await load();
+        } catch (e) {
+            setError(getErrorMessage(e));
+        } finally {
+            setUpdateBusySlug(null);
+        }
+    };
+
     return (
         <Box
+            data-testid="options-shell"
             style={{
                 minHeight: '100vh',
-                background: 'linear-gradient(180deg, #f8fafc 0%, #f5f8fb 100%)',
+                background: '#f3f7fc',
+                color: OPTIONS_TEXT,
+                padding: '1.5rem 1rem',
             }}
         >
-            <Stack gap="lg" p="lg" maw={880} mx="auto">
-                <Paper
-                    p="xl"
-                    radius="xl"
+            <style>
+                {`
+                    .topskip-options-frame {
+                        display: grid;
+                        grid-template-columns: 180px minmax(0, 1fr);
+                    }
+                    @media (max-width: 720px) {
+                        .topskip-options-frame {
+                            grid-template-columns: minmax(0, 1fr);
+                        }
+                        .topskip-options-sidebar {
+                            border-right: 0 !important;
+                            border-bottom: 1px solid var(--mantine-color-slate-2);
+                        }
+                    }
+                `}
+            </style>
+            <Box
+                className="topskip-options-frame"
+                style={{
+                    maxWidth: '52rem',
+                    margin: '0 auto',
+                    background: '#fff',
+                    border: `1px solid ${OPTIONS_BORDER}`,
+                    borderRadius: '0.75rem',
+                    overflow: 'hidden',
+                    boxShadow: '0 14px 36px rgba(15, 23, 42, 0.1)',
+                }}
+            >
+                <Box
+                    className="topskip-options-sidebar"
                     style={{
-                        background:
-                            'linear-gradient(180deg, #fff 0%, #f8fafc 100%)',
+                        borderRight: `1px solid ${OPTIONS_BORDER}`,
+                        background: '#fbfdff',
                     }}
                 >
-                    <Group
-                        justify="space-between"
-                        align="flex-start"
-                        wrap="wrap"
-                        gap="md"
-                    >
-                        <Stack gap={4} maw={560}>
-                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                                TopSkip settings
-                            </Text>
-                            <Title order={2} size="h2">
-                                {reactTranslator.getMessage('options_heading')}
-                            </Title>
-                            <Text size="sm" c="dimmed">
-                                {reactTranslator.getMessage(
-                                    'options_description',
-                                )}
-                            </Text>
-                        </Stack>
-                        <Group gap="xs">
-                            <Badge color={enabled ? 'brand' : 'gray'}>
-                                {enabled
-                                    ? 'Detection enabled'
-                                    : 'Detection paused'}
-                            </Badge>
-                            <Badge
-                                color={
-                                    activeProviderId === PROVIDER_ID.OpenRouter
-                                        ? setupReady
-                                            ? 'success'
-                                            : 'warning'
-                                        : chromeAvailability ===
-                                            PROVIDER_AVAILABILITY.AVAILABLE
-                                          ? 'success'
-                                          : 'gray'
-                                }
-                            >
-                                {activeProviderLabel}
-                            </Badge>
-                        </Group>
-                    </Group>
-                </Paper>
-
-                <Group align="stretch" wrap="wrap" gap="md">
-                    <Paper
-                        p="md"
-                        radius="xl"
-                        style={{
-                            flex: '1 1 180px',
-                            minWidth: 180,
-                        }}
-                    >
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                            Current state
-                        </Text>
-                        <Text fw={700} mt={6}>
-                            {enabled ? 'Ready to analyze' : 'Paused'}
-                        </Text>
-                        <Text size="xs" c="dimmed" mt={4}>
-                            The popup will show a quick status card for the
-                            current YouTube tab.
-                        </Text>
-                    </Paper>
-                    <Paper
-                        p="md"
-                        radius="xl"
-                        style={{
-                            flex: '1 1 180px',
-                            minWidth: 180,
-                        }}
-                    >
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                            Connection
-                        </Text>
-                        <Text fw={700} mt={6}>
-                            {activeProviderId === PROVIDER_ID.OpenRouter
-                                ? setupReady
-                                    ? savedApiKeyMasked
-                                    : 'No API key saved'
-                                : 'Runs on your device'}
-                        </Text>
-                        <Text size="xs" c="dimmed" mt={4}>
-                            {activeProviderId === PROVIDER_ID.OpenRouter
-                                ? 'Keep the field blank below if you want to preserve the ' +
-                                  'saved key.'
-                                : 'Chrome Built-in uses the local browser model instead of ' +
-                                  'a cloud API key.'}
-                        </Text>
-                    </Paper>
-                    <Paper
-                        p="md"
-                        radius="xl"
-                        style={{
-                            flex: '1 1 180px',
-                            minWidth: 180,
-                        }}
-                    >
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                            Active provider
-                        </Text>
-                        <Text fw={700} mt={6}>
-                            {activeProviderLabel}
-                        </Text>
-                        <Text size="xs" c="dimmed" mt={4}>
-                            {activeProviderId === PROVIDER_ID.OpenRouter
-                                ? `Model: ${modelChoice}`
-                                : `Availability: ${chromeAvailability}`}
-                        </Text>
-                    </Paper>
-                </Group>
-
-                {error ? (
-                    <Alert color="error" role="alert">
-                        {error}
-                    </Alert>
-                ) : null}
-                {saved ? (
-                    <Alert color="success" role="status">
-                        {reactTranslator.getMessage('options_saved')}
-                    </Alert>
-                ) : null}
-
-                <Paper p="lg" radius="xl">
-                    <Stack gap="md">
-                        <Stack gap={4}>
-                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                                LLM provider
-                            </Text>
-                            <Title order={3} size="h3">
-                                Choose the analysis backend
-                            </Title>
-                            <Text size="sm" c="dimmed">
-                                Switch between the existing OpenRouter flow and
-                                the upcoming Chrome Built-in provider. The
-                                selected provider takes effect as soon as you
-                                switch tabs.
-                            </Text>
-                        </Stack>
-                        <SegmentedControl
-                            data-testid="provider-selector"
-                            fullWidth
-                            value={activeProviderId}
-                            onChange={(nextId) => {
-                                void onProviderChange(nextId);
-                            }}
-                            data={providers.map((provider) => ({
-                                value: provider.id,
-                                label: provider.displayName,
-                            }))}
-                        />
-                        <Group gap="xs">
-                            {providers.map((provider) => (
-                                <Badge
-                                    key={provider.id}
-                                    color={
-                                        provider.availability ===
-                                        PROVIDER_AVAILABILITY.AVAILABLE
-                                            ? 'success'
-                                            : provider.availability ===
-                                                PROVIDER_AVAILABILITY.UNAVAILABLE
-                                              ? 'gray'
-                                              : 'brand'
-                                    }
-                                    variant={
-                                        provider.id === activeProviderId
-                                            ? 'filled'
-                                            : 'light'
-                                    }
-                                >
-                                    {provider.displayName}:{' '}
-                                    {provider.availability}
-                                </Badge>
-                            ))}
-                        </Group>
-                        {activeProviderId === PROVIDER_ID.ChromePromptApi && (
-                            <ChromeBuiltinInlineStatus />
-                        )}
-                    </Stack>
-                </Paper>
-
-                <Paper p="lg" radius="xl">
-                    <Stack gap="md">
-                        <Stack gap={4}>
-                            <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                                Core controls
-                            </Text>
-                            <Title order={3} size="h3">
-                                Detection behavior
-                            </Title>
-                            <Text size="sm" c="dimmed">
-                                The popup stays intentionally simple. Enable or
-                                pause transcript analysis here.
-                                Provider-specific settings live below.
-                            </Text>
-                        </Stack>
-                        <Paper
-                            p="md"
-                            radius="lg"
-                            style={{ background: '#fbfdff' }}
-                        >
-                            <Group
-                                justify="space-between"
-                                wrap="nowrap"
-                                gap="md"
-                                align="flex-start"
-                            >
-                                <Stack gap={2} style={{ flex: 1 }}>
-                                    <Text fw={600}>
-                                        {translator.getMessage(
-                                            'options_enable_detection',
-                                        )}
-                                    </Text>
-                                    <Text size="xs" c="dimmed">
-                                        When enabled, TopSkip analyzes available
-                                        captions and marks promo windows for
-                                        skipping.
-                                    </Text>
-                                </Stack>
-                                <Switch
-                                    checked={enabled}
-                                    onChange={(e) => {
-                                        const val = e.currentTarget.checked;
-                                        setEnabled(val);
-                                        void browser.runtime.sendMessage({
-                                            type: TOPSKIP_MESSAGE.SET_PREFS,
-                                            enabled: val,
-                                        });
-                                    }}
-                                    aria-label={translator.getMessage(
-                                        'options_enable_detection',
-                                    )}
-                                />
-                            </Group>
-                        </Paper>
-                    </Stack>
-                </Paper>
-
-                {activeProviderId === PROVIDER_ID.OpenRouter && (
-                    <OpenRouterConfigPanel
-                        apiKey={apiKey}
-                        apiKeyVisible={apiKeyVisible}
-                        savedApiKeyMasked={savedApiKeyMasked}
-                        modelChoice={modelChoice}
-                        modelSelectData={modelSelectData}
-                        customModels={customModels}
-                        newModelDraft={newModelDraft}
-                        addBusy={addBusy}
-                        removeBusySlug={removeBusySlug}
-                        validationError={error}
-                        unverifiedModels={unverifiedModels}
-                        onApiKeyChange={setApiKey}
-                        onToggleApiKeyVisibility={toggleApiKeyVisibility}
-                        onModelChoiceChange={(value) => {
-                            setModelChoice(
-                                value ?? OPENROUTER_DEFAULT_MODEL_SLUG,
-                            );
-                        }}
-                        onNewModelDraftChange={setNewModelDraft}
-                        onAddCustomModel={() => {
-                            void onAddCustomModel();
-                        }}
-                        onRemoveCustomModel={(slug) => {
-                            void onRemoveCustomModel(slug);
-                        }}
+                    <OptionsSidebar
+                        activeSection={activeSection}
+                        onSectionChange={setActiveSection}
                     />
-                )}
+                </Box>
+                <Box p="lg" style={{ minWidth: 0 }}>
+                    {activeSection === 'general' ? (
+                        <Stack gap="md">
+                            <Stack gap={4}>
+                                <Title order={1} size="h3" c={OPTIONS_TEXT}>
+                                    TopSkip Settings
+                                </Title>
+                                <Text size="xs" c={OPTIONS_MUTED}>
+                                    Configure how TopSkip detects and skips
+                                    promo segments on YouTube.
+                                </Text>
+                            </Stack>
 
-                <Paper p="lg" radius="xl">
-                    <Stack gap="sm">
-                        <Text size="xs" c="dimmed" tt="uppercase" fw={700}>
-                            What the popup will show
-                        </Text>
-                        <Title order={3} size="h3">
-                            Status-first behavior
-                        </Title>
-                        <Text size="sm" c="dimmed">
-                            {reactTranslator.getMessage('options_save_help')}
-                        </Text>
-                    </Stack>
-                </Paper>
+                            {error ? (
+                                <Alert color="error" role="alert">
+                                    {error}
+                                </Alert>
+                            ) : null}
+                            <Stack gap="sm">
+                                <Title order={2} size="h4">
+                                    1. Promo-detection provider
+                                </Title>
+                                <ProviderChoiceCards
+                                    providers={providers}
+                                    activeProviderId={activeProviderId}
+                                    onProviderChange={(nextId) => {
+                                        void onProviderChange(nextId);
+                                    }}
+                                />
+                                {activeProviderId ===
+                                    PROVIDER_ID.ChromePromptApi && (
+                                    <ChromeBuiltinInlineStatus />
+                                )}
+                            </Stack>
 
-                <Group>
-                    <Button loading={loading} onClick={() => void onSave()}>
-                        {reactTranslator.getMessage('options_save_button')}
-                    </Button>
-                    <Button variant="default" onClick={() => void load()}>
-                        {reactTranslator.getMessage('options_reload_button')}
-                    </Button>
-                </Group>
-            </Stack>
+                            {activeProviderId === PROVIDER_ID.OpenRouter && (
+                                <OpenRouterConfigPanel
+                                    apiKey={apiKey}
+                                    apiKeyVisible={apiKeyVisible}
+                                    savedApiKeyMasked={savedApiKeyMasked}
+                                    modelChoice={modelChoice}
+                                    modelSelectData={modelSelectData}
+                                    customModels={customModels}
+                                    newModelDraft={newModelDraft}
+                                    addBusy={addBusy}
+                                    saveBusy={saving}
+                                    removeBusySlug={removeBusySlug}
+                                    editingModelSlug={editingModelSlug}
+                                    editingModelDraft={editingModelDraft}
+                                    updateBusySlug={updateBusySlug}
+                                    validationError={error}
+                                    unverifiedModels={unverifiedModels}
+                                    onApiKeyChange={setApiKey}
+                                    onToggleApiKeyVisibility={
+                                        toggleApiKeyVisibility
+                                    }
+                                    onModelChoiceChange={(value) => {
+                                        setModelChoice(
+                                            value ??
+                                                OPENROUTER_DEFAULT_MODEL_SLUG,
+                                        );
+                                    }}
+                                    onNewModelDraftChange={setNewModelDraft}
+                                    onSave={() => {
+                                        void onSave();
+                                    }}
+                                    onAddCustomModel={() => {
+                                        void onAddCustomModel();
+                                    }}
+                                    onEditCustomModel={(slug) => {
+                                        onStartCustomModelEdit(slug);
+                                    }}
+                                    onEditCustomModelDraftChange={
+                                        setEditingModelDraft
+                                    }
+                                    onSaveCustomModelEdit={(slug) => {
+                                        void onSaveCustomModelEdit(slug);
+                                    }}
+                                    onCancelCustomModelEdit={() => {
+                                        onCancelCustomModelEdit();
+                                    }}
+                                    onRemoveCustomModel={(slug) => {
+                                        void onRemoveCustomModel(slug);
+                                    }}
+                                />
+                            )}
+                        </Stack>
+                    ) : (
+                        <PlaceholderSettingsSection sectionId={activeSection} />
+                    )}
+                </Box>
+            </Box>
         </Box>
     );
 }

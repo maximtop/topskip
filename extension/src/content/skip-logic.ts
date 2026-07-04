@@ -5,6 +5,9 @@ import { SKIP_END_SEC, SKIP_START_SEC } from '@/shared/constants';
  */
 export const MAX_PLAYBACK_DELTA_SEC = 2.75;
 
+/**
+ * Result of the legacy fixed-window skip decision.
+ */
 export type SkipDecision =
     | { action: 'none' }
     | { action: 'skip'; targetTime: number };
@@ -26,6 +29,9 @@ export function computeSkipTarget(duration: number): number | null {
     return Math.min(SKIP_END_SEC, duration);
 }
 
+/**
+ * Playback state needed to decide whether fixed-window skip should fire.
+ */
 export type ShouldFireSkipInput = {
     prevTime: number;
     currentTime: number;

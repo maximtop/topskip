@@ -9,12 +9,18 @@ import {
 import { getErrorMessage } from '@/shared/error';
 import { PERCENT_SCALE } from '@/shared/constants';
 
+/**
+ * Download progress and error state for the Prompt API model setup flow.
+ */
 type DownloadContext = {
     progress: number;
     extracting: boolean;
     error: string | null;
 };
 
+/**
+ * Events accepted by the Chrome built-in model download state machine.
+ */
 type DownloadEvent =
     | { type: 'DOWNLOAD' }
     | { type: 'RETRY' }
@@ -22,6 +28,9 @@ type DownloadEvent =
     | { type: 'DOWNLOAD_COMPLETE' }
     | { type: 'DOWNLOAD_ERROR'; error: string };
 
+/**
+ * Availability states returned by the Chrome Prompt API.
+ */
 type Availability =
     | 'unavailable'
     | 'downloadable'

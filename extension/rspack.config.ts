@@ -114,6 +114,7 @@ export default defineConfig({
     entry: {
         background: './src/background/index.ts',
         content: './src/content/index.ts',
+        'caption-page-bridge': './src/content/captions/caption-page-bridge.ts',
         popup: './src/popup/main.tsx',
         options: './src/options/main.tsx',
     },
@@ -139,6 +140,7 @@ export default defineConfig({
                         jsc: {
                             parser: { syntax: 'typescript', tsx: true },
                             transform: { react: { runtime: 'automatic' } },
+                            target: 'es2022',
                         },
                     },
                 },

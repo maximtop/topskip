@@ -6,6 +6,7 @@ import {
     type UserPreferences,
 } from '@/shared/constants';
 import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
+import type { ProviderId } from '@/shared/providers';
 import type { PROVIDER_AVAILABILITY } from './chrome-prompt-api';
 
 /**
@@ -18,6 +19,10 @@ export const TOPSKIP_MESSAGE = {
     GET_ACTIVE_PROVIDER: 'TOPSKIP_GET_ACTIVE_PROVIDER',
     SET_ACTIVE_PROVIDER: 'TOPSKIP_SET_ACTIVE_PROVIDER',
     GET_PROVIDER_LIST: 'TOPSKIP_GET_PROVIDER_LIST',
+    GET_MODEL_SETTINGS: 'TOPSKIP_GET_MODEL_SETTINGS',
+    SET_ACTIVE_MODEL: 'TOPSKIP_SET_ACTIVE_MODEL',
+    SAVE_CONNECTION_KEY: 'TOPSKIP_SAVE_CONNECTION_KEY',
+    TEST_CONNECTION_KEY: 'TOPSKIP_TEST_CONNECTION_KEY',
     PREFS_UPDATED: 'TOPSKIP_PREFS_UPDATED',
     /**
      * Watch content script fetched captions and forwards them for service worker
@@ -25,10 +30,11 @@ export const TOPSKIP_MESSAGE = {
      */
     CAPTIONS_FROM_CONTENT: 'TOPSKIP_CAPTIONS_FROM_CONTENT',
     /**
-     * Fetch `/api/timedtext` in the page MAIN world (content-script fetch can get
-     * empty bodies on YouTube).
+     * Installs a MAIN-world page bridge for player-mediated caption capture.
      */
-    FETCH_TIMEDTEXT_PAGE: 'TOPSKIP_FETCH_TIMEDTEXT_PAGE',
+    INSTALL_CAPTION_CAPTURE: 'TOPSKIP_INSTALL_CAPTION_CAPTURE',
+    ACTIVATE_CAPTION_CAPTURE: 'TOPSKIP_ACTIVATE_CAPTION_CAPTURE',
+    DEACTIVATE_CAPTION_CAPTURE: 'TOPSKIP_DEACTIVATE_CAPTION_CAPTURE',
     GET_OPENROUTER_CONFIG: 'TOPSKIP_GET_OPENROUTER_CONFIG',
     SET_OPENROUTER_CONFIG: 'TOPSKIP_SET_OPENROUTER_CONFIG',
     ADD_OPENROUTER_CUSTOM_MODEL: 'TOPSKIP_ADD_OPENROUTER_CUSTOM_MODEL',
@@ -48,23 +54,63 @@ export const TOPSKIP_MESSAGE = {
 } as const;
 
 /**
- * Response from {@link TOPSKIP_MESSAGE.FETCH_TIMEDTEXT_PAGE}.
+ * Bounded caption acquisition failure reasons safe to surface in diagnostics.
  */
-export type FetchTimedtextPageResponse =
-    | { ok: true; status: number; body: string }
-    | { ok: false; error: string };
+export const CAPTION_CAPTURE_FAILURE_REASON = {
+    PlayerNotReady: 'player-not-ready',
+    ActivationUnavailable: 'activation-unavailable',
+    CaptureTimeout: 'capture-timeout',
+    ParseFailed: 'parse-failed',
+    CaptionsUnavailable: 'captions-unavailable',
+    StaleVideo: 'stale-video',
+    BridgeInstallFailed: 'bridge-install-failed',
+} as const;
+
+/**
+ * Failure reason literals accepted in caption capture diagnostics.
+ */
+export type CaptionCaptureFailureReason =
+    (typeof CAPTION_CAPTURE_FAILURE_REASON)[keyof typeof CAPTION_CAPTURE_FAILURE_REASON];
+
+const captionCaptureFailureReasonSchema = v.picklist([
+    CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady,
+    CAPTION_CAPTURE_FAILURE_REASON.ActivationUnavailable,
+    CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
+    CAPTION_CAPTURE_FAILURE_REASON.ParseFailed,
+    CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable,
+    CAPTION_CAPTURE_FAILURE_REASON.StaleVideo,
+    CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed,
+] as const);
+
+const captionCaptureDiagnosticsSchema = v.strictObject({
+    stage: v.string(),
+    bodyLength: v.optional(v.number()),
+    segmentCount: v.optional(v.number()),
+    languageCode: v.optional(v.string()),
+    urlShape: v.optional(
+        v.strictObject({
+            pathname: v.string(),
+            paramNames: v.array(v.string()),
+            fmt: v.nullable(v.string()),
+            hasPot: v.boolean(),
+        }),
+    ),
+});
 
 const captionsFromContentPayloadOkSchema = v.object({
     ok: v.literal(true),
     videoId: v.pipe(v.string(), v.minLength(1)),
     languageCode: v.string(),
     segments: v.array(captionSegmentSchema),
+    diagnostics: v.optional(captionCaptureDiagnosticsSchema),
 });
 
-const captionsFromContentPayloadErrSchema = v.object({
+const captionsFromContentPayloadErrSchema = v.strictObject({
     ok: v.literal(false),
     videoId: v.pipe(v.string(), v.minLength(1)),
     error: v.string(),
+    reason: v.optional(captionCaptureFailureReasonSchema),
+    diagnostics: v.optional(captionCaptureDiagnosticsSchema),
 });
 
 /**
@@ -93,6 +139,9 @@ export const captionsFromContentRuntimeMessageSchema = v.object({
     payload: captionsFromContentPayloadSchema,
 });
 
+/**
+ * Runtime message body for validated content-script caption payloads.
+ */
 export type CaptionsFromContentRuntimeMessage = v.InferOutput<
     typeof captionsFromContentRuntimeMessageSchema
 >;
@@ -143,6 +192,9 @@ export type GetOpenRouterConfigResponse =
       }
     | { ok: false; error: string };
 
+/**
+ * Result of saving OpenRouter API key and selected model.
+ */
 export type SetOpenRouterConfigResponse =
     | { ok: true }
     | { ok: false; error: string };
@@ -169,31 +221,52 @@ export type PromoDetectionStatePayload = {
     partialCoverage?: boolean;
 };
 
+/**
+ * Popup response containing the latest detection state for the active tab.
+ */
 export type GetDetectionStatusResponse =
     | { ok: true; state: PromoDetectionStatePayload | null }
     | { ok: false; error: string };
 
+/**
+ * Serialized provider availability state sent over runtime messages.
+ */
 export type ProviderAvailabilityMessage =
     (typeof PROVIDER_AVAILABILITY)[keyof typeof PROVIDER_AVAILABILITY];
 
+/**
+ * Provider registry item exposed to extension UI.
+ */
 export type ProviderListItem = {
     id: string;
     displayName: string;
     availability: ProviderAvailabilityMessage;
 };
 
+/**
+ * Active provider metadata used by legacy provider-first UI paths.
+ */
 export type GetActiveProviderResponse =
     | { ok: true; providerId: string; displayName: string; modelName: string }
     | { ok: false; error: string };
 
+/**
+ * Result of changing the active provider through legacy provider messages.
+ */
 export type SetActiveProviderResponse =
     | { ok: true }
     | { ok: false; error: string };
 
+/**
+ * Provider list response returned to extension UI.
+ */
 export type GetProviderListResponse =
     | { ok: true; providers: ProviderListItem[] }
     | { ok: false; error: string };
 
+/**
+ * Chrome Prompt API readiness and download progress response.
+ */
 export type GetChromePromptApiStatusResponse =
     | {
           ok: true;
@@ -202,6 +275,9 @@ export type GetChromePromptApiStatusResponse =
       }
     | { ok: false; error: string };
 
+/**
+ * Result of requesting Chrome Prompt API model download.
+ */
 export type TriggerChromeModelDownloadResponse =
     | { ok: true }
     | { ok: false; error: string };
@@ -212,6 +288,81 @@ export type TriggerChromeModelDownloadResponse =
 export type ValidateOpenRouterModelResponse =
     | { ok: true; valid: boolean; error?: string; unverified?: boolean }
     | { ok: false; error: string };
+
+/**
+ * User-facing model option serialized for options and popup UI.
+ */
+export type DetectionModelMessage = {
+    id: string;
+    label: string;
+    providerId: ProviderId;
+    providerLabel: string;
+    modelName: string;
+    requiresConnection: boolean;
+    availability: ProviderAvailabilityMessage;
+};
+
+/**
+ * Providers that expose API-key connection entries.
+ */
+export type ConnectionProviderId = 'openrouter' | 'openai';
+
+export const CONNECTION_STATUS = {
+    Missing: 'missing',
+    Saved: 'saved',
+} as const;
+
+/**
+ * Saved/missing key state for a provider connection row.
+ */
+export type ConnectionStatus =
+    (typeof CONNECTION_STATUS)[keyof typeof CONNECTION_STATUS];
+
+/**
+ * Provider connection row sent to the model-first settings UI.
+ */
+export type ConnectionEntryMessage = {
+    providerId: ConnectionProviderId;
+    providerLabel: string;
+    requiredForActiveModel: boolean;
+    apiKeyMasked: string | null;
+    status: ConnectionStatus;
+};
+
+/**
+ * Complete model-first settings snapshot for options and popup.
+ */
+export type GetModelSettingsResponse =
+    | {
+          ok: true;
+          activeModelId: string;
+          models: DetectionModelMessage[];
+          connections: ConnectionEntryMessage[];
+          customOpenRouterModels: string[];
+      }
+    | { ok: false; error: string };
+
+/**
+ * Result of persisting a new active detection model.
+ */
+export type SetActiveModelResponse =
+    | { ok: true }
+    | { ok: false; error: string };
+
+/**
+ * Result of saving a provider connection key.
+ */
+export type SaveConnectionKeyResponse =
+    | { ok: true; apiKeyMasked: string | null }
+    | { ok: false; error: string };
+
+/**
+ * Result of validating a draft or saved provider connection key.
+ */
+export type TestConnectionKeyResponse =
+    | { ok: true; valid: true }
+    | { ok: true; valid: false; error: string }
+    | { ok: false; error: string; retryable?: boolean };
 
 /**
  * Log level for content-to-background log forwarding.
@@ -228,6 +379,9 @@ export const contentLogMessageSchema = v.object({
     args: v.array(v.unknown()),
 });
 
+/**
+ * Union of all runtime messages routed through the background service worker.
+ */
 export type TopSkipRuntimeMessage =
     | { type: typeof TOPSKIP_MESSAGE.GET_PREFS }
     | { type: typeof TOPSKIP_MESSAGE.SET_PREFS; enabled: boolean }
@@ -237,12 +391,29 @@ export type TopSkipRuntimeMessage =
           providerId: string;
       }
     | { type: typeof TOPSKIP_MESSAGE.GET_PROVIDER_LIST }
+    | { type: typeof TOPSKIP_MESSAGE.GET_MODEL_SETTINGS }
+    | {
+          type: typeof TOPSKIP_MESSAGE.SET_ACTIVE_MODEL;
+          modelId: string;
+      }
+    | {
+          type: typeof TOPSKIP_MESSAGE.SAVE_CONNECTION_KEY;
+          providerId: ConnectionProviderId;
+          apiKey: string;
+      }
+    | {
+          type: typeof TOPSKIP_MESSAGE.TEST_CONNECTION_KEY;
+          providerId: ConnectionProviderId;
+          apiKey?: string;
+      }
     | { type: typeof TOPSKIP_MESSAGE.PREFS_UPDATED; prefs: UserPreferences }
     | {
           type: typeof TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT;
           payload: CaptionsFromContentPayload;
       }
-    | { type: typeof TOPSKIP_MESSAGE.FETCH_TIMEDTEXT_PAGE; url: string }
+    | { type: typeof TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE }
+    | { type: typeof TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE }
+    | { type: typeof TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE }
     | { type: typeof TOPSKIP_MESSAGE.GET_OPENROUTER_CONFIG }
     | {
           type: typeof TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG;
@@ -315,10 +486,16 @@ export function pickMessage<K extends TopSkipRuntimeMessage['type']>(
     return message as Extract<TopSkipRuntimeMessage, { type: K }>;
 }
 
+/**
+ * Response from reading stored user preferences.
+ */
 export type GetPrefsResponse =
     | { ok: true; prefs: UserPreferences }
     | { ok: false; error: string };
 
+/**
+ * Result of saving user preferences.
+ */
 export type SetPrefsResponse = { ok: true } | { ok: false; error: string };
 
 /**
@@ -371,17 +548,6 @@ export const getPrefsMessageSchema = v.object({
 export const setPrefsMessageSchema = v.object({
     type: v.literal(TOPSKIP_MESSAGE.SET_PREFS),
     enabled: v.boolean(),
-});
-
-/**
- * Valibot schema for {@link TOPSKIP_MESSAGE.FETCH_TIMEDTEXT_PAGE}.
- * Validates structure only; the caller checks the allowed URL prefix
- * separately since an invalid prefix warrants an error response rather
- * than silently ignoring the message.
- */
-export const fetchTimedtextPageMessageSchema = v.object({
-    type: v.literal(TOPSKIP_MESSAGE.FETCH_TIMEDTEXT_PAGE),
-    url: v.string(),
 });
 
 /**

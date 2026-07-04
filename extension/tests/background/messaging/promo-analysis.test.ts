@@ -262,6 +262,31 @@ describe('PromoAnalysis — adapter routing', () => {
             });
         });
 
+        it('routes OpenAI active model through the OpenAI provider adapter', () => {
+            const openAiAnalyze = makeAnalyzeTranscript();
+            const openAiAdapter = makeAdapter({
+                id: 'openai',
+                displayName: 'OpenAI',
+                analyzeTranscript: openAiAnalyze,
+            });
+            prefsMocks.load.mockReturnValue({
+                enabled: true,
+                providerId: 'openai',
+                activeModelId: 'openai:gpt-5.2',
+            });
+            registryMocks.get.mockReturnValue(openAiAdapter);
+
+            PromoAnalysis.onCaptionsReady(
+                baseSender(),
+                basePayload('openAiVid'),
+            );
+
+            return vi.waitFor(() => {
+                expect(registryMocks.get).toHaveBeenCalledWith('openai');
+                expect(openAiAnalyze).toHaveBeenCalled();
+            });
+        });
+
         it('returns not_configured when registry.get returns undefined', () => {
             registryMocks.get.mockReturnValue(undefined);
 

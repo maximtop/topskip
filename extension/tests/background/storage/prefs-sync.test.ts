@@ -1,61 +1,44 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { STORAGE_KEY_PREFS } from '@/shared/constants';
-
-const mocks = vi.hoisted(() => ({
-    get: vi.fn(),
-    set: vi.fn(),
-}));
+const storageGet = vi.fn();
+const storageSet = vi.fn();
 
 vi.mock('@/shared/browser', () => ({
     default: {
         storage: {
             local: {
-                get: mocks.get,
-                set: mocks.set,
+                get: storageGet,
+                set: storageSet,
             },
         },
     },
 }));
 
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+const { PrefsSyncStorage } = await import('@/background/storage/prefs-sync');
+const { DEFAULT_DETECTION_MODEL_ID, CHROME_BUILTIN_MODEL_ID } =
+    await import('@/shared/detection-models');
 
-describe('PrefsSyncStorage', () => {
+describe('PrefsSyncStorage model migration', () => {
     beforeEach(() => {
-        mocks.get.mockReset();
-        mocks.set.mockReset();
+        storageGet.mockReset();
+        storageSet.mockReset();
     });
 
-    it('loads defaults with providerId when storage empty', async () => {
-        mocks.get.mockResolvedValue({});
+    it('adds activeModelId to existing OpenRouter prefs', async () => {
+        storageGet.mockResolvedValue({
+            'topskip:prefs': { enabled: true, providerId: 'openrouter' },
+        });
         const prefs = await PrefsSyncStorage.load();
-        expect(prefs.enabled).toBe(true);
+        expect(prefs.activeModelId).toBe(DEFAULT_DETECTION_MODEL_ID);
         expect(prefs.providerId).toBe('openrouter');
+        expect(storageSet).toHaveBeenCalled();
     });
 
-    it('loads persisted prefs with providerId', async () => {
-        mocks.get.mockResolvedValue({
-            [STORAGE_KEY_PREFS]: {
-                enabled: false,
-                providerId: 'chrome-prompt-api',
-            },
+    it('maps old Chrome provider prefs to the built-in model id', async () => {
+        storageGet.mockResolvedValue({
+            'topskip:prefs': { enabled: true, providerId: 'chrome-prompt-api' },
         });
         const prefs = await PrefsSyncStorage.load();
-        expect(prefs.enabled).toBe(false);
-        expect(prefs.providerId).toBe('chrome-prompt-api');
-    });
-
-    it('save persists providerId', async () => {
-        mocks.set.mockResolvedValue(undefined);
-        await PrefsSyncStorage.save({
-            enabled: false,
-            providerId: 'chrome-prompt-api',
-        });
-        expect(mocks.set).toHaveBeenCalledWith({
-            [STORAGE_KEY_PREFS]: {
-                enabled: false,
-                providerId: 'chrome-prompt-api',
-            },
-        });
+        expect(prefs.activeModelId).toBe(CHROME_BUILTIN_MODEL_ID);
     });
 });

@@ -9,6 +9,7 @@ import {
     TOPSKIP_MESSAGE,
     type GetActiveProviderResponse,
     type GetChromePromptApiStatusResponse,
+    type GetModelSettingsResponse,
     type GetPrefsResponse,
     type ProviderAvailabilityMessage,
     type SetPrefsResponse,
@@ -73,6 +74,27 @@ function isGetActiveProviderOk(
     );
 }
 
+/**
+ * Type guard for successful model-first settings response.
+ *
+ * @param res - Untyped `runtime.sendMessage` result.
+ * @returns Whether `res` includes active model and model list.
+ */
+function isGetModelSettingsOk(
+    res: unknown,
+): res is Extract<GetModelSettingsResponse, { ok: true }> {
+    return (
+        typeof res === 'object' &&
+        res !== null &&
+        'ok' in res &&
+        (res as { ok: boolean }).ok === true &&
+        'activeModelId' in res &&
+        typeof (res as { activeModelId: unknown }).activeModelId === 'string' &&
+        'models' in res &&
+        Array.isArray((res as { models: unknown }).models)
+    );
+}
+
 // FIXME use valibot for checking shapes
 /**
  * Type guard for a successful GET_CHROME_PROMPT_API_STATUS response.
@@ -132,19 +154,36 @@ export class PreferencesStore {
     private port: Runtime.Port | null = null;
 
     /**
-     * Fetches the active provider display name and model name from the
+     * Fetches the active model display name and provider metadata from the
      * background and updates the corresponding observables.
      *
      * @returns Promise that resolves when the observables are updated.
      */
     private async refreshProviderDisplay(): Promise<void> {
         const res = await browser.runtime.sendMessage({
+            type: TOPSKIP_MESSAGE.GET_MODEL_SETTINGS,
+        });
+        if (isGetModelSettingsOk(res)) {
+            const activeModel = res.models.find(
+                (model) => model.id === res.activeModelId,
+            );
+            if (activeModel) {
+                runInAction(() => {
+                    this.providerId = activeModel.providerId;
+                    this.providerDisplayName = activeModel.providerLabel;
+                    this.modelDisplayName = activeModel.label;
+                });
+                return;
+            }
+        }
+
+        const legacyRes = await browser.runtime.sendMessage({
             type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
         });
-        if (isGetActiveProviderOk(res)) {
+        if (isGetActiveProviderOk(legacyRes)) {
             runInAction(() => {
-                this.providerDisplayName = res.displayName;
-                this.modelDisplayName = res.modelName;
+                this.providerDisplayName = legacyRes.displayName;
+                this.modelDisplayName = legacyRes.modelName;
             });
         }
     }
@@ -215,11 +254,8 @@ export class PreferencesStore {
      * @returns A promise that resolves when `enabled` reflects stored prefs.
      */
     async load(): Promise<void> {
-        const [prefsRes, providerRes] = await Promise.all([
+        const [prefsRes] = await Promise.all([
             browser.runtime.sendMessage({ type: TOPSKIP_MESSAGE.GET_PREFS }),
-            browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
-            }),
         ]);
 
         // FIXME use valibot for validating; tighten response types so the
@@ -239,12 +275,9 @@ export class PreferencesStore {
             if (typeof prefsRes.prefs.providerId === 'string') {
                 this.providerId = prefsRes.prefs.providerId;
             }
-            if (isGetActiveProviderOk(providerRes)) {
-                this.providerDisplayName = providerRes.displayName;
-                this.modelDisplayName = providerRes.modelName;
-            }
         });
 
+        await this.refreshProviderDisplay();
         await this.refreshChromeModelAvailability();
     }
 

@@ -1,0 +1,436 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const { mockSendMessage } = vi.hoisted(() => ({
+    mockSendMessage: vi.fn(),
+}));
+
+vi.mock('@/shared/browser', () => ({
+    default: {
+        runtime: {
+            sendMessage: mockSendMessage,
+        },
+    },
+}));
+
+import { PlayerCaptionCapture } from '@/content/captions/player-caption-capture';
+import { TOPSKIP_MESSAGE } from '@/shared/messages';
+
+type WindowListener = (event: MessageEvent<unknown>) => void;
+
+class TestMessageEvent<T = unknown> {
+    readonly type: string;
+
+    readonly data: T | undefined;
+
+    readonly source: unknown;
+
+    constructor(type: string, init: { data?: T; source?: unknown } = {}) {
+        this.type = type;
+        this.data = init.data;
+        this.source = init.source;
+    }
+}
+
+function installWindowStub(): void {
+    const listeners = new Map<string, WindowListener[]>();
+    const fakeWindow = {
+        location: { origin: 'https://www.youtube.com' },
+        addEventListener: vi.fn((type: string, listener: WindowListener) => {
+            const existing = listeners.get(type) ?? [];
+            existing.push(listener);
+            listeners.set(type, existing);
+        }),
+        removeEventListener: vi.fn((type: string, listener: WindowListener) => {
+            const existing = listeners.get(type) ?? [];
+            listeners.set(
+                type,
+                existing.filter((item) => item !== listener),
+            );
+        }),
+        dispatchEvent: vi.fn((event: MessageEvent<unknown>) => {
+            for (const listener of listeners.get(event.type) ?? []) {
+                listener(event);
+            }
+            return true;
+        }),
+        postMessage: vi.fn(),
+    };
+    Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: fakeWindow,
+    });
+    Object.defineProperty(globalThis, 'MessageEvent', {
+        configurable: true,
+        value: TestMessageEvent,
+    });
+}
+
+async function flushMicrotasks(): Promise<void> {
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
+}
+
+async function acceptActivation(): Promise<void> {
+    await flushMicrotasks();
+    await flushMicrotasks();
+}
+
+async function finishCleanup(): Promise<void> {
+    await flushMicrotasks();
+    await flushMicrotasks();
+}
+
+function dispatchTimedtextCapture(videoId: string, body: string): void {
+    window.dispatchEvent(
+        new MessageEvent('message', {
+            source: window,
+            data: {
+                source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
+                kind: 'timedtext-capture',
+                videoId,
+                languageCode: 'en',
+                contentType: 'application/json; charset=UTF-8',
+                bodyLength: body.length,
+                urlShape: {
+                    pathname: '/api/timedtext',
+                    paramNames: ['fmt', 'lang', 'v'],
+                    fmt: 'json3',
+                    hasPot: false,
+                },
+                body,
+            },
+        }),
+    );
+}
+
+function dispatchPageDiagnostic(): void {
+    window.dispatchEvent(
+        new MessageEvent('message', {
+            source: window,
+            data: {
+                source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
+                kind: 'diagnostic',
+                stage: 'timedtext-empty-body',
+                videoId: 'abc',
+                languageCode: 'en',
+                transport: 'xhr',
+                status: 200,
+                bodyLength: 0,
+                urlShape: {
+                    pathname: '/api/timedtext',
+                    paramNames: ['fmt', 'lang', 'pot', 'v'],
+                    fmt: 'json3',
+                    hasPot: true,
+                },
+            },
+        }),
+    );
+}
+
+describe('PlayerCaptionCapture', () => {
+    beforeEach(() => {
+        installWindowStub();
+        PlayerCaptionCapture.resetForTest();
+        mockSendMessage.mockReset();
+        mockSendMessage.mockResolvedValue({ ok: true });
+        vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+        vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('installs the page bridge before starting capture', async () => {
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 10,
+        });
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(20);
+        await finishCleanup();
+        await run;
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE,
+        });
+    });
+
+    it('sends a structured timeout failure when no capture arrives', async () => {
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 10,
+        });
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(20);
+        await finishCleanup();
+        await run;
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,
+            payload: {
+                ok: false,
+                videoId: 'abc',
+                reason: 'capture-timeout',
+                error: 'Caption capture timed out',
+                diagnostics: { stage: 'waiting-capture' },
+            },
+        });
+    });
+
+    it('does not install the bridge for null video ids', () => {
+        PlayerCaptionCapture.scheduleForVideoId(null, 'test');
+        expect(mockSendMessage).not.toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE,
+        });
+    });
+
+    it('dedupes repeated schedules for the same video id', () => {
+        PlayerCaptionCapture.scheduleForVideoId('abc', 'first');
+        PlayerCaptionCapture.scheduleForVideoId('abc', 'second');
+        expect(PlayerCaptionCapture.getScheduledVideoIdForTest()).toBe('abc');
+    });
+
+    it('relays safe page diagnostics to the content log channel', async () => {
+        PlayerCaptionCapture.installBridgeForPage();
+        dispatchPageDiagnostic();
+        await flushMicrotasks();
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.CONTENT_LOG,
+            level: 'info',
+            args: [
+                'caption-capture',
+                {
+                    stage: 'page:timedtext-empty-body',
+                    videoId: 'abc',
+                    languageCode: 'en',
+                    transport: 'xhr',
+                    status: 200,
+                    bodyLength: 0,
+                    urlShape: {
+                        pathname: '/api/timedtext',
+                        paramNames: ['fmt', 'lang', 'pot', 'v'],
+                        fmt: 'json3',
+                        hasPot: true,
+                    },
+                },
+            ],
+        });
+    });
+
+    it('parses captured json3 and sends one successful payload', async () => {
+        const raw = JSON.stringify({
+            events: [
+                {
+                    tStartMs: 1000,
+                    dDurationMs: 2000,
+                    segs: [{ utf8: 'sponsor message' }],
+                },
+            ],
+        });
+
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 1000,
+        });
+
+        await acceptActivation();
+        dispatchTimedtextCapture('abc', raw);
+        await finishCleanup();
+
+        await run;
+
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,
+            payload: {
+                ok: true,
+                videoId: 'abc',
+                languageCode: 'en',
+                segments: [
+                    { startSec: 1, durationSec: 2, text: 'sponsor message' },
+                ],
+                diagnostics: {
+                    stage: 'parsed',
+                    bodyLength: raw.length,
+                    segmentCount: 1,
+                    languageCode: 'en',
+                    urlShape: {
+                        pathname: '/api/timedtext',
+                        paramNames: ['fmt', 'lang', 'v'],
+                        fmt: 'json3',
+                        hasPot: false,
+                    },
+                },
+            },
+        });
+    });
+
+    it('calls deactivate after capture timeout', async () => {
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 10,
+        });
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(20);
+        await finishCleanup();
+        await run;
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE,
+        });
+    });
+
+    it('ignores duplicate captures for the same video after success', async () => {
+        const raw = JSON.stringify({
+            events: [{ tStartMs: 0, dDurationMs: 1, segs: [{ utf8: 'x' }] }],
+        });
+        const first = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture('abc', raw);
+        dispatchTimedtextCapture('abc', raw);
+        await finishCleanup();
+        await first;
+        const successMessages = mockSendMessage.mock.calls.filter((call) => {
+            const msg: unknown = call[0];
+            if (msg === null || typeof msg !== 'object') {
+                return false;
+            }
+            const payload: unknown = Reflect.get(msg, 'payload');
+            return (
+                Reflect.get(msg, 'type') ===
+                    TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT &&
+                payload !== null &&
+                typeof payload === 'object' &&
+                Reflect.get(payload, 'ok') === true
+            );
+        });
+        expect(successMessages).toHaveLength(1);
+    });
+
+    it('retries activation while the player is not ready', async () => {
+        let activationCalls = 0;
+        mockSendMessage.mockImplementation((message: unknown) => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
+            ) {
+                activationCalls += 1;
+                if (activationCalls === 1) {
+                    return Promise.resolve({
+                        ok: false,
+                        reason: 'player-not-ready',
+                        error: 'Watch player is not ready for caption capture',
+                    });
+                }
+            }
+            return Promise.resolve({ ok: true });
+        });
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 10,
+        });
+        await flushMicrotasks();
+        await vi.advanceTimersByTimeAsync(250);
+        await vi.advanceTimersByTimeAsync(20);
+        await finishCleanup();
+        await run;
+        const activationMessages = mockSendMessage.mock.calls.filter((item) => {
+            const message: unknown = item[0];
+            return (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
+            );
+        });
+        expect(activationMessages).toHaveLength(2);
+    });
+
+    it('logs safe activation details from the page bridge result', async () => {
+        mockSendMessage.mockImplementation((message: unknown) => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
+            ) {
+                return Promise.resolve({
+                    ok: true,
+                    wasOn: false,
+                    userIntervened: false,
+                    hasTracks: 2,
+                    actions: [
+                        'hide-style-added',
+                        'loadModule:captions',
+                        'setOption:track',
+                        'toggleSubtitlesOn',
+                    ],
+                });
+            }
+            return Promise.resolve({ ok: true });
+        });
+
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 10,
+        });
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(20);
+        await finishCleanup();
+        await run;
+
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.CONTENT_LOG,
+            level: 'info',
+            args: [
+                'caption-capture',
+                {
+                    stage: 'activation-accepted',
+                    videoId: 'abc',
+                    attempt: 1,
+                    ok: true,
+                    wasOn: false,
+                    userIntervened: false,
+                    hasTracks: 2,
+                    actions: [
+                        'hide-style-added',
+                        'loadModule:captions',
+                        'setOption:track',
+                        'toggleSubtitlesOn',
+                    ],
+                },
+            ],
+        });
+    });
+
+    it('sends a structured activation failure when captions are unavailable', async () => {
+        mockSendMessage.mockImplementation((message: unknown) => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
+            ) {
+                return Promise.resolve({
+                    ok: false,
+                    reason: 'captions-unavailable',
+                    error: 'Caption controls are unavailable',
+                });
+            }
+            return Promise.resolve({ ok: true });
+        });
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 1000,
+        });
+        await flushMicrotasks();
+        await finishCleanup();
+        await run;
+        expect(mockSendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,
+            payload: {
+                ok: false,
+                videoId: 'abc',
+                reason: 'captions-unavailable',
+                error: 'Caption controls are unavailable',
+                diagnostics: { stage: 'activating' },
+            },
+        });
+    });
+});

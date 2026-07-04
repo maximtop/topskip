@@ -27,7 +27,8 @@ describe('buildPopupViewModel', () => {
 
     it('idle state includes provider label', () => {
         const vm = buildPopupViewModel(baseArgs);
-        expect(vm.providerLabel).toBe('OpenRouter · google/gemini-2.0-flash');
+        expect(vm.providerLabel).toBe('google/gemini-2.0-flash · OpenRouter');
+        expect(vm.activityLabel).toBe('Promo detection active');
     });
 
     it('providerLabel omits separator when modelDisplayName is empty', () => {
@@ -47,7 +48,7 @@ describe('buildPopupViewModel', () => {
             },
         });
         expect(vm.description).toContain('OpenRouter');
-        expect(vm.providerLabel).toBe('OpenRouter · google/gemini-2.0-flash');
+        expect(vm.providerLabel).toBe('google/gemini-2.0-flash · OpenRouter');
     });
 
     it('Chrome Built-in provider label shows correct string', () => {
@@ -57,7 +58,7 @@ describe('buildPopupViewModel', () => {
             modelDisplayName: 'Gemini Nano',
             detectionState: { videoId: 'v1', status: 'analyzing' },
         });
-        expect(vm.providerLabel).toBe('Chrome Built-in · Gemini Nano');
+        expect(vm.providerLabel).toBe('Gemini Nano · Chrome Built-in');
     });
 
     it('openrouter not_configured with empty model shows name only', () => {
@@ -127,6 +128,18 @@ describe('buildPopupViewModel', () => {
         });
 
         expect(vm.statusHeadline).toBe('Analysis is in progress.');
+    });
+
+    it('paused state uses disabled tone and copy', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            enabled: false,
+        });
+
+        expect(vm.tone).toBe('paused');
+        expect(vm.title).toBe('TopSkip is paused');
+        expect(vm.activityLabel).toBe('Promo detection paused');
+        expect(vm.statusHeadline).toContain('currently off');
     });
 
     it('chrome available falls back to detection logic', () => {

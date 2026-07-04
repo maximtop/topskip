@@ -6,9 +6,10 @@ import {
     ContentLogMessages,
     PromoDetectionRuntimeMessages,
 } from '@/background/messaging/misc-runtime-messages';
-import { FetchTimedtextPageMessages } from '@/background/messaging/fetch-timedtext-page-messages';
+import { CaptionPageCaptureMessages } from '@/background/messaging/caption-page-capture-messages';
 import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
 import { ChromePromptApiRuntimeMessages } from '@/background/messaging/chrome-prompt-api-runtime-messages';
+import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
@@ -51,9 +52,12 @@ export function registerRuntimeMessages(registry: ProviderRegistry): void {
                 case TOPSKIP_MESSAGE.CONTENT_LOG:
                     ContentLogMessages.log(msg.level, msg.args, sender.tab?.id);
                     return;
-                case TOPSKIP_MESSAGE.FETCH_TIMEDTEXT_PAGE:
-                    return FetchTimedtextPageMessages.fetch(
-                        msg.url,
+                case TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE:
+                    return CaptionPageCaptureMessages.install(sender.tab?.id);
+                case TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE:
+                    return CaptionPageCaptureMessages.activate(sender.tab?.id);
+                case TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE:
+                    return CaptionPageCaptureMessages.deactivate(
                         sender.tab?.id,
                     );
                 case TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT:
@@ -66,6 +70,22 @@ export function registerRuntimeMessages(registry: ProviderRegistry): void {
                     return ProviderRuntimeMessages.handleGetActive();
                 case TOPSKIP_MESSAGE.GET_PROVIDER_LIST:
                     return ProviderRuntimeMessages.handleGetList();
+                case TOPSKIP_MESSAGE.GET_MODEL_SETTINGS:
+                    return ModelRuntimeMessages.handleGetSettings();
+                case TOPSKIP_MESSAGE.SET_ACTIVE_MODEL:
+                    return ModelRuntimeMessages.handleSetActiveModel(
+                        msg.modelId,
+                    );
+                case TOPSKIP_MESSAGE.SAVE_CONNECTION_KEY:
+                    return ModelRuntimeMessages.handleSaveConnectionKey(
+                        msg.providerId,
+                        msg.apiKey,
+                    );
+                case TOPSKIP_MESSAGE.TEST_CONNECTION_KEY:
+                    return ModelRuntimeMessages.handleTestConnectionKey(
+                        msg.providerId,
+                        msg.apiKey,
+                    );
                 case TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER:
                     return ProviderRuntimeMessages.handleSetActive(
                         msg.providerId,

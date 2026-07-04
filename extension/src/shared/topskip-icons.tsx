@@ -1,5 +1,8 @@
 import type { ReactElement } from 'react';
 
+/**
+ * Common dimensions and color accepted by local SVG icons.
+ */
 export type TopSkipIconProps = {
     size: number;
     color?: string;

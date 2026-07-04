@@ -2,6 +2,9 @@ import { MAX_PLAYBACK_DELTA_SEC } from '@/content/skip-logic';
 import type { PromoBlock } from '@/shared/promo-types';
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@/shared/promo-block';
 
+/**
+ * Playback state needed to evaluate promo block skip decisions.
+ */
 export type PromoBlocksSkipInput = {
     prevTime: number;
     currentTime: number;
@@ -15,6 +18,9 @@ export type PromoBlocksSkipInput = {
     blocks: ReadonlyArray<PromoBlock>;
 };
 
+/**
+ * Action produced by promo block skip evaluation.
+ */
 export type PromoBlocksSkipDecision =
     | { action: 'none' }
     | { action: 'skip'; blockIndex: number; targetTime: number };
@@ -105,6 +111,9 @@ export function evaluatePromoBlocksSkip(
     return { action: 'none' };
 }
 
+/**
+ * Mutable fired-block state used when playback seeks backward.
+ */
 export type ResetFiredInput = {
     currentTime: number;
     prevTime: number;

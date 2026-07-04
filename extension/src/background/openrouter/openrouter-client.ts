@@ -3,11 +3,17 @@ import { MIME_APPLICATION_JSON } from '@/shared/constants';
 const OPENROUTER_CHAT_COMPLETIONS_URL =
     'https://openrouter.ai/api/v1/chat/completions';
 
+/**
+ * Chat message shape accepted by OpenRouter chat completions.
+ */
 export type OpenRouterChatMessage = {
     role: 'system' | 'user' | 'assistant';
     content: string;
 };
 
+/**
+ * Token details reported for prompt-side multimodal/cached usage.
+ */
 export type OpenRouterPromptTokenDetails = {
     cachedTokens?: number;
     cacheWriteTokens?: number;
@@ -15,18 +21,27 @@ export type OpenRouterPromptTokenDetails = {
     videoTokens?: number;
 };
 
+/**
+ * Token details reported for completion-side reasoning or media usage.
+ */
 export type OpenRouterCompletionTokenDetails = {
     reasoningTokens?: number;
     audioTokens?: number;
     imageTokens?: number;
 };
 
+/**
+ * Provider cost details returned by OpenRouter for BYOK accounting.
+ */
 export type OpenRouterCostDetails = {
     upstreamInferenceCost?: number;
     upstreamInferencePromptCost?: number;
     upstreamInferenceCompletionsCost?: number;
 };
 
+/**
+ * Normalized token and cost usage parsed from OpenRouter responses.
+ */
 export type OpenRouterUsage = {
     promptTokens: number;
     completionTokens: number;
@@ -38,6 +53,9 @@ export type OpenRouterUsage = {
     costDetails?: OpenRouterCostDetails;
 };
 
+/**
+ * Request values needed to call OpenRouter chat completions.
+ */
 export type CallOpenRouterChatParams = {
     apiKey: string;
     model: string;

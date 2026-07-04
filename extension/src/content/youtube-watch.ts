@@ -379,8 +379,8 @@ export class YoutubeWatch {
 
         if (vid !== YoutubeWatch.currentVideoId) {
             YoutubeWatch.resetForNewVideo(vid);
-            WatchCaptions.scheduleForVideoId(vid);
             if (video) {
+                WatchCaptions.scheduleForVideoId(vid, 'video-id-change');
                 YoutubeWatch.bindVideo(video);
             }
             return;
@@ -388,6 +388,7 @@ export class YoutubeWatch {
 
         if (video && YoutubeWatch.boundVideo !== video) {
             contentLog.info('video element swap detected, rebinding');
+            WatchCaptions.scheduleForVideoId(vid, 'video-element-ready');
             YoutubeWatch.bindVideo(video);
         }
     }
@@ -468,6 +469,7 @@ export class YoutubeWatch {
      * Wires SPA hooks, video binding, and runtime messaging for prefs.
      */
     static init(): void {
+        WatchCaptions.installPageBridge();
         YoutubeWatch.loadEnabledFromBackground();
         browser.runtime.onMessage.addListener((message: unknown) => {
             YoutubeWatch.onPrefsUpdatedMessage(message);
@@ -477,9 +479,12 @@ export class YoutubeWatch {
         YoutubeWatch.currentVideoId = YoutubeWatch.getWatchVideoId();
         const start = YoutubeWatch.getMainVideo();
         if (start) {
+            WatchCaptions.scheduleForVideoId(
+                YoutubeWatch.currentVideoId,
+                'init',
+            );
             YoutubeWatch.bindVideo(start);
         }
-        WatchCaptions.scheduleForVideoId(YoutubeWatch.currentVideoId);
 
         const onNav = (): void => {
             YoutubeWatch.syncVideoBinding();

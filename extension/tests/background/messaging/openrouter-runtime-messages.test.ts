@@ -2,15 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { OpenRouterConfig } from '@/background/storage/openrouter-storage';
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
+import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
 import { OPENROUTER_DEFAULT_MODEL_SLUG } from '@/shared/openrouter-model-presets';
 
 const loadMock = vi.fn();
 const saveMock = vi.fn();
 const maskMock = vi.fn();
 const fetchModelsMock = vi.fn();
-
-// No longer needs transitive browser/prefs/broadcast mocks since FR-015
-// sync was removed from handleSet.
+const prefsLoadMock = vi.fn();
+const prefsSaveMock = vi.fn();
+const prefsBroadcastMock = vi.fn();
+const prefsPortBroadcastMock = vi.fn();
 
 vi.mock('@/background/storage/openrouter-storage', () => ({
     OpenRouterStorage: {
@@ -38,6 +40,34 @@ vi.mock('@/background/storage/openrouter-storage', () => ({
     },
 }));
 
+vi.mock('@/background/storage/prefs-sync', () => ({
+    PrefsSyncStorage: {
+        ready: async (): Promise<void> => {},
+        load: async (): Promise<unknown> => {
+            return await prefsLoadMock();
+        },
+        save: async (prefs: unknown): Promise<void> => {
+            await Promise.resolve(prefsSaveMock(prefs));
+        },
+    },
+}));
+
+vi.mock('@/background/messaging/broadcast-prefs-updated', () => ({
+    PrefsBroadcast: {
+        sendUpdatedToAllTabs: async (prefs: unknown): Promise<void> => {
+            await Promise.resolve(prefsBroadcastMock(prefs));
+        },
+    },
+}));
+
+vi.mock('@/background/messaging/prefs-port-hub', () => ({
+    PrefsPortHub: {
+        broadcastPrefsUpdate: (prefs: unknown): void => {
+            prefsPortBroadcastMock(prefs);
+        },
+    },
+}));
+
 vi.mock('@/background/openrouter/openrouter-models-api', () => ({
     fetchOpenRouterModelList: async (apiKey: string): Promise<string[]> => {
         return fetchModelsMock(apiKey) as Promise<string[]>;
@@ -50,6 +80,15 @@ describe('OpenRouterRuntimeMessages', () => {
         saveMock.mockReset();
         maskMock.mockReset();
         fetchModelsMock.mockReset();
+        prefsLoadMock.mockReset();
+        prefsSaveMock.mockReset();
+        prefsBroadcastMock.mockReset();
+        prefsPortBroadcastMock.mockReset();
+        prefsLoadMock.mockResolvedValue({
+            enabled: true,
+            providerId: 'openrouter',
+            activeModelId: DEFAULT_DETECTION_MODEL_ID,
+        });
     });
 
     it('handleGet returns customModels', async () => {
@@ -140,6 +179,44 @@ describe('OpenRouterRuntimeMessages', () => {
             expect.objectContaining({
                 model: OPENROUTER_DEFAULT_MODEL_SLUG,
                 customModels: [],
+            }),
+        );
+    });
+
+    it('handleRemoveCustomModel repairs active model prefs when removed', async () => {
+        loadMock.mockResolvedValue({
+            apiKey: '',
+            model: 'vendor/foo',
+            customModels: ['vendor/foo'],
+        });
+        prefsLoadMock.mockResolvedValue({
+            enabled: true,
+            providerId: 'openrouter',
+            activeModelId: 'openrouter:vendor/foo',
+        });
+        saveMock.mockResolvedValue(undefined);
+        prefsSaveMock.mockResolvedValue(undefined);
+        prefsBroadcastMock.mockResolvedValue(undefined);
+
+        const r =
+            await OpenRouterRuntimeMessages.handleRemoveCustomModel(
+                'vendor/foo',
+            );
+
+        expect(r).toEqual({ ok: true, customModels: [] });
+        expect(prefsSaveMock).toHaveBeenCalledWith({
+            enabled: true,
+            providerId: 'openrouter',
+            activeModelId: DEFAULT_DETECTION_MODEL_ID,
+        });
+        expect(prefsBroadcastMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                activeModelId: DEFAULT_DETECTION_MODEL_ID,
+            }),
+        );
+        expect(prefsPortBroadcastMock).toHaveBeenCalledWith(
+            expect.objectContaining({
+                activeModelId: DEFAULT_DETECTION_MODEL_ID,
             }),
         );
     });

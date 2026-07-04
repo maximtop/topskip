@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 
+import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
 import { PROVIDER_ID } from '@/shared/providers';
 
 /**
@@ -25,6 +26,11 @@ export const STORAGE_KEY_PREFS = 'topskip:prefs';
 export const STORAGE_KEY_OPENROUTER = 'topskip:openrouter';
 
 /**
+ * `browser.storage.local` key for OpenAI connection settings.
+ */
+export const STORAGE_KEY_OPENAI = 'topskip:openai';
+
+/**
  * Max characters for merged caption transcript sent to OpenRouter (tail
  * truncated deterministically).
  */
@@ -41,22 +47,25 @@ export const DEFAULT_PROVIDER_ID = PROVIDER_ID.OpenRouter;
 export const userPreferencesSchema = v.object({
     enabled: v.boolean(),
     providerId: v.string(),
+    activeModelId: v.fallback(v.string(), DEFAULT_DETECTION_MODEL_ID),
 });
 
+/**
+ * Validated user preference shape persisted in extension storage.
+ */
 export type UserPreferences = v.InferOutput<typeof userPreferencesSchema>;
 
 /**
- * When `false` (default), the extension does **not** request captions or call
- * timedtext URLs — core skip behavior is unchanged.
+ * Enables the production player-mediated caption capture path used before
+ * promo analysis on supported watch pages.
  */
 export const CAPTION_TRANSCRIPT_DEV_ENABLED = true;
 
 /**
- * When {@link CAPTION_TRANSCRIPT_DEV_ENABLED} is `true`: if in-page
- * `ytInitialPlayerResponse` is unavailable, allow the legacy path (watch HTML
- * + InnerTube `player` POST). Default `false` — safer, fewer bot-style calls.
+ * Emits safe stage-by-stage caption capture diagnostics for headed manual
+ * YouTube smoke tests.
  */
-export const CAPTION_TRANSCRIPT_ALLOW_INNERTUBE_FALLBACK = false;
+export const CAPTION_CAPTURE_VERBOSE_LOGS = true;
 
 /**
  * Well-known port name for long-lived preference-sync connections
@@ -73,13 +82,6 @@ export const PREFS_PORT_NAME = 'topskip:prefs';
  * it single-source-of-truth.
  */
 export const YOUTUBE_BASE_URL = 'https://www.youtube.com';
-
-/**
- * Prefix for YouTube timedtext caption API responses.
- * Content-script `fetch` to this endpoint can return HTTP 200 with empty
- * bodies; the page-world fetch is the reliable path.
- */
-export const YOUTUBE_TIMEDTEXT_URL = `${YOUTUBE_BASE_URL}/api/timedtext`;
 
 /**
  * Path segment for standard YouTube watch pages (not Shorts).

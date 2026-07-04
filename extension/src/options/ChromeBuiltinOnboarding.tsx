@@ -12,6 +12,9 @@ import type { ReactElement } from 'react';
 import type { ProviderAvailabilityMessage } from '@/shared/messages';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 
+/**
+ * Prompt API onboarding state and download action passed from options.
+ */
 type ChromeBuiltinOnboardingProps = {
     availability: ProviderAvailabilityMessage;
     downloadProgress: number | null;

@@ -3,6 +3,9 @@ import type { ReactElement } from 'react';
 import { ChromeBuiltinOnboarding } from '@/options/ChromeBuiltinOnboarding';
 import type { ProviderAvailabilityMessage } from '@/shared/messages';
 
+/**
+ * Chrome Prompt API readiness state and download action.
+ */
 type ChromeBuiltinPanelProps = {
     availability: ProviderAvailabilityMessage;
     downloadProgress: number | null;

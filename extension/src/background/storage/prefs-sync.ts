@@ -7,6 +7,12 @@ import {
     userPreferencesSchema,
     type UserPreferences,
 } from '@/shared/constants';
+import {
+    CHROME_BUILTIN_MODEL_ID,
+    DEFAULT_DETECTION_MODEL_ID,
+    resolveDetectionModel,
+} from '@/shared/detection-models';
+import { PROVIDER_ID } from '@/shared/providers';
 
 /**
  * Namespace for `browser.storage.local` prefs (query + command); not
@@ -19,6 +25,7 @@ export class PrefsSyncStorage {
     private static readonly defaultPrefs: UserPreferences = {
         enabled: true,
         providerId: DEFAULT_PROVIDER_ID,
+        activeModelId: DEFAULT_DETECTION_MODEL_ID,
     };
 
     /**
@@ -33,7 +40,94 @@ export class PrefsSyncStorage {
      * @returns Validated preferences object.
      */
     private static parseStoredPrefs(raw: unknown): UserPreferences {
-        return v.parse(userPreferencesSchema, raw);
+        const parsed = v.parse(userPreferencesSchema, raw);
+        const rawActiveModelId = PrefsSyncStorage.readRawActiveModelId(raw);
+        const activeModelId =
+            rawActiveModelId !== undefined && rawActiveModelId.length > 0
+                ? rawActiveModelId
+                : PrefsSyncStorage.legacyProviderToModelId(parsed.providerId);
+        const model = resolveDetectionModel(activeModelId, []);
+        const providerId =
+            model?.providerId ??
+            PrefsSyncStorage.providerIdFromModelId(activeModelId);
+        return {
+            enabled: parsed.enabled,
+            providerId,
+            activeModelId: model?.id ?? activeModelId,
+        };
+    }
+
+    /**
+     * Reads the stored active model before Valibot fallback hides whether a
+     * legacy row had no model-first field.
+     *
+     * @param raw Untrusted storage value.
+     * @returns Raw active model id when present.
+     */
+    private static readRawActiveModelId(raw: unknown): string | undefined {
+        if (
+            raw === null ||
+            typeof raw !== 'object' ||
+            !('activeModelId' in raw) ||
+            typeof raw.activeModelId !== 'string'
+        ) {
+            return undefined;
+        }
+        return raw.activeModelId;
+    }
+
+    /**
+     * Checks whether the untrusted storage row already matches normalized prefs.
+     *
+     * @param raw Previous storage value.
+     * @param prefs Normalized preferences.
+     * @returns Whether a repair write is unnecessary.
+     */
+    private static storedPrefsMatch(
+        raw: unknown,
+        prefs: UserPreferences,
+    ): boolean {
+        return (
+            raw !== null &&
+            typeof raw === 'object' &&
+            'enabled' in raw &&
+            'providerId' in raw &&
+            'activeModelId' in raw &&
+            raw.enabled === prefs.enabled &&
+            raw.providerId === prefs.providerId &&
+            raw.activeModelId === prefs.activeModelId
+        );
+    }
+
+    /**
+     * Legacy provider-only prefs need a model ID so model-first UI has a
+     * stable selection after upgrade.
+     *
+     * @param providerId Legacy provider id.
+     * @returns Equivalent default model id.
+     */
+    private static legacyProviderToModelId(providerId: string): string {
+        if (providerId === PROVIDER_ID.ChromePromptApi) {
+            return CHROME_BUILTIN_MODEL_ID;
+        }
+        return DEFAULT_DETECTION_MODEL_ID;
+    }
+
+    /**
+     * Custom model IDs may not resolve without provider-specific storage, but
+     * their prefix still preserves runtime routing.
+     *
+     * @param modelId Stored active model id.
+     * @returns Provider route inferred from the model id.
+     */
+    private static providerIdFromModelId(modelId: string): string {
+        if (modelId.startsWith(`${PROVIDER_ID.OpenAI}:`)) {
+            return PROVIDER_ID.OpenAI;
+        }
+        if (modelId.startsWith(`${PROVIDER_ID.ChromePromptApi}:`)) {
+            return PROVIDER_ID.ChromePromptApi;
+        }
+        return PROVIDER_ID.OpenRouter;
     }
 
     /**
@@ -49,7 +143,9 @@ export class PrefsSyncStorage {
             return PrefsSyncStorage.defaultPrefs;
         }
         try {
-            return PrefsSyncStorage.parseStoredPrefs(raw);
+            const prefs = PrefsSyncStorage.parseStoredPrefs(raw);
+            await PrefsSyncStorage.repairIfChanged(raw, prefs);
+            return prefs;
         } catch {
             await PrefsSyncStorage.save(PrefsSyncStorage.defaultPrefs);
             return PrefsSyncStorage.defaultPrefs;
@@ -65,6 +161,23 @@ export class PrefsSyncStorage {
     static async save(prefs: UserPreferences): Promise<void> {
         const validated = v.parse(userPreferencesSchema, prefs);
         await browser.storage.local.set({ [STORAGE_KEY_PREFS]: validated });
+    }
+
+    /**
+     * Persists upgraded prefs only when a legacy or stale row changed shape.
+     *
+     * @param raw Previous storage value.
+     * @param prefs Normalized preferences.
+     * @returns Promise resolved after optional repair.
+     */
+    private static async repairIfChanged(
+        raw: unknown,
+        prefs: UserPreferences,
+    ): Promise<void> {
+        if (PrefsSyncStorage.storedPrefsMatch(raw, prefs)) {
+            return;
+        }
+        await PrefsSyncStorage.save(prefs);
     }
 
     /**

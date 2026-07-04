@@ -216,24 +216,57 @@ Unit tests live under **`tests/`**, mirroring **`src/`** (e.g. `tests/content/sk
 4. Open the extension **popup** and turn the **switch off** — on another long video, playback should **not** jump at 0:30.
 5. Turn the switch **on** again **before** 0:30 — the jump at 0:30 should return.
 
-### Developer: caption fetch (diagnostic)
+### Manual caption-capture smoke test
 
-**Default:** **`CAPTION_TRANSCRIPT_DEV_ENABLED`** is **`false`** in **`src/shared/constants.ts`** — the extension **does not** load captions or call timedtext URLs; skip behavior is unchanged.
+This flow depends on YouTube's live player and is not part of CI.
 
-To enable diagnostic logging: set **`CAPTION_TRANSCRIPT_DEV_ENABLED`** to **`true`** locally, rebuild, and reload the extension.
+1. Run `pnpm run build`.
+2. Reload `dist/` at `chrome://extensions`.
+3. Open a YouTube watch page with known captions and turn YouTube captions off.
+4. Confirm TopSkip is enabled.
+5. In the extension service worker console, verify a captions payload arrives
+   without visible subtitles flashing on the page.
+6. Repeat with captions already on and verify TopSkip leaves them on.
 
-**Safer path:** **`fetchYoutubeTranscript`** first parses **`ytInitialPlayerResponse`** from existing **`<script>`** tag text in the DOM (**`page-player-response.ts`** — no inline script injection; YouTube’s CSP blocks injected scripts from extensions). Then it **GET**s only the caption **timedtext** URL. **`CAPTION_TRANSCRIPT_ALLOW_INNERTUBE_FALLBACK`** (default **`false`**) controls whether to fall back to watch HTML + InnerTube **`player`** POST when embedded JSON is not found yet (more bot-like).
+Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
+**`src/shared/constants.ts`**. In the service worker console, look for
+**`[TopSkip content ...] caption-capture`** entries with these safe stages:
 
-Fetches use the same **general class** of YouTube web-client caption flow as common open-source tools; output is for **development / analysis** (see `.sdd/20260414-youtube-web-client-captions-dev/spec.md`).
+- **`bridge-install-requested`** / **`bridge-installed`**: content and
+  background installed the page bridge.
+- **`page:bridge-installed`**: MAIN-world bridge ran inside the YouTube page.
+- **`activation-attempt`** / **`activation-accepted`**: TopSkip asked the player
+  to load captions.
+- **`page:activation-finished`**: page bridge recorded caption state, hide style,
+  track count, and activation actions. When captions were off, expect
+  **`setOption:track`** if YouTube exposes a tracklist; otherwise expect
+  **`setOption:reload`**. When captions were already on, expect
+  **`skipped:already-on`**.
+- **`page:timedtext-observed`**: the player made a `fmt=json3` timedtext
+  request; metadata includes transport, status, body length, language, and
+  sanitized URL shape only.
+- **`page:timedtext-empty-body`** or **`page:timedtext-non-json`**: YouTube
+  returned a response that the parser should not use.
+- **`page:timedtext-forwarded`** / **`capture-event-received`** /
+  **`capture-parsed`**: non-empty caption JSON reached content and parsed.
+- **`cleanup-start`** / **`page:cleanup-finished`** /
+  **`cleanup-finished`**: temporary caption state was restored.
 
-**Trigger:** When captions are enabled, the **watch content script** (`WatchCaptions`, wired from `youtube-watch.ts`) **debounces** (~450ms) after the watch **video id** changes. It runs **`fetchYoutubeTranscript`** in **`src/content/captions/youtube-transcript-fetch.ts`**, then sends **`TOPSKIP_CAPTIONS_FROM_CONTENT`** to the background so **`log-transcript-dev.ts`** can print structured cues in the worker — **no keyboard shortcut**.
+These logs intentionally do not include raw caption bodies, full timedtext URLs,
+or signed parameter values.
+
+### Developer: player-mediated caption capture
+
+**Default:** **`CAPTION_TRANSCRIPT_DEV_ENABLED`** is **`true`** in **`src/shared/constants.ts`**. On supported YouTube watch pages, TopSkip installs a MAIN-world bridge, briefly asks the player to activate captions when needed, observes the player's own successful `/api/timedtext?fmt=json3` response, parses it in the content script, and sends **`TOPSKIP_CAPTIONS_FROM_CONTENT`** to the background.
+
+The production path no longer uses direct timedtext probing, direct InnerTube fallback clients, or fresh watch-page HTML scraping. The bridge preserves the page's fetch/XHR behavior, forwards caption bodies only to the internal parser pipeline, and keeps diagnostics to bounded metadata such as failure stage, language, body length, segment count, and sanitized timedtext parameter names.
+
+**Trigger:** When TopSkip is enabled and the watch **video id** changes, **`WatchCaptions`** schedules **`PlayerCaptionCapture`**. The capture flow installs the bridge, waits through bounded activation retries if the player appears unstable or an ad is visible, then cleans up temporary caption state after success or timeout.
 
 1. `make build`, load **`dist/`** unpacked.
 2. Open **`chrome://extensions`**, find TopSkip, click **Service worker** (this DevTools window is where **chunked transcript** **`[TopSkip captions]`** logs from the background appear).
 3. Navigate to a YouTube **`/watch?v=…`** video that has **captions** (CC), or click another video so the watch URL updates (SPA).
-4. After a short delay (~450ms debounce), the **watch tab** DevTools console shows **`[TopSkip captions] Fetch started`** (content script). The **service worker** console shows transcript lines or a forwarded **error** string.
-
-The **watch tab** console shows the fetch start line; the **service worker** console shows the full structured transcript log (same **`[TopSkip captions]`** prefix).
+4. The **service worker** console shows parsed caption handling or a structured acquisition failure. The production runtime should not print raw timedtext bodies or full signed URLs.
 
 #### Troubleshooting: no logs in the “background”
 

@@ -6,6 +6,9 @@ import {
     type ValiError,
 } from 'valibot';
 
+/**
+ * Valibot schema variants that can produce issues for summary extraction.
+ */
 type ValiSchema =
     | BaseSchema<unknown, unknown, BaseIssue<unknown>>
     | BaseSchemaAsync<unknown, unknown, BaseIssue<unknown>>;

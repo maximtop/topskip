@@ -3,6 +3,12 @@
  */
 
 /**
+ * User-facing reason for YouTube's bot-gated player responses.
+ */
+export const YOUTUBE_AUTOMATED_ACCESS_ERROR =
+    'YouTube blocked automated access (try again in-browser)';
+
+/**
  * Cheap guard for non-null object nodes while walking player JSON.
  *
  * @param value Unknown JSON value.
@@ -88,6 +94,9 @@ export function pickCaptionBaseUrl(tracks: unknown):
         return { ok: false, error: 'No caption tracks in player response' };
     }
 
+    /**
+     * Normalized caption track fields read from untrusted player JSON.
+     */
     type Track = Record<string, unknown> & {
         baseUrl?: unknown;
         languageCode?: unknown;
@@ -168,6 +177,9 @@ export function listCaptionTracksOrdered(
         return [];
     }
 
+    /**
+     * Normalized caption track fields needed for ordered fetch attempts.
+     */
     type Track = Record<string, unknown> & {
         baseUrl?: unknown;
         languageCode?: unknown;
@@ -214,7 +226,7 @@ export function playabilityError(data: unknown): string | null {
     const reason =
         typeof ps['reason'] === 'string' ? ps['reason'] : 'Video unplayable';
     if (status === 'LOGIN_REQUIRED' && reason.includes('not a bot')) {
-        return 'YouTube blocked automated access (try again in-browser)';
+        return YOUTUBE_AUTOMATED_ACCESS_ERROR;
     }
     return reason;
 }

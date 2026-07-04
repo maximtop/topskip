@@ -178,5 +178,41 @@
     "prefs_error_save": {
         "message": "failed to save preferences",
         "description": "Error fallback in preferences store when saving fails"
+    },
+    "options_no_custom_models": {
+        "message": "No custom models saved yet.",
+        "description": "Shown in the add-model section when the user has not saved custom models yet."
+    },
+    "options_connections_heading": {
+        "message": "Connections",
+        "description": "Heading for the provider API key connections section on the options page."
+    },
+    "options_connections_description": {
+        "message": "Save and test API keys for cloud models.",
+        "description": "Help text for the provider API key connections section on the options page."
+    },
+    "options_connection_required_badge": {
+        "message": "Required for selected model",
+        "description": "Badge shown on a provider connection when the active model needs that API key."
+    },
+    "options_connection_key_saved": {
+        "message": "Key saved",
+        "description": "Status badge for a provider connection with a saved API key."
+    },
+    "options_connection_key_missing": {
+        "message": "Key missing",
+        "description": "Status badge for a provider connection without a saved API key."
+    },
+    "options_connection_key_placeholder": {
+        "message": "Enter API key",
+        "description": "Placeholder for provider API key inputs in the connections section."
+    },
+    "options_connection_test_button": {
+        "message": "Test",
+        "description": "Button that validates a provider API key in the connections section."
+    },
+    "options_connection_key_valid": {
+        "message": "Key is valid.",
+        "description": "Success message shown after a provider API key test passes."
     }
 }

@@ -23,6 +23,9 @@ export type PromoUncoveredRange = {
     kind: 'dropped_tail' | 'failed_chunk' | 'irreducible_line';
 };
 
+/**
+ * Final outcome variants represented in the promo analysis debug bundle.
+ */
 export type PromoAnalysisBundleOutcome =
     | { type: 'openrouter_error'; error: string }
     | { type: 'parse_error'; error: string }

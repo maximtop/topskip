@@ -10,6 +10,7 @@ vi.mock('@/shared/browser', () => ({
             connect: vi.fn(),
             onMessage: { addListener: vi.fn(), removeListener: vi.fn() },
             openOptionsPage: vi.fn(),
+            getManifest: vi.fn(() => ({ version: '0.1.0' })),
         },
     },
 }));
@@ -17,6 +18,7 @@ vi.mock('@/shared/browser', () => ({
 import { ChromeBuiltinOnboarding } from '@/options/ChromeBuiltinOnboarding';
 import { OpenRouterConfigPanel } from '@/options/OpenRouterConfigPanel';
 import {
+    AboutSettingsSection,
     OptionsSidebar,
     PlaceholderSettingsSection,
     ProviderChoiceCards,
@@ -159,6 +161,21 @@ describe('PlaceholderSettingsSection', () => {
 
         expect(html).toContain('Detection');
         expect(html).toContain('not configurable yet');
+    });
+});
+
+describe('AboutSettingsSection', () => {
+    it('renders minimal extension metadata', () => {
+        const html = renderWithMantine(
+            createElement(AboutSettingsSection, {
+                extensionVersion: '2.3.4',
+            }),
+        );
+
+        expect(html).toContain('About TopSkip');
+        expect(html).toContain('Automatically skip detected sponsor');
+        expect(html).toContain('Version');
+        expect(html).toContain('v2.3.4');
     });
 });
 

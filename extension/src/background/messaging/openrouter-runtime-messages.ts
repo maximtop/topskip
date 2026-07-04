@@ -1,11 +1,19 @@
+import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { fetchOpenRouterModelList } from '@/background/openrouter/openrouter-models-api';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import {
+    buildOpenRouterModelId,
+    DEFAULT_DETECTION_MODEL_ID,
+} from '@/shared/detection-models';
 import { getErrorMessage } from '@/shared/error';
 import {
     isOpenRouterBuiltinModelSlug,
     isValidOpenRouterModelSlug,
     OPENROUTER_DEFAULT_MODEL_SLUG,
 } from '@/shared/openrouter-model-presets';
+import { PROVIDER_ID } from '@/shared/providers';
 import {
     type GetOpenRouterConfigResponse,
     type MutateOpenRouterCustomModelResponse,
@@ -131,10 +139,39 @@ export class OpenRouterRuntimeMessages {
                 model,
                 customModels,
             });
+            await OpenRouterRuntimeMessages.repairActiveModelAfterCustomRemove(
+                trimmed,
+            );
             return { ok: true, customModels };
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
         }
+    }
+
+    /**
+     * Removing the active custom model must leave persisted model-first prefs
+     * on a resolvable catalog entry, not only repair OpenRouter's own model.
+     *
+     * @param slug - Removed custom OpenRouter slug.
+     * @returns Promise resolved after optional preference repair.
+     */
+    private static async repairActiveModelAfterCustomRemove(
+        slug: string,
+    ): Promise<void> {
+        await PrefsSyncStorage.ready();
+        const prefs = await PrefsSyncStorage.load();
+        if (prefs.activeModelId !== buildOpenRouterModelId(slug)) {
+            return;
+        }
+
+        const nextPrefs = {
+            ...prefs,
+            providerId: PROVIDER_ID.OpenRouter,
+            activeModelId: DEFAULT_DETECTION_MODEL_ID,
+        };
+        await PrefsSyncStorage.save(nextPrefs);
+        await PrefsBroadcast.sendUpdatedToAllTabs(nextPrefs);
+        PrefsPortHub.broadcastPrefsUpdate(nextPrefs);
     }
 
     /**

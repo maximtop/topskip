@@ -37,6 +37,9 @@ export type ChunkPlan = {
     coverageFraction: number;
 };
 
+/**
+ * Timestamped transcript rows used by the chunk planner.
+ */
 type TimedLine = ReadonlyArray<{ sec: number; line: string }>;
 
 /**

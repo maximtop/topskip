@@ -119,11 +119,16 @@ describe('PrefsPortHub', () => {
         PrefsPortHub.broadcastPrefsUpdate({
             enabled: false,
             providerId: 'openrouter',
+            activeModelId: 'openrouter:test/model',
         });
 
         const expected = {
             type: TOPSKIP_MESSAGE.PREFS_UPDATED,
-            prefs: { enabled: false, providerId: 'openrouter' },
+            prefs: {
+                enabled: false,
+                providerId: 'openrouter',
+                activeModelId: 'openrouter:test/model',
+            },
         };
         expect(m1.port.postMessage).toHaveBeenCalledWith(expected);
         expect(m2.port.postMessage).toHaveBeenCalledWith(expected);
@@ -139,6 +144,7 @@ describe('PrefsPortHub', () => {
         PrefsPortHub.broadcastPrefsUpdate({
             enabled: true,
             providerId: 'openrouter',
+            activeModelId: 'openrouter:test/model',
         });
         expect(m1.port.postMessage).toHaveBeenCalledOnce();
         expect(m2.port.postMessage).not.toHaveBeenCalled();

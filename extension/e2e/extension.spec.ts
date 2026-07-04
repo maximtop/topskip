@@ -337,14 +337,16 @@ test.describe('TopSkip extension', () => {
             await expect(
                 popupPage.getByRole('switch', { name: /enable/i }),
             ).toBeVisible();
+            const settingsButton = popupPage.getByRole('button', {
+                name: /open settings|continue setup/i,
+            });
+            await expect(settingsButton).toBeVisible();
+            await expect(settingsButton).toBeEnabled();
+            await expect(popupPage.getByTestId('popup-footer')).toHaveCount(0);
             await expect(
-                popupPage.getByTestId('popup-footer').getByRole('button', {
-                    name: /open settings|open options/i,
-                }),
-            ).toBeVisible();
-            await expect(
-                popupPage.getByText(/v0\.1\.0|version/i),
-            ).toBeVisible();
+                popupPage.getByRole('button', { name: /open options/i }),
+            ).toHaveCount(0);
+            await expect(popupPage.getByText(/version/i)).toHaveCount(0);
 
             const horizontalOverflow = await popupPage.evaluate(() => {
                 return (
@@ -398,6 +400,18 @@ test.describe('TopSkip extension', () => {
             await expect(
                 page.getByRole('button', { name: 'About' }),
             ).toBeVisible();
+            await page.getByRole('button', { name: 'About' }).click();
+            await expect(
+                page.getByRole('button', { name: 'About' }),
+            ).toHaveAttribute('aria-current', 'page');
+            await expect(
+                page.getByRole('heading', { name: 'About TopSkip' }),
+            ).toBeVisible();
+            await expect(page.getByText('Version')).toBeVisible();
+            const extensionVersion = await page.evaluate(() => {
+                return chrome.runtime.getManifest().version;
+            });
+            await expect(page.getByText(`v${extensionVersion}`)).toBeVisible();
 
             expectNoCollectedErrors(errors);
         } finally {
@@ -444,7 +458,7 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('options page switches between provider panels', async () => {
+    test('options page exposes model-first settings', async () => {
         const errors: string[] = [];
         const context = await chromium.launchPersistentContext(
             '',
@@ -461,15 +475,17 @@ test.describe('TopSkip extension', () => {
                 waitUntil: 'domcontentloaded',
             });
 
-            await page.getByTestId('provider-selector').waitFor();
-            await expect(
-                page.getByRole('radio', { name: 'OpenRouter BYOK' }),
-            ).toBeVisible();
-
             await page
-                .getByRole('radio', { name: /Chrome Built-in Prompt API/i })
-                .click({ force: true, timeout: 30_000 });
-            await expect(page.getByText('not available').first()).toBeVisible();
+                .getByTestId('options-shell')
+                .waitFor({ state: 'visible' });
+            await expect(
+                page.getByRole('heading', { name: 'Detection model' }),
+            ).toBeVisible();
+            await expect(
+                page.getByRole('heading', { name: 'Connections' }),
+            ).toBeVisible();
+            await expect(page.getByText('OpenAI').first()).toBeVisible();
+            await expect(page.getByText('OpenRouter').first()).toBeVisible();
 
             expectNoCollectedErrors(errors);
         } finally {
@@ -519,12 +535,11 @@ test.describe('TopSkip extension', () => {
                 .getByRole('heading', { level: 2 })
                 .first()
                 .waitFor({ state: 'visible', timeout: 30_000 });
-            await optionsPage
-                .getByRole('radio', { name: /OpenRouter BYOK/i })
-                .focus();
-            await expect(
-                optionsPage.getByRole('radio', { name: /OpenRouter BYOK/i }),
-            ).toBeFocused();
+            const modelInput = optionsPage.getByRole('combobox', {
+                name: 'Model',
+            });
+            await modelInput.focus();
+            await expect(modelInput).toBeFocused();
 
             const optionsResults = await new AxeBuilder({
                 page: optionsPage,

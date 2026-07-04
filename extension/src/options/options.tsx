@@ -11,7 +11,6 @@ import {
     Text,
     Title,
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
 import {
     type ReactElement,
     StrictMode,
@@ -24,30 +23,36 @@ import { createRoot } from 'react-dom/client';
 
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
-import { DEFAULT_PROVIDER_ID, PREFS_PORT_NAME } from '@/shared/constants';
+import { PREFS_PORT_NAME } from '@/shared/constants';
 import { PROVIDER_ID } from '@/shared/providers';
 import {
     TOPSKIP_MESSAGE,
+    type ConnectionEntryMessage,
+    type ConnectionProviderId,
+    type DetectionModelMessage,
     type GetActiveProviderResponse,
+    type GetModelSettingsResponse,
     type GetOpenRouterConfigResponse,
     type GetProviderListResponse,
     type MutateOpenRouterCustomModelResponse,
     type ProviderAvailabilityMessage,
     type ProviderListItem,
+    type SaveConnectionKeyResponse,
     type SetOpenRouterConfigResponse,
+    type TestConnectionKeyResponse,
     type ValidateOpenRouterModelResponse,
     isPrefsPortMessage,
 } from '@/shared/messages';
-import {
-    OPENROUTER_DEFAULT_MODEL_SLUG,
-    OPENROUTER_MODEL_PRESETS,
-} from '@/shared/openrouter-model-presets';
 import { topskipTheme } from '@/shared/theme';
 import { ErrorBoundary } from '@/shared/ErrorBoundary';
 import { i18n } from '@/shared/i18n/i18n';
 import { translator } from '@/shared/i18n/translator';
-import { ChromeBuiltinInlineStatus } from '@/options/ChromeBuiltinInlineStatus';
-import { OpenRouterConfigPanel } from '@/options/OpenRouterConfigPanel';
+import { AddModelPanel } from '@/options/AddModelPanel';
+import {
+    ConnectionsPanel,
+    type ConnectionTestState,
+} from '@/options/ConnectionsPanel';
+import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
 import {
     HomeIcon,
     InfoIcon,
@@ -57,18 +62,30 @@ import {
     TopSkipLogoIcon,
 } from '@/shared/topskip-icons';
 
+/**
+ * Successful OpenRouter config response used after runtime shape narrowing.
+ */
 type OpenRouterGetOkPayload = Extract<
     GetOpenRouterConfigResponse,
     { ok: true }
 >;
 
+/**
+ * Successful active-provider response used by legacy options helpers.
+ */
 type ActiveProviderGetOkPayload = Extract<
     GetActiveProviderResponse,
     { ok: true }
 >;
 
+/**
+ * Successful provider-list response used by legacy options helpers.
+ */
 type ProviderListGetOkPayload = Extract<GetProviderListResponse, { ok: true }>;
 
+/**
+ * Section identifiers used by the options sidebar and content switcher.
+ */
 export type OptionsSectionId =
     | 'general'
     | 'detection'
@@ -180,7 +197,7 @@ export function OptionsSidebar(props: {
  * @returns Placeholder settings content.
  */
 export function PlaceholderSettingsSection(props: {
-    sectionId: Exclude<OptionsSectionId, 'general'>;
+    sectionId: Exclude<OptionsSectionId, 'general' | 'about'>;
 }): ReactElement {
     const title =
         OPTIONS_SECTIONS.find((section) => section.id === props.sectionId)
@@ -191,6 +208,36 @@ export function PlaceholderSettingsSection(props: {
             <Alert color="slate" role="status">
                 {`${title} settings are visible for navigation preview, but not configurable yet.`}
             </Alert>
+        </Stack>
+    );
+}
+
+/**
+ * About content keeps extension metadata out of the compact popup.
+ *
+ * @param props - Runtime extension metadata.
+ * @returns Minimal About settings content.
+ */
+export function AboutSettingsSection(props: {
+    extensionVersion: string;
+}): ReactElement {
+    return (
+        <Stack gap="md" maw={640} data-testid="options-about-section">
+            <Stack gap={4}>
+                <Title order={2}>About TopSkip</Title>
+                <Text size="sm" c={OPTIONS_MUTED}>
+                    Automatically skip detected sponsor and promo segments on
+                    YouTube.
+                </Text>
+            </Stack>
+            <Group gap="sm" wrap="nowrap">
+                <Text size="sm" fw={700} c={OPTIONS_TEXT}>
+                    Version
+                </Text>
+                <Text size="sm" c={OPTIONS_MUTED}>
+                    {`v${props.extensionVersion}`}
+                </Text>
+            </Group>
         </Stack>
     );
 }
@@ -281,7 +328,7 @@ export function ProviderChoiceCards(props: {
  * @param err - Error from `runtime.sendMessage`
  * @returns Whether another attempt may help (cold MV3 service worker).
  */
-function isTransientSendMessageFailure(err: unknown): boolean {
+export function isTransientSendMessageFailure(err: unknown): boolean {
     const msg = getErrorMessage(err).toLowerCase();
     return (
         msg.includes('receiving end does not exist') ||
@@ -295,7 +342,7 @@ function isTransientSendMessageFailure(err: unknown): boolean {
  *
  * @returns Raw message result from the background script
  */
-async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
+export async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
     const maxAttempts = 10;
     let lastErr: unknown;
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
@@ -333,7 +380,7 @@ async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
  * @param res - Untyped runtime response
  * @returns Parsed success payload, or `null` if shape is unusable
  */
-function parseGetOpenRouterConfigOk(
+export function parseGetOpenRouterConfigOk(
     res: unknown,
 ): OpenRouterGetOkPayload | null {
     if (typeof res !== 'object' || res === null || !('ok' in res)) {
@@ -374,7 +421,7 @@ function parseGetOpenRouterConfigOk(
  * @param res - Untyped runtime response
  * @returns Parsed active provider payload, or `null` if shape is unusable
  */
-function parseGetActiveProviderOk(
+export function parseGetActiveProviderOk(
     res: unknown,
 ): ActiveProviderGetOkPayload | null {
     if (typeof res !== 'object' || res === null || !('ok' in res)) {
@@ -403,7 +450,9 @@ function parseGetActiveProviderOk(
  * @param res - Untyped runtime response
  * @returns Parsed provider list payload, or `null` if shape is unusable
  */
-function parseGetProviderListOk(res: unknown): ProviderListGetOkPayload | null {
+export function parseGetProviderListOk(
+    res: unknown,
+): ProviderListGetOkPayload | null {
     if (typeof res !== 'object' || res === null || !('ok' in res)) {
         return null;
     }
@@ -448,7 +497,7 @@ function parseGetProviderListOk(res: unknown): ProviderListGetOkPayload | null {
  * @param res - Untyped runtime response
  * @returns Whether the payload is a successful OpenRouter SET response
  */
-function isSetOpenRouterOk(
+export function isSetOpenRouterOk(
     res: unknown,
 ): res is Extract<SetOpenRouterConfigResponse, { ok: true }> {
     return (
@@ -465,7 +514,7 @@ function isSetOpenRouterOk(
  * @param res - Untyped runtime response
  * @returns Whether the payload is a successful add/remove custom model response
  */
-function isMutateOpenRouterCustomModelOk(
+export function isMutateOpenRouterCustomModelOk(
     res: unknown,
 ): res is Extract<MutateOpenRouterCustomModelResponse, { ok: true }> {
     return (
@@ -484,7 +533,7 @@ function isMutateOpenRouterCustomModelOk(
  * @param res - Untyped runtime response
  * @returns Whether the payload is a successful validation response
  */
-function isValidateOpenRouterModelOk(
+export function isValidateOpenRouterModelOk(
     res: unknown,
 ): res is Extract<ValidateOpenRouterModelResponse, { ok: true }> {
     return (
@@ -531,119 +580,71 @@ export class Options {
  * @returns Options page React tree
  */
 function OptionsApp(): ReactElement {
-    // FIXME why this states are not handled in the mobx?
+    const extensionVersion = browser.runtime.getManifest().version;
     const [, setLoading] = useState(true);
-    const [providers, setProviders] = useState<ProviderListItem[]>([]);
-    const [activeProviderId, setActiveProviderId] =
-        useState<string>(DEFAULT_PROVIDER_ID);
-    const [activeProviderDisplayName, setActiveProviderDisplayName] =
-        useState('OpenRouter');
-    const [apiKey, setApiKey] = useState('');
-    const [modelChoice, setModelChoice] = useState<string>(
-        OPENROUTER_DEFAULT_MODEL_SLUG,
+    const [activeModelId, setActiveModelId] = useState('');
+    const [models, setModels] = useState<DetectionModelMessage[]>([]);
+    const [connections, setConnections] = useState<ConnectionEntryMessage[]>(
+        [],
     );
     const [customModels, setCustomModels] = useState<string[]>([]);
     const [newModelDraft, setNewModelDraft] = useState('');
-    const [unverifiedModels, setUnverifiedModels] = useState<Set<string>>(
-        new Set(),
-    );
+    const [connectionDrafts, setConnectionDrafts] = useState<
+        Record<ConnectionProviderId, string>
+    >({ openrouter: '', openai: '' });
+    const [busyProviderId, setBusyProviderId] =
+        useState<ConnectionProviderId | null>(null);
+    const [testStates, setTestStates] = useState<
+        Partial<Record<ConnectionProviderId, ConnectionTestState>>
+    >({});
     const [addBusy, setAddBusy] = useState(false);
-    const [saving, setSaving] = useState(false);
     const [removeBusySlug, setRemoveBusySlug] = useState<string | null>(null);
-    const [editingModelSlug, setEditingModelSlug] = useState<string | null>(
-        null,
-    );
-    const [editingModelDraft, setEditingModelDraft] = useState('');
-    const [updateBusySlug, setUpdateBusySlug] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [, setSaved] = useState(false);
-    const [savedApiKeyMasked, setSavedApiKeyMasked] = useState<string | null>(
-        null,
-    );
-    const [apiKeyVisible, { toggle: toggleApiKeyVisibility }] =
-        useDisclosure(false);
     const [activeSection, setActiveSection] =
         useState<OptionsSectionId>('general');
 
-    const modelSelectData = useMemo(() => {
-        const seen = new Set<string>();
-        const rows: { value: string; label: string }[] = [];
-        for (const p of OPENROUTER_MODEL_PRESETS) {
-            rows.push({ value: p.value, label: p.label });
-            seen.add(p.value);
+    const missingConnectionProviderId = useMemo(() => {
+        const activeModel = models.find((model) => model.id === activeModelId);
+        if (!activeModel?.requiresConnection) {
+            return null;
         }
-        for (const slug of customModels) {
-            if (!seen.has(slug)) {
-                rows.push({ value: slug, label: slug });
-                seen.add(slug);
-            }
+        const connection = connections.find(
+            (entry) => entry.providerId === activeModel.providerId,
+        );
+        if (connection?.status === 'missing') {
+            return connection.providerId;
         }
-        if (modelChoice.length > 0 && !seen.has(modelChoice)) {
-            rows.push({ value: modelChoice, label: modelChoice });
-        }
-        return rows;
-    }, [customModels, modelChoice]);
+        return null;
+    }, [activeModelId, connections, models]);
 
     const load = useCallback(async (): Promise<void> => {
         setLoading(true);
         setError(null);
         try {
-            // FIXME batch provider state into one background message.
-            const [providerListRes, activeProviderRes, res] = await Promise.all(
-                [
-                    browser.runtime.sendMessage({
-                        type: TOPSKIP_MESSAGE.GET_PROVIDER_LIST,
-                    }),
-                    browser.runtime.sendMessage({
-                        type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
-                    }),
-                    sendGetOpenRouterConfigWithRetry(),
-                ],
-            );
-
-            const providerList = parseGetProviderListOk(providerListRes);
-            if (!providerList) {
-                setError('Failed to load provider list');
-                return;
-            }
-            setProviders(providerList.providers);
-
-            const activeProvider = parseGetActiveProviderOk(activeProviderRes);
-            if (!activeProvider) {
-                setError('Failed to load active provider');
-                return;
-            }
-            setActiveProviderId(activeProvider.providerId);
-            setActiveProviderDisplayName(activeProvider.displayName);
-
+            const res: unknown = await browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.GET_MODEL_SETTINGS,
+            });
             if (
-                res &&
-                typeof res === 'object' &&
-                'ok' in res &&
-                (res as { ok: boolean }).ok === false
+                typeof res !== 'object' ||
+                res === null ||
+                Reflect.get(res, 'ok') !== true
             ) {
-                const hasErr =
-                    'error' in res &&
-                    typeof (res as { error: unknown }).error === 'string';
-                const err = hasErr
-                    ? (res as { error: string }).error
-                    : translator.getMessage('options_error_load_failed');
-                setError(err);
+                const rawError: unknown =
+                    typeof res === 'object' && res !== null
+                        ? Reflect.get(res, 'error')
+                        : undefined;
+                setError(
+                    typeof rawError === 'string'
+                        ? rawError
+                        : translator.getMessage('options_error_load_failed'),
+                );
                 return;
             }
-            const data = parseGetOpenRouterConfigOk(res);
-            if (!data) {
-                setError(translator.getMessage('options_error_load_failed'));
-                return;
-            }
-            setCustomModels([...data.customModels]);
-            const nextModel =
-                data.model.length > 0
-                    ? data.model
-                    : OPENROUTER_DEFAULT_MODEL_SLUG;
-            setModelChoice(nextModel);
-            setApiKey('');
-            setSavedApiKeyMasked(data.apiKeyMasked);
+            const data = res as Extract<GetModelSettingsResponse, { ok: true }>;
+            setActiveModelId(data.activeModelId);
+            setModels(data.models);
+            setConnections(data.connections);
+            setCustomModels(data.customOpenRouterModels);
         } catch (e) {
             setError(getErrorMessage(e));
         } finally {
@@ -659,182 +660,194 @@ function OptionsApp(): ReactElement {
         const port = browser.runtime.connect({ name: PREFS_PORT_NAME });
         port.onMessage.addListener((msg: unknown) => {
             if (isPrefsPortMessage(msg)) {
-                if (typeof msg.prefs.providerId === 'string') {
-                    setActiveProviderId(msg.prefs.providerId);
-                }
+                void load();
             }
         });
         return () => {
             port.disconnect();
         };
-    }, []);
+    }, [load]);
 
-    /**
-     * Persists the active provider choice immediately when the segmented control
-     * changes.
-     *
-     * @param nextProviderId - Newly selected provider identifier
-     * @returns Promise that resolves when the switch attempt finishes
-     */
-    const onProviderChange = async (nextProviderId: string): Promise<void> => {
-        const previousProviderId = activeProviderId;
-        const nextProvider = providers.find(
-            (provider) => provider.id === nextProviderId,
-        );
-
+    const onModelChange = async (modelId: string): Promise<void> => {
         setError(null);
-        setSaved(false);
-        setActiveProviderId(nextProviderId);
-        if (nextProvider) {
-            setActiveProviderDisplayName(nextProvider.displayName);
-        }
-
+        const previousModelId = activeModelId;
+        setActiveModelId(modelId);
         try {
             const res: unknown = await browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER,
-                providerId: nextProviderId,
+                type: TOPSKIP_MESSAGE.SET_ACTIVE_MODEL,
+                modelId,
             });
             if (
-                !res ||
                 typeof res !== 'object' ||
-                !('ok' in res) ||
+                res === null ||
                 Reflect.get(res, 'ok') !== true
             ) {
                 const rawError: unknown =
-                    res && typeof res === 'object'
+                    typeof res === 'object' && res !== null
                         ? Reflect.get(res, 'error')
-                        : undefined;
-                const err =
+                        : null;
+                setActiveModelId(previousModelId);
+                setError(
                     typeof rawError === 'string'
                         ? rawError
-                        : 'Failed to switch provider';
-                setActiveProviderId(previousProviderId);
-                setActiveProviderDisplayName(
-                    providers.find(
-                        (provider) => provider.id === previousProviderId,
-                    )?.displayName ?? activeProviderDisplayName,
+                        : 'Failed to switch model',
                 );
-                setError(err);
                 return;
             }
-            setSaved(true);
+            await load();
         } catch (e) {
-            setActiveProviderId(previousProviderId);
-            setActiveProviderDisplayName(
-                providers.find((provider) => provider.id === previousProviderId)
-                    ?.displayName ?? activeProviderDisplayName,
-            );
+            setActiveModelId(previousModelId);
             setError(getErrorMessage(e));
         }
     };
 
-    /**
-     * Persists OpenRouter settings via the background service worker.
-     *
-     * @returns Promise that resolves when save attempt finishes
-     */
-    const onSave = async (): Promise<void> => {
+    const onConnectionDraftChange = (
+        providerId: ConnectionProviderId,
+        value: string,
+    ): void => {
+        setConnectionDrafts((current) => ({ ...current, [providerId]: value }));
+        setTestStates((current) => ({
+            ...current,
+            [providerId]: { kind: 'idle' },
+        }));
+    };
+
+    const onSaveConnection = async (
+        providerId: ConnectionProviderId,
+    ): Promise<void> => {
         setError(null);
-        setSaved(false);
-        setSaving(true);
-        if (activeProviderId !== PROVIDER_ID.OpenRouter) {
-            setSaved(true);
-            setSaving(false);
-            return;
-        }
+        setBusyProviderId(providerId);
         try {
             const res: unknown = await browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG,
-                apiKey: apiKey.trim(),
-                model: modelChoice,
+                type: TOPSKIP_MESSAGE.SAVE_CONNECTION_KEY,
+                providerId,
+                apiKey: connectionDrafts[providerId],
             });
-            if (!isSetOpenRouterOk(res)) {
-                const err =
-                    res &&
-                    typeof res === 'object' &&
-                    'error' in res &&
-                    typeof (res as { error: unknown }).error === 'string'
-                        ? (res as { error: string }).error
-                        : translator.getMessage('options_error_save_failed');
-                setError(err);
+            if (
+                typeof res !== 'object' ||
+                res === null ||
+                Reflect.get(res, 'ok') !== true
+            ) {
+                const rawError: unknown =
+                    typeof res === 'object' && res !== null
+                        ? Reflect.get(res, 'error')
+                        : null;
+                setError(
+                    typeof rawError === 'string'
+                        ? rawError
+                        : translator.getMessage('options_error_save_failed'),
+                );
                 return;
             }
-            setSaved(true);
+            const saved = res as Extract<
+                SaveConnectionKeyResponse,
+                { ok: true }
+            >;
+            setConnectionDrafts((current) => ({
+                ...current,
+                [providerId]: '',
+            }));
+            setConnections((current) =>
+                current.map((entry) =>
+                    entry.providerId === providerId
+                        ? {
+                              ...entry,
+                              apiKeyMasked: saved.apiKeyMasked,
+                              status:
+                                  saved.apiKeyMasked === null
+                                      ? 'missing'
+                                      : 'saved',
+                          }
+                        : entry,
+                ),
+            );
             await load();
         } catch (e) {
             setError(getErrorMessage(e));
         } finally {
-            setSaving(false);
+            setBusyProviderId(null);
         }
     };
 
-    /**
-     * Adds a custom model slug to storage (separate from Save).
-     * First validates the slug format and (if API key present) existence.
-     *
-     * @returns Promise that resolves when the add attempt finishes
-     */
+    const onTestConnection = async (
+        providerId: ConnectionProviderId,
+    ): Promise<void> => {
+        setError(null);
+        setBusyProviderId(providerId);
+        try {
+            const res: unknown = await browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.TEST_CONNECTION_KEY,
+                providerId,
+                apiKey: connectionDrafts[providerId],
+            });
+            if (
+                typeof res !== 'object' ||
+                res === null ||
+                Reflect.get(res, 'ok') !== true
+            ) {
+                const rawError: unknown =
+                    typeof res === 'object' && res !== null
+                        ? Reflect.get(res, 'error')
+                        : null;
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: {
+                        kind: 'error',
+                        error:
+                            typeof rawError === 'string'
+                                ? rawError
+                                : 'Connection test failed',
+                    },
+                }));
+                return;
+            }
+            const data = res as Extract<
+                TestConnectionKeyResponse,
+                { ok: true }
+            >;
+            setTestStates((current) => ({
+                ...current,
+                [providerId]: data.valid
+                    ? { kind: 'valid' }
+                    : { kind: 'invalid', error: data.error },
+            }));
+        } catch (e) {
+            setTestStates((current) => ({
+                ...current,
+                [providerId]: { kind: 'error', error: getErrorMessage(e) },
+            }));
+        } finally {
+            setBusyProviderId(null);
+        }
+    };
+
     const onAddCustomModel = async (): Promise<void> => {
         setError(null);
-        setSaved(false);
         setAddBusy(true);
         try {
-            // Validate slug first
             const validationRes: unknown = await browser.runtime.sendMessage({
                 type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
                 slug: newModelDraft.trim(),
-                apiKey,
+                apiKey: connectionDrafts.openrouter,
             });
-
             if (!isValidateOpenRouterModelOk(validationRes)) {
-                const err =
-                    validationRes &&
-                    typeof validationRes === 'object' &&
-                    'error' in validationRes &&
-                    typeof (validationRes as { error: unknown }).error ===
-                        'string'
-                        ? (validationRes as { error: string }).error
-                        : 'Validation failed';
-                setError(err);
+                setError('Validation failed');
                 return;
             }
-
-            const validation = validationRes as {
-                ok: true;
-                valid: boolean;
-                error?: string;
-                unverified?: boolean;
-            };
-
-            if (!validation.valid) {
+            if (!validationRes.valid) {
                 setError(
-                    validation.error ??
+                    validationRes.error ??
                         translator.getMessage('options_error_add_model'),
                 );
                 return;
             }
 
-            // Track unverified models
-            if (validation.unverified) {
-                setUnverifiedModels(
-                    (prev) => new Set([...prev, newModelDraft.trim()]),
-                );
-            }
-
-            // Proceed with adding the model
             const addRes: unknown = await browser.runtime.sendMessage({
                 type: TOPSKIP_MESSAGE.ADD_OPENROUTER_CUSTOM_MODEL,
                 slug: newModelDraft,
             });
             if (!isMutateOpenRouterCustomModelOk(addRes)) {
-                const err =
-                    addRes &&
-                    typeof addRes === 'object' &&
-                    'error' in addRes &&
-                    typeof (addRes as { error: unknown }).error === 'string'
-                        ? (addRes as { error: string }).error
-                        : translator.getMessage('options_error_add_model');
-                setError(err);
+                setError(translator.getMessage('options_error_add_model'));
                 return;
             }
             setNewModelDraft('');
@@ -846,15 +859,8 @@ function OptionsApp(): ReactElement {
         }
     };
 
-    /**
-     * Removes a custom model slug from storage.
-     *
-     * @param slug - Model id to remove
-     * @returns Promise that resolves when the remove attempt finishes
-     */
     const onRemoveCustomModel = async (slug: string): Promise<void> => {
         setError(null);
-        setSaved(false);
         setRemoveBusySlug(slug);
         try {
             const res: unknown = await browser.runtime.sendMessage({
@@ -862,14 +868,7 @@ function OptionsApp(): ReactElement {
                 slug,
             });
             if (!isMutateOpenRouterCustomModelOk(res)) {
-                const err =
-                    res &&
-                    typeof res === 'object' &&
-                    'error' in res &&
-                    typeof (res as { error: unknown }).error === 'string'
-                        ? (res as { error: string }).error
-                        : translator.getMessage('options_error_remove_model');
-                setError(err);
+                setError(translator.getMessage('options_error_remove_model'));
                 return;
             }
             await load();
@@ -877,134 +876,6 @@ function OptionsApp(): ReactElement {
             setError(getErrorMessage(e));
         } finally {
             setRemoveBusySlug(null);
-        }
-    };
-
-    /**
-     * Starts inline editing for a saved custom model row.
-     *
-     * @param slug - Existing model id to edit.
-     * @returns Nothing.
-     */
-    const onStartCustomModelEdit = (slug: string): void => {
-        setError(null);
-        setEditingModelSlug(slug);
-        setEditingModelDraft(slug);
-    };
-
-    /**
-     * Cancels inline custom model editing without mutating storage.
-     *
-     * @returns Nothing.
-     */
-    const onCancelCustomModelEdit = (): void => {
-        setEditingModelSlug(null);
-        setEditingModelDraft('');
-    };
-
-    /**
-     * Replaces a custom model by validating and adding the new slug first.
-     *
-     * @param slug - Existing model id to replace.
-     * @returns Promise that resolves when the edit attempt finishes.
-     */
-    const onSaveCustomModelEdit = async (slug: string): Promise<void> => {
-        const nextSlug = editingModelDraft.trim();
-        setError(null);
-        setSaved(false);
-
-        if (nextSlug.length === 0) {
-            setError(translator.getMessage('options_error_add_model'));
-            return;
-        }
-
-        if (nextSlug === slug) {
-            onCancelCustomModelEdit();
-            return;
-        }
-
-        setUpdateBusySlug(slug);
-        try {
-            const validationRes: unknown = await browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL,
-                slug: nextSlug,
-                apiKey,
-            });
-
-            if (!isValidateOpenRouterModelOk(validationRes)) {
-                const err =
-                    validationRes &&
-                    typeof validationRes === 'object' &&
-                    'error' in validationRes &&
-                    typeof (validationRes as { error: unknown }).error ===
-                        'string'
-                        ? (validationRes as { error: string }).error
-                        : 'Validation failed';
-                setError(err);
-                return;
-            }
-
-            const validation = validationRes as {
-                ok: true;
-                valid: boolean;
-                error?: string;
-                unverified?: boolean;
-            };
-
-            if (!validation.valid) {
-                setError(
-                    validation.error ??
-                        translator.getMessage('options_error_add_model'),
-                );
-                return;
-            }
-
-            if (validation.unverified) {
-                setUnverifiedModels((prev) => new Set([...prev, nextSlug]));
-            }
-
-            if (!customModels.includes(nextSlug)) {
-                const addRes: unknown = await browser.runtime.sendMessage({
-                    type: TOPSKIP_MESSAGE.ADD_OPENROUTER_CUSTOM_MODEL,
-                    slug: nextSlug,
-                });
-                if (!isMutateOpenRouterCustomModelOk(addRes)) {
-                    const err =
-                        addRes &&
-                        typeof addRes === 'object' &&
-                        'error' in addRes &&
-                        typeof (addRes as { error: unknown }).error === 'string'
-                            ? (addRes as { error: string }).error
-                            : translator.getMessage('options_error_add_model');
-                    setError(err);
-                    return;
-                }
-            }
-
-            const removeRes: unknown = await browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.REMOVE_OPENROUTER_CUSTOM_MODEL,
-                slug,
-            });
-            if (!isMutateOpenRouterCustomModelOk(removeRes)) {
-                const err =
-                    removeRes &&
-                    typeof removeRes === 'object' &&
-                    'error' in removeRes &&
-                    typeof (removeRes as { error: unknown }).error === 'string'
-                        ? (removeRes as { error: string }).error
-                        : translator.getMessage('options_error_remove_model');
-                setError(err);
-                return;
-            }
-
-            setModelChoice(nextSlug);
-            setEditingModelSlug(null);
-            setEditingModelDraft('');
-            await load();
-        } catch (e) {
-            setError(getErrorMessage(e));
-        } finally {
-            setUpdateBusySlug(null);
         }
     };
 
@@ -1077,75 +948,50 @@ function OptionsApp(): ReactElement {
                                     {error}
                                 </Alert>
                             ) : null}
-                            <Stack gap="sm">
-                                <Title order={2} size="h4">
-                                    1. Promo-detection provider
-                                </Title>
-                                <ProviderChoiceCards
-                                    providers={providers}
-                                    activeProviderId={activeProviderId}
-                                    onProviderChange={(nextId) => {
-                                        void onProviderChange(nextId);
-                                    }}
-                                />
-                                {activeProviderId ===
-                                    PROVIDER_ID.ChromePromptApi && (
-                                    <ChromeBuiltinInlineStatus />
-                                )}
-                            </Stack>
-
-                            {activeProviderId === PROVIDER_ID.OpenRouter && (
-                                <OpenRouterConfigPanel
-                                    apiKey={apiKey}
-                                    apiKeyVisible={apiKeyVisible}
-                                    savedApiKeyMasked={savedApiKeyMasked}
-                                    modelChoice={modelChoice}
-                                    modelSelectData={modelSelectData}
-                                    customModels={customModels}
-                                    newModelDraft={newModelDraft}
-                                    addBusy={addBusy}
-                                    saveBusy={saving}
-                                    removeBusySlug={removeBusySlug}
-                                    editingModelSlug={editingModelSlug}
-                                    editingModelDraft={editingModelDraft}
-                                    updateBusySlug={updateBusySlug}
-                                    validationError={error}
-                                    unverifiedModels={unverifiedModels}
-                                    onApiKeyChange={setApiKey}
-                                    onToggleApiKeyVisibility={
-                                        toggleApiKeyVisibility
-                                    }
-                                    onModelChoiceChange={(value) => {
-                                        setModelChoice(
-                                            value ??
-                                                OPENROUTER_DEFAULT_MODEL_SLUG,
-                                        );
-                                    }}
-                                    onNewModelDraftChange={setNewModelDraft}
-                                    onSave={() => {
-                                        void onSave();
-                                    }}
-                                    onAddCustomModel={() => {
-                                        void onAddCustomModel();
-                                    }}
-                                    onEditCustomModel={(slug) => {
-                                        onStartCustomModelEdit(slug);
-                                    }}
-                                    onEditCustomModelDraftChange={
-                                        setEditingModelDraft
-                                    }
-                                    onSaveCustomModelEdit={(slug) => {
-                                        void onSaveCustomModelEdit(slug);
-                                    }}
-                                    onCancelCustomModelEdit={() => {
-                                        onCancelCustomModelEdit();
-                                    }}
-                                    onRemoveCustomModel={(slug) => {
-                                        void onRemoveCustomModel(slug);
-                                    }}
-                                />
-                            )}
+                            <ModelSelectionPanel
+                                activeModelId={activeModelId}
+                                models={models}
+                                missingConnectionProviderId={
+                                    missingConnectionProviderId
+                                }
+                                onModelChange={(modelId) => {
+                                    void onModelChange(modelId);
+                                }}
+                                onOpenConnection={(_providerId) => {
+                                    setActiveSection('general');
+                                }}
+                            />
+                            <ConnectionsPanel
+                                connections={connections}
+                                drafts={connectionDrafts}
+                                busyProviderId={busyProviderId}
+                                testStates={testStates}
+                                onDraftChange={onConnectionDraftChange}
+                                onSave={(providerId) => {
+                                    void onSaveConnection(providerId);
+                                }}
+                                onTest={(providerId) => {
+                                    void onTestConnection(providerId);
+                                }}
+                            />
+                            <AddModelPanel
+                                customModels={customModels}
+                                newModelDraft={newModelDraft}
+                                addBusy={addBusy}
+                                removeBusySlug={removeBusySlug}
+                                onNewModelDraftChange={setNewModelDraft}
+                                onAddCustomModel={() => {
+                                    void onAddCustomModel();
+                                }}
+                                onRemoveCustomModel={(slug) => {
+                                    void onRemoveCustomModel(slug);
+                                }}
+                            />
                         </Stack>
+                    ) : activeSection === 'about' ? (
+                        <AboutSettingsSection
+                            extensionVersion={extensionVersion}
+                        />
                     ) : (
                         <PlaceholderSettingsSection sectionId={activeSection} />
                     )}

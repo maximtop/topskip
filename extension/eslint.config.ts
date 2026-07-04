@@ -173,8 +173,9 @@ export default tseslint.config(
                         FunctionExpression: false,
                         MethodDefinition: true,
                     },
-                    // Class fields (e.g. `private static readonly id = …`) need a block too.
-                    contexts: ['PropertyDefinition'],
+                    // Class fields and type aliases describe public contracts
+                    // that otherwise lack nearby prose.
+                    contexts: ['PropertyDefinition', 'TSTypeAliasDeclaration'],
                     checkConstructors: true,
                     exemptEmptyConstructors: true,
                 },
@@ -208,6 +209,7 @@ export default tseslint.config(
             'coverage/**',
             'eslint.config.ts',
             'tasks/**',
+            'tmp/**',
         ],
     },
 );

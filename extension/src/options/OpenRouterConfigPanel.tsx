@@ -23,11 +23,17 @@ import {
     XIcon,
 } from '@/shared/topskip-icons';
 
+/**
+ * Select option shape for built-in and custom OpenRouter models.
+ */
 type OpenRouterSelectOption = {
     value: string;
     label: string;
 };
 
+/**
+ * OpenRouter form state and callbacks owned by the options container.
+ */
 type OpenRouterConfigPanelProps = {
     apiKey: string;
     apiKeyVisible: boolean;

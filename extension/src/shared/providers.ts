@@ -12,7 +12,17 @@
  */
 export const PROVIDER_ID = {
     ChromePromptApi: 'chrome-prompt-api',
+    OpenAI: 'openai',
     OpenRouter: 'openrouter',
+} as const;
+
+/**
+ * Human-readable provider names shared by model metadata and connection rows.
+ */
+export const PROVIDER_LABEL = {
+    ChromeBuiltIn: 'Chrome Built-in',
+    OpenAI: 'OpenAI',
+    OpenRouter: 'OpenRouter',
 } as const;
 
 /**

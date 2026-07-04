@@ -26,4 +26,7 @@ export const llmPromoDetectionSchema = v.union([
     llmHasPromoFalseSchema,
 ]);
 
+/**
+ * Parsed promo detection JSON returned by the LLM.
+ */
 export type LlmPromoDetection = v.InferOutput<typeof llmPromoDetectionSchema>;

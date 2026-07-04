@@ -13,6 +13,12 @@ export class ContentScriptsRegistration {
     private static readonly WATCH_SCRIPT_ID = 'topskip-watch';
 
     /**
+     * MAIN-world bridge id; separate from content.js because worlds differ.
+     */
+    private static readonly CAPTION_PAGE_BRIDGE_SCRIPT_ID =
+        'topskip-caption-page-bridge';
+
+    /**
      * Applies `enabled`: when `true`, registers YouTube (+ dev localhost)
      * matches; when `false`, unregisters.
      *
@@ -37,13 +43,19 @@ export class ContentScriptsRegistration {
     private static async registerWatchScript(): Promise<void> {
         await ContentScriptsRegistration.unregisterWatchScript();
         const matches = getWatchContentScriptMatches();
-        const js = ['content.js'];
         await browser.scripting.registerContentScripts([
+            {
+                id: ContentScriptsRegistration.CAPTION_PAGE_BRIDGE_SCRIPT_ID,
+                matches,
+                js: ['caption-page-bridge.js'],
+                runAt: 'document_start',
+                world: 'MAIN',
+            },
             {
                 id: ContentScriptsRegistration.WATCH_SCRIPT_ID,
                 matches,
-                js,
-                runAt: 'document_idle',
+                js: ['content.js'],
+                runAt: 'document_start',
             },
         ]);
     }
@@ -56,7 +68,10 @@ export class ContentScriptsRegistration {
     private static async unregisterWatchScript(): Promise<void> {
         try {
             await browser.scripting.unregisterContentScripts({
-                ids: [ContentScriptsRegistration.WATCH_SCRIPT_ID],
+                ids: [
+                    ContentScriptsRegistration.WATCH_SCRIPT_ID,
+                    ContentScriptsRegistration.CAPTION_PAGE_BRIDGE_SCRIPT_ID,
+                ],
             });
         } catch {
             // not registered

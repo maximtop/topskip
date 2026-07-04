@@ -4,7 +4,6 @@ import {
     ActionIcon,
     Badge,
     Box,
-    Button,
     Group,
     Paper,
     Stack,
@@ -36,7 +35,6 @@ import { PROVIDER_ID } from '@/shared/providers';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import {
     CheckIcon,
-    ExternalLinkIcon,
     PromoBlocksIcon,
     SettingsIcon,
     TopSkipLogoIcon,
@@ -52,35 +50,61 @@ const POPUP_WARNING_SOFT = '#fffbeb';
 const POPUP_DANGER = '#ef4444';
 const POPUP_DANGER_SOFT = '#fef2f2';
 const POPUP_SLATE_BORDER = '#dbe3ee';
+const ACTIVITY_LABEL_ACTIVE = 'Promo detection active';
+const ACTIVITY_LABEL_PAUSED = 'Promo detection paused';
+const ACTIVITY_LABEL_UNAVAILABLE = 'Status unavailable';
 
 const POPUP_TONE_STYLES: Record<
     PopupTone,
-    { surface: string; icon: string; iconText: string }
+    {
+        surface: string;
+        icon: string;
+        iconText: string;
+        title: string;
+        dot: string;
+    }
 > = {
     brand: {
         surface: POPUP_BLUE_SOFT,
         icon: POPUP_BLUE,
         iconText: '#ffffff',
+        title: POPUP_BLUE_DARK,
+        dot: POPUP_BLUE,
     },
     success: {
         surface: POPUP_SUCCESS_SOFT,
         icon: POPUP_SUCCESS,
         iconText: '#ffffff',
+        title: '#15803d',
+        dot: '#16a34a',
     },
     warning: {
         surface: POPUP_WARNING_SOFT,
         icon: POPUP_WARNING,
         iconText: '#ffffff',
+        title: '#b45309',
+        dot: POPUP_WARNING,
     },
     danger: {
         surface: POPUP_DANGER_SOFT,
         icon: POPUP_DANGER,
         iconText: '#ffffff',
+        title: '#b91c1c',
+        dot: POPUP_DANGER,
     },
     neutral: {
         surface: POPUP_SUCCESS_SOFT,
         icon: POPUP_SUCCESS,
         iconText: '#ffffff',
+        title: '#15803d',
+        dot: '#16a34a',
+    },
+    paused: {
+        surface: POPUP_WARNING_SOFT,
+        icon: POPUP_WARNING,
+        iconText: '#ffffff',
+        title: '#b45309',
+        dot: POPUP_WARNING,
     },
 };
 
@@ -141,14 +165,27 @@ function getPromoBlockEndSec(block: PromoBlock): number {
     return block.startSec + 30;
 }
 
-type PopupTone = 'brand' | 'success' | 'warning' | 'danger' | 'neutral';
+/**
+ * Visual tone names used to map popup states to stable colors.
+ */
+type PopupTone =
+    | 'brand'
+    | 'success'
+    | 'warning'
+    | 'danger'
+    | 'neutral'
+    | 'paused';
 
+/**
+ * Fully resolved display state consumed by the popup component.
+ */
 type PopupViewModel = {
     tone: PopupTone;
     badgeLabel: string;
     badgeColor: string;
     title: string;
     description: string;
+    activityLabel: string;
     statusHeadline: string;
     statusBody: string | null;
     settingsLabel: string;
@@ -184,7 +221,7 @@ export function buildPopupViewModel(args: {
     } = args;
 
     const providerLabel = modelDisplayName
-        ? `${providerDisplayName} · ${modelDisplayName}`
+        ? `${modelDisplayName} · ${providerDisplayName}`
         : providerDisplayName;
 
     if (prefsError !== null || detectionError !== null) {
@@ -195,6 +232,7 @@ export function buildPopupViewModel(args: {
             badgeColor: 'error',
             title: 'Status unavailable',
             description: 'TopSkip could not refresh its current state.',
+            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
             statusHeadline: message,
             statusBody: null,
             settingsLabel: 'Open settings',
@@ -204,13 +242,14 @@ export function buildPopupViewModel(args: {
 
     if (!enabled) {
         return {
-            tone: 'neutral',
+            tone: 'paused',
             badgeLabel: 'Off',
             badgeColor: 'gray',
             title: 'TopSkip is paused',
             description:
                 'Auto-skip is disabled for YouTube ' +
                 'until you turn it back on.',
+            activityLabel: ACTIVITY_LABEL_PAUSED,
             statusHeadline: 'Automatic sponsor skipping is currently off.',
             statusBody:
                 'You can still open settings and ' + 'review your model setup.',
@@ -228,6 +267,7 @@ export function buildPopupViewModel(args: {
             description:
                 'TopSkip is ready, but this tab does not ' +
                 'have an active watch context yet.',
+            activityLabel: ACTIVITY_LABEL_ACTIVE,
             statusHeadline: 'Waiting for a supported watch page.',
             statusBody:
                 'Detection details will appear here ' +
@@ -249,6 +289,7 @@ export function buildPopupViewModel(args: {
                 badgeColor: 'brand',
                 title: 'Preparing Chrome Built-in model',
                 description: 'Gemini Nano is downloading on this device.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'Model downloading...',
                 statusBody:
                     'Keep this popup open or check settings for progress.',
@@ -265,6 +306,7 @@ export function buildPopupViewModel(args: {
                 title: 'Chrome model unavailable',
                 description:
                     'This device does not currently meet Chrome Built-in requirements.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'Model unavailable - check settings',
                 statusBody:
                     'Open settings to see compatibility requirements and setup guidance.',
@@ -280,6 +322,7 @@ export function buildPopupViewModel(args: {
             title: 'Download required',
             description:
                 'Chrome Built-in is selected but Gemini Nano is not downloaded yet.',
+            activityLabel: ACTIVITY_LABEL_ACTIVE,
             statusHeadline: 'Model not downloaded yet',
             statusBody:
                 'Open settings to download the model and enable on-device analysis.',
@@ -298,6 +341,7 @@ export function buildPopupViewModel(args: {
                 description:
                     `Configure ${providerDisplayName || 'your LLM provider'} ` +
                     'to enable transcript analysis for promo detection.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'LLM detection is not configured yet.',
                 statusBody:
                     'Save an API key and select a default ' +
@@ -315,6 +359,7 @@ export function buildPopupViewModel(args: {
                     'TopSkip is enabled, but detection ' +
                     'data is not available for this tab ' +
                     'right now.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'No detection snapshot is available.',
                 statusBody:
                     'This can happen before captions are ' +
@@ -331,6 +376,7 @@ export function buildPopupViewModel(args: {
                 description:
                     'TopSkip is reading the latest ' +
                     'transcript slice for this video.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'Analysis is in progress.',
                 statusBody:
                     'Detected sponsor windows will appear ' +
@@ -348,6 +394,7 @@ export function buildPopupViewModel(args: {
                 description:
                     'TopSkip has marked the current ' +
                     'sponsor windows for this video.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'Detected windows',
                 statusBody:
                     detectionState.promoBlocks !== undefined &&
@@ -367,6 +414,7 @@ export function buildPopupViewModel(args: {
                 description:
                     'No sponsor segments were found ' +
                     'in the current transcript window.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'No promo blocks detected.',
                 statusBody:
                     'TopSkip will keep monitoring the ' +
@@ -382,6 +430,7 @@ export function buildPopupViewModel(args: {
                 title: 'Detection error',
                 description:
                     'TopSkip could not analyze the ' + 'current transcript.',
+                activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
                 statusHeadline:
                     detectionState.error ?? 'Detection failed for this tab.',
                 statusBody:
@@ -398,6 +447,7 @@ export function buildPopupViewModel(args: {
                 title: 'Status update',
                 description:
                     'TopSkip reported a state update ' + 'for the current tab.',
+                activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: detectionLabel(detectionState.status),
                 statusBody: null,
                 settingsLabel: 'Open settings',
@@ -584,7 +634,7 @@ export const PopupApp = observer(function PopupApp() {
                 background: '#ffffff',
                 overflowX: 'hidden',
                 border: `1px solid ${POPUP_SLATE_BORDER}`,
-                borderRadius: '0.625rem',
+                borderRadius: 0,
                 boxShadow: '0 12px 32px rgba(15, 23, 42, 0.14)',
             }}
         >
@@ -648,6 +698,8 @@ export const PopupApp = observer(function PopupApp() {
                     >
                         {view.tone === 'danger' ? (
                             '!'
+                        ) : view.tone === 'paused' ? (
+                            'i'
                         ) : view.tone === 'warning' ? (
                             'i'
                         ) : (
@@ -655,7 +707,7 @@ export const PopupApp = observer(function PopupApp() {
                         )}
                     </Box>
                     <Stack gap={3} style={{ minWidth: 0 }}>
-                        <Text size="sm" fw={700} c="#15803d">
+                        <Text size="sm" fw={700} c={toneStyle.title}>
                             {view.title}
                         </Text>
                         <Text size="xs" c="#64748b">
@@ -668,11 +720,11 @@ export const PopupApp = observer(function PopupApp() {
                                     width: '0.35rem',
                                     height: '0.35rem',
                                     borderRadius: '999px',
-                                    background: '#16a34a',
+                                    background: toneStyle.dot,
                                 }}
                             />
                             <Text size="xs" c="#334155">
-                                Promo detection active
+                                {view.activityLabel}
                             </Text>
                         </Group>
                     </Stack>
@@ -822,35 +874,6 @@ export const PopupApp = observer(function PopupApp() {
                     </Stack>
                 ) : null}
             </Paper>
-
-            <Group
-                data-testid="popup-footer"
-                justify="space-between"
-                p="md"
-                wrap="nowrap"
-            >
-                <Button
-                    variant={
-                        detectionState?.status === 'not_configured'
-                            ? 'filled'
-                            : 'light'
-                    }
-                    color="blue"
-                    size="sm"
-                    radius="md"
-                    leftSection={
-                        <ExternalLinkIcon size={14} color="currentColor" />
-                    }
-                    onClick={() => {
-                        void browser.runtime.openOptionsPage();
-                    }}
-                >
-                    Open Options
-                </Button>
-                <Text size="xs" c="dimmed">
-                    v0.1.0
-                </Text>
-            </Group>
         </Stack>
     );
 });

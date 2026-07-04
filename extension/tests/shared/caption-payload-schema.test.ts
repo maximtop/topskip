@@ -49,6 +49,51 @@ describe('captionsFromContentPayloadSchema', () => {
         expect(r.success).toBe(true);
     });
 
+    it('accepts an error payload with a structured capture reason', () => {
+        const r = v.safeParse(captionsFromContentPayloadSchema, {
+            ok: false,
+            videoId: 'abc',
+            error: 'Caption capture timed out',
+            reason: 'capture-timeout',
+            diagnostics: {
+                stage: 'waiting-capture',
+                bodyLength: 120,
+                languageCode: 'en',
+                urlShape: {
+                    pathname: '/api/timedtext',
+                    paramNames: ['fmt', 'lang', 'v'],
+                    fmt: 'json3',
+                    hasPot: false,
+                },
+            },
+        });
+        expect(r.success).toBe(true);
+    });
+
+    it('rejects raw URL values in diagnostics', () => {
+        const r = v.safeParse(captionsFromContentPayloadSchema, {
+            ok: false,
+            videoId: 'abc',
+            error: 'bad',
+            reason: 'parse-failed',
+            diagnostics: {
+                stage: 'parsing',
+                rawUrl: 'https://www.youtube.com/api/timedtext?pot=secret',
+            },
+        });
+        expect(r.success).toBe(false);
+    });
+
+    it('rejects an unknown structured capture reason', () => {
+        const r = v.safeParse(captionsFromContentPayloadSchema, {
+            ok: false,
+            videoId: 'abc',
+            error: 'bad',
+            reason: 'raw-youtube-token-missing',
+        });
+        expect(r.success).toBe(false);
+    });
+
     it('rejects empty videoId on success branch', () => {
         const r = v.safeParse(captionsFromContentPayloadSchema, {
             ok: true,
@@ -67,6 +112,14 @@ describe('captionsFromContentPayloadSchema', () => {
             segments: [{ startSec: 0 }],
         });
         expect(r.success).toBe(false);
+    });
+});
+
+describe('TOPSKIP_MESSAGE', () => {
+    it('has a runtime message for installing caption capture', () => {
+        expect(TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE).toBe(
+            'TOPSKIP_INSTALL_CAPTION_CAPTURE',
+        );
     });
 });
 

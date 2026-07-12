@@ -1,4 +1,33 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
+
+const {
+    addRuntimeMessageListener,
+    installPageBridge,
+    scheduleForVideoId,
+    sendMessage,
+} = vi.hoisted(() => ({
+    addRuntimeMessageListener:
+        vi.fn<(listener: (message: unknown) => void) => void>(),
+    installPageBridge: vi.fn(),
+    scheduleForVideoId: vi.fn(),
+    sendMessage: vi.fn<(message: unknown) => Promise<unknown>>(),
+}));
+
+vi.mock('@/shared/browser', () => ({
+    default: {
+        runtime: {
+            sendMessage,
+            onMessage: { addListener: addRuntimeMessageListener },
+        },
+    },
+}));
+
+vi.mock('@/content/watch-captions', () => ({
+    WatchCaptions: {
+        installPageBridge,
+        scheduleForVideoId,
+    },
+}));
 
 import {
     evaluatePromoBlocksSkip,
@@ -7,6 +36,12 @@ import {
     computePromoBlockTargetTime,
 } from '@/content/promo-skip-logic';
 import type { PromoBlock } from '@/shared/promo-types';
+import { ANALYSIS_MODE, type UserPreferences } from '@/shared/constants';
+import { TOPSKIP_MESSAGE } from '@/shared/messages';
+import {
+    VIDEO_BINDING_POLL_INTERVAL_MS,
+    YOUTUBE_VIDEO_ELEMENT_SELECTOR,
+} from '@/content/youtube-dom';
 
 /**
  * Simulates the YoutubeWatch.onTimeUpdate loop by calling
@@ -108,6 +143,22 @@ describe('onTimeUpdate skip pipeline integration', () => {
                 firedStartKeys: fired,
                 blocks: [],
             });
+            expect(d.action).toBe('none');
+        },
+    );
+
+    it.each(['no_promo', 'unavailable', 'error', 'rate_limited'] as const)(
+        'server %s state leaves playback unaltered when no blocks are delivered',
+        () => {
+            const d = simulateTimeUpdate({
+                prevTime: 34.5,
+                currentTime: 35.2,
+                duration: 120,
+                isSeeking: false,
+                firedStartKeys: new Set<number>(),
+                blocks: [],
+            });
+
             expect(d.action).toBe('none');
         },
     );
@@ -281,6 +332,38 @@ describe('onTimeUpdate skip pipeline integration', () => {
         expect(d2).toEqual({ action: 'skip', blockIndex: 1, targetTime: 150 });
     });
 
+    it('server ready blocks arriving after an early start only apply future crossings', () => {
+        const fired = new Set<number>();
+        const blocks: PromoBlock[] = [
+            { startSec: 4, endSec: 24 },
+            { startSec: 35, endSec: 45 },
+        ];
+
+        const early = simulateTimeUpdate({
+            prevTime: 12,
+            currentTime: 12.5,
+            duration: 120,
+            isSeeking: false,
+            firedStartKeys: fired,
+            blocks,
+        });
+        expect(early.action).toBe('none');
+
+        const future = simulateTimeUpdate({
+            prevTime: 34.5,
+            currentTime: 35.2,
+            duration: 120,
+            isSeeking: false,
+            firedStartKeys: fired,
+            blocks,
+        });
+        expect(future).toEqual({
+            action: 'skip',
+            blockIndex: 1,
+            targetTime: 45,
+        });
+    });
+
     it(
         'FR-011: after skip, lastTime should be' +
             ' targetTime (verified by next call)',
@@ -364,5 +447,257 @@ describe('onTimeUpdate skip pipeline integration', () => {
             blocks,
         });
         expect(d2).toEqual({ action: 'skip', blockIndex: 1, targetTime: 110 });
+    });
+});
+
+describe('per-video analysis route lifecycle', () => {
+    const serverPrefs = {
+        enabled: true,
+        providerId: 'openrouter',
+        activeModelId: 'openrouter:test',
+        analysisMode: ANALYSIS_MODE.Server,
+    };
+
+    type RuntimeMessageListener = (message: unknown) => void;
+
+    class FakeVideoElement extends EventTarget {
+        currentTime = 0;
+        duration = 120;
+    }
+
+    async function flushAsyncWork(): Promise<void> {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+    }
+
+    async function createRouteHarness(initialPrefs: UserPreferences): Promise<{
+        emitPrefs(prefs: UserPreferences): Promise<void>;
+        messagesOfType(type: string): unknown[];
+        navigateToVideo(videoId: string): Promise<void>;
+        pollBindings(): Promise<void>;
+        replaceVideoElement(): Promise<void>;
+        dispose(): void;
+    }> {
+        vi.useFakeTimers();
+        vi.resetModules();
+        sendMessage.mockReset();
+        addRuntimeMessageListener.mockReset();
+        installPageBridge.mockReset();
+        scheduleForVideoId.mockReset();
+
+        let runtimeMessageListener: RuntimeMessageListener | null = null;
+        let video = new FakeVideoElement();
+        const locationState = {
+            hostname: 'www.youtube.com',
+            pathname: '/watch',
+            search: '?v=video-a',
+        };
+        const windowEvents = new EventTarget();
+
+        addRuntimeMessageListener.mockImplementation(
+            (listener: RuntimeMessageListener) => {
+                runtimeMessageListener = listener;
+            },
+        );
+        sendMessage.mockImplementation((message: unknown) => {
+            if (
+                typeof message === 'object' &&
+                message !== null &&
+                'type' in message
+            ) {
+                if (message.type === TOPSKIP_MESSAGE.GET_PREFS) {
+                    return Promise.resolve({ ok: true, prefs: initialPrefs });
+                }
+                if (
+                    message.type === TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS ||
+                    message.type ===
+                        TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
+                ) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 'processing',
+                        jobId: 'job-video-a',
+                        pollAfterSec: 1,
+                    });
+                }
+            }
+            return Promise.resolve({ ok: true });
+        });
+
+        vi.stubGlobal('HTMLVideoElement', FakeVideoElement);
+        vi.stubGlobal('location', locationState);
+        vi.stubGlobal('document', {
+            querySelector(selector: string): FakeVideoElement | null {
+                return selector === YOUTUBE_VIDEO_ELEMENT_SELECTOR
+                    ? video
+                    : null;
+            },
+        });
+        vi.stubGlobal('window', {
+            addEventListener: windowEvents.addEventListener.bind(windowEvents),
+            clearTimeout: globalThis.clearTimeout,
+            dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
+            setTimeout: globalThis.setTimeout,
+        });
+
+        const { YoutubeWatch } = await import('@/content/youtube-watch');
+        YoutubeWatch.init();
+        await flushAsyncWork();
+
+        const getRuntimeMessageListener = (): RuntimeMessageListener => {
+            if (runtimeMessageListener === null) {
+                throw new Error('Runtime message listener was not registered.');
+            }
+            return runtimeMessageListener;
+        };
+        const dispatchNavigation = async (): Promise<void> => {
+            windowEvents.dispatchEvent(new Event('yt-navigate-finish'));
+            await flushAsyncWork();
+        };
+
+        return {
+            async emitPrefs(prefs: UserPreferences): Promise<void> {
+                getRuntimeMessageListener()({
+                    type: TOPSKIP_MESSAGE.PREFS_UPDATED,
+                    prefs,
+                });
+                await flushAsyncWork();
+            },
+            messagesOfType(type: string): unknown[] {
+                return sendMessage.mock.calls
+                    .map(([message]) => message)
+                    .filter(
+                        (message) =>
+                            typeof message === 'object' &&
+                            message !== null &&
+                            'type' in message &&
+                            message.type === type,
+                    );
+            },
+            async navigateToVideo(videoId: string): Promise<void> {
+                locationState.search = `?v=${videoId}`;
+                await dispatchNavigation();
+            },
+            async pollBindings(): Promise<void> {
+                await vi.advanceTimersByTimeAsync(
+                    VIDEO_BINDING_POLL_INTERVAL_MS * 2,
+                );
+                await flushAsyncWork();
+            },
+            async replaceVideoElement(): Promise<void> {
+                video = new FakeVideoElement();
+                await dispatchNavigation();
+            },
+            dispose(): void {
+                vi.clearAllTimers();
+                vi.useRealTimers();
+                vi.unstubAllGlobals();
+            },
+        };
+    }
+
+    it('locks Server on video A, cancels polling, and starts BYOK only on video B', async () => {
+        const harness = await createRouteHarness(serverPrefs);
+        const byokPrefs: UserPreferences = {
+            ...serverPrefs,
+            analysisMode: ANALYSIS_MODE.Byok,
+        };
+
+        try {
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+
+            await harness.emitPrefs(byokPrefs);
+            await harness.pollBindings();
+            await harness.replaceVideoElement();
+            await harness.pollBindings();
+
+            expect(
+                harness.messagesOfType(
+                    TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+                ),
+            ).toHaveLength(0);
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
+            ).toHaveLength(0);
+            expect(scheduleForVideoId).not.toHaveBeenCalled();
+
+            await harness.navigateToVideo('video-b');
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
+            ).toEqual([
+                {
+                    type: TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP,
+                    payload: { videoId: 'video-b' },
+                },
+            ]);
+            expect(scheduleForVideoId).toHaveBeenCalledTimes(1);
+            expect(scheduleForVideoId).toHaveBeenCalledWith(
+                'video-b',
+                'video-id-change',
+            );
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('locks BYOK through polls and element replacement, then starts Server on video B', async () => {
+        const byokPrefs: UserPreferences = {
+            ...serverPrefs,
+            analysisMode: ANALYSIS_MODE.Byok,
+        };
+        const harness = await createRouteHarness(byokPrefs);
+
+        try {
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
+            ).toEqual([
+                {
+                    type: TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP,
+                    payload: { videoId: 'video-a' },
+                },
+            ]);
+            expect(scheduleForVideoId).toHaveBeenCalledTimes(1);
+
+            await harness.pollBindings();
+            await harness.emitPrefs(serverPrefs);
+            await harness.pollBindings();
+            await harness.replaceVideoElement();
+            await harness.pollBindings();
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
+            ).toHaveLength(1);
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(0);
+            expect(scheduleForVideoId).toHaveBeenCalledTimes(2);
+            expect(scheduleForVideoId).toHaveBeenLastCalledWith(
+                'video-a',
+                'video-element-ready',
+            );
+
+            await harness.navigateToVideo('video-b');
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toEqual([
+                {
+                    type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                    payload: { videoId: 'video-b', durationSec: 120 },
+                },
+            ]);
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
     });
 });

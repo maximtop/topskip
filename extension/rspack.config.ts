@@ -15,7 +15,10 @@ import { TopSkipBuild, type TopSkipBuildMode } from './build-modes.ts';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Local Playwright fixture origin (injected for `TOPSKIP_BUILD=dev` only). */
-const DEV_LOCAL_MATCH = 'http://127.0.0.1:4173/*';
+const DEV_E2E_MATCH = 'http://127.0.0.1:4173/*';
+
+/** Local backend origin used by the server-first development path. */
+const DEV_BACKEND_MATCH = 'http://127.0.0.1:8787/*';
 
 /**
  * Reads `TOPSKIP_BUILD`: `dev` (default) includes localhost for E2E fixtures;
@@ -51,21 +54,23 @@ function applyDevLocalhostToManifest(
     if (!hostPermissions) {
         return;
     }
-    if (!hostPermissions.includes(DEV_LOCAL_MATCH)) {
-        hostPermissions.push(DEV_LOCAL_MATCH);
+    for (const match of [DEV_E2E_MATCH, DEV_BACKEND_MATCH]) {
+        if (!hostPermissions.includes(match)) {
+            hostPermissions.push(match);
+        }
     }
     const firstContentScript = manifest.content_scripts?.[0];
     if (
         firstContentScript &&
-        !firstContentScript.matches.includes(DEV_LOCAL_MATCH)
+        !firstContentScript.matches.includes(DEV_E2E_MATCH)
     ) {
-        firstContentScript.matches.push(DEV_LOCAL_MATCH);
+        firstContentScript.matches.push(DEV_E2E_MATCH);
     }
 }
 
 /**
  * Emits `manifest.json` from `src/manifest.json` with optional dev-only
- * `127.0.0.1:4173` matches.
+ * localhost matches.
  *
  * @param build - Resolved `TOPSKIP_BUILD` value
  * @returns Rspack plugin

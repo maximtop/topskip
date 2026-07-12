@@ -1,25 +1,35 @@
 # Deployment
 
-This document describes **shipping TopSkip to the Chrome Web Store**. It is not a hosted service: there is **no server**, **no runtime environment variables**, and **no backend infrastructure** in the MVP. Local development and testing are covered in [`DEVELOPMENT.md`](DEVELOPMENT.md).
+This document describes **shipping TopSkip to the Chrome Web Store**. Packaging
+the extension remains separate from the server-first development MVP, which
+uses only a loopback backend at `127.0.0.1:8787`. Public hosting is intentionally
+deferred: this MVP configures no public backend origin, token, or edge
+infrastructure. Local development and testing are covered in
+[`DEVELOPMENT.md`](DEVELOPMENT.md); deferred public hardening and corrections
+are tracked in [`SERVER_FIRST_FUTURE_WORK.md`](SERVER_FIRST_FUTURE_WORK.md).
 
 ## Production configuration (reference)
 
-| Area                        | Production behavior                                                                                                                                                          |
-| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Environment variables**   | None. The extension bundle does not read `process.env` or similar at runtime.                                                                                                |
-| **Infrastructure**          | None (no database, cache, queue, or object storage).                                                                                                                         |
-| **External APIs / network** | Optional: **OpenRouter** `https://openrouter.ai/api/v1/chat/completions` when the user enables LLM promo detection and supplies an API key (declared in `host_permissions`). |
-| **Error reporting**         | No Sentry or similar SDK in the shipped code.                                                                                                                                |
-| **Logging**                 | No centralized logging; behavior is entirely in the user’s browser.                                                                                                          |
+| Area                        | Production behavior                                                                                                                               |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Environment variables**   | None. The extension bundle does not read `process.env` or similar at runtime.                                                                     |
+| **Infrastructure**          | No public infrastructure is configured. The development backend is loopback-only and retains local artifacts for 30 days.                         |
+| **External APIs / network** | Development server mode targets loopback only. Private BYOK may use a user-configured provider; production public-service networking is deferred. |
+| **Error reporting**         | No Sentry or similar SDK in the shipped code.                                                                                                     |
+| **Logging**                 | No centralized logging; behavior is entirely in the user’s browser.                                                                               |
 
-User data: the on/off preference is stored in **`browser.storage.sync`** (written only by the extension’s **background** service worker) on the user’s Google account (Chrome sync), not on TopSkip servers—state this clearly in the store’s privacy fields.
+User data: preferences and provider configuration are stored in
+**`browser.storage.local`**, written only by the extension’s **background**
+service worker. Private BYOK does not make TopSkip backend analysis, cache, or
+status requests. State the applicable storage and network behavior clearly in
+the store’s privacy fields.
 
 ## Production build
 
 Requires **Node.js ≥ 20** (see `package.json` `engines`).
 
 ```bash
-make build
+pnpm run release
 ```
 
 Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`,
@@ -28,7 +38,7 @@ Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`,
 
 ## Package for Chrome Web Store
 
-1. Run a clean build: `make build`
+1. Run a clean release build: `pnpm run release`
 2. Zip **only** the contents of `dist/` (not the parent repo). On macOS:
 
     ```bash
@@ -40,7 +50,7 @@ Rspack writes **`dist/`** with `background.js`, `content.js`, `popup.js`,
 ## Pre-submit checklist
 
 - [ ] **Manifest V3** — `manifest_version` is `3`
-- [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), optional **OpenRouter** (`https://openrouter.ai/*`); remove dev-only `http://127.0.0.1:4173/*` from `host_permissions` and from programmatic content-script matches before a public release if that entry was only for local Playwright fixtures
+- [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), optional **OpenRouter** (`https://openrouter.ai/*`); verify both dev-only origins (`http://127.0.0.1:4173/*` and `http://127.0.0.1:8787/*`) are absent from `host_permissions` and programmatic content-script matches
 - [ ] **Privacy** — Describe access to `browser.storage` (local prefs + OpenRouter settings), **`tabs`** (messages and detection status), optional **OpenRouter** (user-supplied API key for transcript analysis), and YouTube pages
 - [ ] **Icons** — Verify `src/public/icons/topskip.svg` and generated PNG sizes are copied into `dist/` and referenced by `manifest.json`
 - [ ] **Version** — Bump `"version"` in `src/manifest.json` for each submission (it is emitted into `dist/`)

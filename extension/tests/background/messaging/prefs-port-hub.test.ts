@@ -120,6 +120,7 @@ describe('PrefsPortHub', () => {
             enabled: false,
             providerId: 'openrouter',
             activeModelId: 'openrouter:test/model',
+            analysisMode: 'server',
         });
 
         const expected = {
@@ -128,6 +129,7 @@ describe('PrefsPortHub', () => {
                 enabled: false,
                 providerId: 'openrouter',
                 activeModelId: 'openrouter:test/model',
+                analysisMode: 'server',
             },
         };
         expect(m1.port.postMessage).toHaveBeenCalledWith(expected);
@@ -145,6 +147,7 @@ describe('PrefsPortHub', () => {
             enabled: true,
             providerId: 'openrouter',
             activeModelId: 'openrouter:test/model',
+            analysisMode: 'server',
         });
         expect(m1.port.postMessage).toHaveBeenCalledOnce();
         expect(m2.port.postMessage).not.toHaveBeenCalled();

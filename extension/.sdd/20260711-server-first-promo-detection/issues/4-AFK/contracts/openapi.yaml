@@ -1,0 +1,370 @@
+openapi: 3.1.0
+info:
+  title: TopSkip Local Backend API
+  version: 0.4.0
+  summary: Local cold-analysis job lifecycle and polling contract.
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local development backend
+paths:
+  /v1/analysis:
+    post:
+      operationId: requestAnalysis
+      summary: Request server-mode promo analysis for a YouTube video.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisRequest"
+      responses:
+        "200":
+          description: The backend has a ready cache result or an existing terminal in-memory job result.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ReadyResponse"
+                  - $ref: "#/components/schemas/NoPromoResponse"
+                  - $ref: "#/components/schemas/UnavailableResponse"
+                  - $ref: "#/components/schemas/TerminalErrorResponse"
+        "202":
+          description: The backend accepted a new local analysis job or joined an existing active job with the same video ID and algorithm version.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingResponse"
+        "400":
+          description: The request is invalid and did not start work.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: The request body exceeds the local API limit and did not start work.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/analysis/jobs/{jobId}:
+    get:
+      operationId: getAnalysisJobStatus
+      summary: Read the current status of a previously-created local job.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      responses:
+        "200":
+          description: The job reached a terminal state.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ReadyResponse"
+                  - $ref: "#/components/schemas/NoPromoResponse"
+                  - $ref: "#/components/schemas/UnavailableResponse"
+                  - $ref: "#/components/schemas/TerminalErrorResponse"
+        "202":
+          description: The job is still processing.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingResponse"
+        "404":
+          description: The job id is unknown to the local in-memory job store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+  /v1/analysis/jobs/{jobId}/fixture-result:
+    post:
+      operationId: completeFixtureAnalysisJob
+      summary: Local deterministic test hook for completing an in-memory job.
+      description: This route is for local development and automated tests only.
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+            minLength: 1
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/FixtureCompletionRequest"
+      responses:
+        "200":
+          description: The job was moved to the requested terminal fixture state.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/ReadyResponse"
+                  - $ref: "#/components/schemas/NoPromoResponse"
+                  - $ref: "#/components/schemas/UnavailableResponse"
+                  - $ref: "#/components/schemas/TerminalErrorResponse"
+        "400":
+          description: The fixture completion request is invalid.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "404":
+          description: The job id is unknown to the local in-memory job store.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    AnalysisRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - videoId
+        - extensionVersion
+        - algorithmVersion
+        - client
+      properties:
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+        durationSec:
+          type: number
+          exclusiveMinimum: 0
+        extensionVersion:
+          type: string
+          minLength: 1
+        algorithmVersion:
+          type: string
+          minLength: 1
+        client:
+          type: object
+          additionalProperties: false
+          required:
+            - source
+            - capabilities
+          properties:
+            source:
+              type: string
+              const: chrome-extension
+            capabilities:
+              type: array
+              items:
+                type: string
+              uniqueItems: true
+    ProcessingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - videoId
+        - algorithmVersion
+        - jobId
+        - pollAfterSec
+      properties:
+        status:
+          type: string
+          const: processing
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+        algorithmVersion:
+          type: string
+          minLength: 1
+        jobId:
+          type: string
+          minLength: 1
+        pollAfterSec:
+          type: integer
+          minimum: 1
+    ReadyResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - videoId
+        - algorithmVersion
+        - source
+        - sourceResultId
+        - freshness
+        - promoBlocks
+      properties:
+        status:
+          type: string
+          const: ready
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+        algorithmVersion:
+          type: string
+          minLength: 1
+        source:
+          type: string
+          const: server_cache
+        sourceResultId:
+          type: string
+          minLength: 1
+        freshness:
+          $ref: "#/components/schemas/ResultFreshness"
+        promoBlocks:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/PromoBlock"
+    NoPromoResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - videoId
+        - algorithmVersion
+        - sourceResultId
+        - freshness
+      properties:
+        status:
+          type: string
+          const: no_promo
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+        algorithmVersion:
+          type: string
+          minLength: 1
+        sourceResultId:
+          type: string
+          minLength: 1
+        freshness:
+          $ref: "#/components/schemas/ResultFreshness"
+    UnavailableResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - videoId
+        - algorithmVersion
+        - reason
+        - message
+      properties:
+        status:
+          type: string
+          const: unavailable
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+        algorithmVersion:
+          type: string
+          minLength: 1
+        reason:
+          type: string
+          enum:
+            - fixture_unavailable
+        message:
+          type: string
+          minLength: 1
+    TerminalErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - videoId
+        - algorithmVersion
+        - error
+      properties:
+        status:
+          type: string
+          const: error
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+        algorithmVersion:
+          type: string
+          minLength: 1
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - fixture_error
+            message:
+              type: string
+              minLength: 1
+    ResultFreshness:
+      type: object
+      additionalProperties: false
+      required:
+        - expiresAtMs
+      properties:
+        expiresAtMs:
+          type: integer
+          minimum: 1
+    PromoBlock:
+      type: object
+      additionalProperties: false
+      required:
+        - startSec
+      properties:
+        startSec:
+          type: number
+          minimum: 0
+        endSec:
+          type: number
+          exclusiveMinimum: 0
+          description: Valibot enforces endSec greater than startSec.
+        confidence:
+          type: string
+          enum:
+            - low
+            - medium
+            - high
+    FixtureCompletionRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+      properties:
+        status:
+          type: string
+          enum:
+            - ready
+            - no_promo
+            - unavailable
+            - error
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - error
+      properties:
+        status:
+          type: string
+          const: invalid_request
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_video_id
+                - invalid_request
+                - request_body_too_large
+                - job_not_found
+            message:
+              type: string
+              minLength: 1

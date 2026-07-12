@@ -2,6 +2,7 @@ import * as v from 'valibot';
 
 import { captionSegmentSchema } from '@/shared/caption-types';
 import {
+    type AnalysisMode,
     userPreferencesSchema,
     type UserPreferences,
 } from '@/shared/constants';
@@ -16,6 +17,7 @@ import type { PROVIDER_AVAILABILITY } from './chrome-prompt-api';
 export const TOPSKIP_MESSAGE = {
     GET_PREFS: 'TOPSKIP_GET_PREFS',
     SET_PREFS: 'TOPSKIP_SET_PREFS',
+    SET_ANALYSIS_MODE: 'TOPSKIP_SET_ANALYSIS_MODE',
     GET_ACTIVE_PROVIDER: 'TOPSKIP_GET_ACTIVE_PROVIDER',
     SET_ACTIVE_PROVIDER: 'TOPSKIP_SET_ACTIVE_PROVIDER',
     GET_PROVIDER_LIST: 'TOPSKIP_GET_PROVIDER_LIST',
@@ -41,6 +43,9 @@ export const TOPSKIP_MESSAGE = {
     REMOVE_OPENROUTER_CUSTOM_MODEL: 'TOPSKIP_REMOVE_OPENROUTER_CUSTOM_MODEL',
     VALIDATE_OPENROUTER_MODEL: 'TOPSKIP_VALIDATE_OPENROUTER_MODEL',
     GET_DETECTION_STATUS: 'TOPSKIP_GET_DETECTION_STATUS',
+    PREFLIGHT_BYOK_SETUP: 'TOPSKIP_PREFLIGHT_BYOK_SETUP',
+    REQUEST_SERVER_ANALYSIS: 'TOPSKIP_REQUEST_SERVER_ANALYSIS',
+    REFRESH_SERVER_ANALYSIS_STATUS: 'TOPSKIP_REFRESH_SERVER_ANALYSIS_STATUS',
     PROMO_DETECTION_UPDATED: 'TOPSKIP_PROMO_DETECTION_UPDATED',
     PROMO_BLOCKS_DETECTED: 'TOPSKIP_PROMO_BLOCKS_DETECTED',
     DEV_SET_DETECTION_STATUS: 'TOPSKIP_DEV_SET_DETECTION_STATUS',
@@ -207,11 +212,21 @@ export type MutateOpenRouterCustomModelResponse =
     | { ok: false; error: string };
 
 /**
+ * Origin of the latest promo detection state shown in the popup.
+ */
+export type PromoDetectionSource =
+    | 'server'
+    | 'local_provider'
+    | 'local_cache'
+    | 'server_cache';
+
+/**
  * Detection snapshot for the active tab’s current video (popup).
  */
 export type PromoDetectionStatePayload = {
     videoId: string;
     status: PromoDetectionStatus;
+    source?: PromoDetectionSource;
     promoBlocks?: PromoBlock[];
     error?: string;
     /**
@@ -227,6 +242,60 @@ export type PromoDetectionStatePayload = {
 export type GetDetectionStatusResponse =
     | { ok: true; state: PromoDetectionStatePayload | null }
     | { ok: false; error: string };
+
+/**
+ * Content-to-background payload requesting server-first analysis.
+ */
+export type RequestServerAnalysisPayload = {
+    videoId: string;
+    durationSec?: number;
+};
+
+/**
+ * Watch-open readiness probe for a video assigned to the Private BYOK route.
+ */
+export type PreflightByokSetupPayload = {
+    videoId: string;
+};
+
+/**
+ * Ack for a caption-independent Private BYOK readiness probe.
+ */
+export type PreflightByokSetupResponse =
+    | { ok: true; status: 'inactive' | 'ready' | 'setup_required' }
+    | { ok: false; error: string };
+
+/**
+ * Content-to-background payload requesting a pollable server job status.
+ */
+export type RefreshServerAnalysisStatusPayload = {
+    videoId: string;
+    jobId: string;
+};
+
+/**
+ * Terminal server-analysis statuses acknowledged by background polling.
+ */
+export type ServerAnalysisTerminalStatus =
+    | 'ready'
+    | 'no_promo'
+    | 'unavailable'
+    | 'error'
+    | 'rate_limited';
+
+/**
+ * Ack returned after the background updates server detection state.
+ */
+export type RequestServerAnalysisResponse =
+    | { ok: true; status: 'processing'; jobId: string; pollAfterSec: number }
+    | { ok: true; status: 'inactive' }
+    | { ok: true; status: ServerAnalysisTerminalStatus }
+    | { ok: false; error: string };
+
+/**
+ * Ack returned after the background refreshes a pollable server job status.
+ */
+export type RefreshServerAnalysisStatusResponse = RequestServerAnalysisResponse;
 
 /**
  * Serialized provider availability state sent over runtime messages.
@@ -385,6 +454,10 @@ export const contentLogMessageSchema = v.object({
 export type TopSkipRuntimeMessage =
     | { type: typeof TOPSKIP_MESSAGE.GET_PREFS }
     | { type: typeof TOPSKIP_MESSAGE.SET_PREFS; enabled: boolean }
+    | {
+          type: typeof TOPSKIP_MESSAGE.SET_ANALYSIS_MODE;
+          analysisMode: AnalysisMode;
+      }
     | { type: typeof TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER }
     | {
           type: typeof TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER;
@@ -434,6 +507,18 @@ export type TopSkipRuntimeMessage =
           apiKey: string;
       }
     | { type: typeof TOPSKIP_MESSAGE.GET_DETECTION_STATUS }
+    | {
+          type: typeof TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP;
+          payload: PreflightByokSetupPayload;
+      }
+    | {
+          type: typeof TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS;
+          payload: RequestServerAnalysisPayload;
+      }
+    | {
+          type: typeof TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS;
+          payload: RefreshServerAnalysisStatusPayload;
+      }
     | {
           type: typeof TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS;
           state: PromoDetectionStatePayload | null;
@@ -497,6 +582,13 @@ export type GetPrefsResponse =
  * Result of saving user preferences.
  */
 export type SetPrefsResponse = { ok: true } | { ok: false; error: string };
+
+/**
+ * Result of changing the selected analysis route without replacing BYOK setup.
+ */
+export type SetAnalysisModeResponse =
+    | { ok: true; prefs: UserPreferences }
+    | { ok: false; error: string };
 
 /**
  * Ack for {@link TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT}.

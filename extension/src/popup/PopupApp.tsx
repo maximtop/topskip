@@ -30,7 +30,11 @@ import {
     POPUP_DETECTION_POLL_INTERVAL_MS,
     MIN_PROMO_BLOCK_WIDTH_SEC,
 } from '@/popup/constants';
-import { PERCENT_SCALE } from '@/shared/constants';
+import {
+    ANALYSIS_MODE,
+    PERCENT_SCALE,
+    type AnalysisMode,
+} from '@/shared/constants';
 import { PROVIDER_ID } from '@/shared/providers';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import {
@@ -179,7 +183,7 @@ type PopupTone =
 /**
  * Fully resolved display state consumed by the popup component.
  */
-type PopupViewModel = {
+type PopupStatusViewModel = {
     tone: PopupTone;
     badgeLabel: string;
     badgeColor: string;
@@ -193,14 +197,18 @@ type PopupViewModel = {
 };
 
 /**
- * Builds the view-model that drives the popup's UI,
- * based on extension state and detection results.
- *
- * @param args - Current prefs and detection state.
- * @returns The resolved view-model.
+ * Fully resolved popup state with the selected route shown independently.
  */
-export function buildPopupViewModel(args: {
+type PopupViewModel = PopupStatusViewModel & {
+    modeLabel: string;
+};
+
+/**
+ * Inputs needed to derive popup mode and detection status copy.
+ */
+type PopupViewModelArgs = {
     enabled: boolean;
+    analysisMode: AnalysisMode;
     detectionState: PromoDetectionStatePayload | null;
     prefsError: string | null;
     detectionError: string | null;
@@ -208,7 +216,18 @@ export function buildPopupViewModel(args: {
     providerDisplayName: string;
     modelDisplayName: string;
     chromeModelAvailability: ProviderAvailabilityMessage | null;
-}): PopupViewModel {
+};
+
+/**
+ * Builds the view-model that drives the popup's UI,
+ * based on extension state and detection results.
+ *
+ * @param args - Current prefs and detection state.
+ * @returns The resolved view-model.
+ */
+function buildPopupStatusViewModel(
+    args: PopupViewModelArgs,
+): PopupStatusViewModel {
     const {
         enabled,
         detectionState,
@@ -218,6 +237,7 @@ export function buildPopupViewModel(args: {
         providerDisplayName,
         modelDisplayName,
         chromeModelAvailability,
+        analysisMode,
     } = args;
 
     const providerLabel = modelDisplayName
@@ -273,6 +293,170 @@ export function buildPopupViewModel(args: {
                 'Detection details will appear here ' +
                 'when a video is available.',
             settingsLabel: 'Open settings',
+            providerLabel,
+        };
+    }
+
+    if (
+        detectionState.status === 'analyzing' &&
+        detectionState.source === 'server'
+    ) {
+        return {
+            tone: 'brand',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_pending_badge',
+            ),
+            badgeColor: 'brand',
+            title: translator.getMessage(
+                'popup_detection_server_pending_title',
+            ),
+            description: translator.getMessage(
+                'popup_detection_server_pending_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_ACTIVE,
+            statusHeadline: translator.getMessage(
+                'popup_detection_server_pending_headline',
+            ),
+            statusBody: translator.getMessage(
+                'popup_detection_server_pending_body',
+            ),
+            settingsLabel: translator.getMessage('popup_open_settings'),
+            providerLabel,
+        };
+    }
+
+    if (
+        detectionState.status === 'error' &&
+        detectionState.source === 'server'
+    ) {
+        return {
+            tone: 'danger',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_error_badge',
+            ),
+            badgeColor: 'error',
+            title: translator.getMessage('popup_detection_server_error_title'),
+            description: translator.getMessage(
+                'popup_detection_server_error_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            statusHeadline:
+                detectionState.error ??
+                translator.getMessage('popup_detection_server_error_headline'),
+            statusBody: translator.getMessage(
+                'popup_detection_server_error_body',
+            ),
+            settingsLabel: translator.getMessage('popup_open_settings'),
+            providerLabel,
+        };
+    }
+
+    if (
+        detectionState.status === 'detected' &&
+        detectionState.source === 'server_cache'
+    ) {
+        return {
+            tone: 'brand',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_cache_badge',
+            ),
+            badgeColor: 'brand',
+            title: translator.getMessage('popup_detection_server_cache_title'),
+            description: translator.getMessage(
+                'popup_detection_server_cache_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_ACTIVE,
+            statusHeadline: translator.getMessage(
+                'popup_detection_server_cache_headline',
+            ),
+            statusBody:
+                detectionState.promoBlocks !== undefined &&
+                detectionState.promoBlocks.length > 0
+                    ? formatPromoBlocksSummary(detectionState.promoBlocks)
+                    : null,
+            settingsLabel: translator.getMessage('popup_open_settings'),
+            providerLabel,
+        };
+    }
+
+    if (
+        detectionState.status === 'no_promo' &&
+        detectionState.source === 'server'
+    ) {
+        return {
+            tone: 'success',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_no_promo_badge',
+            ),
+            badgeColor: 'success',
+            title: translator.getMessage(
+                'popup_detection_server_no_promo_title',
+            ),
+            description: translator.getMessage(
+                'popup_detection_server_no_promo_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_ACTIVE,
+            statusHeadline: translator.getMessage(
+                'popup_detection_server_no_promo_headline',
+            ),
+            statusBody: translator.getMessage(
+                'popup_detection_server_no_promo_body',
+            ),
+            settingsLabel: translator.getMessage('popup_open_settings'),
+            providerLabel,
+        };
+    }
+
+    if (
+        detectionState.status === 'unavailable' &&
+        detectionState.source === 'server'
+    ) {
+        return {
+            tone: 'warning',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_unavailable_badge',
+            ),
+            badgeColor: 'warning',
+            title: translator.getMessage(
+                'popup_detection_server_unavailable_title',
+            ),
+            description: translator.getMessage(
+                'popup_detection_server_unavailable_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            statusHeadline:
+                detectionState.error ??
+                translator.getMessage(
+                    'popup_detection_server_unavailable_headline',
+                ),
+            statusBody: translator.getMessage(
+                'popup_detection_server_unavailable_body',
+            ),
+            settingsLabel: translator.getMessage('popup_open_settings'),
+            providerLabel,
+        };
+    }
+
+    if (
+        analysisMode === ANALYSIS_MODE.Byok &&
+        detectionState.status === 'not_configured' &&
+        detectionState.source === 'local_provider'
+    ) {
+        const providerName =
+            providerDisplayName ??
+            translator.getMessage('popup_analysis_mode_byok');
+        return {
+            tone: 'warning',
+            badgeLabel: translator.getMessage('popup_byok_setup_badge'),
+            badgeColor: 'warning',
+            title: translator.getMessage('popup_byok_setup_title'),
+            description: translator.getMessage('popup_byok_setup_description', {
+                provider: providerName,
+            }),
+            activityLabel: ACTIVITY_LABEL_ACTIVE,
+            statusHeadline: translator.getMessage('popup_byok_setup_badge'),
+            statusBody: translator.getMessage('popup_byok_setup_body'),
+            settingsLabel: translator.getMessage('popup_open_settings'),
             providerLabel,
         };
     }
@@ -457,6 +641,23 @@ export function buildPopupViewModel(args: {
 }
 
 /**
+ * Adds the persisted mode label to every popup status branch.
+ *
+ * @param args - Current preferences, provider details, and detection state.
+ * @returns Status copy with an explicit selected analysis mode.
+ */
+export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
+    return {
+        ...buildPopupStatusViewModel(args),
+        modeLabel: translator.getMessage(
+            args.analysisMode === ANALYSIS_MODE.Byok
+                ? 'popup_analysis_mode_byok'
+                : 'popup_analysis_mode_server',
+        ),
+    };
+}
+
+/**
  * Renders a visual timeline bar of detected promo blocks.
  *
  * @param props - Contains the blocks to display.
@@ -608,6 +809,7 @@ export const PopupApp = observer(function PopupApp() {
 
     const view = buildPopupViewModel({
         enabled: store.enabled,
+        analysisMode: store.analysisMode,
         detectionState,
         prefsError,
         detectionError,
@@ -672,6 +874,22 @@ export const PopupApp = observer(function PopupApp() {
                     >
                         <SettingsIcon size={18} color="currentColor" />
                     </ActionIcon>
+                </Group>
+
+                <Group
+                    justify="space-between"
+                    wrap="nowrap"
+                    gap="sm"
+                    px="md"
+                    py={8}
+                    style={{ borderTop: `1px solid ${POPUP_SLATE_BORDER}` }}
+                >
+                    <Text size="xs" c="dimmed">
+                        {translator.getMessage('popup_analysis_mode_label')}
+                    </Text>
+                    <Badge variant="light" color="blue" size="sm">
+                        {view.modeLabel}
+                    </Badge>
                 </Group>
 
                 <Group

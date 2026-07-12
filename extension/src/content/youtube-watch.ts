@@ -8,11 +8,25 @@ import {
     getWatchVideoIdFromSearch,
     shouldActivateTopSkip,
 } from '@/content/page-guards';
+import {
+    buildRefreshServerAnalysisStatusMessage,
+    buildRequestServerAnalysisMessage,
+    shouldUseServerAnalysis,
+} from '@/content/server-analysis-request';
 import { contentLog } from '@/content/content-log';
 import { WatchCaptions } from '@/content/watch-captions';
 import browser from '@/shared/browser';
-import type { UserPreferences } from '@/shared/constants';
-import { pickMessage, TOPSKIP_MESSAGE } from '@/shared/messages';
+import {
+    ANALYSIS_MODE,
+    MS_PER_SECOND,
+    type AnalysisMode,
+    type UserPreferences,
+} from '@/shared/constants';
+import {
+    pickMessage,
+    TOPSKIP_MESSAGE,
+    type RequestServerAnalysisResponse,
+} from '@/shared/messages';
 import type { PromoBlock } from '@/shared/promo-types';
 import { translator } from '@/shared/i18n/translator';
 import {
@@ -35,17 +49,78 @@ import {
 const videoCleanup = new WeakMap<HTMLVideoElement, () => void>();
 
 /**
+ * Retains an assigned route until navigation clears the current-video lock.
+ *
+ * @param currentMode - Route already assigned to the active video, if any.
+ * @param prefs - Latest preference snapshot.
+ * @returns Existing route, or the selected route when the video is first routed.
+ */
+export function resolveAnalysisModeForCurrentVideo(
+    currentMode: AnalysisMode | null,
+    prefs: UserPreferences,
+): AnalysisMode | null {
+    if (currentMode !== null) {
+        return currentMode;
+    }
+    return prefs.enabled ? prefs.analysisMode : null;
+}
+
+/**
+ * Prevents binding polls and player swaps from repeating a BYOK readiness probe.
+ *
+ * @param analysisMode - Route locked to the current video.
+ * @param videoId - Current non-empty video id.
+ * @param requestedVideoId - Video id already preflighted, if any.
+ * @returns Whether the current video needs its one readiness probe.
+ */
+export function shouldRequestByokSetupPreflight(
+    analysisMode: AnalysisMode | null,
+    videoId: string,
+    requestedVideoId: string | null,
+): boolean {
+    return analysisMode === ANALYSIS_MODE.Byok && requestedVideoId !== videoId;
+}
+
+/**
  * YouTube watch DOM + runtime messaging; not instantiable.
  */
 export class YoutubeWatch {
     /**
-     * Master switch from background; disables skips when user turns TopSkip off.
+     * Preferences from background; `null` means routing waits for GET_PREFS.
      */
-    private static enabled = true;
+    private static prefs: UserPreferences | null = null;
     /**
      * Watch URL video id (or e2e fixture id) for the bound player.
      */
     private static currentVideoId: string | null = null;
+    /**
+     * Analysis route fixed for the lifetime of the current video id.
+     */
+    private static analysisModeForCurrentVideo: AnalysisMode | null = null;
+    /**
+     * Video id whose caption-independent BYOK readiness probe was sent.
+     */
+    private static byokPreflightVideoId: string | null = null;
+    /**
+     * Last video id for which server-mode analysis was requested.
+     */
+    private static serverRequestedVideoId: string | null = null;
+    /**
+     * Timer id for the content-owned server job polling loop.
+     */
+    private static serverAnalysisPollTimerId: number | null = null;
+    /**
+     * Backend job id currently being polled by this watch page.
+     */
+    private static serverAnalysisPollingJobId: string | null = null;
+    /**
+     * Video id paired with the active backend polling job.
+     */
+    private static serverAnalysisPollingVideoId: string | null = null;
+    /**
+     * Last video id for which BYOK caption capture was scheduled.
+     */
+    private static captionScheduledVideoId: string | null = null;
     /**
      * Last `timeupdate` position used for seek / skip heuristics.
      */
@@ -190,7 +265,10 @@ export class YoutubeWatch {
      * @param video Active watch player element.
      */
     private static onTimeUpdate(video: HTMLVideoElement): void {
-        if (!YoutubeWatch.enabled || YoutubeWatch.isLikelyAdPlaying()) {
+        if (
+            YoutubeWatch.prefs?.enabled === false ||
+            YoutubeWatch.isLikelyAdPlaying()
+        ) {
             YoutubeWatch.lastTime = video.currentTime;
             return;
         }
@@ -359,10 +437,223 @@ export class YoutubeWatch {
      */
     private static resetForNewVideo(videoId: string | null): void {
         YoutubeWatch.unbindVideo();
+        YoutubeWatch.clearServerAnalysisPolling();
         YoutubeWatch.currentVideoId = videoId;
+        YoutubeWatch.analysisModeForCurrentVideo = null;
+        YoutubeWatch.byokPreflightVideoId = null;
+        YoutubeWatch.serverRequestedVideoId = null;
+        YoutubeWatch.captionScheduledVideoId = null;
         YoutubeWatch.lastTime = 0;
         YoutubeWatch.promoBlocks = [];
         YoutubeWatch.firedPromoBlockStartKeys.clear();
+    }
+
+    /**
+     * Stops the pending server-job polling loop for this watch page.
+     */
+    private static clearServerAnalysisPolling(): void {
+        if (YoutubeWatch.serverAnalysisPollTimerId !== null) {
+            window.clearTimeout(YoutubeWatch.serverAnalysisPollTimerId);
+        }
+        YoutubeWatch.serverAnalysisPollTimerId = null;
+        YoutubeWatch.serverAnalysisPollingJobId = null;
+        YoutubeWatch.serverAnalysisPollingVideoId = null;
+    }
+
+    /**
+     * Narrows runtime acks from background server-analysis handlers.
+     *
+     * @param response - Untyped `runtime.sendMessage` response.
+     * @returns Whether the response has the supported ack shape.
+     */
+    private static isServerAnalysisResponse(
+        response: unknown,
+    ): response is RequestServerAnalysisResponse {
+        if (response === null || typeof response !== 'object') {
+            return false;
+        }
+
+        if (!('ok' in response)) {
+            return false;
+        }
+        const ok: unknown = response.ok;
+        if (ok === false) {
+            return 'error' in response && typeof response.error === 'string';
+        }
+        if (ok !== true) {
+            return false;
+        }
+
+        if (!('status' in response)) {
+            return false;
+        }
+        const status: unknown = response.status;
+        if (status === 'processing') {
+            return (
+                'jobId' in response &&
+                typeof response.jobId === 'string' &&
+                'pollAfterSec' in response &&
+                typeof response.pollAfterSec === 'number'
+            );
+        }
+
+        return (
+            status === 'inactive' ||
+            status === 'ready' ||
+            status === 'no_promo' ||
+            status === 'unavailable' ||
+            status === 'error' ||
+            status === 'rate_limited'
+        );
+    }
+
+    /**
+     * Schedules the next status refresh while the current video stays active.
+     *
+     * @param input - Polling job id, video id, and server interval.
+     */
+    private static scheduleServerAnalysisStatusRefresh(input: {
+        videoId: string;
+        jobId: string;
+        pollAfterSec: number;
+    }): void {
+        YoutubeWatch.clearServerAnalysisPolling();
+        YoutubeWatch.serverAnalysisPollingJobId = input.jobId;
+        YoutubeWatch.serverAnalysisPollingVideoId = input.videoId;
+        YoutubeWatch.serverAnalysisPollTimerId = window.setTimeout(() => {
+            void YoutubeWatch.refreshServerAnalysisStatus();
+        }, input.pollAfterSec * MS_PER_SECOND);
+    }
+
+    /**
+     * Sends a status refresh only when the page still owns the same job/video.
+     *
+     * @returns Promise resolved after the refresh response is handled.
+     */
+    private static async refreshServerAnalysisStatus(): Promise<void> {
+        const jobId = YoutubeWatch.serverAnalysisPollingJobId;
+        const videoId = YoutubeWatch.serverAnalysisPollingVideoId;
+        YoutubeWatch.serverAnalysisPollTimerId = null;
+
+        if (
+            jobId === null ||
+            videoId === null ||
+            videoId !== YoutubeWatch.currentVideoId ||
+            YoutubeWatch.analysisModeForCurrentVideo !== ANALYSIS_MODE.Server ||
+            YoutubeWatch.prefs === null ||
+            !shouldUseServerAnalysis(YoutubeWatch.prefs)
+        ) {
+            YoutubeWatch.clearServerAnalysisPolling();
+            return;
+        }
+
+        try {
+            const response = await browser.runtime.sendMessage(
+                buildRefreshServerAnalysisStatusMessage({ videoId, jobId }),
+            );
+            YoutubeWatch.handleServerAnalysisResponse(response, videoId);
+        } catch {
+            YoutubeWatch.clearServerAnalysisPolling();
+        }
+    }
+
+    /**
+     * Applies background acks to the content-owned polling lifecycle.
+     *
+     * @param response - Untyped ack from the background.
+     * @param videoId - Video id tied to the request that produced the ack.
+     */
+    private static handleServerAnalysisResponse(
+        response: unknown,
+        videoId: string,
+    ): void {
+        if (
+            videoId !== YoutubeWatch.currentVideoId ||
+            YoutubeWatch.analysisModeForCurrentVideo !== ANALYSIS_MODE.Server ||
+            YoutubeWatch.prefs === null ||
+            !shouldUseServerAnalysis(YoutubeWatch.prefs)
+        ) {
+            YoutubeWatch.clearServerAnalysisPolling();
+            return;
+        }
+        if (!YoutubeWatch.isServerAnalysisResponse(response)) {
+            YoutubeWatch.clearServerAnalysisPolling();
+            return;
+        }
+
+        if (!response.ok) {
+            YoutubeWatch.clearServerAnalysisPolling();
+            return;
+        }
+
+        if (response.status === 'processing') {
+            YoutubeWatch.scheduleServerAnalysisStatusRefresh({
+                videoId,
+                jobId: response.jobId,
+                pollAfterSec: response.pollAfterSec,
+            });
+            return;
+        }
+
+        if (response.status === 'inactive') {
+            YoutubeWatch.serverRequestedVideoId = null;
+        }
+        YoutubeWatch.clearServerAnalysisPolling();
+    }
+
+    /**
+     * Sends one caption-independent provider readiness probe for a BYOK video.
+     *
+     * @param videoId - Video assigned to the locked BYOK route.
+     */
+    private static requestByokSetupPreflight(videoId: string): void {
+        if (
+            !shouldRequestByokSetupPreflight(
+                YoutubeWatch.analysisModeForCurrentVideo,
+                videoId,
+                YoutubeWatch.byokPreflightVideoId,
+            )
+        ) {
+            return;
+        }
+        YoutubeWatch.byokPreflightVideoId = videoId;
+        void browser.runtime
+            .sendMessage({
+                type: TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP,
+                payload: { videoId },
+            })
+            .catch(() => {
+                // The background owns setup status; caption capture remains independent.
+            });
+    }
+
+    /**
+     * Requests server analysis once for the active video in server mode.
+     *
+     * @param video Active watch player element.
+     * @param videoId Current watch video id.
+     */
+    private static requestServerAnalysis(
+        video: HTMLVideoElement,
+        videoId: string,
+    ): void {
+        if (YoutubeWatch.serverRequestedVideoId === videoId) {
+            return;
+        }
+        YoutubeWatch.serverRequestedVideoId = videoId;
+        const durationSec = Number.isFinite(video.duration)
+            ? video.duration
+            : undefined;
+        void browser.runtime
+            .sendMessage(
+                buildRequestServerAnalysisMessage({ videoId, durationSec }),
+            )
+            .then((response: unknown) => {
+                YoutubeWatch.handleServerAnalysisResponse(response, videoId);
+            })
+            .catch(() => {
+                YoutubeWatch.clearServerAnalysisPolling();
+            });
     }
 
     /**
@@ -370,33 +661,69 @@ export class YoutubeWatch {
      */
     private static syncVideoBinding(): void {
         if (!YoutubeWatch.shouldActivateForPage()) {
-            YoutubeWatch.unbindVideo();
+            YoutubeWatch.resetForNewVideo(null);
             return;
         }
 
         const vid = YoutubeWatch.getWatchVideoId();
         const video = YoutubeWatch.getMainVideo();
+        const isNewVideo = vid !== YoutubeWatch.currentVideoId;
 
-        if (vid !== YoutubeWatch.currentVideoId) {
+        if (isNewVideo) {
             YoutubeWatch.resetForNewVideo(vid);
-            if (video) {
-                WatchCaptions.scheduleForVideoId(vid, 'video-id-change');
-                YoutubeWatch.bindVideo(video);
+        }
+
+        if (!video) {
+            return;
+        }
+
+        const isVideoElementSwap =
+            !isNewVideo && YoutubeWatch.boundVideo !== video;
+        YoutubeWatch.bindVideo(video);
+
+        const prefs = YoutubeWatch.prefs;
+        if (prefs === null) {
+            return;
+        }
+
+        YoutubeWatch.analysisModeForCurrentVideo =
+            resolveAnalysisModeForCurrentVideo(
+                YoutubeWatch.analysisModeForCurrentVideo,
+                prefs,
+            );
+        const analysisMode = YoutubeWatch.analysisModeForCurrentVideo;
+        if (analysisMode === null) {
+            YoutubeWatch.clearServerAnalysisPolling();
+            return;
+        }
+
+        if (analysisMode === ANALYSIS_MODE.Server) {
+            if (vid !== null && shouldUseServerAnalysis(prefs)) {
+                YoutubeWatch.requestServerAnalysis(video, vid);
             }
             return;
         }
 
-        if (video && YoutubeWatch.boundVideo !== video) {
+        if (vid !== null) {
+            YoutubeWatch.requestByokSetupPreflight(vid);
+        }
+        WatchCaptions.installPageBridge();
+        if (vid !== null && YoutubeWatch.captionScheduledVideoId !== vid) {
+            YoutubeWatch.captionScheduledVideoId = vid;
+            WatchCaptions.scheduleForVideoId(vid, 'video-id-change');
+            return;
+        }
+
+        if (isVideoElementSwap) {
             contentLog.info('video element swap detected, rebinding');
             WatchCaptions.scheduleForVideoId(vid, 'video-element-ready');
-            YoutubeWatch.bindVideo(video);
         }
     }
 
     /**
-     * Initial `enabled` flag from the background (GET_PREFS).
+     * Initial preferences from the background (GET_PREFS).
      */
-    private static loadEnabledFromBackground(): void {
+    private static loadPrefsFromBackground(): void {
         void browser.runtime
             .sendMessage({ type: TOPSKIP_MESSAGE.GET_PREFS })
             .then((res: unknown) => {
@@ -408,13 +735,12 @@ export class YoutubeWatch {
                     'prefs' in res
                 ) {
                     const prefs = (res as { prefs: UserPreferences }).prefs;
-                    if (typeof prefs.enabled === 'boolean') {
-                        YoutubeWatch.enabled = prefs.enabled;
-                    }
+                    YoutubeWatch.prefs = prefs;
+                    YoutubeWatch.syncVideoBinding();
                 }
             })
             .catch(() => {
-                // keep default enabled
+                // keep routing idle until preferences are available
             });
     }
 
@@ -462,29 +788,25 @@ export class YoutubeWatch {
         if (!m) {
             return;
         }
-        YoutubeWatch.enabled = m.prefs.enabled;
+        YoutubeWatch.prefs = m.prefs;
+        if (!shouldUseServerAnalysis(m.prefs)) {
+            YoutubeWatch.clearServerAnalysisPolling();
+            YoutubeWatch.serverRequestedVideoId = null;
+        }
+        YoutubeWatch.syncVideoBinding();
     }
 
     /**
      * Wires SPA hooks, video binding, and runtime messaging for prefs.
      */
     static init(): void {
-        WatchCaptions.installPageBridge();
-        YoutubeWatch.loadEnabledFromBackground();
+        YoutubeWatch.loadPrefsFromBackground();
         browser.runtime.onMessage.addListener((message: unknown) => {
             YoutubeWatch.onPrefsUpdatedMessage(message);
             YoutubeWatch.onPromoBlocksMessage(message);
         });
 
-        YoutubeWatch.currentVideoId = YoutubeWatch.getWatchVideoId();
-        const start = YoutubeWatch.getMainVideo();
-        if (start) {
-            WatchCaptions.scheduleForVideoId(
-                YoutubeWatch.currentVideoId,
-                'init',
-            );
-            YoutubeWatch.bindVideo(start);
-        }
+        YoutubeWatch.syncVideoBinding();
 
         const onNav = (): void => {
             YoutubeWatch.syncVideoBinding();

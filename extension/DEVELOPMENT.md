@@ -19,7 +19,11 @@ Optional:
 | ------------ | ------------------------------------------------------------------------------------- |
 | **GNU Make** | Optional convenience; all `make` targets call `pnpm run` (see [Makefile](./Makefile)) |
 
-No `.env` file or database is required — the MVP uses only `chrome.storage.sync` in the browser.
+No `.env` file or database is required. Preferences use `browser.storage.local`.
+The local backend retains analysis artifacts for 30 days in
+`.topskip-data/analysis-artifacts.json` (ignored by Git and private to the
+current user). Set `TOPSKIP_ARTIFACT_STORE_PATH` to store them elsewhere; remove
+that file to clear local history.
 
 ---
 
@@ -53,7 +57,9 @@ Equivalent:
 pnpm run build
 ```
 
-Output goes to **`dist/`** (Rspack: `background.js`, `content.js`, `popup.js`, `popup.html`, `manifest.json`, source maps).
+Output goes to **`dist/`** (Rspack: `background.js`, `content.js`, `popup.js`,
+`options.js`, the caption-page bridge, HTML entry files, `manifest.json`, and
+source maps).
 
 ### 3. Load the extension in Chrome
 
@@ -72,29 +78,56 @@ Rebuild on file changes:
 pnpm run build:watch
 ```
 
+### 5. Local server-mode backend (optional)
+
+Run the loopback backend when exercising server-mode development:
+
+```bash
+pnpm run backend:dev
+```
+
+It listens on `http://127.0.0.1:8787`. The matching host permission is injected
+only into development builds, so extension-only work and private BYOK testing do
+not require this process. Public deployment and future correction work are
+intentionally deferred; see
+[SERVER_FIRST_FUTURE_WORK.md](./SERVER_FIRST_FUTURE_WORK.md).
+
+Real YouTube timedtext access is disabled by default so local development does
+not silently make outbound caption requests. Enable it deliberately when needed:
+
+```bash
+TOPSKIP_ENABLE_NETWORK_CAPTION_EXTRACTION=true pnpm run backend:dev
+```
+
+This sends the watched video ID to YouTube's caption endpoint. Fixture videos
+continue to work without the opt-in.
+
 ---
 
 ## Project layout
 
 | Path                | Role                                                                                                                                                                            |
 | ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `src/background/`   | MV3 **service worker** — sole **`sync` storage** access for prefs; Valibot; **`runtime.onMessage`**; broadcasts updates via **`tabs.sendMessage`**                              |
+| `src/background/`   | MV3 **service worker** — sole **`local` storage** access for prefs; Valibot; **`runtime.onMessage`**; broadcasts updates via **`tabs.sendMessage`**                             |
 | `src/content/`      | **Content script** — `Content.init()` → `YoutubeWatch`; `skip-logic.ts` / `page-guards.ts` (pure); `youtube-watch.ts` (orchestration + runtime messaging, no storage for prefs) |
 | `src/popup/`        | **React + Mantine + MobX** toolbar popup; **`preferences-store.ts`** (messaging to background only)                                                                             |
 | `src/shared/`       | **`browser.ts`**, **Valibot** schema + constants, **`messages.ts`**, **`error.ts`** / **`valibot.ts`** (`getErrorMessage`, `extractMessageFromValiError`)                       |
 | `src/public/`       | Static files copied into `dist/` (e.g. icons)                                                                                                                                   |
+| `src/backend/`      | Local server-first API, caption extraction, analysis jobs, and durable artifacts                                                                                                |
 | `dist/`             | **Build output** — load this folder as unpacked extension (gitignored)                                                                                                          |
 | `e2e/`              | Playwright tests and `e2e/fixtures` static HTML                                                                                                                                 |
 | `src/manifest.json` | Source manifest; **emitted into `dist/`** by the build                                                                                                                          |
 | `.sdd/`             | SDD feature **spec.md** / **plan.md** (e.g. `.sdd/001-init-extension/` MVP baseline, dated folders per feature)                                                                 |
 
-The bundler is **Rspack** (`rspack.config.ts`): three entries (`background`, `content`, `popup`), `HtmlRspackPlugin` for `popup.html`.
+The bundler is **Rspack** (`rspack.config.ts`): background, content, popup,
+options, and caption-page-bridge entries, with HTML plugins for popup and
+options pages.
 
-### Preferences and `browser.storage.sync`
+### Preferences and `browser.storage.local`
 
-Only **`PrefsSyncStorage`** in **`src/background/storage/prefs-sync.ts`** reads or writes **`browser.storage.sync`** for the `topskip:prefs` key (query: **`PrefsSyncStorage.load`**, command: **`PrefsSyncStorage.save`**). The service worker entry **`src/background/index.ts`** calls **`Background.init()`** from **`src/background/background.ts`**, which registers install + runtime messaging. Persisted objects are validated with **Valibot** (`userPreferencesSchema` in `src/shared/constants.ts`) — no unchecked casts on storage payloads.
+Only **`PrefsSyncStorage`** in **`src/background/storage/prefs-sync.ts`** reads or writes **`browser.storage.local`** for the `topskip:prefs` key (query: **`PrefsSyncStorage.load`**, command: **`PrefsSyncStorage.save`**). The service worker entry **`src/background/index.ts`** calls **`Background.init()`** from **`src/background/background.ts`**, which registers install + runtime messaging. Persisted objects are validated with **Valibot** (`userPreferencesSchema` in `src/shared/constants.ts`) — no unchecked casts on storage payloads.
 
-The **popup** and **content** scripts must not call **`storage.sync`** for preferences. They use **`browser.runtime.sendMessage`** with **`TOPSKIP_*`** message types from **`src/shared/messages.ts`**. After a successful update, the background notifies content scripts with **`TOPSKIP_PREFS_UPDATED`** via **`tabs.sendMessage`**, which requires the **`tabs`** permission in **`manifest.json`**.
+The **popup** and **content** scripts must not call **`storage.local`** for preferences. They use **`browser.runtime.sendMessage`** with **`TOPSKIP_*`** message types from **`src/shared/messages.ts`**. After a successful update, the background notifies content scripts with **`TOPSKIP_PREFS_UPDATED`** via **`tabs.sendMessage`**, which requires the **`tabs`** permission in **`manifest.json`**.
 
 ---
 
@@ -208,13 +241,16 @@ make test-coverage
 
 Unit tests live under **`tests/`**, mirroring **`src/`** (e.g. `tests/content/skip-logic.test.ts` → `src/content/skip-logic.ts`). Coverage thresholds apply to **`skip-logic.ts`**, **`page-guards.ts`**, and **`src/popup/preferences-store.ts`** (see `vitest.config.ts`).
 
-### Manual check on real YouTube
+### Manual server-mode check
 
 1. `make build`, load **`dist/`** unpacked (see [Getting started](#3-load-the-extension-in-chrome)).
-2. Open a **`/watch`** URL with a video **longer than one minute**.
-3. Let playback pass **0:30** — the player should jump to **1:00** and show a small **“Skip applied”** toast.
-4. Open the extension **popup** and turn the **switch off** — on another long video, playback should **not** jump at 0:30.
-5. Turn the switch **on** again **before** 0:30 — the jump at 0:30 should return.
+2. Run the local backend; add `TOPSKIP_ENABLE_NETWORK_CAPTION_EXTRACTION=true`
+   for a real-caption smoke test.
+3. Open a `/watch` URL and verify the popup first reports server analysis and
+   then a ready, unavailable, or no-promo terminal state.
+4. For a ready result, let playback reach a detected block start and verify it
+   skips only that future block once.
+5. Switch to Private BYOK and open a new video; verify no server request occurs.
 
 ### Manual caption-capture smoke test
 

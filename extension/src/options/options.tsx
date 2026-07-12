@@ -23,7 +23,11 @@ import { createRoot } from 'react-dom/client';
 
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
-import { PREFS_PORT_NAME } from '@/shared/constants';
+import {
+    ANALYSIS_MODE,
+    PREFS_PORT_NAME,
+    type AnalysisMode,
+} from '@/shared/constants';
 import { PROVIDER_ID } from '@/shared/providers';
 import {
     TOPSKIP_MESSAGE,
@@ -33,12 +37,14 @@ import {
     type GetActiveProviderResponse,
     type GetModelSettingsResponse,
     type GetOpenRouterConfigResponse,
+    type GetPrefsResponse,
     type GetProviderListResponse,
     type MutateOpenRouterCustomModelResponse,
     type ProviderAvailabilityMessage,
     type ProviderListItem,
     type SaveConnectionKeyResponse,
     type SetOpenRouterConfigResponse,
+    type SetAnalysisModeResponse,
     type TestConnectionKeyResponse,
     type ValidateOpenRouterModelResponse,
     isPrefsPortMessage,
@@ -48,6 +54,7 @@ import { ErrorBoundary } from '@/shared/ErrorBoundary';
 import { i18n } from '@/shared/i18n/i18n';
 import { translator } from '@/shared/i18n/translator';
 import { AddModelPanel } from '@/options/AddModelPanel';
+import { AnalysisModePanel } from '@/options/AnalysisModePanel';
 import {
     ConnectionsPanel,
     type ConnectionTestState,
@@ -106,6 +113,16 @@ const OPTIONS_BLUE_SOFT = '#eff6ff';
 const OPTIONS_BORDER = '#dbe3ee';
 const OPTIONS_TEXT = '#0f172a';
 const OPTIONS_MUTED = '#64748b';
+
+/**
+ * Keeps provider configuration available only for the intentional BYOK route.
+ *
+ * @param analysisMode - Current user-selected analysis route.
+ * @returns Whether provider, key, and model controls should be rendered.
+ */
+export function shouldShowByokSettings(analysisMode: AnalysisMode): boolean {
+    return analysisMode === ANALYSIS_MODE.Byok;
+}
 
 /**
  * Sidebar icons keep navigation recognizable without adding an icon package.
@@ -583,6 +600,10 @@ function OptionsApp(): ReactElement {
     const extensionVersion = browser.runtime.getManifest().version;
     const [, setLoading] = useState(true);
     const [activeModelId, setActiveModelId] = useState('');
+    const [analysisMode, setAnalysisMode] = useState<AnalysisMode>(
+        ANALYSIS_MODE.Server,
+    );
+    const [analysisModeSaving, setAnalysisModeSaving] = useState(false);
     const [models, setModels] = useState<DetectionModelMessage[]>([]);
     const [connections, setConnections] = useState<ConnectionEntryMessage[]>(
         [],
@@ -621,9 +642,14 @@ function OptionsApp(): ReactElement {
         setLoading(true);
         setError(null);
         try {
-            const res: unknown = await browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.GET_MODEL_SETTINGS,
-            });
+            const [res, prefsRes]: [unknown, unknown] = await Promise.all([
+                browser.runtime.sendMessage({
+                    type: TOPSKIP_MESSAGE.GET_MODEL_SETTINGS,
+                }),
+                browser.runtime.sendMessage({
+                    type: TOPSKIP_MESSAGE.GET_PREFS,
+                }),
+            ]);
             if (
                 typeof res !== 'object' ||
                 res === null ||
@@ -641,7 +667,28 @@ function OptionsApp(): ReactElement {
                 return;
             }
             const data = res as Extract<GetModelSettingsResponse, { ok: true }>;
+            if (
+                typeof prefsRes !== 'object' ||
+                prefsRes === null ||
+                Reflect.get(prefsRes, 'ok') !== true
+            ) {
+                const rawError: unknown =
+                    typeof prefsRes === 'object' && prefsRes !== null
+                        ? Reflect.get(prefsRes, 'error')
+                        : undefined;
+                setError(
+                    typeof rawError === 'string'
+                        ? rawError
+                        : translator.getMessage('options_error_load_failed'),
+                );
+                return;
+            }
+            const prefsData = prefsRes as Extract<
+                GetPrefsResponse,
+                { ok: true }
+            >;
             setActiveModelId(data.activeModelId);
+            setAnalysisMode(prefsData.prefs.analysisMode);
             setModels(data.models);
             setConnections(data.connections);
             setCustomModels(data.customOpenRouterModels);
@@ -655,6 +702,50 @@ function OptionsApp(): ReactElement {
     useEffect(() => {
         void load();
     }, [load]);
+
+    const onAnalysisModeChange = async (
+        nextMode: AnalysisMode,
+    ): Promise<void> => {
+        if (analysisModeSaving || nextMode === analysisMode) {
+            return;
+        }
+        const previousMode = analysisMode;
+        setError(null);
+        setAnalysisMode(nextMode);
+        setAnalysisModeSaving(true);
+        try {
+            const res: unknown = await browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.SET_ANALYSIS_MODE,
+                analysisMode: nextMode,
+            });
+            if (
+                typeof res !== 'object' ||
+                res === null ||
+                Reflect.get(res, 'ok') !== true
+            ) {
+                const rawError: unknown =
+                    typeof res === 'object' && res !== null
+                        ? Reflect.get(res, 'error')
+                        : undefined;
+                setAnalysisMode(previousMode);
+                setError(
+                    typeof rawError === 'string'
+                        ? rawError
+                        : translator.getMessage(
+                              'options_analysis_mode_save_error',
+                          ),
+                );
+                return;
+            }
+            const saved = res as Extract<SetAnalysisModeResponse, { ok: true }>;
+            setAnalysisMode(saved.prefs.analysisMode);
+        } catch (e) {
+            setAnalysisMode(previousMode);
+            setError(getErrorMessage(e));
+        } finally {
+            setAnalysisModeSaving(false);
+        }
+    };
 
     useEffect(() => {
         const port = browser.runtime.connect({ name: PREFS_PORT_NAME });
@@ -948,45 +1039,56 @@ function OptionsApp(): ReactElement {
                                     {error}
                                 </Alert>
                             ) : null}
-                            <ModelSelectionPanel
-                                activeModelId={activeModelId}
-                                models={models}
-                                missingConnectionProviderId={
-                                    missingConnectionProviderId
-                                }
-                                onModelChange={(modelId) => {
-                                    void onModelChange(modelId);
-                                }}
-                                onOpenConnection={(_providerId) => {
-                                    setActiveSection('general');
+                            <AnalysisModePanel
+                                value={analysisMode}
+                                disabled={analysisModeSaving}
+                                onChange={(value) => {
+                                    void onAnalysisModeChange(value);
                                 }}
                             />
-                            <ConnectionsPanel
-                                connections={connections}
-                                drafts={connectionDrafts}
-                                busyProviderId={busyProviderId}
-                                testStates={testStates}
-                                onDraftChange={onConnectionDraftChange}
-                                onSave={(providerId) => {
-                                    void onSaveConnection(providerId);
-                                }}
-                                onTest={(providerId) => {
-                                    void onTestConnection(providerId);
-                                }}
-                            />
-                            <AddModelPanel
-                                customModels={customModels}
-                                newModelDraft={newModelDraft}
-                                addBusy={addBusy}
-                                removeBusySlug={removeBusySlug}
-                                onNewModelDraftChange={setNewModelDraft}
-                                onAddCustomModel={() => {
-                                    void onAddCustomModel();
-                                }}
-                                onRemoveCustomModel={(slug) => {
-                                    void onRemoveCustomModel(slug);
-                                }}
-                            />
+                            {shouldShowByokSettings(analysisMode) ? (
+                                <>
+                                    <ModelSelectionPanel
+                                        activeModelId={activeModelId}
+                                        models={models}
+                                        missingConnectionProviderId={
+                                            missingConnectionProviderId
+                                        }
+                                        onModelChange={(modelId) => {
+                                            void onModelChange(modelId);
+                                        }}
+                                        onOpenConnection={(_providerId) => {
+                                            setActiveSection('general');
+                                        }}
+                                    />
+                                    <ConnectionsPanel
+                                        connections={connections}
+                                        drafts={connectionDrafts}
+                                        busyProviderId={busyProviderId}
+                                        testStates={testStates}
+                                        onDraftChange={onConnectionDraftChange}
+                                        onSave={(providerId) => {
+                                            void onSaveConnection(providerId);
+                                        }}
+                                        onTest={(providerId) => {
+                                            void onTestConnection(providerId);
+                                        }}
+                                    />
+                                    <AddModelPanel
+                                        customModels={customModels}
+                                        newModelDraft={newModelDraft}
+                                        addBusy={addBusy}
+                                        removeBusySlug={removeBusySlug}
+                                        onNewModelDraftChange={setNewModelDraft}
+                                        onAddCustomModel={() => {
+                                            void onAddCustomModel();
+                                        }}
+                                        onRemoveCustomModel={(slug) => {
+                                            void onRemoveCustomModel(slug);
+                                        }}
+                                    />
+                                </>
+                            ) : null}
                         </Stack>
                     ) : activeSection === 'about' ? (
                         <AboutSettingsSection

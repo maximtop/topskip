@@ -8,6 +8,15 @@ vi.mock('@/shared/browser', () => ({
         i18n: {
             getMessage: vi.fn((key: string) => {
                 const messages: Record<string, string> = {
+                    options_analysis_mode_heading: 'Analysis mode',
+                    options_analysis_mode_server_label: 'TopSkip Server',
+                    options_analysis_mode_server_description:
+                        'Uses TopSkip analysis and shared cached results.',
+                    options_analysis_mode_byok_label: 'Private BYOK',
+                    options_analysis_mode_byok_description:
+                        'Uses your configured provider in this extension.',
+                    options_analysis_mode_byok_privacy:
+                        'TopSkip Server is never used as a fallback in this mode.',
                     options_connections_heading: 'Connections',
                     options_connections_description:
                         'Save and test API keys for cloud models.',
@@ -25,8 +34,11 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
+import { AnalysisModePanel } from '@/options/AnalysisModePanel';
 import { ConnectionsPanel } from '@/options/ConnectionsPanel';
 import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
+import { shouldShowByokSettings } from '@/options/options';
+import { ANALYSIS_MODE } from '@/shared/constants';
 import { topskipTheme } from '@/shared/theme';
 
 function render(element: ReturnType<typeof createElement>): string {
@@ -36,6 +48,35 @@ function render(element: ReturnType<typeof createElement>): string {
 }
 
 describe('model-first settings panels', () => {
+    it.each([
+        [ANALYSIS_MODE.Server, 'TopSkip Server'],
+        [ANALYSIS_MODE.Byok, 'Private BYOK'],
+    ] as const)('renders the explicit %s mode selector', (value, label) => {
+        const html = render(
+            createElement(AnalysisModePanel, {
+                value,
+                disabled: false,
+                onChange: () => {},
+            }),
+        );
+
+        expect(html).toContain('Analysis mode');
+        expect(html).toContain('TopSkip Server');
+        expect(html).toContain('Private BYOK');
+        expect(html).toContain(label);
+        expect(html).toContain('role="radiogroup"');
+        expect(html).toContain(
+            value === ANALYSIS_MODE.Byok
+                ? 'Uses your configured provider in this extension.'
+                : 'Uses TopSkip analysis and shared cached results.',
+        );
+    });
+
+    it('reveals retained provider controls only in Private BYOK mode', () => {
+        expect(shouldShowByokSettings(ANALYSIS_MODE.Server)).toBe(false);
+        expect(shouldShowByokSettings(ANALYSIS_MODE.Byok)).toBe(true);
+    });
+
     it('renders model choice without provider cards', () => {
         const html = render(
             createElement(ModelSelectionPanel, {

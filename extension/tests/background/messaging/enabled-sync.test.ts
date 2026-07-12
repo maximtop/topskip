@@ -32,7 +32,12 @@ vi.mock('@/shared/browser', () => ({
 
 import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
-import { STORAGE_KEY_PREFS, STORAGE_KEY_OPENROUTER } from '@/shared/constants';
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
+import {
+    ANALYSIS_MODE,
+    STORAGE_KEY_PREFS,
+    STORAGE_KEY_OPENROUTER,
+} from '@/shared/constants';
 
 // --------------------------------------------------------------
 // FR-014 removed: SET_PREFS no longer touches OpenRouter storage
@@ -135,5 +140,55 @@ describe('SET_OPENROUTER_CONFIG does NOT propagate to prefs (FR-015 removed)', (
             return STORAGE_KEY_PREFS in arg;
         });
         expect(prefsSetCall).toBeUndefined();
+    });
+});
+
+describe('SET_ANALYSIS_MODE', () => {
+    const currentPrefs = {
+        enabled: true,
+        providerId: 'openai',
+        activeModelId: 'openai:gpt-5.2',
+        analysisMode: ANALYSIS_MODE.Server,
+    };
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        storageGet.mockResolvedValue({
+            [STORAGE_KEY_PREFS]: currentPrefs,
+        });
+        storageSet.mockResolvedValue(undefined);
+        tabsQuery.mockResolvedValue([{ id: 21 }]);
+        tabsSendMessage.mockResolvedValue(undefined);
+    });
+
+    it.each([ANALYSIS_MODE.Byok, ANALYSIS_MODE.Server])(
+        'persists %s without clearing BYOK settings and broadcasts it',
+        async (analysisMode) => {
+            const portBroadcast = vi
+                .spyOn(PrefsPortHub, 'broadcastPrefsUpdate')
+                .mockImplementation(() => {});
+
+            const response =
+                await PrefsRuntimeMessages.handleSetAnalysisMode(analysisMode);
+            const prefs = { ...currentPrefs, analysisMode };
+
+            expect(storageSet).toHaveBeenCalledWith({
+                [STORAGE_KEY_PREFS]: prefs,
+            });
+            expect(tabsSendMessage).toHaveBeenCalledWith(21, {
+                type: 'TOPSKIP_PREFS_UPDATED',
+                prefs,
+            });
+            expect(portBroadcast).toHaveBeenCalledWith(prefs);
+            expect(response).toEqual({ ok: true, prefs });
+        },
+    );
+
+    it('returns a typed error when the mode cannot be persisted', async () => {
+        storageSet.mockRejectedValue(new Error('storage unavailable'));
+
+        await expect(
+            PrefsRuntimeMessages.handleSetAnalysisMode(ANALYSIS_MODE.Byok),
+        ).resolves.toEqual({ ok: false, error: 'storage unavailable' });
     });
 });

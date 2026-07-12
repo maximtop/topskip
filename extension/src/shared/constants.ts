@@ -31,6 +31,11 @@ export const STORAGE_KEY_OPENROUTER = 'topskip:openrouter';
 export const STORAGE_KEY_OPENAI = 'topskip:openai';
 
 /**
+ * Prefix for background-owned local copies of ready server results.
+ */
+export const STORAGE_KEY_SERVER_RESULT_CACHE = 'topskip:server-result-cache';
+
+/**
  * Max characters for merged caption transcript sent to OpenRouter (tail
  * truncated deterministically).
  */
@@ -42,12 +47,34 @@ export const MAX_CAPTION_TRANSCRIPT_CHARS = 120_000;
 export const DEFAULT_PROVIDER_ID = PROVIDER_ID.OpenRouter;
 
 /**
+ * Supported routes for promo detection.
+ */
+export const ANALYSIS_MODE = {
+    Server: 'server',
+    Byok: 'byok',
+} as const;
+
+/**
+ * User-selected route for promo detection.
+ */
+export type AnalysisMode = (typeof ANALYSIS_MODE)[keyof typeof ANALYSIS_MODE];
+
+/**
+ * Validates the user-selected promo detection route.
+ */
+export const analysisModeSchema = v.picklist([
+    ANALYSIS_MODE.Server,
+    ANALYSIS_MODE.Byok,
+] as const);
+
+/**
  * Validates persisted preference objects from storage.
  */
 export const userPreferencesSchema = v.object({
     enabled: v.boolean(),
     providerId: v.string(),
     activeModelId: v.fallback(v.string(), DEFAULT_DETECTION_MODEL_ID),
+    analysisMode: v.fallback(analysisModeSchema, ANALYSIS_MODE.Server),
 });
 
 /**

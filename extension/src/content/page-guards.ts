@@ -19,7 +19,7 @@ export function getWatchVideoIdFromSearch(
     search: string,
 ): string | null {
     if (hostname === E2E_HOST) {
-        return 'e2e-fixture';
+        return 'e2eFixture1';
     }
     return new URLSearchParams(search).get(YOUTUBE_WATCH_VIDEO_ID_PARAM);
 }

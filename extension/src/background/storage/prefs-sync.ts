@@ -2,6 +2,7 @@ import * as v from 'valibot';
 
 import browser from '@/shared/browser';
 import {
+    ANALYSIS_MODE,
     DEFAULT_PROVIDER_ID,
     STORAGE_KEY_PREFS,
     userPreferencesSchema,
@@ -26,6 +27,7 @@ export class PrefsSyncStorage {
         enabled: true,
         providerId: DEFAULT_PROVIDER_ID,
         activeModelId: DEFAULT_DETECTION_MODEL_ID,
+        analysisMode: ANALYSIS_MODE.Server,
     };
 
     /**
@@ -54,6 +56,7 @@ export class PrefsSyncStorage {
             enabled: parsed.enabled,
             providerId,
             activeModelId: model?.id ?? activeModelId,
+            analysisMode: parsed.analysisMode,
         };
     }
 
@@ -93,9 +96,11 @@ export class PrefsSyncStorage {
             'enabled' in raw &&
             'providerId' in raw &&
             'activeModelId' in raw &&
+            'analysisMode' in raw &&
             raw.enabled === prefs.enabled &&
             raw.providerId === prefs.providerId &&
-            raw.activeModelId === prefs.activeModelId
+            raw.activeModelId === prefs.activeModelId &&
+            raw.analysisMode === prefs.analysisMode
         );
     }
 

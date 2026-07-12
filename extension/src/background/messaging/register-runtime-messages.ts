@@ -8,6 +8,7 @@ import {
 } from '@/background/messaging/misc-runtime-messages';
 import { CaptionPageCaptureMessages } from '@/background/messaging/caption-page-capture-messages';
 import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
 import { ChromePromptApiRuntimeMessages } from '@/background/messaging/chrome-prompt-api-runtime-messages';
 import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
@@ -15,6 +16,7 @@ import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
 import type { ProviderRegistry } from '@/background/providers/provider-registry';
 import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
+import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
 import { TOPSKIP_MESSAGE, type TopSkipRuntimeMessage } from '@/shared/messages';
 
 /**
@@ -42,6 +44,7 @@ function toRuntimeMessage(message: unknown): TopSkipRuntimeMessage | undefined {
 export function registerRuntimeMessages(registry: ProviderRegistry): void {
     PromoAnalysis.setRegistry(registry);
     ProviderRuntimeMessages.setRegistry(registry);
+    ByokSetupRuntimeMessages.setRegistry(registry);
 
     browser.runtime.onMessage.addListener(
         (message: unknown, sender: Runtime.MessageSender) => {
@@ -62,10 +65,26 @@ export function registerRuntimeMessages(registry: ProviderRegistry): void {
                     );
                 case TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT:
                     return CaptionRuntimeMessages.handle(msg.payload, sender);
+                case TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP:
+                    return ByokSetupRuntimeMessages.handle(msg.payload, sender);
+                case TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS:
+                    return ServerAnalysisRuntimeMessages.handleRequest(
+                        msg.payload,
+                        sender,
+                    );
+                case TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS:
+                    return ServerAnalysisRuntimeMessages.handleRefreshStatus(
+                        msg.payload,
+                        sender,
+                    );
                 case TOPSKIP_MESSAGE.GET_PREFS:
                     return PrefsRuntimeMessages.handleGet();
                 case TOPSKIP_MESSAGE.SET_PREFS:
                     return PrefsRuntimeMessages.handleSet(msg.enabled);
+                case TOPSKIP_MESSAGE.SET_ANALYSIS_MODE:
+                    return PrefsRuntimeMessages.handleSetAnalysisMode(
+                        msg.analysisMode,
+                    );
                 case TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER:
                     return ProviderRuntimeMessages.handleGetActive();
                 case TOPSKIP_MESSAGE.GET_PROVIDER_LIST:

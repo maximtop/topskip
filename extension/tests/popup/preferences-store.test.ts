@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PreferencesStore } from '@/popup/preferences-store';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
+import { ANALYSIS_MODE } from '@/shared/constants';
 
 const mocks = vi.hoisted(() => ({
     sendMessage: vi.fn(),
@@ -76,6 +77,32 @@ describe('PreferencesStore', () => {
         expect(mocks.sendMessage).toHaveBeenCalledWith({
             type: TOPSKIP_MESSAGE.GET_PREFS,
         });
+    });
+
+    it('load applies the stored analysis mode', async () => {
+        mocks.sendMessage.mockImplementation((msg: unknown) => {
+            const type: unknown =
+                msg && typeof msg === 'object'
+                    ? Reflect.get(msg, 'type')
+                    : undefined;
+            if (type === TOPSKIP_MESSAGE.GET_PREFS) {
+                return Promise.resolve({
+                    ok: true,
+                    prefs: {
+                        enabled: true,
+                        providerId: 'openrouter',
+                        activeModelId: 'openrouter:test',
+                        analysisMode: ANALYSIS_MODE.Byok,
+                    },
+                });
+            }
+            return defaultSendMessage(msg);
+        });
+
+        const store = new PreferencesStore();
+        await store.load();
+
+        expect(store.analysisMode).toBe(ANALYSIS_MODE.Byok);
     });
 
     it('load applies stored enabled flag and providerId', async () => {
@@ -171,6 +198,25 @@ describe('PreferencesStore', () => {
 
         expect(store.enabled).toBe(true);
         expect(store.providerId).toBe('chrome-prompt-api');
+    });
+
+    it('updates analysis mode from the preferences port', () => {
+        const store = new PreferencesStore();
+        store.connectPort();
+        const listener = mocks.connectOnMessage.addListener.mock
+            .calls[0][0] as (msg: unknown) => void;
+
+        listener({
+            type: TOPSKIP_MESSAGE.PREFS_UPDATED,
+            prefs: {
+                enabled: true,
+                providerId: 'openrouter',
+                activeModelId: 'openrouter:test',
+                analysisMode: ANALYSIS_MODE.Byok,
+            },
+        });
+
+        expect(store.analysisMode).toBe(ANALYSIS_MODE.Byok);
     });
 
     it('ignores invalid messages on the port', () => {

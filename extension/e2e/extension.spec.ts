@@ -1,4 +1,5 @@
 import path from 'node:path';
+import { createServer } from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -115,6 +116,66 @@ async function seedDetectedPopupState(popupPage: Page): Promise<void> {
     });
 }
 
+/**
+ * Seeds a ready server result through extension storage for no-network e2e.
+ *
+ * @param popupPage - Open extension popup page.
+ */
+async function seedFreshLocalServerCache(popupPage: Page): Promise<void> {
+    await popupPage.evaluate(async () => {
+        const chromeApi = Reflect.get(globalThis, 'chrome');
+        if (typeof chromeApi !== 'object' || chromeApi === null) {
+            throw new Error('Missing chrome API');
+        }
+        const storage = Reflect.get(chromeApi, 'storage');
+        if (typeof storage !== 'object' || storage === null) {
+            throw new Error('Missing chrome.storage API');
+        }
+        const local = Reflect.get(storage, 'local');
+        if (typeof local !== 'object' || local === null) {
+            throw new Error('Missing chrome.storage.local API');
+        }
+        const set = Reflect.get(local, 'set');
+        if (typeof set !== 'function') {
+            throw new Error('Missing chrome.storage.local.set API');
+        }
+
+        const key = 'topskip:server-result-cache:server-v1:e2eFixture1';
+        await new Promise<void>((resolve, reject) => {
+            Reflect.apply(set, local, [
+                {
+                    [key]: {
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                        sourceResultId: 'result-e2eFixture1-server-v1',
+                        freshness: { expiresAtMs: 4_102_444_800_000 },
+                        promoBlocks: [
+                            { startSec: 4, endSec: 24, confidence: 'high' },
+                        ],
+                        storedAtMs: 1_900_000_000_000,
+                    },
+                },
+                () => {
+                    const runtime = Reflect.get(chromeApi, 'runtime');
+                    const lastError =
+                        typeof runtime === 'object' && runtime !== null
+                            ? Reflect.get(runtime, 'lastError')
+                            : undefined;
+                    if (typeof lastError === 'object' && lastError !== null) {
+                        reject(
+                            new Error(
+                                String(Reflect.get(lastError, 'message')),
+                            ),
+                        );
+                        return;
+                    }
+                    resolve();
+                },
+            ]);
+        });
+    });
+}
+
 test.describe('TopSkip extension', () => {
     test.setTimeout(120_000);
 
@@ -215,6 +276,704 @@ test.describe('TopSkip extension', () => {
                 return video.currentTime;
             });
             expect(t).toBeLessThan(55);
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('server mode reports pending analysis from local backend', async () => {
+        let resolveRequestSeen: () => void = () => {};
+        const requestSeen = new Promise<void>((resolve) => {
+            resolveRequestSeen = resolve;
+        });
+        const backend = createServer((req, res) => {
+            if (req.method !== 'POST' || req.url !== '/v1/analysis') {
+                res.writeHead(404);
+                res.end();
+                return;
+            }
+            let body = '';
+            req.setEncoding('utf8');
+            req.on('data', (chunk) => {
+                body = body + chunk;
+            });
+            req.on('end', () => {
+                expect(JSON.parse(body)).toMatchObject({
+                    videoId: 'e2eFixture1',
+                    algorithmVersion: 'server-v1',
+                });
+                expect(body).not.toContain('transcript');
+                res.writeHead(202, { 'content-type': 'application/json' });
+                res.end(
+                    JSON.stringify({
+                        status: 'processing',
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                        jobId: 'local-e2eFixture1-server-v1',
+                        pollAfterSec: 3,
+                    }),
+                );
+                resolveRequestSeen();
+            });
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const warmupPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await warmupPopup.close();
+
+            const page = await context.newPage();
+            trackPageErrors(page, 'fixture', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+            await Promise.race([
+                requestSeen,
+                new Promise<never>((_resolve, reject) => {
+                    setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    'Timed out waiting for server analysis request.',
+                                ),
+                            ),
+                        15_000,
+                    );
+                }),
+            ]);
+
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await page.bringToFront();
+            await expect(
+                popupPage.getByText('Server analysis pending'),
+            ).toBeVisible({ timeout: 10_000 });
+            await popupPage.close();
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
+        }
+    });
+
+    test('server cache hit applies promo blocks and skips fixture playback', async () => {
+        let resolveRequestSeen: () => void = () => {};
+        const requestSeen = new Promise<void>((resolve) => {
+            resolveRequestSeen = resolve;
+        });
+        const backend = createServer((req, res) => {
+            if (req.method !== 'POST' || req.url !== '/v1/analysis') {
+                res.writeHead(404);
+                res.end();
+                return;
+            }
+            let body = '';
+            req.setEncoding('utf8');
+            req.on('data', (chunk) => {
+                body = body + chunk;
+            });
+            req.on('end', () => {
+                expect(JSON.parse(body)).toMatchObject({
+                    videoId: 'e2eFixture1',
+                    algorithmVersion: 'server-v1',
+                });
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(
+                    JSON.stringify({
+                        status: 'ready',
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                        source: 'server_cache',
+                        sourceResultId: 'result-e2eFixture1-server-v1',
+                        freshness: { expiresAtMs: 4_102_444_800_000 },
+                        promoBlocks: [
+                            { startSec: 4, endSec: 24, confidence: 'high' },
+                        ],
+                    }),
+                );
+                resolveRequestSeen();
+            });
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const warmupPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await warmupPopup.close();
+
+            const page = await context.newPage();
+            trackPageErrors(page, 'fixture-ready', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+            await Promise.race([
+                requestSeen,
+                new Promise<never>((_resolve, reject) => {
+                    setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    'Timed out waiting for server ready request.',
+                                ),
+                            ),
+                        15_000,
+                    );
+                }),
+            ]);
+
+            await page.evaluate(async () => {
+                const video = document.querySelector('video');
+                if (!(video instanceof HTMLVideoElement)) {
+                    throw new Error('Missing fixture video.');
+                }
+                await new Promise<void>((resolve, reject) => {
+                    if (video.readyState >= 1) {
+                        resolve();
+                        return;
+                    }
+                    video.addEventListener('loadedmetadata', () => resolve(), {
+                        once: true,
+                    });
+                    video.addEventListener(
+                        'error',
+                        () => reject(new Error('video error')),
+                        { once: true },
+                    );
+                });
+                video.muted = true;
+                video.playbackRate = 1;
+                void video.play();
+            });
+
+            await expect
+                .poll(
+                    async () =>
+                        page.evaluate(() => {
+                            const video = document.querySelector(
+                                'video',
+                            ) as HTMLVideoElement;
+                            return video.currentTime;
+                        }),
+                    { timeout: 12_000 },
+                )
+                .toBeGreaterThan(23);
+
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await page.bringToFront();
+            await expect(
+                popupPage.getByText('Server-detected blocks ready'),
+            ).toBeVisible({ timeout: 10_000 });
+            await popupPage.close();
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
+        }
+    });
+
+    test('server processing job polls fixture completion and skips only future blocks', async () => {
+        const jobId = 'local-e2eFixture1-server-v1';
+        let terminalReady = false;
+        let resolveRequestSeen: () => void = () => {};
+        let resolveProcessingPollSeen: () => void = () => {};
+        let resolveReadyPollSeen: () => void = () => {};
+        const requestSeen = new Promise<void>((resolve) => {
+            resolveRequestSeen = resolve;
+        });
+        const processingPollSeen = new Promise<void>((resolve) => {
+            resolveProcessingPollSeen = resolve;
+        });
+        const readyPollSeen = new Promise<void>((resolve) => {
+            resolveReadyPollSeen = resolve;
+        });
+        const readyResponse = {
+            status: 'ready',
+            videoId: 'e2eFixture1',
+            algorithmVersion: 'server-v1',
+            source: 'server_cache',
+            sourceResultId: 'result-e2eFixture1-server-v1',
+            freshness: { expiresAtMs: 4_102_444_800_000 },
+            promoBlocks: [
+                { startSec: 4, endSec: 24, confidence: 'high' },
+                { startSec: 35, endSec: 45, confidence: 'medium' },
+            ],
+        };
+        const backend = createServer((req, res) => {
+            if (req.method === 'POST' && req.url === '/v1/analysis') {
+                let body = '';
+                req.setEncoding('utf8');
+                req.on('data', (chunk) => {
+                    body = body + chunk;
+                });
+                req.on('end', () => {
+                    expect(JSON.parse(body)).toMatchObject({
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                    });
+                    res.writeHead(202, {
+                        'content-type': 'application/json',
+                    });
+                    res.end(
+                        JSON.stringify({
+                            status: 'processing',
+                            videoId: 'e2eFixture1',
+                            algorithmVersion: 'server-v1',
+                            jobId,
+                            pollAfterSec: 1,
+                        }),
+                    );
+                    resolveRequestSeen();
+                });
+                return;
+            }
+
+            if (
+                req.method === 'GET' &&
+                req.url === `/v1/analysis/jobs/${jobId}`
+            ) {
+                if (terminalReady) {
+                    res.writeHead(200, {
+                        'content-type': 'application/json',
+                    });
+                    res.end(JSON.stringify(readyResponse));
+                    resolveReadyPollSeen();
+                    return;
+                }
+                res.writeHead(202, { 'content-type': 'application/json' });
+                res.end(
+                    JSON.stringify({
+                        status: 'processing',
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                        jobId,
+                        pollAfterSec: 1,
+                    }),
+                );
+                resolveProcessingPollSeen();
+                return;
+            }
+
+            if (
+                req.method === 'POST' &&
+                req.url === `/v1/analysis/jobs/${jobId}/fixture-result`
+            ) {
+                terminalReady = true;
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(readyResponse));
+                return;
+            }
+
+            res.writeHead(404);
+            res.end();
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const warmupPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await warmupPopup.close();
+
+            const page = await context.newPage();
+            trackPageErrors(page, 'fixture-polling', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+            await requestSeen;
+            await processingPollSeen;
+
+            const completed = await fetch(
+                `http://127.0.0.1:8787/v1/analysis/jobs/${jobId}/fixture-result`,
+                {
+                    method: 'POST',
+                    headers: { 'content-type': 'application/json' },
+                    body: JSON.stringify({ status: 'ready' }),
+                },
+            );
+            expect(completed.status).toBe(200);
+            await readyPollSeen;
+            await page.waitForTimeout(300);
+
+            await page.evaluate(async () => {
+                const video = document.querySelector('video');
+                if (!(video instanceof HTMLVideoElement)) {
+                    throw new Error('Missing fixture video.');
+                }
+                await new Promise<void>((resolve, reject) => {
+                    if (video.readyState >= 1) {
+                        resolve();
+                        return;
+                    }
+                    video.addEventListener('loadedmetadata', () => resolve(), {
+                        once: true,
+                    });
+                    video.addEventListener(
+                        'error',
+                        () => reject(new Error('video error')),
+                        { once: true },
+                    );
+                });
+                video.muted = true;
+                video.playbackRate = 1;
+                video.currentTime = 12;
+                void video.play();
+            });
+            await page.waitForTimeout(900);
+            await page.evaluate(() => {
+                const video = document.querySelector(
+                    'video',
+                ) as HTMLVideoElement;
+                video.pause();
+            });
+            const afterEarlyBlock = await page.evaluate(() => {
+                const video = document.querySelector(
+                    'video',
+                ) as HTMLVideoElement;
+                return video.currentTime;
+            });
+            expect(afterEarlyBlock).toBeLessThan(20);
+
+            await page.evaluate(() => {
+                const video = document.querySelector(
+                    'video',
+                ) as HTMLVideoElement;
+                video.currentTime = 34.5;
+                void video.play();
+            });
+            await expect
+                .poll(
+                    async () =>
+                        page.evaluate(() => {
+                            const video = document.querySelector(
+                                'video',
+                            ) as HTMLVideoElement;
+                            return video.currentTime;
+                        }),
+                    { timeout: 8_000 },
+                )
+                .toBeGreaterThan(44);
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
+        }
+    });
+
+    test('prefs update cancellation stops scheduled server status polling', async () => {
+        const jobId = 'local-e2eFixture1-server-v1';
+        let statusRequestCount = 0;
+        let resolveRequestSeen: () => void = () => {};
+        const requestSeen = new Promise<void>((resolve) => {
+            resolveRequestSeen = resolve;
+        });
+        const backend = createServer((req, res) => {
+            if (req.method === 'POST' && req.url === '/v1/analysis') {
+                res.writeHead(202, { 'content-type': 'application/json' });
+                res.end(
+                    JSON.stringify({
+                        status: 'processing',
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                        jobId,
+                        pollAfterSec: 4,
+                    }),
+                );
+                resolveRequestSeen();
+                return;
+            }
+
+            if (
+                req.method === 'GET' &&
+                req.url === `/v1/analysis/jobs/${jobId}`
+            ) {
+                statusRequestCount += 1;
+                res.writeHead(202, { 'content-type': 'application/json' });
+                res.end(
+                    JSON.stringify({
+                        status: 'processing',
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                        jobId,
+                        pollAfterSec: 4,
+                    }),
+                );
+                return;
+            }
+
+            res.writeHead(404);
+            res.end();
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const warmupPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await warmupPopup.close();
+
+            const page = await context.newPage();
+            trackPageErrors(page, 'fixture-polling-cancel', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+            await requestSeen;
+
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await popupPage
+                .getByRole('switch', { name: /enable/i })
+                .click({ force: true, timeout: 30_000 });
+            await popupPage.close();
+
+            await page.waitForTimeout(4_800);
+            expect(statusRequestCount).toBe(0);
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
+        }
+    });
+
+    test('Private BYOK keeps the local backend idle until a fresh Server watch lifecycle', async () => {
+        const backendRequests: string[] = [];
+        let resolveServerRequestSeen: () => void = () => {};
+        const serverRequestSeen = new Promise<void>((resolve) => {
+            resolveServerRequestSeen = resolve;
+        });
+        const backend = createServer((req, res) => {
+            backendRequests.push(`${req.method ?? 'UNKNOWN'} ${req.url ?? ''}`);
+            if (req.method === 'POST' && req.url === '/v1/analysis') {
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(
+                    JSON.stringify({
+                        status: 'no_promo',
+                        videoId: 'e2eFixture1',
+                        algorithmVersion: 'server-v1',
+                        sourceResultId: 'result-e2eFixture1-server-v1',
+                        freshness: { expiresAtMs: 4_102_444_800_000 },
+                    }),
+                );
+                resolveServerRequestSeen();
+                return;
+            }
+            res.writeHead(404);
+            res.end();
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const optionsPage = await context.newPage();
+            trackPageErrors(optionsPage, 'options-byok-route-smoke', errors);
+            await optionsPage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            const serverMode = optionsPage.getByRole('radio', {
+                name: 'TopSkip Server',
+            });
+            const byokMode = optionsPage.getByRole('radio', {
+                name: 'Private BYOK',
+            });
+            await expect(serverMode).toBeChecked({ timeout: 30_000 });
+            await optionsPage
+                .getByText('Private BYOK', { exact: true })
+                .click();
+            await expect(byokMode).toBeChecked();
+
+            const byokWatchPage = await context.newPage();
+            trackPageErrors(byokWatchPage, 'fixture-byok-route-smoke', errors);
+            await byokWatchPage.goto('/video.html', {
+                waitUntil: 'domcontentloaded',
+            });
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await byokWatchPage.bringToFront();
+            await expect(
+                popupPage.getByText('Private BYOK setup required'),
+            ).toBeVisible({ timeout: 10_000 });
+            await popupPage.close();
+            await byokWatchPage.waitForTimeout(1_200);
+            expect(backendRequests).toEqual([]);
+
+            await optionsPage.bringToFront();
+            await optionsPage
+                .getByText('TopSkip Server', { exact: true })
+                .click();
+            await expect(serverMode).toBeChecked();
+            await byokWatchPage.bringToFront();
+            await byokWatchPage.waitForTimeout(1_200);
+            expect(backendRequests).toEqual([]);
+
+            await byokWatchPage.close();
+            const serverWatchPage = await context.newPage();
+            trackPageErrors(
+                serverWatchPage,
+                'fixture-server-route-smoke',
+                errors,
+            );
+            await serverWatchPage.goto('/video.html', {
+                waitUntil: 'domcontentloaded',
+            });
+            await Promise.race([
+                serverRequestSeen,
+                new Promise<never>((_resolve, reject) => {
+                    setTimeout(
+                        () =>
+                            reject(
+                                new Error(
+                                    'Timed out waiting for resumed Server request.',
+                                ),
+                            ),
+                        15_000,
+                    );
+                }),
+            ]);
+            expect(backendRequests).toEqual(['POST /v1/analysis']);
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
+        }
+    });
+
+    test('fresh local cache hit skips fixture playback without a backend', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const warmupPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await seedFreshLocalServerCache(warmupPopup);
+            await warmupPopup.close();
+
+            const page = await context.newPage();
+            trackPageErrors(page, 'fixture-local-cache', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+            await page.evaluate(async () => {
+                const video = document.querySelector('video');
+                if (!(video instanceof HTMLVideoElement)) {
+                    throw new Error('Missing fixture video.');
+                }
+                await new Promise<void>((resolve, reject) => {
+                    if (video.readyState >= 1) {
+                        resolve();
+                        return;
+                    }
+                    video.addEventListener('loadedmetadata', () => resolve(), {
+                        once: true,
+                    });
+                    video.addEventListener(
+                        'error',
+                        () => reject(new Error('video error')),
+                        { once: true },
+                    );
+                });
+                video.muted = true;
+                video.playbackRate = 1;
+                void video.play();
+            });
+
+            await expect
+                .poll(
+                    async () =>
+                        page.evaluate(() => {
+                            const video = document.querySelector(
+                                'video',
+                            ) as HTMLVideoElement;
+                            return video.currentTime;
+                        }),
+                    { timeout: 12_000 },
+                )
+                .toBeGreaterThan(23);
 
             expectNoCollectedErrors(errors);
         } finally {
@@ -458,7 +1217,7 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('options page exposes model-first settings', async () => {
+    test('options page defaults to Server and reveals Private BYOK settings intentionally', async () => {
         const errors: string[] = [];
         const context = await chromium.launchPersistentContext(
             '',
@@ -478,6 +1237,25 @@ test.describe('TopSkip extension', () => {
             await page
                 .getByTestId('options-shell')
                 .waitFor({ state: 'visible' });
+            await expect(
+                page.getByRole('heading', { name: 'Analysis mode' }),
+            ).toBeVisible();
+            const serverMode = page.getByRole('radio', {
+                name: 'TopSkip Server',
+            });
+            const byokMode = page.getByRole('radio', {
+                name: 'Private BYOK',
+            });
+            await expect(serverMode).toBeChecked();
+            await expect(
+                page.getByRole('heading', { name: 'Detection model' }),
+            ).toBeHidden();
+            await expect(
+                page.getByRole('heading', { name: 'Connections' }),
+            ).toBeHidden();
+
+            await page.getByText('Private BYOK', { exact: true }).click();
+            await expect(byokMode).toBeChecked();
             await expect(
                 page.getByRole('heading', { name: 'Detection model' }),
             ).toBeVisible();
@@ -524,33 +1302,50 @@ test.describe('TopSkip extension', () => {
             ).toEqual([]);
             await popupPage.close();
 
-            // --- Options page ---
+            // --- Options page: intentional Server and BYOK states ---
             const optionsPage = await context.newPage();
             trackPageErrors(optionsPage, 'options', errors);
             await optionsPage.goto(
                 `chrome-extension://${extensionId}/options.html`,
                 { waitUntil: 'domcontentloaded' },
             );
-            await optionsPage
-                .getByRole('heading', { level: 2 })
-                .first()
-                .waitFor({ state: 'visible', timeout: 30_000 });
-            const modelInput = optionsPage.getByRole('combobox', {
-                name: 'Model',
+            const serverMode = optionsPage.getByRole('radio', {
+                name: 'TopSkip Server',
             });
-            await modelInput.focus();
-            await expect(modelInput).toBeFocused();
+            const byokMode = optionsPage.getByRole('radio', {
+                name: 'Private BYOK',
+            });
+            await expect(serverMode).toBeChecked({ timeout: 30_000 });
 
-            const optionsResults = await new AxeBuilder({
+            const serverOptionsResults = await new AxeBuilder({
                 page: optionsPage,
             })
                 .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
                 .disableRules(['color-contrast'])
                 .analyze();
             expect(
-                optionsResults.violations,
-                'Options axe violations:\n' +
-                    JSON.stringify(optionsResults.violations, null, 2),
+                serverOptionsResults.violations,
+                'Server options axe violations:\n' +
+                    JSON.stringify(serverOptionsResults.violations, null, 2),
+            ).toEqual([]);
+
+            await optionsPage
+                .getByText('Private BYOK', { exact: true })
+                .click();
+            await expect(byokMode).toBeChecked();
+            await expect(
+                optionsPage.getByRole('combobox', { name: 'Model' }),
+            ).toBeVisible();
+            const byokOptionsResults = await new AxeBuilder({
+                page: optionsPage,
+            })
+                .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+                .disableRules(['color-contrast'])
+                .analyze();
+            expect(
+                byokOptionsResults.violations,
+                'Private BYOK options axe violations:\n' +
+                    JSON.stringify(byokOptionsResults.violations, null, 2),
             ).toEqual([]);
             await optionsPage.close();
 

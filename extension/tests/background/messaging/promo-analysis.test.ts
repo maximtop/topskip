@@ -56,6 +56,7 @@ const prefsMocks = vi.hoisted(() => ({
     load: vi.fn().mockReturnValue({
         enabled: true,
         providerId: 'openrouter',
+        analysisMode: 'byok',
     }),
     save: vi.fn().mockResolvedValue(undefined),
 }));
@@ -179,6 +180,7 @@ describe('PromoAnalysis — adapter routing', () => {
         loadFn.mockReturnValue({
             enabled: true,
             providerId: 'openrouter',
+            analysisMode: 'byok',
         });
     });
 
@@ -246,6 +248,7 @@ describe('PromoAnalysis — adapter routing', () => {
             prefsMocks.load.mockReturnValue({
                 enabled: true,
                 providerId: 'chrome-prompt-api',
+                analysisMode: 'byok',
             });
             registryMocks.get.mockReturnValue(chromeAdapter);
 
@@ -273,6 +276,7 @@ describe('PromoAnalysis — adapter routing', () => {
                 enabled: true,
                 providerId: 'openai',
                 activeModelId: 'openai:gpt-5.2',
+                analysisMode: 'byok',
             });
             registryMocks.get.mockReturnValue(openAiAdapter);
 
@@ -298,6 +302,7 @@ describe('PromoAnalysis — adapter routing', () => {
                 expect(detectionStoreMocks.set).toHaveBeenCalledWith(42, {
                     videoId: 'vid123',
                     status: 'not_configured',
+                    source: 'local_provider',
                 });
             });
         });
@@ -321,8 +326,27 @@ describe('PromoAnalysis — adapter routing', () => {
                 expect(detectionStoreMocks.set).toHaveBeenCalledWith(42, {
                     videoId: 'vid123',
                     status: 'not_configured',
+                    source: 'local_provider',
                 });
             });
+        });
+
+        it('re-checks persisted mode before resolving the provider', async () => {
+            prefsMocks.load.mockResolvedValueOnce({
+                enabled: true,
+                providerId: 'openrouter',
+                activeModelId: 'openrouter:test',
+                analysisMode: 'server',
+            });
+
+            PromoAnalysis.onCaptionsReady(baseSender(), basePayload());
+
+            await vi.waitFor(() => {
+                expect(prefsMocks.load).toHaveBeenCalled();
+            });
+            expect(registryMocks.get).not.toHaveBeenCalled();
+            expect(mockAnalyze).not.toHaveBeenCalled();
+            expect(detectionStoreMocks.set).not.toHaveBeenCalled();
         });
 
         it('aborts inflight analysis when the active provider changes', async () => {
@@ -354,12 +378,14 @@ describe('PromoAnalysis — adapter routing', () => {
             expect(prefsMocks.save).toHaveBeenCalledWith({
                 enabled: true,
                 providerId: 'chrome-prompt-api',
+                analysisMode: 'byok',
             });
             expect(prefsBroadcastMocks.sendUpdatedToAllTabs).toHaveBeenCalled();
             expect(prefsPortHubMocks.broadcastPrefsUpdate).toHaveBeenCalledWith(
                 {
                     enabled: true,
                     providerId: 'chrome-prompt-api',
+                    analysisMode: 'byok',
                 },
             );
         });

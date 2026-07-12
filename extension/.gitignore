@@ -6,5 +6,6 @@ coverage/
 playwright-report/
 test-results/
 tmp/
+.topskip-data/
 .env
 .env.local

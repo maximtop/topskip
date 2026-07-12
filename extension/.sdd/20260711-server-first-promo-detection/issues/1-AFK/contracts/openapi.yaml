@@ -1,0 +1,158 @@
+openapi: 3.1.0
+info:
+  title: TopSkip Local Backend API
+  version: 0.1.0
+  summary: Local server-mode tracer bullet for extension promo analysis.
+servers:
+  - url: http://127.0.0.1:8787
+    description: Local development backend
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      summary: Confirm the local backend is reachable.
+      responses:
+        "200":
+          description: Local backend health response.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+  /v1/analysis:
+    post:
+      operationId: requestAnalysis
+      summary: Request server-mode promo analysis for a YouTube video.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalysisRequest"
+      responses:
+        "202":
+          description: The backend accepted or joined a non-blocking analysis job.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProcessingResponse"
+        "400":
+          description: The request is invalid and did not start work.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "413":
+          description: The request body exceeds the local API limit and did not start work.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - ok
+        - service
+        - version
+      properties:
+        ok:
+          type: boolean
+          const: true
+        service:
+          type: string
+          const: topskip-backend
+        version:
+          type: string
+          minLength: 1
+    AnalysisRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - videoId
+        - extensionVersion
+        - algorithmVersion
+        - client
+      properties:
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+          description: Canonical YouTube watch video id.
+        durationSec:
+          type: number
+          exclusiveMinimum: 0
+          description: Video duration when the content script already knows it.
+        extensionVersion:
+          type: string
+          minLength: 1
+        algorithmVersion:
+          type: string
+          minLength: 1
+        client:
+          type: object
+          additionalProperties: false
+          required:
+            - source
+            - capabilities
+          properties:
+            source:
+              type: string
+              const: chrome-extension
+            capabilities:
+              type: array
+              items:
+                type: string
+              uniqueItems: true
+    ProcessingResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - videoId
+        - algorithmVersion
+        - jobId
+        - pollAfterSec
+      properties:
+        status:
+          type: string
+          const: processing
+        videoId:
+          type: string
+          pattern: "^[A-Za-z0-9_-]{11}$"
+        algorithmVersion:
+          type: string
+          minLength: 1
+        jobId:
+          type: string
+          minLength: 1
+          description: Deterministic local job id for this tracer bullet.
+        pollAfterSec:
+          type: integer
+          minimum: 1
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - error
+      properties:
+        status:
+          type: string
+          const: invalid_request
+        error:
+          type: object
+          additionalProperties: false
+          required:
+            - code
+            - message
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_video_id
+                - invalid_request
+                - request_body_too_large
+            message:
+              type: string
+              minLength: 1

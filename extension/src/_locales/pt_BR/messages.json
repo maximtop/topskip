@@ -67,6 +67,102 @@
         "message": "Detection error",
         "description": "Detection status shown when detection fails"
     },
+    "popup_detection_server_pending_badge": {
+        "message": "Server",
+        "description": "Popup status badge shown while the TopSkip backend is analyzing the current video."
+    },
+    "popup_detection_server_pending_title": {
+        "message": "Server analysis pending",
+        "description": "Popup title shown while the TopSkip backend is analyzing the current video."
+    },
+    "popup_detection_server_pending_description": {
+        "message": "TopSkip asked the local backend to analyze this video.",
+        "description": "Popup description shown while the local backend is processing a video."
+    },
+    "popup_detection_server_pending_headline": {
+        "message": "Server analysis is in progress.",
+        "description": "Popup headline shown for a server processing response."
+    },
+    "popup_detection_server_pending_body": {
+        "message": "Skipping will start when the TopSkip backend has promo blocks for a future playback position.",
+        "description": "Popup body shown for a server processing response."
+    },
+    "popup_detection_server_error_badge": {
+        "message": "Server",
+        "description": "Popup status badge shown when server analysis fails."
+    },
+    "popup_detection_server_error_title": {
+        "message": "Server analysis unavailable",
+        "description": "Popup title shown when the local backend request fails."
+    },
+    "popup_detection_server_error_description": {
+        "message": "TopSkip could not use the local backend for this video.",
+        "description": "Popup description shown when server analysis cannot run."
+    },
+    "popup_detection_server_error_headline": {
+        "message": "Server analysis failed.",
+        "description": "Fallback popup headline shown when no specific server error is available."
+    },
+    "popup_detection_server_error_body": {
+        "message": "The local TopSkip backend did not return a usable response. Playback continues without server-detected skips.",
+        "description": "Popup body shown for server request failures."
+    },
+    "popup_detection_server_cache_badge": {
+        "message": "Server cache",
+        "description": "Popup status badge shown when promo blocks came from the TopSkip backend cache."
+    },
+    "popup_detection_server_cache_title": {
+        "message": "Server-detected blocks ready",
+        "description": "Popup title shown when the TopSkip backend returns cached promo blocks."
+    },
+    "popup_detection_server_cache_description": {
+        "message": "TopSkip received cached promo blocks from the local backend.",
+        "description": "Popup description shown for a server cache-hit response."
+    },
+    "popup_detection_server_cache_headline": {
+        "message": "Server cache hit.",
+        "description": "Popup headline shown when a server cache hit is ready."
+    },
+    "popup_detection_server_no_promo_badge": {
+        "message": "Server",
+        "description": "Popup status badge shown when server analysis completes with no promo blocks."
+    },
+    "popup_detection_server_no_promo_title": {
+        "message": "Server analysis complete",
+        "description": "Popup title shown when server analysis completes with no promo blocks."
+    },
+    "popup_detection_server_no_promo_description": {
+        "message": "TopSkip checked the local backend result for this video.",
+        "description": "Popup description shown when a server terminal no-promo result is available."
+    },
+    "popup_detection_server_no_promo_headline": {
+        "message": "No server promo blocks detected.",
+        "description": "Popup headline shown when server analysis finds no promo blocks."
+    },
+    "popup_detection_server_no_promo_body": {
+        "message": "Playback continues normally unless future server results add blocks.",
+        "description": "Popup body shown when server analysis finds no promo blocks."
+    },
+    "popup_detection_server_unavailable_badge": {
+        "message": "Server",
+        "description": "Popup status badge shown when server analysis is unavailable."
+    },
+    "popup_detection_server_unavailable_title": {
+        "message": "Server analysis unavailable",
+        "description": "Popup title shown when server analysis reaches an unavailable terminal state."
+    },
+    "popup_detection_server_unavailable_description": {
+        "message": "The local backend could not produce a result for this video.",
+        "description": "Popup description shown when server analysis cannot produce a result."
+    },
+    "popup_detection_server_unavailable_headline": {
+        "message": "Server analysis is unavailable.",
+        "description": "Fallback popup headline shown when no specific server unavailable reason is available."
+    },
+    "popup_detection_server_unavailable_body": {
+        "message": "Playback continues without server-detected skips.",
+        "description": "Popup body shown when server analysis is unavailable."
+    },
     "options_heading": {
         "message": "TopSkip — LLM promo detection",
         "description": "Heading on the options page"
@@ -214,5 +310,65 @@
     "options_connection_key_valid": {
         "message": "Key is valid.",
         "description": "Success message shown after a provider API key test passes."
+    },
+    "options_analysis_mode_heading": {
+        "message": "Analysis mode",
+        "description": "Heading for the analysis route selector in extension settings."
+    },
+    "options_analysis_mode_server_label": {
+        "message": "TopSkip Server",
+        "description": "Label for the default server-backed analysis mode."
+    },
+    "options_analysis_mode_server_description": {
+        "message": "Uses TopSkip analysis and shared cached results.",
+        "description": "Description shown when TopSkip Server mode is selected."
+    },
+    "options_analysis_mode_byok_label": {
+        "message": "Private BYOK",
+        "description": "Label for the private bring-your-own-key analysis mode."
+    },
+    "options_analysis_mode_byok_description": {
+        "message": "Uses your configured provider in this extension.",
+        "description": "Description shown when Private BYOK mode is selected."
+    },
+    "options_analysis_mode_byok_privacy": {
+        "message": "Your watched video ID and analysis result are not sent to TopSkip Server. TopSkip Server is never used as a fallback in this mode.",
+        "description": "Privacy and no-fallback disclosure shown for Private BYOK mode."
+    },
+    "options_analysis_mode_setup_required": {
+        "message": "Setup required: choose a provider and configure the selected model before using Private BYOK.",
+        "description": "Guidance shown when Private BYOK is selected without a runnable provider."
+    },
+    "options_analysis_mode_save_error": {
+        "message": "Could not change analysis mode.",
+        "description": "Fallback error shown when saving the selected analysis mode fails."
+    },
+    "popup_analysis_mode_label": {
+        "message": "Analysis mode",
+        "description": "Label for the selected analysis route in the popup."
+    },
+    "popup_analysis_mode_server": {
+        "message": "TopSkip Server",
+        "description": "Popup label for the server-backed analysis mode."
+    },
+    "popup_analysis_mode_byok": {
+        "message": "Private BYOK",
+        "description": "Popup label for the private provider analysis mode."
+    },
+    "popup_byok_setup_badge": {
+        "message": "Setup required",
+        "description": "Popup status badge shown when Private BYOK is not configured."
+    },
+    "popup_byok_setup_title": {
+        "message": "Private BYOK setup required",
+        "description": "Popup title shown when the selected BYOK provider is unavailable."
+    },
+    "popup_byok_setup_description": {
+        "message": "Configure %provider% in settings before promo analysis can run.",
+        "description": "Popup BYOK setup guidance. %provider% is replaced with the selected provider name."
+    },
+    "popup_byok_setup_body": {
+        "message": "Analysis stays with your configured provider and is not shared with TopSkip.",
+        "description": "Popup privacy reminder for an unconfigured Private BYOK route."
     }
 }

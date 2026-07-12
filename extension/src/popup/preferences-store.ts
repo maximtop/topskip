@@ -3,7 +3,12 @@ import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
-import { DEFAULT_PROVIDER_ID, PREFS_PORT_NAME } from '@/shared/constants';
+import {
+    ANALYSIS_MODE,
+    DEFAULT_PROVIDER_ID,
+    PREFS_PORT_NAME,
+    type AnalysisMode,
+} from '@/shared/constants';
 import { PROVIDER_ID } from '@/shared/providers';
 import {
     TOPSKIP_MESSAGE,
@@ -125,6 +130,10 @@ export class PreferencesStore {
      */
     enabled = true;
     /**
+     * Selected analysis route mirrored from background preferences.
+     */
+    analysisMode: AnalysisMode = ANALYSIS_MODE.Server;
+    /**
      * Active LLM provider id mirrored from background prefs.
      */
     providerId: string = DEFAULT_PROVIDER_ID;
@@ -226,6 +235,8 @@ export class PreferencesStore {
                 const prevProviderId = this.providerId;
                 runInAction(() => {
                     this.enabled = msg.prefs.enabled;
+                    this.analysisMode =
+                        msg.prefs.analysisMode ?? ANALYSIS_MODE.Server;
                     if (typeof msg.prefs.providerId === 'string') {
                         this.providerId = msg.prefs.providerId;
                     }
@@ -270,6 +281,8 @@ export class PreferencesStore {
 
         runInAction(() => {
             this.enabled = prefsRes.prefs.enabled;
+            this.analysisMode =
+                prefsRes.prefs.analysisMode ?? ANALYSIS_MODE.Server;
 
             // FIXME type should be specified
             if (typeof prefsRes.prefs.providerId === 'string') {

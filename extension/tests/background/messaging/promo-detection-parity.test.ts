@@ -62,7 +62,11 @@ vi.mock(
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { PromoDetectionRuntimeMessages } from '@/background/messaging/misc-runtime-messages';
-import { STORAGE_KEY_PREFS, STORAGE_KEY_OPENROUTER } from '@/shared/constants';
+import {
+    ANALYSIS_MODE,
+    STORAGE_KEY_PREFS,
+    STORAGE_KEY_OPENROUTER,
+} from '@/shared/constants';
 
 // ------------------------------------------------------------------
 // FR-010: popup and content receive identical promoBlocks
@@ -96,6 +100,7 @@ describe(
                         [STORAGE_KEY_PREFS]: {
                             enabled: true,
                             providerId: 'openrouter',
+                            analysisMode: ANALYSIS_MODE.Byok,
                         },
                     });
                 }
@@ -153,6 +158,7 @@ describe(
                 status: 'detected',
                 promoBlocks: expectedBlocks,
                 partialCoverage: false,
+                source: 'local_provider',
             });
 
             // 2. Content script received the same blocks via
@@ -176,6 +182,7 @@ describe(
                     status: 'detected',
                     promoBlocks: expectedBlocks,
                     partialCoverage: false,
+                    source: 'local_provider',
                 },
             });
 

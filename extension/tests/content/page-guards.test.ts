@@ -7,8 +7,8 @@ import {
 } from '@/content/page-guards';
 
 describe('getWatchVideoIdFromSearch', () => {
-    it('returns synthetic id for e2e host', () => {
-        expect(getWatchVideoIdFromSearch(E2E_HOST, '')).toBe('e2e-fixture');
+    it('returns a valid synthetic id for e2e host', () => {
+        expect(getWatchVideoIdFromSearch(E2E_HOST, '')).toBe('e2eFixture1');
     });
 
     it('returns v param on YouTube watch', () => {

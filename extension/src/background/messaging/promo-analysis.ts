@@ -11,7 +11,10 @@ import {
 } from '@/background/openrouter/log-promo-analysis';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
-import { MAX_CAPTION_TRANSCRIPT_CHARS } from '@/shared/constants';
+import {
+    ANALYSIS_MODE,
+    MAX_CAPTION_TRANSCRIPT_CHARS,
+} from '@/shared/constants';
 import browser from '@/shared/browser';
 import {
     TOPSKIP_MESSAGE,
@@ -231,18 +234,17 @@ export class PromoAnalysis {
         const runStartedAt = performance.now();
 
         const setStatus = (state: PromoDetectionStatePayload): void => {
-            PromoDetectionStore.set(tabId, state);
+            PromoDetectionStore.set(tabId, {
+                ...state,
+                source: 'local_provider',
+            });
         };
 
         try {
             const prefs = await PrefsSyncStorage.ready().then(() =>
                 PrefsSyncStorage.load(),
             );
-            if (!prefs.enabled) {
-                setStatus({
-                    videoId,
-                    status: 'unavailable',
-                });
+            if (!prefs.enabled || prefs.analysisMode !== ANALYSIS_MODE.Byok) {
                 return;
             }
 

@@ -41,4 +41,22 @@ describe('PrefsSyncStorage model migration', () => {
         const prefs = await PrefsSyncStorage.load();
         expect(prefs.activeModelId).toBe(CHROME_BUILTIN_MODEL_ID);
     });
+
+    it('defaults legacy prefs to server analysis mode', async () => {
+        storageGet.mockResolvedValue({
+            'topskip:prefs': { enabled: true, providerId: 'openrouter' },
+        });
+
+        const prefs = await PrefsSyncStorage.load();
+
+        expect(prefs.analysisMode).toBe('server');
+        expect(storageSet).toHaveBeenCalledWith({
+            'topskip:prefs': {
+                enabled: true,
+                providerId: 'openrouter',
+                activeModelId: DEFAULT_DETECTION_MODEL_ID,
+                analysisMode: 'server',
+            },
+        });
+    });
 });

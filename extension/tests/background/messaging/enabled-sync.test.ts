@@ -2,6 +2,7 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const {
     sendMessage,
+    storageSetAccessLevel,
     storageGet,
     storageSet,
     tabsQuery,
@@ -10,6 +11,7 @@ const {
     unregisterContentScripts,
 } = vi.hoisted(() => ({
     sendMessage: vi.fn(),
+    storageSetAccessLevel: vi.fn().mockResolvedValue(undefined),
     storageGet: vi.fn(),
     storageSet: vi.fn(),
     tabsQuery: vi.fn().mockResolvedValue([]),
@@ -21,7 +23,13 @@ const {
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: { sendMessage },
-        storage: { local: { get: storageGet, set: storageSet } },
+        storage: {
+            local: {
+                setAccessLevel: storageSetAccessLevel,
+                get: storageGet,
+                set: storageSet,
+            },
+        },
         tabs: { query: tabsQuery, sendMessage: tabsSendMessage },
         scripting: {
             registerContentScripts,

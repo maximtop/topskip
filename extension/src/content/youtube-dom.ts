@@ -45,6 +45,13 @@ export const SKIP_TOAST_DISPLAY_MS = 2500;
 export const VIDEO_BINDING_POLL_INTERVAL_MS = 500;
 
 /**
+ * Maximum wait for YouTube to expose finite media duration before server
+ * analysis falls back to a durationless request. Live streams and broken
+ * metadata must not leave analysis blocked forever.
+ */
+export const SERVER_ANALYSIS_DURATION_WAIT_MAX_MS = 5_000;
+
+/**
  * Bottom offset (px) from the viewport edge for the skip-toast.
  */
 export const SKIP_TOAST_BOTTOM_PX = 88;

@@ -35,10 +35,11 @@ import {
     resetFiredIndicesOnBackwardSeek,
     computePromoBlockTargetTime,
 } from '@/content/promo-skip-logic';
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
 import { ANALYSIS_MODE, type UserPreferences } from '@/shared/constants';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 import {
+    SERVER_ANALYSIS_DURATION_WAIT_MAX_MS,
     VIDEO_BINDING_POLL_INTERVAL_MS,
     YOUTUBE_VIDEO_ELEMENT_SELECTOR,
 } from '@/content/youtube-dom';
@@ -471,12 +472,19 @@ describe('per-video analysis route lifecycle', () => {
         await Promise.resolve();
     }
 
-    async function createRouteHarness(initialPrefs: UserPreferences): Promise<{
+    async function createRouteHarness(
+        initialPrefs: UserPreferences,
+        initialVideoPresent = true,
+        initialDurationSec = 120,
+    ): Promise<{
+        advanceBindingTime(elapsedMs: number): Promise<void>;
         emitPrefs(prefs: UserPreferences): Promise<void>;
         messagesOfType(type: string): unknown[];
         navigateToVideo(videoId: string): Promise<void>;
         pollBindings(): Promise<void>;
         replaceVideoElement(): Promise<void>;
+        setVideoDuration(durationSec: number): void;
+        fetchCallCount(): number;
         dispose(): void;
     }> {
         vi.useFakeTimers();
@@ -487,13 +495,19 @@ describe('per-video analysis route lifecycle', () => {
         scheduleForVideoId.mockReset();
 
         let runtimeMessageListener: RuntimeMessageListener | null = null;
-        let video = new FakeVideoElement();
+        let video: FakeVideoElement | null = initialVideoPresent
+            ? new FakeVideoElement()
+            : null;
+        if (video !== null) {
+            video.duration = initialDurationSec;
+        }
         const locationState = {
             hostname: 'www.youtube.com',
             pathname: '/watch',
             search: '?v=video-a',
         };
         const windowEvents = new EventTarget();
+        const fetchMock = vi.fn();
 
         addRuntimeMessageListener.mockImplementation(
             (listener: RuntimeMessageListener) => {
@@ -540,6 +554,7 @@ describe('per-video analysis route lifecycle', () => {
             dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
             setTimeout: globalThis.setTimeout,
         });
+        vi.stubGlobal('fetch', fetchMock);
 
         const { YoutubeWatch } = await import('@/content/youtube-watch');
         YoutubeWatch.init();
@@ -557,6 +572,10 @@ describe('per-video analysis route lifecycle', () => {
         };
 
         return {
+            async advanceBindingTime(elapsedMs: number): Promise<void> {
+                await vi.advanceTimersByTimeAsync(elapsedMs);
+                await flushAsyncWork();
+            },
             async emitPrefs(prefs: UserPreferences): Promise<void> {
                 getRuntimeMessageListener()({
                     type: TOPSKIP_MESSAGE.PREFS_UPDATED,
@@ -589,6 +608,14 @@ describe('per-video analysis route lifecycle', () => {
                 video = new FakeVideoElement();
                 await dispatchNavigation();
             },
+            setVideoDuration(durationSec: number): void {
+                if (video !== null) {
+                    video.duration = durationSec;
+                }
+            },
+            fetchCallCount(): number {
+                return fetchMock.mock.calls.length;
+            },
             dispose(): void {
                 vi.clearAllTimers();
                 vi.useRealTimers();
@@ -596,6 +623,93 @@ describe('per-video analysis route lifecycle', () => {
             },
         };
     }
+
+    it('does not request the backend route while disabled or before video binding', async () => {
+        const disabledHarness = await createRouteHarness({
+            ...serverPrefs,
+            enabled: false,
+        });
+        try {
+            expect(
+                disabledHarness.messagesOfType(
+                    TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                ),
+            ).toHaveLength(0);
+            expect(disabledHarness.fetchCallCount()).toBe(0);
+        } finally {
+            disabledHarness.dispose();
+        }
+
+        const waitingHarness = await createRouteHarness(serverPrefs, false);
+        try {
+            expect(
+                waitingHarness.messagesOfType(
+                    TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                ),
+            ).toHaveLength(0);
+            expect(waitingHarness.fetchCallCount()).toBe(0);
+        } finally {
+            waitingHarness.dispose();
+        }
+    });
+
+    it('waits briefly for YouTube duration before the one server request', async () => {
+        const harness = await createRouteHarness(serverPrefs, true, Number.NaN);
+        try {
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(0);
+
+            await harness.pollBindings();
+            harness.setVideoDuration(213);
+            await harness.pollBindings();
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toEqual([
+                {
+                    type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                    payload: { videoId: 'video-a', durationSec: 213 },
+                },
+            ]);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('falls back after the bounded duration wait and resets it on navigation', async () => {
+        const harness = await createRouteHarness(serverPrefs, true, Number.NaN);
+        try {
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_DURATION_WAIT_MAX_MS -
+                    VIDEO_BINDING_POLL_INTERVAL_MS,
+            );
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(0);
+
+            await harness.navigateToVideo('video-b');
+            await harness.advanceBindingTime(VIDEO_BINDING_POLL_INTERVAL_MS);
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(0);
+
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_DURATION_WAIT_MAX_MS -
+                    VIDEO_BINDING_POLL_INTERVAL_MS,
+            );
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toEqual([
+                {
+                    type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                    payload: { videoId: 'video-b' },
+                },
+            ]);
+        } finally {
+            harness.dispose();
+        }
+    });
 
     it('locks Server on video A, cancels polling, and starts BYOK only on video B', async () => {
         const harness = await createRouteHarness(serverPrefs);
@@ -608,6 +722,7 @@ describe('per-video analysis route lifecycle', () => {
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
             ).toHaveLength(1);
+            expect(harness.fetchCallCount()).toBe(0);
 
             await harness.emitPrefs(byokPrefs);
             await harness.pollBindings();

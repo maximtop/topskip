@@ -9,7 +9,7 @@ import type {
     CapturedTimedtextPayload,
 } from '@/content/captions/caption-capture-types';
 import browser from '@/shared/browser';
-import { parseTranscriptJson3 } from '@/shared/captions/transcript-json3';
+import { parseTranscriptJson3 } from '@topskip/common/captions/transcript-json3';
 import { CAPTION_CAPTURE_VERBOSE_LOGS } from '@/shared/constants';
 import {
     CAPTION_CAPTURE_FAILURE_REASON,

@@ -18,15 +18,15 @@ const clientMocks = vi.hoisted(() => ({
     requestAnalysis: vi.fn().mockResolvedValue({
         status: 'processing',
         videoId: 'dQw4w9WgXcQ',
-        algorithmVersion: 'server-v1',
-        jobId: 'local-dQw4w9WgXcQ-server-v1',
+        algorithmVersion: 'server-v4',
+        jobId: 'local-dQw4w9WgXcQ-server-v4',
         pollAfterSec: 3,
     }),
     requestJobStatus: vi.fn().mockResolvedValue({
         status: 'processing',
         videoId: 'dQw4w9WgXcQ',
-        algorithmVersion: 'server-v1',
-        jobId: 'local-dQw4w9WgXcQ-server-v1',
+        algorithmVersion: 'server-v4',
+        jobId: 'local-dQw4w9WgXcQ-server-v4',
         pollAfterSec: 3,
     }),
 }));
@@ -35,8 +35,29 @@ vi.mock('@/background/server-analysis-client', () => ({
     ServerAnalysisClient: clientMocks,
 }));
 
+const configurationMocks = vi.hoisted(() => ({
+    loadActive: vi.fn().mockResolvedValue({
+        apiVersion: 1,
+        algorithmVersion: 'server-v4',
+        supportedCapabilities: ['processing-status', 'typed-server-errors-v1'],
+        supportIssueBaseUrl: 'https://github.com/maximtop/topskip/issues/new',
+    }),
+    loadCached: vi.fn().mockResolvedValue({
+        apiVersion: 1,
+        algorithmVersion: 'server-v4',
+        supportedCapabilities: ['processing-status', 'typed-server-errors-v1'],
+        supportIssueBaseUrl: 'https://github.com/maximtop/topskip/issues/new',
+    }),
+    noteAlgorithmVersion: vi.fn().mockResolvedValue(undefined),
+}));
+
+vi.mock('@/background/server-analysis-configuration', () => ({
+    ServerAnalysisConfiguration: configurationMocks,
+}));
+
 const cacheMocks = vi.hoisted(() => ({
     loadFresh: vi.fn().mockResolvedValue(null),
+    loadLatestFreshForVideo: vi.fn().mockResolvedValue(null),
     saveReadyResponse: vi.fn().mockResolvedValue(undefined),
 }));
 
@@ -69,12 +90,20 @@ vi.mock('@/shared/browser', () => ({
 
 import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
+
+const SERVER_FAILURE_CONTEXT = {
+    apiVersion: 1,
+    algorithmVersion: 'server-v4',
+    extensionVersion: '0.1.0',
+    supportIssueBaseUrl: 'https://github.com/maximtop/topskip/issues/new',
+} as const;
 
 describe('ServerAnalysisRuntimeMessages', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         cacheMocks.loadFresh.mockResolvedValue(null);
+        cacheMocks.loadLatestFreshForVideo.mockResolvedValue(null);
         cacheMocks.saveReadyResponse.mockResolvedValue(undefined);
     });
 
@@ -96,6 +125,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
         expect(cacheMocks.saveReadyResponse).not.toHaveBeenCalled();
         expect(clientMocks.requestAnalysis).not.toHaveBeenCalled();
         expect(clientMocks.requestJobStatus).not.toHaveBeenCalled();
+        expect(configurationMocks.loadActive).not.toHaveBeenCalled();
         expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
         expect(detectionMocks.set).not.toHaveBeenCalled();
     });
@@ -109,7 +139,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
         expect(result).toEqual({
             ok: true,
             status: 'processing',
-            jobId: 'local-dQw4w9WgXcQ-server-v1',
+            jobId: 'local-dQw4w9WgXcQ-server-v4',
             pollAfterSec: 3,
         });
         expect(clientMocks.requestAnalysis).toHaveBeenCalledWith({
@@ -119,7 +149,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
         });
         expect(cacheMocks.loadFresh).toHaveBeenCalledWith({
             videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
         });
         expect(detectionMocks.set).toHaveBeenCalledWith(42, {
             videoId: 'dQw4w9WgXcQ',
@@ -131,11 +161,13 @@ describe('ServerAnalysisRuntimeMessages', () => {
     it('delivers a fresh local cache hit without calling the backend', async () => {
         const blocks: PromoBlock[] = [
             { startSec: 4, endSec: 24, confidence: 'high' },
+            { startSec: 35, endSec: 45, confidence: 'medium' },
+            { startSec: 70, endSec: 82, confidence: 'high' },
         ];
         cacheMocks.loadFresh.mockResolvedValueOnce({
             videoId: 'e2eFixture1',
-            algorithmVersion: 'server-v1',
-            sourceResultId: 'result-e2eFixture1-server-v1',
+            algorithmVersion: 'server-v4',
+            sourceResultId: 'result-e2eFixture1-server-v4',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: blocks,
             storedAtMs: 1_900_000_000_000,
@@ -158,7 +190,33 @@ describe('ServerAnalysisRuntimeMessages', () => {
             status: 'detected',
             source: 'local_cache',
             promoBlocks: blocks,
+            durationSec: 120,
         });
+    });
+
+    it('uses the newest fresh video cache when config has never loaded', async () => {
+        const blocks: PromoBlock[] = [{ startSec: 4, endSec: 24 }];
+        configurationMocks.loadActive.mockResolvedValueOnce(null);
+        cacheMocks.loadLatestFreshForVideo.mockResolvedValueOnce({
+            videoId: 'e2eFixture1',
+            algorithmVersion: 'server-v5',
+            sourceResultId: 'result-server-v5',
+            freshness: { expiresAtMs: 4_102_444_800_000 },
+            promoBlocks: blocks,
+            storedAtMs: 1_900_000_000_000,
+        });
+
+        const result = await ServerAnalysisRuntimeMessages.handleRequest(
+            { videoId: 'e2eFixture1', durationSec: 120 },
+            { tab: { id: 42 } } as never,
+        );
+
+        expect(result).toEqual({ ok: true, status: 'ready' });
+        expect(cacheMocks.loadFresh).not.toHaveBeenCalled();
+        expect(cacheMocks.loadLatestFreshForVideo).toHaveBeenCalledWith({
+            videoId: 'e2eFixture1',
+        });
+        expect(clientMocks.requestAnalysis).not.toHaveBeenCalled();
     });
 
     it('maps client failures into server error detection state', async () => {
@@ -173,13 +231,16 @@ describe('ServerAnalysisRuntimeMessages', () => {
 
         expect(result).toEqual({
             ok: false,
-            error: 'Server analysis timed out.',
+            error: 'Server analysis failed.',
         });
         expect(detectionMocks.set).toHaveBeenCalledWith(42, {
             videoId: 'dQw4w9WgXcQ',
             status: 'error',
             source: 'server',
-            error: 'Server analysis timed out.',
+            serverFailure: {
+                ...SERVER_FAILURE_CONTEXT,
+                code: 'invalid_server_response',
+            },
         });
     });
 
@@ -190,9 +251,9 @@ describe('ServerAnalysisRuntimeMessages', () => {
         clientMocks.requestAnalysis.mockResolvedValueOnce({
             status: 'ready',
             videoId: 'e2eFixture1',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v1',
+            sourceResultId: 'result-e2eFixture1-server-v4',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: blocks,
         });
@@ -206,9 +267,9 @@ describe('ServerAnalysisRuntimeMessages', () => {
         expect(cacheMocks.saveReadyResponse).toHaveBeenCalledWith({
             status: 'ready',
             videoId: 'e2eFixture1',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v1',
+            sourceResultId: 'result-e2eFixture1-server-v4',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: blocks,
         });
@@ -222,6 +283,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
             status: 'detected',
             source: 'server_cache',
             promoBlocks: blocks,
+            durationSec: 120,
         });
     });
 
@@ -229,9 +291,9 @@ describe('ServerAnalysisRuntimeMessages', () => {
         clientMocks.requestAnalysis.mockResolvedValueOnce({
             status: 'ready',
             videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
             source: 'server_cache',
-            sourceResultId: 'result-dQw4w9WgXcQ-server-v1',
+            sourceResultId: 'result-dQw4w9WgXcQ-server-v4',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: [{ startSec: 4, endSec: 24 }],
         });
@@ -243,18 +305,21 @@ describe('ServerAnalysisRuntimeMessages', () => {
 
         expect(result).toEqual({
             ok: false,
-            error: 'Server returned analysis for a different video.',
+            error: 'Invalid server response.',
         });
         expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
         expect(detectionMocks.set).toHaveBeenCalledWith(42, {
             videoId: 'e2eFixture1',
             status: 'error',
             source: 'server',
-            error: 'Server returned analysis for a different video.',
+            serverFailure: {
+                ...SERVER_FAILURE_CONTEXT,
+                code: 'invalid_server_response',
+            },
         });
     });
 
-    it('rejects ready backend results for a different algorithm version', async () => {
+    it('accepts and records a server-owned algorithm version', async () => {
         clientMocks.requestAnalysis.mockResolvedValueOnce({
             status: 'ready',
             videoId: 'e2eFixture1',
@@ -270,18 +335,12 @@ describe('ServerAnalysisRuntimeMessages', () => {
             { tab: { id: 42 } } as never,
         );
 
-        expect(result).toEqual({
-            ok: false,
-            error: 'Server returned analysis for an unsupported algorithm version.',
-        });
-        expect(cacheMocks.saveReadyResponse).not.toHaveBeenCalled();
-        expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
-        expect(detectionMocks.set).toHaveBeenCalledWith(42, {
-            videoId: 'e2eFixture1',
-            status: 'error',
-            source: 'server',
-            error: 'Server returned analysis for an unsupported algorithm version.',
-        });
+        expect(result).toEqual({ ok: true, status: 'ready' });
+        expect(configurationMocks.noteAlgorithmVersion).toHaveBeenCalledWith(
+            'server-v0',
+        );
+        expect(cacheMocks.saveReadyResponse).toHaveBeenCalled();
+        expect(browserMocks.tabsSendMessage).toHaveBeenCalled();
     });
 
     it('delivers ready backend blocks when saving the local cache fails', async () => {
@@ -292,9 +351,9 @@ describe('ServerAnalysisRuntimeMessages', () => {
         clientMocks.requestAnalysis.mockResolvedValueOnce({
             status: 'ready',
             videoId: 'e2eFixture1',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v1',
+            sourceResultId: 'result-e2eFixture1-server-v4',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: blocks,
         });
@@ -316,6 +375,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
             status: 'detected',
             source: 'server_cache',
             promoBlocks: blocks,
+            durationSec: 120,
         });
     });
 
@@ -327,9 +387,9 @@ describe('ServerAnalysisRuntimeMessages', () => {
         clientMocks.requestJobStatus.mockResolvedValueOnce({
             status: 'ready',
             videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
             source: 'server_cache',
-            sourceResultId: 'result-dQw4w9WgXcQ-server-v1',
+            sourceResultId: 'result-dQw4w9WgXcQ-server-v4',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: blocks,
         });
@@ -337,7 +397,8 @@ describe('ServerAnalysisRuntimeMessages', () => {
         const result = await ServerAnalysisRuntimeMessages.handleRefreshStatus(
             {
                 videoId: 'dQw4w9WgXcQ',
-                jobId: 'local-dQw4w9WgXcQ-server-v1',
+                jobId: 'local-dQw4w9WgXcQ-server-v4',
+                durationSec: 213,
             },
             { tab: { id: 42 } } as never,
         );
@@ -347,6 +408,13 @@ describe('ServerAnalysisRuntimeMessages', () => {
             type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
             videoId: 'dQw4w9WgXcQ',
             promoBlocks: blocks,
+        });
+        expect(detectionMocks.set).toHaveBeenCalledWith(42, {
+            videoId: 'dQw4w9WgXcQ',
+            status: 'detected',
+            source: 'server',
+            promoBlocks: blocks,
+            durationSec: 213,
         });
     });
 
@@ -361,7 +429,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
         const result = await ServerAnalysisRuntimeMessages.handleRefreshStatus(
             {
                 videoId: 'dQw4w9WgXcQ',
-                jobId: 'local-dQw4w9WgXcQ-server-v1',
+                jobId: 'local-dQw4w9WgXcQ-server-v4',
             },
             { tab: { id: 42 } } as never,
         );
@@ -371,13 +439,64 @@ describe('ServerAnalysisRuntimeMessages', () => {
         expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
     });
 
+    it('resubmits analysis once when a deploy loses an in-memory job', async () => {
+        clientMocks.requestJobStatus.mockResolvedValue({
+            status: 'error',
+            videoId: 'dQw4w9WgXcQ',
+            algorithmVersion: 'server-v5',
+            error: { code: 'job_not_found' },
+        });
+        clientMocks.requestAnalysis.mockResolvedValueOnce({
+            status: 'processing',
+            videoId: 'dQw4w9WgXcQ',
+            algorithmVersion: 'server-v5',
+            jobId: 'replacement-job',
+            pollAfterSec: 3,
+        });
+
+        const result = await ServerAnalysisRuntimeMessages.handleRefreshStatus(
+            {
+                videoId: 'dQw4w9WgXcQ',
+                jobId: 'lost-job',
+                durationSec: 213,
+            },
+            { tab: { id: 42 } } as never,
+        );
+
+        expect(clientMocks.requestAnalysis).toHaveBeenCalledOnce();
+        expect(clientMocks.requestAnalysis).toHaveBeenCalledWith({
+            videoId: 'dQw4w9WgXcQ',
+            durationSec: 213,
+            extensionVersion: '0.1.0',
+        });
+        expect(result).toEqual({
+            ok: true,
+            status: 'processing',
+            jobId: 'replacement-job',
+            pollAfterSec: 3,
+        });
+
+        const repeated =
+            await ServerAnalysisRuntimeMessages.handleRefreshStatus(
+                {
+                    videoId: 'dQw4w9WgXcQ',
+                    jobId: 'replacement-job',
+                    durationSec: 213,
+                },
+                { tab: { id: 42 } } as never,
+            );
+
+        expect(clientMocks.requestAnalysis).toHaveBeenCalledOnce();
+        expect(repeated).toEqual({ ok: true, status: 'error' });
+    });
+
     it.each([
         {
             response: {
                 status: 'no_promo',
                 videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v1',
-                sourceResultId: 'result-dQw4w9WgXcQ-server-v1',
+                algorithmVersion: 'server-v4',
+                sourceResultId: 'result-dQw4w9WgXcQ-server-v4',
                 freshness: { expiresAtMs: 4_102_444_800_000 },
             },
             expectedState: {
@@ -391,15 +510,17 @@ describe('ServerAnalysisRuntimeMessages', () => {
             response: {
                 status: 'unavailable',
                 videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v1',
-                reason: 'fixture_unavailable',
-                message: 'Fixture analysis is unavailable.',
+                algorithmVersion: 'server-v4',
+                error: { code: 'fixture_unavailable' },
             },
             expectedState: {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
-                error: 'Fixture analysis is unavailable.',
+                serverFailure: {
+                    ...SERVER_FAILURE_CONTEXT,
+                    code: 'fixture_unavailable',
+                },
             },
             expectedStatus: 'unavailable',
         },
@@ -407,34 +528,40 @@ describe('ServerAnalysisRuntimeMessages', () => {
             response: {
                 status: 'error',
                 videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v1',
+                algorithmVersion: 'server-v4',
                 error: {
                     code: 'fixture_error',
-                    message: 'Fixture job failed.',
                 },
             },
             expectedState: {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'error',
                 source: 'server',
-                error: 'Fixture job failed.',
+                serverFailure: {
+                    ...SERVER_FAILURE_CONTEXT,
+                    code: 'fixture_error',
+                },
             },
             expectedStatus: 'error',
         },
         {
             response: {
                 status: 'rate_limited',
-                retryAfterSec: 60,
+                algorithmVersion: 'server-v4',
                 error: {
                     code: 'rate_limited',
-                    message: 'Local cold-analysis limit reached. Retry later.',
+                    retryAfterSec: 60,
                 },
             },
             expectedState: {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
-                error: 'Local cold-analysis limit reached. Retry later.',
+                serverFailure: {
+                    ...SERVER_FAILURE_CONTEXT,
+                    code: 'rate_limited',
+                    retryAfterSec: 60,
+                },
             },
             expectedStatus: 'rate_limited',
         },
@@ -447,7 +574,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
                 await ServerAnalysisRuntimeMessages.handleRefreshStatus(
                     {
                         videoId: 'dQw4w9WgXcQ',
-                        jobId: 'local-dQw4w9WgXcQ-server-v1',
+                        jobId: 'local-dQw4w9WgXcQ-server-v4',
                     },
                     { tab: { id: 42 } } as never,
                 );
@@ -463,8 +590,8 @@ describe('ServerAnalysisRuntimeMessages', () => {
             response: {
                 status: 'no_promo',
                 videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v1',
-                sourceResultId: 'result-dQw4w9WgXcQ-server-v1',
+                algorithmVersion: 'server-v4',
+                sourceResultId: 'result-dQw4w9WgXcQ-server-v4',
                 freshness: { expiresAtMs: 4_102_444_800_000 },
             },
             expectedState: {
@@ -478,15 +605,17 @@ describe('ServerAnalysisRuntimeMessages', () => {
             response: {
                 status: 'unavailable',
                 videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v1',
-                reason: 'fixture_unavailable',
-                message: 'Fixture analysis is unavailable.',
+                algorithmVersion: 'server-v4',
+                error: { code: 'fixture_unavailable' },
             },
             expectedState: {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
-                error: 'Fixture analysis is unavailable.',
+                serverFailure: {
+                    ...SERVER_FAILURE_CONTEXT,
+                    code: 'fixture_unavailable',
+                },
             },
             expectedStatus: 'unavailable',
         },
@@ -494,34 +623,40 @@ describe('ServerAnalysisRuntimeMessages', () => {
             response: {
                 status: 'error',
                 videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v1',
+                algorithmVersion: 'server-v4',
                 error: {
                     code: 'fixture_error',
-                    message: 'Fixture job failed.',
                 },
             },
             expectedState: {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'error',
                 source: 'server',
-                error: 'Fixture job failed.',
+                serverFailure: {
+                    ...SERVER_FAILURE_CONTEXT,
+                    code: 'fixture_error',
+                },
             },
             expectedStatus: 'error',
         },
         {
             response: {
                 status: 'rate_limited',
-                retryAfterSec: 60,
+                algorithmVersion: 'server-v4',
                 error: {
                     code: 'rate_limited',
-                    message: 'Local cold-analysis limit reached. Retry later.',
+                    retryAfterSec: 60,
                 },
             },
             expectedState: {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
-                error: 'Local cold-analysis limit reached. Retry later.',
+                serverFailure: {
+                    ...SERVER_FAILURE_CONTEXT,
+                    code: 'rate_limited',
+                    retryAfterSec: 60,
+                },
             },
             expectedStatus: 'rate_limited',
         },
@@ -555,14 +690,20 @@ describe('ServerAnalysisRuntimeMessages', () => {
                 { tab: { id: 42 } } as never,
             );
 
-            expect(result).toEqual({ ok: false, error: error.message });
+            expect(result).toEqual({
+                ok: false,
+                error: 'Server analysis failed.',
+            });
             expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
             expect(cacheMocks.saveReadyResponse).not.toHaveBeenCalled();
             expect(detectionMocks.set).toHaveBeenCalledWith(42, {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'error',
                 source: 'server',
-                error: error.message,
+                serverFailure: {
+                    ...SERVER_FAILURE_CONTEXT,
+                    code: 'invalid_server_response',
+                },
             });
         },
     );
@@ -571,17 +712,16 @@ describe('ServerAnalysisRuntimeMessages', () => {
         clientMocks.requestJobStatus.mockResolvedValueOnce({
             status: 'error',
             videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
             error: {
                 code: 'unsafe_model_blocks',
-                message: 'Model returned unsafe promo blocks.',
             },
         });
 
         const result = await ServerAnalysisRuntimeMessages.handleRefreshStatus(
             {
                 videoId: 'dQw4w9WgXcQ',
-                jobId: 'local-dQw4w9WgXcQ-server-v1',
+                jobId: 'local-dQw4w9WgXcQ-server-v4',
             },
             { tab: { id: 42 } } as never,
         );
@@ -592,7 +732,10 @@ describe('ServerAnalysisRuntimeMessages', () => {
             videoId: 'dQw4w9WgXcQ',
             status: 'error',
             source: 'server',
-            error: 'Model returned unsafe promo blocks.',
+            serverFailure: {
+                ...SERVER_FAILURE_CONTEXT,
+                code: 'unsafe_model_blocks',
+            },
         });
     });
 });

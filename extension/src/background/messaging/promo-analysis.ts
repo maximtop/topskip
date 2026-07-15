@@ -35,12 +35,12 @@ import {
 } from '@/background/messaging/chunk-plan-config';
 import { ChunkPlanner } from '@/background/messaging/chunk-planner';
 import { ChunkMerge } from '@/background/messaging/chunk-merge';
-import { mergePromoBlocksWithGap } from '@/shared/promo-dedupe';
+import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
 import {
     PROMO_DETECTION_PROMPT_VERSION,
     PROMO_DETECTION_SYSTEM_PROMPT,
 } from '@/background/openrouter/promo-detection-system-prompt';
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
 
 /**
  * Orchestrates LLM analysis after captions arrive; static API only.
@@ -343,37 +343,42 @@ export class PromoAnalysis {
                 totalAdapterLatencyMs = totalAdapterLatencyMs + latencyMs;
 
                 const aborted = abort.signal.aborted;
-                if (result.ok) {
-                    lastRawAssistant = result.rawAssistant;
-                } else if (result.rawAssistant !== undefined) {
-                    lastRawAssistant = result.rawAssistant;
-                }
+                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                    if (result.ok) {
+                        lastRawAssistant = result.rawAssistant;
+                    } else if (result.rawAssistant !== undefined) {
+                        lastRawAssistant = result.rawAssistant;
+                    }
 
-                let parsedCount: number | undefined;
-                if (result.ok && result.hasPromo) {
-                    parsedCount = result.blocks.length;
-                } else if (result.ok && !result.hasPromo) {
-                    parsedCount = 0;
-                }
+                    let parsedCount: number | undefined;
+                    if (result.ok && result.hasPromo) {
+                        parsedCount = result.blocks.length;
+                    } else if (result.ok && !result.hasPromo) {
+                        parsedCount = 0;
+                    }
 
-                logChunkPromoEntry({
-                    chunkIndex,
-                    chunkCount: chunkCountInner,
-                    chunkStartSec: cStart,
-                    chunkEndSec: cEnd,
-                    chunkChars: chunkText.length,
-                    promptVersion: PROMO_DETECTION_PROMPT_VERSION,
-                    chunkText,
-                    chunkTextMaxChars: LOG_CHUNK_TEXT_MAX_CHARS,
-                    rawAssistant: result.ok
-                        ? result.rawAssistant
-                        : (result.rawAssistant ?? null),
-                    rawAssistantMaxChars: LOG_RAW_ASSISTANT_MAX_CHARS,
-                    adapterLatencyMs: latencyMs,
-                    outcome: PromoAnalysis.chunkOutcomeForLog(result, aborted),
-                    parsedBlockCount: parsedCount,
-                    retryLabel,
-                });
+                    logChunkPromoEntry({
+                        chunkIndex,
+                        chunkCount: chunkCountInner,
+                        chunkStartSec: cStart,
+                        chunkEndSec: cEnd,
+                        chunkChars: chunkText.length,
+                        promptVersion: PROMO_DETECTION_PROMPT_VERSION,
+                        chunkText,
+                        chunkTextMaxChars: LOG_CHUNK_TEXT_MAX_CHARS,
+                        rawAssistant: result.ok
+                            ? result.rawAssistant
+                            : (result.rawAssistant ?? null),
+                        rawAssistantMaxChars: LOG_RAW_ASSISTANT_MAX_CHARS,
+                        adapterLatencyMs: latencyMs,
+                        outcome: PromoAnalysis.chunkOutcomeForLog(
+                            result,
+                            aborted,
+                        ),
+                        parsedBlockCount: parsedCount,
+                        retryLabel,
+                    });
+                }
 
                 if (aborted) {
                     return;
@@ -448,13 +453,13 @@ export class PromoAnalysis {
                 totalAdapterCalls = totalAdapterCalls + 1;
                 totalAdapterLatencyMs = totalAdapterLatencyMs + firstLatency;
 
-                if (first.ok) {
-                    lastRawAssistant = first.rawAssistant;
-                } else if (first.rawAssistant !== undefined) {
-                    lastRawAssistant = first.rawAssistant;
-                }
+                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                    if (first.ok) {
+                        lastRawAssistant = first.rawAssistant;
+                    } else if (first.rawAssistant !== undefined) {
+                        lastRawAssistant = first.rawAssistant;
+                    }
 
-                const logFirst = (): void => {
                     let parsedCount: number | undefined;
                     if (first.ok && first.hasPromo) {
                         parsedCount = first.blocks.length;
@@ -482,8 +487,7 @@ export class PromoAnalysis {
                         parsedBlockCount: parsedCount,
                         retryLabel: undefined,
                     });
-                };
-                logFirst();
+                }
 
                 if (abort.signal.aborted) {
                     return;
@@ -584,42 +588,95 @@ export class PromoAnalysis {
                     error: 'All transcript chunks failed',
                     partialCoverage: anyPartial,
                 });
-                LogPromoAnalysis.logAnalysisBundle(
-                    buildPromoAnalysisLogBundle({
-                        videoId,
-                        languageCode,
-                        segmentCount: segments.length,
-                        maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
-                        mergedText: merged.text,
-                        mergedTruncated: merged.truncated,
-                        providerId,
-                        model: 'unknown',
-                        rawAssistant: lastRawAssistant,
-                        outcome: outcomeBlocks,
-                        chunkedMeta: {
-                            promptVersion: PROMO_DETECTION_PROMPT_VERSION,
-                            systemPromptFull: PROMO_DETECTION_SYSTEM_PROMPT,
-                            plannedBudgetChars: budget,
-                            overlapSec: plan.overlapSec,
-                            totalChunks: plan.chunks.length,
-                            totalAdapterCalls,
-                            coverageFraction: plan.coverageFraction,
-                            partialCoverage: anyPartial,
-                            uncoveredRanges:
-                                uncoveredRanges.length > 0
-                                    ? uncoveredRanges
-                                    : undefined,
-                            totalAdapterLatencyMs,
-                            totalWallClockMs,
-                            globalTruncated: merged.truncated,
-                            mergedTextLogMaxChars: LOG_MERGED_TEXT_MAX_CHARS,
-                        },
-                    }),
-                );
+                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                    LogPromoAnalysis.logAnalysisBundle(
+                        buildPromoAnalysisLogBundle({
+                            videoId,
+                            languageCode,
+                            segmentCount: segments.length,
+                            maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
+                            mergedText: merged.text,
+                            mergedTruncated: merged.truncated,
+                            providerId,
+                            model: 'unknown',
+                            rawAssistant: lastRawAssistant,
+                            outcome: outcomeBlocks,
+                            chunkedMeta: {
+                                promptVersion: PROMO_DETECTION_PROMPT_VERSION,
+                                systemPromptFull: PROMO_DETECTION_SYSTEM_PROMPT,
+                                plannedBudgetChars: budget,
+                                overlapSec: plan.overlapSec,
+                                totalChunks: plan.chunks.length,
+                                totalAdapterCalls,
+                                coverageFraction: plan.coverageFraction,
+                                partialCoverage: anyPartial,
+                                uncoveredRanges:
+                                    uncoveredRanges.length > 0
+                                        ? uncoveredRanges
+                                        : undefined,
+                                totalAdapterLatencyMs,
+                                totalWallClockMs,
+                                globalTruncated: merged.truncated,
+                                mergedTextLogMaxChars:
+                                    LOG_MERGED_TEXT_MAX_CHARS,
+                            },
+                        }),
+                    );
+                }
                 return;
             }
 
             if (mergedBlocks.length === 0) {
+                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                    LogPromoAnalysis.logAnalysisBundle(
+                        buildPromoAnalysisLogBundle({
+                            videoId,
+                            languageCode,
+                            segmentCount: segments.length,
+                            maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
+                            mergedText: merged.text,
+                            mergedTruncated: merged.truncated,
+                            providerId,
+                            model:
+                                providerId === PROVIDER_ID.OpenRouter
+                                    ? '(see per-chunk logs)'
+                                    : 'gemini-nano',
+                            rawAssistant: lastRawAssistant,
+                            outcome:
+                                outcomeBlocks.type === 'no_promo'
+                                    ? { type: 'no_promo' }
+                                    : outcomeBlocks,
+                            chunkedMeta: {
+                                promptVersion: PROMO_DETECTION_PROMPT_VERSION,
+                                systemPromptFull: PROMO_DETECTION_SYSTEM_PROMPT,
+                                plannedBudgetChars: budget,
+                                overlapSec: plan.overlapSec,
+                                totalChunks: plan.chunks.length,
+                                totalAdapterCalls,
+                                coverageFraction: plan.coverageFraction,
+                                partialCoverage: anyPartial,
+                                uncoveredRanges:
+                                    uncoveredRanges.length > 0
+                                        ? uncoveredRanges
+                                        : undefined,
+                                totalAdapterLatencyMs,
+                                totalWallClockMs,
+                                globalTruncated: merged.truncated,
+                                mergedTextLogMaxChars:
+                                    LOG_MERGED_TEXT_MAX_CHARS,
+                            },
+                        }),
+                    );
+                }
+                setStatus({
+                    videoId,
+                    status: 'no_promo',
+                    partialCoverage: anyPartial,
+                });
+                return;
+            }
+
+            if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
                 LogPromoAnalysis.logAnalysisBundle(
                     buildPromoAnalysisLogBundle({
                         videoId,
@@ -634,10 +691,7 @@ export class PromoAnalysis {
                                 ? '(see per-chunk logs)'
                                 : 'gemini-nano',
                         rawAssistant: lastRawAssistant,
-                        outcome:
-                            outcomeBlocks.type === 'no_promo'
-                                ? { type: 'no_promo' }
-                                : outcomeBlocks,
+                        outcome: { type: 'promo_blocks', blocks: mergedBlocks },
                         chunkedMeta: {
                             promptVersion: PROMO_DETECTION_PROMPT_VERSION,
                             systemPromptFull: PROMO_DETECTION_SYSTEM_PROMPT,
@@ -658,49 +712,7 @@ export class PromoAnalysis {
                         },
                     }),
                 );
-                setStatus({
-                    videoId,
-                    status: 'no_promo',
-                    partialCoverage: anyPartial,
-                });
-                return;
             }
-
-            LogPromoAnalysis.logAnalysisBundle(
-                buildPromoAnalysisLogBundle({
-                    videoId,
-                    languageCode,
-                    segmentCount: segments.length,
-                    maxTranscriptChars: MAX_CAPTION_TRANSCRIPT_CHARS,
-                    mergedText: merged.text,
-                    mergedTruncated: merged.truncated,
-                    providerId,
-                    model:
-                        providerId === PROVIDER_ID.OpenRouter
-                            ? '(see per-chunk logs)'
-                            : 'gemini-nano',
-                    rawAssistant: lastRawAssistant,
-                    outcome: { type: 'promo_blocks', blocks: mergedBlocks },
-                    chunkedMeta: {
-                        promptVersion: PROMO_DETECTION_PROMPT_VERSION,
-                        systemPromptFull: PROMO_DETECTION_SYSTEM_PROMPT,
-                        plannedBudgetChars: budget,
-                        overlapSec: plan.overlapSec,
-                        totalChunks: plan.chunks.length,
-                        totalAdapterCalls,
-                        coverageFraction: plan.coverageFraction,
-                        partialCoverage: anyPartial,
-                        uncoveredRanges:
-                            uncoveredRanges.length > 0
-                                ? uncoveredRanges
-                                : undefined,
-                        totalAdapterLatencyMs,
-                        totalWallClockMs,
-                        globalTruncated: merged.truncated,
-                        mergedTextLogMaxChars: LOG_MERGED_TEXT_MAX_CHARS,
-                    },
-                }),
-            );
             setStatus({
                 videoId,
                 status: 'detected',

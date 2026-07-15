@@ -1,4 +1,4 @@
-import type { CaptionSegment } from '@/shared/caption-types';
+import type { CaptionSegment } from '@topskip/common/caption-types';
 import { LOG_PREFIX_CAPTIONS } from '@/shared/constants';
 
 const PREVIEW_LINES = 8;
@@ -11,13 +11,18 @@ const CHUNK_SIZE = 40;
  * @param videoId YouTube video id.
  * @param languageCode Track language when known.
  * @param segments Parsed cues.
+ * @param enabled Explicit override used by unit tests.
  * @returns A short text preview for messaging acks.
  */
 export function logTranscriptForDeveloper(
     videoId: string,
     languageCode: string | undefined,
     segments: CaptionSegment[],
+    enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
 ): string {
+    if (!enabled) {
+        return '';
+    }
     const head = [
         LOG_PREFIX_CAPTIONS,
         `videoId=${videoId}`,

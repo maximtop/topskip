@@ -4,7 +4,7 @@ import {
     extractJsonObjectFromMixedLog,
     parseOpenRouterComparePresetsLog,
     renderOpenRouterCompareHtml,
-} from '../../scripts/lib/openrouter-compare-report';
+} from '../../../scripts/lib/openrouter-compare-report';
 
 function buildSampleLog(): string {
     return [

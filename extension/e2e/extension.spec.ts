@@ -1,5 +1,9 @@
 import path from 'node:path';
-import { createServer } from 'node:http';
+import {
+    createServer,
+    type IncomingMessage,
+    type ServerResponse,
+} from 'node:http';
 import { fileURLToPath } from 'node:url';
 
 import {
@@ -12,6 +16,11 @@ import {
 import AxeBuilder from '@axe-core/playwright';
 
 import {
+    SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
+    TOPSKIP_CAPABILITIES_HEADER_NAME,
+} from '@topskip/common/server-analysis-contract';
+
+import {
     expectNoCollectedErrors,
     openPopupAndWaitForUi,
     trackPageErrors,
@@ -20,6 +29,83 @@ import {
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const extensionPath = path.resolve(__dirname, '../dist');
+const E2E_SERVER_ALGORITHM_VERSION = 'server-v4';
+const E2E_INSTALLATION_TOKEN =
+    'e2e-installation-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const E2E_INSTALLATION_EXPIRES_AT_MS = 4_102_444_800_000;
+const E2E_CAPABILITIES_HEADER =
+    SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
+
+/**
+ * Serves the public bootstrap endpoints shared by every server-mode fixture.
+ *
+ * @param req - Fixture backend request.
+ * @param res - Fixture backend response.
+ * @returns Whether the request was fully handled.
+ */
+function handlePublicApiBootstrap(
+    req: IncomingMessage,
+    res: ServerResponse,
+): boolean {
+    if (req.method === 'OPTIONS') {
+        const origin = req.headers.origin;
+        if (typeof origin === 'string') {
+            res.setHeader('access-control-allow-origin', origin);
+        }
+        res.writeHead(204, {
+            'access-control-allow-methods': 'GET, POST, OPTIONS',
+            'access-control-allow-headers':
+                'Authorization, Content-Type, X-TopSkip-Capabilities',
+        });
+        res.end();
+        return true;
+    }
+
+    if (req.method === 'GET' && req.url === '/v1/config') {
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(
+            JSON.stringify({
+                apiVersion: 'v1',
+                algorithmVersion: E2E_SERVER_ALGORITHM_VERSION,
+                supportedCapabilities: [
+                    ...SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
+                ],
+                supportIssueBaseUrl:
+                    'https://github.com/maximtop/topskip/issues/new',
+            }),
+        );
+        return true;
+    }
+
+    if (req.method === 'POST' && req.url === '/v1/installations/register') {
+        expect(
+            req.headers[TOPSKIP_CAPABILITIES_HEADER_NAME.toLowerCase()],
+        ).toBe(E2E_CAPABILITIES_HEADER);
+        res.writeHead(201, { 'content-type': 'application/json' });
+        res.end(
+            JSON.stringify({
+                status: 'registered',
+                token: E2E_INSTALLATION_TOKEN,
+                expiresAtMs: E2E_INSTALLATION_EXPIRES_AT_MS,
+            }),
+        );
+        return true;
+    }
+
+    return false;
+}
+
+/**
+ * Verifies that analysis traffic uses the background-owned installation.
+ *
+ * @param req - Fixture backend request.
+ */
+function expectAuthenticatedServerRequest(req: IncomingMessage): void {
+    expect(req.headers.authorization).toBe(`Bearer ${E2E_INSTALLATION_TOKEN}`);
+    expect(req.headers[TOPSKIP_CAPABILITIES_HEADER_NAME.toLowerCase()]).toBe(
+        E2E_CAPABILITIES_HEADER,
+    );
+}
 
 /**
  * Default **headless** for CI/local; set `PW_EXTENSION_HEADED=1` for a visible
@@ -79,6 +165,7 @@ async function seedDetectedPopupState(popupPage: Page): Promise<void> {
             state: {
                 videoId: 'visual-fixture',
                 status: 'detected',
+                durationSec: 600,
                 promoBlocks: [
                     { startSec: 92, endSec: 125 },
                     { startSec: 490, endSec: 522 },
@@ -140,14 +227,14 @@ async function seedFreshLocalServerCache(popupPage: Page): Promise<void> {
             throw new Error('Missing chrome.storage.local.set API');
         }
 
-        const key = 'topskip:server-result-cache:server-v1:e2eFixture1';
+        const key = 'topskip:server-result-cache:server-v4:e2eFixture1';
         await new Promise<void>((resolve, reject) => {
             Reflect.apply(set, local, [
                 {
                     [key]: {
                         videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
-                        sourceResultId: 'result-e2eFixture1-server-v1',
+                        algorithmVersion: 'server-v4',
+                        sourceResultId: 'result-e2eFixture1-server-v4',
                         freshness: { expiresAtMs: 4_102_444_800_000 },
                         promoBlocks: [
                             { startSec: 4, endSec: 24, confidence: 'high' },
@@ -284,16 +371,37 @@ test.describe('TopSkip extension', () => {
     });
 
     test('server mode reports pending analysis from local backend', async () => {
+        const jobId = 'local-e2eFixture1-server-v4';
+        const processingResponse = {
+            status: 'processing',
+            videoId: 'e2eFixture1',
+            algorithmVersion: 'server-v4',
+            jobId,
+            pollAfterSec: 3,
+        };
         let resolveRequestSeen: () => void = () => {};
         const requestSeen = new Promise<void>((resolve) => {
             resolveRequestSeen = resolve;
         });
         const backend = createServer((req, res) => {
+            if (handlePublicApiBootstrap(req, res)) {
+                return;
+            }
+            if (
+                req.method === 'GET' &&
+                req.url === `/v1/analysis/jobs/${jobId}`
+            ) {
+                expectAuthenticatedServerRequest(req);
+                res.writeHead(202, { 'content-type': 'application/json' });
+                res.end(JSON.stringify(processingResponse));
+                return;
+            }
             if (req.method !== 'POST' || req.url !== '/v1/analysis') {
                 res.writeHead(404);
                 res.end();
                 return;
             }
+            expectAuthenticatedServerRequest(req);
             let body = '';
             req.setEncoding('utf8');
             req.on('data', (chunk) => {
@@ -302,19 +410,18 @@ test.describe('TopSkip extension', () => {
             req.on('end', () => {
                 expect(JSON.parse(body)).toMatchObject({
                     videoId: 'e2eFixture1',
-                    algorithmVersion: 'server-v1',
+                    extensionVersion: '0.1.0',
+                    client: {
+                        source: 'chrome-extension',
+                        capabilities: [
+                            ...SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
+                        ],
+                    },
                 });
+                expect(JSON.parse(body)).not.toHaveProperty('algorithmVersion');
                 expect(body).not.toContain('transcript');
                 res.writeHead(202, { 'content-type': 'application/json' });
-                res.end(
-                    JSON.stringify({
-                        status: 'processing',
-                        videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
-                        jobId: 'local-e2eFixture1-server-v1',
-                        pollAfterSec: 3,
-                    }),
-                );
+                res.end(JSON.stringify(processingResponse));
                 resolveRequestSeen();
             });
         });
@@ -365,6 +472,12 @@ test.describe('TopSkip extension', () => {
             await expect(
                 popupPage.getByText('Server analysis pending'),
             ).toBeVisible({ timeout: 10_000 });
+            await expect(
+                popupPage.getByText('Promo blocks detected', { exact: true }),
+            ).toHaveCount(0);
+            await expect(
+                popupPage.getByText('0 blocks', { exact: true }),
+            ).toHaveCount(0);
             await popupPage.close();
             expectNoCollectedErrors(errors);
         } finally {
@@ -381,11 +494,15 @@ test.describe('TopSkip extension', () => {
             resolveRequestSeen = resolve;
         });
         const backend = createServer((req, res) => {
+            if (handlePublicApiBootstrap(req, res)) {
+                return;
+            }
             if (req.method !== 'POST' || req.url !== '/v1/analysis') {
                 res.writeHead(404);
                 res.end();
                 return;
             }
+            expectAuthenticatedServerRequest(req);
             let body = '';
             req.setEncoding('utf8');
             req.on('data', (chunk) => {
@@ -394,16 +511,17 @@ test.describe('TopSkip extension', () => {
             req.on('end', () => {
                 expect(JSON.parse(body)).toMatchObject({
                     videoId: 'e2eFixture1',
-                    algorithmVersion: 'server-v1',
+                    extensionVersion: '0.1.0',
                 });
+                expect(JSON.parse(body)).not.toHaveProperty('algorithmVersion');
                 res.writeHead(200, { 'content-type': 'application/json' });
                 res.end(
                     JSON.stringify({
                         status: 'ready',
                         videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
+                        algorithmVersion: 'server-v4',
                         source: 'server_cache',
-                        sourceResultId: 'result-e2eFixture1-server-v1',
+                        sourceResultId: 'result-e2eFixture1-server-v4',
                         freshness: { expiresAtMs: 4_102_444_800_000 },
                         promoBlocks: [
                             { startSec: 4, endSec: 24, confidence: 'high' },
@@ -509,7 +627,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('server processing job polls fixture completion and skips only future blocks', async () => {
-        const jobId = 'local-e2eFixture1-server-v1';
+        const jobId = 'local-e2eFixture1-server-v4';
         let terminalReady = false;
         let resolveRequestSeen: () => void = () => {};
         let resolveProcessingPollSeen: () => void = () => {};
@@ -526,9 +644,9 @@ test.describe('TopSkip extension', () => {
         const readyResponse = {
             status: 'ready',
             videoId: 'e2eFixture1',
-            algorithmVersion: 'server-v1',
+            algorithmVersion: 'server-v4',
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v1',
+            sourceResultId: 'result-e2eFixture1-server-v4',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: [
                 { startSec: 4, endSec: 24, confidence: 'high' },
@@ -536,7 +654,11 @@ test.describe('TopSkip extension', () => {
             ],
         };
         const backend = createServer((req, res) => {
+            if (handlePublicApiBootstrap(req, res)) {
+                return;
+            }
             if (req.method === 'POST' && req.url === '/v1/analysis') {
+                expectAuthenticatedServerRequest(req);
                 let body = '';
                 req.setEncoding('utf8');
                 req.on('data', (chunk) => {
@@ -545,8 +667,11 @@ test.describe('TopSkip extension', () => {
                 req.on('end', () => {
                     expect(JSON.parse(body)).toMatchObject({
                         videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
+                        extensionVersion: '0.1.0',
                     });
+                    expect(JSON.parse(body)).not.toHaveProperty(
+                        'algorithmVersion',
+                    );
                     res.writeHead(202, {
                         'content-type': 'application/json',
                     });
@@ -554,7 +679,7 @@ test.describe('TopSkip extension', () => {
                         JSON.stringify({
                             status: 'processing',
                             videoId: 'e2eFixture1',
-                            algorithmVersion: 'server-v1',
+                            algorithmVersion: 'server-v4',
                             jobId,
                             pollAfterSec: 1,
                         }),
@@ -568,6 +693,7 @@ test.describe('TopSkip extension', () => {
                 req.method === 'GET' &&
                 req.url === `/v1/analysis/jobs/${jobId}`
             ) {
+                expectAuthenticatedServerRequest(req);
                 if (terminalReady) {
                     res.writeHead(200, {
                         'content-type': 'application/json',
@@ -581,7 +707,7 @@ test.describe('TopSkip extension', () => {
                     JSON.stringify({
                         status: 'processing',
                         videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
+                        algorithmVersion: 'server-v4',
                         jobId,
                         pollAfterSec: 1,
                     }),
@@ -640,6 +766,25 @@ test.describe('TopSkip extension', () => {
             expect(completed.status).toBe(200);
             await readyPollSeen;
             await page.waitForTimeout(300);
+
+            const resultPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await page.bringToFront();
+            await expect(
+                resultPopup.getByText('2 promo blocks found'),
+            ).toBeVisible({ timeout: 10_000 });
+            await expect(
+                resultPopup.getByText('Server cache hit.', { exact: true }),
+            ).toHaveCount(0);
+            await expect(
+                resultPopup
+                    .getByTestId('popup-promo-timeline')
+                    .getByText('2:00', { exact: true }),
+            ).toBeVisible();
+            await resultPopup.close();
 
             await page.evaluate(async () => {
                 const video = document.querySelector('video');
@@ -710,20 +855,24 @@ test.describe('TopSkip extension', () => {
     });
 
     test('prefs update cancellation stops scheduled server status polling', async () => {
-        const jobId = 'local-e2eFixture1-server-v1';
+        const jobId = 'local-e2eFixture1-server-v4';
         let statusRequestCount = 0;
         let resolveRequestSeen: () => void = () => {};
         const requestSeen = new Promise<void>((resolve) => {
             resolveRequestSeen = resolve;
         });
         const backend = createServer((req, res) => {
+            if (handlePublicApiBootstrap(req, res)) {
+                return;
+            }
             if (req.method === 'POST' && req.url === '/v1/analysis') {
+                expectAuthenticatedServerRequest(req);
                 res.writeHead(202, { 'content-type': 'application/json' });
                 res.end(
                     JSON.stringify({
                         status: 'processing',
                         videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
+                        algorithmVersion: 'server-v4',
                         jobId,
                         pollAfterSec: 4,
                     }),
@@ -736,13 +885,14 @@ test.describe('TopSkip extension', () => {
                 req.method === 'GET' &&
                 req.url === `/v1/analysis/jobs/${jobId}`
             ) {
+                expectAuthenticatedServerRequest(req);
                 statusRequestCount += 1;
                 res.writeHead(202, { 'content-type': 'application/json' });
                 res.end(
                     JSON.stringify({
                         status: 'processing',
                         videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
+                        algorithmVersion: 'server-v4',
                         jobId,
                         pollAfterSec: 4,
                     }),
@@ -808,14 +958,18 @@ test.describe('TopSkip extension', () => {
         });
         const backend = createServer((req, res) => {
             backendRequests.push(`${req.method ?? 'UNKNOWN'} ${req.url ?? ''}`);
+            if (handlePublicApiBootstrap(req, res)) {
+                return;
+            }
             if (req.method === 'POST' && req.url === '/v1/analysis') {
+                expectAuthenticatedServerRequest(req);
                 res.writeHead(200, { 'content-type': 'application/json' });
                 res.end(
                     JSON.stringify({
                         status: 'no_promo',
                         videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v1',
-                        sourceResultId: 'result-e2eFixture1-server-v1',
+                        algorithmVersion: 'server-v4',
+                        sourceResultId: 'result-e2eFixture1-server-v4',
                         freshness: { expiresAtMs: 4_102_444_800_000 },
                     }),
                 );
@@ -907,7 +1061,11 @@ test.describe('TopSkip extension', () => {
                     );
                 }),
             ]);
-            expect(backendRequests).toEqual(['POST /v1/analysis']);
+            expect(backendRequests).toEqual([
+                'GET /v1/config',
+                'POST /v1/installations/register',
+                'POST /v1/analysis',
+            ]);
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();

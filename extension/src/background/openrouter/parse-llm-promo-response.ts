@@ -1,9 +1,9 @@
 import { parse, ValiError } from 'valibot';
 
 import { extractMessageFromValiError } from '@/shared/valibot';
-import { llmPromoDetectionSchema } from '@/shared/openrouter-llm-schema';
-import type { PromoBlock } from '@/shared/promo-types';
-import { sortAndDedupePromoBlocks } from '@/shared/promo-dedupe';
+import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
+import type { PromoBlock } from '@topskip/common/promo-types';
+import { sortAndDedupePromoBlocks } from '@topskip/common/promo-dedupe';
 
 /**
  * Strips optional markdown code fences from model output.

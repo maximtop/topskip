@@ -1,0 +1,14 @@
+node_modules/
+dist/
+deployment-dist/
+.DS_Store
+*.log
+coverage/
+playwright-report/
+test-results/
+tmp/
+.topskip-data/
+.tools/
+.env
+.env.local
+/deploy/production.env

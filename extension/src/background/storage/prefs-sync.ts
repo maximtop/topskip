@@ -1,5 +1,6 @@
 import * as v from 'valibot';
 
+import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
 import browser from '@/shared/browser';
 import {
     ANALYSIS_MODE,
@@ -206,6 +207,7 @@ export class PrefsSyncStorage {
      * @returns A promise that resolves when defaults are ensured.
      */
     private static async ensureInitialized(): Promise<void> {
+        await BackgroundStorageAccess.ready();
         const result = await browser.storage.local.get(STORAGE_KEY_PREFS);
         const raw = result[STORAGE_KEY_PREFS];
         if (raw === undefined) {

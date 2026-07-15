@@ -1,5 +1,5 @@
 import { MS_PER_SECOND } from '@/shared/constants';
-import type { CaptionSegment } from '@/shared/caption-types';
+import type { CaptionSegment } from '@topskip/common/caption-types';
 
 import { isPlayerRecord } from '@/shared/captions/player-json';
 

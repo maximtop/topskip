@@ -1,4 +1,4 @@
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import type { ProviderId } from '@/shared/providers';
 export { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';

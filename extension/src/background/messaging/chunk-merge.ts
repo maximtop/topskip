@@ -1,4 +1,4 @@
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
 
 /**
  * Chunk-local promo block filtering before cross-chunk merge; static API only.

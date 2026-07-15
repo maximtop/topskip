@@ -1,0 +1,513 @@
+openapi: 3.1.0
+info:
+    title: TopSkip public analysis API
+    version: 1.0.0
+    description: >-
+        Stable v1 boundary used by the Chrome extension. The backend owns the
+        active analysis algorithm version; an optional request-side version is
+        accepted only for compatibility with older clients. Clients ignore
+        additive response fields while every request remains strictly validated.
+servers:
+    - url: https://topskip.maximtop.dev
+paths:
+    /v1/health:
+        get:
+            operationId: getHealth
+            responses:
+                '200':
+                    description: Minimal liveness response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/Health'
+    /v1/config:
+        get:
+            operationId: getServerConfig
+            responses:
+                '200':
+                    description: Public compatibility and support metadata.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ServerConfig'
+    /v1/installations/register:
+        post:
+            operationId: registerInstallation
+            parameters:
+                - $ref: '#/components/parameters/CapabilitiesHeader'
+            responses:
+                '201':
+                    description: A new anonymous 90-day installation credential.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/InstallationRegistration'
+                '429':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '500':
+                    $ref: '#/components/responses/NegotiatedFailure'
+    /v1/analysis:
+        post:
+            operationId: startOrJoinAnalysis
+            parameters:
+                - $ref: '#/components/parameters/CapabilitiesHeader'
+            security:
+                - installationToken: []
+            requestBody:
+                required: true
+                content:
+                    application/json:
+                        schema:
+                            $ref: '#/components/schemas/AnalysisRequest'
+            responses:
+                '200':
+                    description: A cache hit or terminal analysis response.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TerminalAnalysisResponse'
+                '202':
+                    description: New or joined in-memory analysis job.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProcessingResponse'
+                '400':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '401':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '413':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '422':
+                    description: Advisory or authoritative video limit failure.
+                    content:
+                        application/json:
+                            schema:
+                                oneOf:
+                                    - $ref: '#/components/schemas/UnavailableResponse'
+                                    - $ref: '#/components/schemas/LegacyUnavailableResponse'
+                '426':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '429':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '503':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '500':
+                    $ref: '#/components/responses/NegotiatedFailure'
+    /v1/analysis/jobs/{jobId}:
+        get:
+            operationId: getAnalysisJob
+            security:
+                - installationToken: []
+            parameters:
+                - name: jobId
+                  in: path
+                  required: true
+                  schema:
+                      type: string
+                      minLength: 1
+                      maxLength: 160
+                - $ref: '#/components/parameters/CapabilitiesHeader'
+            responses:
+                '200':
+                    description: Terminal job state.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/TerminalAnalysisResponse'
+                '202':
+                    description: Job remains active; poll again after `pollAfterSec`.
+                    content:
+                        application/json:
+                            schema:
+                                $ref: '#/components/schemas/ProcessingResponse'
+                '401':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '404':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '429':
+                    $ref: '#/components/responses/NegotiatedFailure'
+                '500':
+                    $ref: '#/components/responses/NegotiatedFailure'
+components:
+    parameters:
+        CapabilitiesHeader:
+            name: X-TopSkip-Capabilities
+            in: header
+            required: false
+            description: >-
+                Comma-separated request-scoped capabilities. Use
+                typed-server-errors-v1 to receive message-free typed failures
+                before authentication or request-body validation. A valid
+                AnalysisRequest body may also negotiate that capability for
+                its own response.
+            style: simple
+            explode: false
+            schema:
+                type: array
+                maxItems: 16
+                uniqueItems: true
+                items:
+                    $ref: '#/components/schemas/Capability'
+    securitySchemes:
+        installationToken:
+            type: http
+            scheme: bearer
+            bearerFormat: opaque installation token
+    responses:
+        NegotiatedFailure:
+            description: >-
+                Request-scoped failure. Clients that send
+                typed-server-errors-v1 receive a message-free typed shape;
+                older clients receive one of the bounded legacy envelopes.
+            headers:
+                Retry-After:
+                    schema:
+                        type: integer
+                        minimum: 1
+            content:
+                application/json:
+                    schema:
+                        oneOf:
+                            - $ref: '#/components/schemas/ErrorResponse'
+                            - $ref: '#/components/schemas/RateLimitedResponse'
+                            - $ref: '#/components/schemas/LegacyRequestErrorResponse'
+                            - $ref: '#/components/schemas/LegacyRateLimitedResponse'
+    schemas:
+        Health:
+            type: object
+            additionalProperties: false
+            required: [ok]
+            properties:
+                ok:
+                    const: true
+        InstallationRegistration:
+            type: object
+            required: [status, token, expiresAtMs]
+            properties:
+                status:
+                    const: registered
+                token:
+                    type: string
+                    minLength: 32
+                    maxLength: 128
+                expiresAtMs:
+                    type: integer
+                    minimum: 1
+        ExtensionVersion:
+            type: string
+            maxLength: 32
+            pattern: '^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$'
+            description: Each numeric component is additionally bounded to 65535.
+        Capability:
+            type: string
+            minLength: 1
+            maxLength: 64
+        ServerConfig:
+            type: object
+            required:
+                - apiVersion
+                - algorithmVersion
+                - supportedCapabilities
+                - supportIssueBaseUrl
+            properties:
+                apiVersion:
+                    const: 1
+                algorithmVersion:
+                    type: string
+                    minLength: 1
+                supportedCapabilities:
+                    type: array
+                    maxItems: 16
+                    uniqueItems: true
+                    items:
+                        $ref: '#/components/schemas/Capability'
+                minimumExtensionVersion:
+                    $ref: '#/components/schemas/ExtensionVersion'
+                supportIssueBaseUrl:
+                    type: string
+                    format: uri
+                    pattern: '^https://github\\.com/[^/?#]+/[^/?#]+/issues/new/?$'
+        AnalysisRequest:
+            type: object
+            additionalProperties: false
+            required: [videoId, extensionVersion, client]
+            properties:
+                videoId:
+                    type: string
+                    pattern: '^[A-Za-z0-9_-]{11}$'
+                durationSec:
+                    type: number
+                    exclusiveMinimum: 0
+                extensionVersion:
+                    $ref: '#/components/schemas/ExtensionVersion'
+                algorithmVersion:
+                    type: string
+                    minLength: 1
+                    deprecated: true
+                    description: Accepted and ignored by the server.
+                client:
+                    type: object
+                    additionalProperties: false
+                    required: [source, capabilities]
+                    properties:
+                        source:
+                            const: chrome-extension
+                        capabilities:
+                            type: array
+                            maxItems: 16
+                            uniqueItems: true
+                            items:
+                                $ref: '#/components/schemas/Capability'
+        ProcessingResponse:
+            type: object
+            required:
+                - status
+                - videoId
+                - algorithmVersion
+                - jobId
+                - pollAfterSec
+            properties:
+                status:
+                    const: processing
+                videoId:
+                    type: string
+                algorithmVersion:
+                    type: string
+                jobId:
+                    type: string
+                pollAfterSec:
+                    type: integer
+                    minimum: 1
+        PromoBlock:
+            type: object
+            required: [startSec]
+            properties:
+                startSec:
+                    type: number
+                    minimum: 0
+                endSec:
+                    type: number
+                    minimum: 0
+                confidence:
+                    enum: [low, medium, high]
+        Freshness:
+            type: object
+            required: [expiresAtMs]
+            properties:
+                expiresAtMs:
+                    type: integer
+                    minimum: 1
+        ReadyResponse:
+            type: object
+            required:
+                - status
+                - videoId
+                - algorithmVersion
+                - source
+                - sourceResultId
+                - freshness
+                - promoBlocks
+            properties:
+                status:
+                    const: ready
+                videoId:
+                    type: string
+                algorithmVersion:
+                    type: string
+                source:
+                    const: server_cache
+                sourceResultId:
+                    type: string
+                freshness:
+                    $ref: '#/components/schemas/Freshness'
+                promoBlocks:
+                    type: array
+                    minItems: 1
+                    items:
+                        $ref: '#/components/schemas/PromoBlock'
+        NoPromoResponse:
+            type: object
+            required:
+                - status
+                - videoId
+                - algorithmVersion
+                - sourceResultId
+                - freshness
+            properties:
+                status:
+                    const: no_promo
+                videoId:
+                    type: string
+                algorithmVersion:
+                    type: string
+                sourceResultId:
+                    type: string
+                freshness:
+                    $ref: '#/components/schemas/Freshness'
+        Failure:
+            type: object
+            additionalProperties: false
+            required: [code]
+            properties:
+                code:
+                    type: string
+                    enum:
+                        - video_unavailable
+                        - captions_unavailable
+                        - video_too_long
+                        - too_many_caption_segments
+                        - transcript_too_large
+                        - subtitle_response_too_large
+                        - rate_limited
+                        - capacity_limited
+                        - budget_exhausted
+                        - invalid_request
+                        - caption_extraction_failed
+                        - model_provider_error
+                        - invalid_model_response
+                        - unsafe_model_blocks
+                        - internal_error
+                        - invalid_server_response
+                        - client_upgrade_required
+                        - invalid_video_id
+                        - request_body_too_large
+                        - token_missing
+                        - token_invalid
+                        - token_expired
+                        - job_not_found
+                        - service_unavailable
+                supportId:
+                    type: string
+                    maxLength: 80
+                retryAfterSec:
+                    type: integer
+                    minimum: 1
+        UnavailableResponse:
+            type: object
+            required: [status, videoId, algorithmVersion, error]
+            properties:
+                status:
+                    const: unavailable
+                videoId:
+                    type: string
+                algorithmVersion:
+                    type: string
+                error:
+                    $ref: '#/components/schemas/Failure'
+        ErrorResponse:
+            type: object
+            required: [status, algorithmVersion, error]
+            properties:
+                status:
+                    const: error
+                videoId:
+                    type: string
+                algorithmVersion:
+                    type: string
+                error:
+                    $ref: '#/components/schemas/Failure'
+        RateLimitedResponse:
+            type: object
+            required: [status, algorithmVersion, error]
+            properties:
+                status:
+                    const: rate_limited
+                algorithmVersion:
+                    type: string
+                error:
+                    allOf:
+                        - $ref: '#/components/schemas/Failure'
+                        - type: object
+                          required: [retryAfterSec]
+        LegacyRequestErrorResponse:
+            type: object
+            additionalProperties: false
+            required: [status, error]
+            properties:
+                status:
+                    const: invalid_request
+                error:
+                    type: object
+                    additionalProperties: false
+                    required: [code, message]
+                    properties:
+                        code:
+                            enum:
+                                - invalid_video_id
+                                - invalid_request
+                                - request_body_too_large
+                                - job_not_found
+                        message:
+                            type: string
+        LegacyRateLimitedResponse:
+            type: object
+            additionalProperties: false
+            required: [status, retryAfterSec, error]
+            properties:
+                status:
+                    const: rate_limited
+                retryAfterSec:
+                    type: integer
+                    minimum: 1
+                error:
+                    type: object
+                    additionalProperties: false
+                    required: [code, message]
+                    properties:
+                        code:
+                            const: rate_limited
+                        message:
+                            type: string
+        LegacyUnavailableResponse:
+            type: object
+            additionalProperties: false
+            required:
+                - status
+                - videoId
+                - algorithmVersion
+                - reason
+                - message
+            properties:
+                status:
+                    const: unavailable
+                videoId:
+                    type: string
+                algorithmVersion:
+                    type: string
+                reason:
+                    enum: [fixture_unavailable, caption_extraction_failed]
+                message:
+                    type: string
+        LegacyTerminalErrorResponse:
+            type: object
+            additionalProperties: false
+            required: [status, videoId, algorithmVersion, error]
+            properties:
+                status:
+                    const: error
+                videoId:
+                    type: string
+                algorithmVersion:
+                    type: string
+                error:
+                    type: object
+                    additionalProperties: false
+                    required: [code, message]
+                    properties:
+                        code:
+                            enum:
+                                - fixture_error
+                                - invalid_model_response
+                                - unsafe_model_blocks
+                                - model_provider_error
+                        message:
+                            type: string
+        TerminalAnalysisResponse:
+            oneOf:
+                - $ref: '#/components/schemas/ReadyResponse'
+                - $ref: '#/components/schemas/NoPromoResponse'
+                - $ref: '#/components/schemas/UnavailableResponse'
+                - $ref: '#/components/schemas/ErrorResponse'
+                - $ref: '#/components/schemas/LegacyUnavailableResponse'
+                - $ref: '#/components/schemas/LegacyTerminalErrorResponse'

@@ -76,8 +76,8 @@
         "description": "Popup title shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_description": {
-        "message": "TopSkip asked the local backend to analyze this video.",
-        "description": "Popup description shown while the local backend is processing a video."
+        "message": "TopSkip asked the server to analyze this video.",
+        "description": "Popup description shown while the TopSkip server is processing a video."
     },
     "popup_detection_server_pending_headline": {
         "message": "Server analysis is in progress.",
@@ -93,10 +93,10 @@
     },
     "popup_detection_server_error_title": {
         "message": "Server analysis unavailable",
-        "description": "Popup title shown when the local backend request fails."
+        "description": "Popup title shown when the TopSkip server request fails."
     },
     "popup_detection_server_error_description": {
-        "message": "TopSkip could not use the local backend for this video.",
+        "message": "TopSkip could not use the server for this video.",
         "description": "Popup description shown when server analysis cannot run."
     },
     "popup_detection_server_error_headline": {
@@ -104,7 +104,7 @@
         "description": "Fallback popup headline shown when no specific server error is available."
     },
     "popup_detection_server_error_body": {
-        "message": "The local TopSkip backend did not return a usable response. Playback continues without server-detected skips.",
+        "message": "The TopSkip server did not return a usable response. Playback continues without server-detected skips.",
         "description": "Popup body shown for server request failures."
     },
     "popup_detection_server_cache_badge": {
@@ -116,7 +116,7 @@
         "description": "Popup title shown when the TopSkip backend returns cached promo blocks."
     },
     "popup_detection_server_cache_description": {
-        "message": "TopSkip received cached promo blocks from the local backend.",
+        "message": "TopSkip received cached promo blocks from the server.",
         "description": "Popup description shown for a server cache-hit response."
     },
     "popup_detection_server_cache_headline": {
@@ -132,7 +132,7 @@
         "description": "Popup title shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_description": {
-        "message": "TopSkip checked the local backend result for this video.",
+        "message": "TopSkip checked the server result for this video.",
         "description": "Popup description shown when a server terminal no-promo result is available."
     },
     "popup_detection_server_no_promo_headline": {
@@ -152,7 +152,7 @@
         "description": "Popup title shown when server analysis reaches an unavailable terminal state."
     },
     "popup_detection_server_unavailable_description": {
-        "message": "The local backend could not produce a result for this video.",
+        "message": "The TopSkip server could not produce a result for this video.",
         "description": "Popup description shown when server analysis cannot produce a result."
     },
     "popup_detection_server_unavailable_headline": {
@@ -370,5 +370,81 @@
     "popup_byok_setup_body": {
         "message": "Analysis stays with your configured provider and is not shared with TopSkip.",
         "description": "Popup privacy reminder for an unconfigured Private BYOK route."
+    },
+    "popup_server_limitation_title": {
+        "message": "This video could not be analyzed",
+        "description": "Popup title for a server analysis limitation specific to the video."
+    },
+    "popup_server_limitation_description": {
+        "message": "Your TopSkip settings are working.",
+        "description": "Popup reassurance for video-specific server limitations."
+    },
+    "popup_server_limitation_headline": {
+        "message": "TopSkip could not process this video.",
+        "description": "Popup headline for video-specific server limitations."
+    },
+    "popup_server_limitation_body": {
+        "message": "Playback continues without server-detected skips.",
+        "description": "Popup body for video-specific server limitations."
+    },
+    "popup_server_temporary_title": {
+        "message": "TopSkip Server is temporarily busy",
+        "description": "Popup title for temporary server capacity failures."
+    },
+    "popup_server_temporary_description": {
+        "message": "Your settings are working. Try again later.",
+        "description": "Popup reassurance for temporary server capacity failures."
+    },
+    "popup_server_temporary_headline": {
+        "message": "Server capacity is temporarily unavailable.",
+        "description": "Popup headline for temporary server capacity failures."
+    },
+    "popup_server_temporary_body": {
+        "message": "Try this video again later.",
+        "description": "Popup body when the server does not provide a retry time."
+    },
+    "popup_server_temporary_retry": {
+        "message": "Try again in %seconds% seconds.",
+        "description": "Popup retry guidance. %seconds% is replaced with the server retry delay."
+    },
+    "popup_server_failure_title": {
+        "message": "TopSkip Server error",
+        "description": "Popup title for a reportable TopSkip server failure."
+    },
+    "popup_server_failure_description": {
+        "message": "The problem is on the TopSkip server, not in your settings.",
+        "description": "Popup reassurance for a reportable server failure."
+    },
+    "popup_server_failure_headline": {
+        "message": "The server could not analyze this video.",
+        "description": "Popup headline for a reportable TopSkip server failure."
+    },
+    "popup_server_failure_body": {
+        "message": "Playback continues normally. You can report this error on GitHub.",
+        "description": "Popup body for a reportable TopSkip server failure."
+    },
+    "popup_server_upgrade_title": {
+        "message": "Update TopSkip",
+        "description": "Popup title when the server requires a newer extension."
+    },
+    "popup_server_upgrade_description": {
+        "message": "This server version requires a newer extension.",
+        "description": "Popup description when the server requires a newer extension."
+    },
+    "popup_server_upgrade_headline": {
+        "message": "An extension update is required.",
+        "description": "Popup headline when the server requires a newer extension."
+    },
+    "popup_server_upgrade_body": {
+        "message": "Update TopSkip and try this video again.",
+        "description": "Popup body when the server requires a newer extension."
+    },
+    "popup_server_report_primary": {
+        "message": "Report on GitHub",
+        "description": "Primary popup button for a reportable server failure."
+    },
+    "popup_server_report_secondary": {
+        "message": "Report if this seems wrong",
+        "description": "Secondary popup button for a possibly incorrect video limitation."
     }
 }

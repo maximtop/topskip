@@ -4,14 +4,17 @@ import {
     ActionIcon,
     Badge,
     Box,
+    Button,
     Group,
     Paper,
+    Skeleton,
     Stack,
     Switch,
     Text,
 } from '@mantine/core';
 
 import { PreferencesStore } from '@/popup/preferences-store';
+import { DetectionRefreshGuard } from '@/popup/detection-refresh-guard';
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
 import {
@@ -20,7 +23,10 @@ import {
     type ProviderAvailabilityMessage,
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
-import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
+import type {
+    PromoBlock,
+    PromoDetectionStatus,
+} from '@topskip/common/promo-types';
 import {
     formatPromoBlocksSummary,
     formatSecondsAsTimecode,
@@ -35,6 +41,13 @@ import {
     PERCENT_SCALE,
     type AnalysisMode,
 } from '@/shared/constants';
+import {
+    SERVER_FAILURE_CATEGORY,
+    SERVER_FAILURE_REPORT_ACTION,
+    classifyServerFailure,
+    getServerFailureReportAction,
+    type ServerFailureReportAction,
+} from '@/shared/server-analysis-failure';
 import { PROVIDER_ID } from '@/shared/providers';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import {
@@ -194,6 +207,8 @@ type PopupStatusViewModel = {
     statusBody: string | null;
     settingsLabel: string;
     providerLabel: string;
+    reportAction?: ServerFailureReportAction;
+    reportLabel?: string;
 };
 
 /**
@@ -217,6 +232,116 @@ type PopupViewModelArgs = {
     modelDisplayName: string;
     chromeModelAvailability: ProviderAvailabilityMessage | null;
 };
+
+/**
+ * Builds localized public-server failure copy from stable codes only.
+ *
+ * @param input - Typed failure state and provider label used by the popup.
+ * @returns Safe popup view model without raw backend text.
+ */
+function buildServerFailureViewModel(input: {
+    state: PromoDetectionStatePayload;
+    providerLabel: string;
+}): PopupStatusViewModel {
+    const failure = input.state.serverFailure;
+    if (failure === undefined) {
+        throw new Error('Expected typed server failure.');
+    }
+    const category = classifyServerFailure(failure.code);
+    const reportAction = getServerFailureReportAction(failure.code);
+    const settingsLabel = translator.getMessage('popup_open_settings');
+    const reportState =
+        reportAction === SERVER_FAILURE_REPORT_ACTION.None
+            ? {}
+            : {
+                  reportAction,
+                  reportLabel: translator.getMessage(
+                      reportAction === SERVER_FAILURE_REPORT_ACTION.Primary
+                          ? 'popup_server_report_primary'
+                          : 'popup_server_report_secondary',
+                  ),
+              };
+
+    if (category === SERVER_FAILURE_CATEGORY.VideoLimitation) {
+        return {
+            tone: 'warning',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_unavailable_badge',
+            ),
+            badgeColor: 'warning',
+            title: translator.getMessage('popup_server_limitation_title'),
+            description: translator.getMessage(
+                'popup_server_limitation_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            statusHeadline: translator.getMessage(
+                'popup_server_limitation_headline',
+            ),
+            statusBody: translator.getMessage('popup_server_limitation_body'),
+            settingsLabel,
+            providerLabel: input.providerLabel,
+            ...reportState,
+        };
+    }
+    if (category === SERVER_FAILURE_CATEGORY.TemporaryCapacity) {
+        return {
+            tone: 'warning',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_unavailable_badge',
+            ),
+            badgeColor: 'warning',
+            title: translator.getMessage('popup_server_temporary_title'),
+            description: translator.getMessage(
+                'popup_server_temporary_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            statusHeadline: translator.getMessage(
+                'popup_server_temporary_headline',
+            ),
+            statusBody:
+                failure.retryAfterSec === undefined
+                    ? translator.getMessage('popup_server_temporary_body')
+                    : translator.getMessage('popup_server_temporary_retry', {
+                          seconds: String(failure.retryAfterSec),
+                      }),
+            settingsLabel,
+            providerLabel: input.providerLabel,
+        };
+    }
+    if (category === SERVER_FAILURE_CATEGORY.UpgradeRequired) {
+        return {
+            tone: 'warning',
+            badgeLabel: translator.getMessage(
+                'popup_detection_server_unavailable_badge',
+            ),
+            badgeColor: 'warning',
+            title: translator.getMessage('popup_server_upgrade_title'),
+            description: translator.getMessage(
+                'popup_server_upgrade_description',
+            ),
+            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            statusHeadline: translator.getMessage(
+                'popup_server_upgrade_headline',
+            ),
+            statusBody: translator.getMessage('popup_server_upgrade_body'),
+            settingsLabel,
+            providerLabel: input.providerLabel,
+        };
+    }
+    return {
+        tone: 'danger',
+        badgeLabel: translator.getMessage('popup_detection_server_error_badge'),
+        badgeColor: 'error',
+        title: translator.getMessage('popup_server_failure_title'),
+        description: translator.getMessage('popup_server_failure_description'),
+        activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+        statusHeadline: translator.getMessage('popup_server_failure_headline'),
+        statusBody: translator.getMessage('popup_server_failure_body'),
+        settingsLabel,
+        providerLabel: input.providerLabel,
+        ...reportState,
+    };
+}
 
 /**
  * Builds the view-model that drives the popup's UI,
@@ -295,6 +420,16 @@ function buildPopupStatusViewModel(
             settingsLabel: 'Open settings',
             providerLabel,
         };
+    }
+
+    if (
+        detectionState.source === 'server' &&
+        detectionState.serverFailure !== undefined
+    ) {
+        return buildServerFailureViewModel({
+            state: detectionState,
+            providerLabel,
+        });
     }
 
     if (
@@ -660,30 +795,33 @@ export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
 /**
  * Renders a visual timeline bar of detected promo blocks.
  *
- * @param props - Contains the blocks to display.
- * @returns The timeline element, or null when empty.
+ * @param props - Contains the blocks and authoritative video duration.
+ * @returns The timeline element, or null without safe scale metadata.
  */
 function PromoTimeline({
     blocks,
+    durationSec,
 }: {
     blocks: readonly PromoBlock[];
+    durationSec?: number;
 }): ReactElement | null {
-    if (blocks.length === 0) {
+    if (
+        blocks.length === 0 ||
+        durationSec === undefined ||
+        !Number.isFinite(durationSec) ||
+        durationSec <= 0
+    ) {
         return null;
     }
 
-    const maxEnd = blocks.reduce((max, block) => {
-        return Math.max(max, getPromoBlockEndSec(block));
-    }, 60);
-
     return (
-        <Stack gap={6} mt="sm">
+        <Stack data-testid="popup-promo-timeline" gap={6} mt="sm">
             <Group justify="space-between" wrap="nowrap">
                 <Text size="xs" c="dimmed">
                     0:00
                 </Text>
                 <Text size="xs" c="dimmed">
-                    {formatSecondsAsTimecode(maxEnd)}
+                    {formatSecondsAsTimecode(durationSec)}
                 </Text>
             </Group>
             <Box
@@ -701,13 +839,20 @@ function PromoTimeline({
                 }}
             >
                 {blocks.map((block, index) => {
-                    const end = getPromoBlockEndSec(block);
-                    const left = `${(block.startSec / maxEnd) * PERCENT_SCALE}%`;
-                    const barSpan = Math.max(
-                        end - block.startSec,
-                        MIN_PROMO_BLOCK_WIDTH_SEC,
+                    const start = Math.max(
+                        0,
+                        Math.min(block.startSec, durationSec),
                     );
-                    const width = `${(barSpan / maxEnd) * PERCENT_SCALE}%`;
+                    const end = Math.max(
+                        start,
+                        Math.min(getPromoBlockEndSec(block), durationSec),
+                    );
+                    const left = `${(start / durationSec) * PERCENT_SCALE}%`;
+                    const barSpan = Math.min(
+                        Math.max(end - start, MIN_PROMO_BLOCK_WIDTH_SEC),
+                        durationSec - start,
+                    );
+                    const width = `${(barSpan / durationSec) * PERCENT_SCALE}%`;
                     return (
                         <Box
                             key={`${block.startSec}-${end}-${index}`}
@@ -742,6 +887,7 @@ export const PopupApp = observer(function PopupApp() {
     const [detectionState, setDetectionState] =
         useState<PromoDetectionStatePayload | null>(null);
     const [detectionError, setDetectionError] = useState<string | null>(null);
+    const [detectionLoaded, setDetectionLoaded] = useState(false);
 
     useEffect(() => {
         void store.load().then(
@@ -760,33 +906,61 @@ export const PopupApp = observer(function PopupApp() {
 
     useEffect(() => {
         let cancelled = false;
+        const detectionRefreshGuard = new DetectionRefreshGuard();
 
-        const refreshDetection = async (): Promise<void> => {
+        const handleRefreshCompletion = (applyCompletion: () => void): void => {
+            const completion = detectionRefreshGuard.completeRefresh();
+            if (cancelled) {
+                return;
+            }
+            if (completion.applyCompletion) {
+                applyCompletion();
+            }
+            if (completion.runFollowUp) {
+                void runDetectionRefresh();
+            }
+        };
+
+        const runDetectionRefresh = async (): Promise<void> => {
             try {
                 const res: unknown = await browser.runtime.sendMessage({
                     type: TOPSKIP_MESSAGE.GET_DETECTION_STATUS,
                 });
-                if (cancelled) {
-                    return;
-                }
-                if (!isGetDetectionOk(res)) {
-                    setDetectionState(null);
-                    setDetectionError('Could not load detection status.');
-                    return;
-                }
-                setDetectionError(null);
-                setDetectionState(res.state);
+                handleRefreshCompletion(() => {
+                    if (!isGetDetectionOk(res)) {
+                        if (detectionRefreshGuard.shouldSurfaceFailure()) {
+                            setDetectionLoaded(true);
+                            setDetectionError(
+                                'Could not load detection status.',
+                            );
+                        }
+                        return;
+                    }
+                    detectionRefreshGuard.markSuccessfulSnapshot();
+                    setDetectionLoaded(true);
+                    setDetectionError(null);
+                    setDetectionState(res.state);
+                });
             } catch (e) {
-                if (!cancelled) {
-                    setDetectionState(null);
-                    setDetectionError(getErrorMessage(e));
-                }
+                handleRefreshCompletion(() => {
+                    if (detectionRefreshGuard.shouldSurfaceFailure()) {
+                        setDetectionLoaded(true);
+                        setDetectionError(getErrorMessage(e));
+                    }
+                });
             }
         };
 
-        void refreshDetection();
+        const refreshDetection = (): void => {
+            if (!detectionRefreshGuard.requestRefresh()) {
+                return;
+            }
+            void runDetectionRefresh();
+        };
+
+        refreshDetection();
         const id = window.setInterval(() => {
-            void refreshDetection();
+            refreshDetection();
         }, POPUP_DETECTION_POLL_INTERVAL_MS);
 
         const onRuntimeMessage = (message: unknown): void => {
@@ -796,7 +970,7 @@ export const PopupApp = observer(function PopupApp() {
                 Reflect.get(message, 'type') ===
                     TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED
             ) {
-                void refreshDetection();
+                refreshDetection();
             }
         };
         browser.runtime.onMessage.addListener(onRuntimeMessage);
@@ -824,6 +998,11 @@ export const PopupApp = observer(function PopupApp() {
         detectionState.promoBlocks !== undefined
             ? detectionState.promoBlocks
             : [];
+    const hasDetectedBlocks = detectedBlocks.length > 0;
+    const blocksStatusHeading =
+        detectionState === null
+            ? view.title
+            : detectionLabel(detectionState.status);
     const toneStyle = POPUP_TONE_STYLES[view.tone];
 
     return (
@@ -900,52 +1079,70 @@ export const PopupApp = observer(function PopupApp() {
                     py={14}
                     style={{ background: toneStyle.surface }}
                 >
-                    <Box
-                        aria-hidden="true"
-                        style={{
-                            width: '1.125rem',
-                            height: '1.125rem',
-                            borderRadius: '999px',
-                            background: toneStyle.icon,
-                            color: toneStyle.iconText,
-                            display: 'grid',
-                            placeItems: 'center',
-                            flex: '0 0 auto',
-                            fontWeight: 900,
-                        }}
-                    >
-                        {view.tone === 'danger' ? (
-                            '!'
-                        ) : view.tone === 'paused' ? (
-                            'i'
-                        ) : view.tone === 'warning' ? (
-                            'i'
-                        ) : (
-                            <CheckIcon size={12} color={toneStyle.iconText} />
-                        )}
-                    </Box>
-                    <Stack gap={3} style={{ minWidth: 0 }}>
-                        <Text size="sm" fw={700} c={toneStyle.title}>
-                            {view.title}
-                        </Text>
-                        <Text size="xs" c="#64748b">
-                            {view.description}
-                        </Text>
-                        <Group gap={6} wrap="nowrap">
+                    {detectionLoaded ? (
+                        <>
                             <Box
                                 aria-hidden="true"
                                 style={{
-                                    width: '0.35rem',
-                                    height: '0.35rem',
+                                    width: '1.125rem',
+                                    height: '1.125rem',
                                     borderRadius: '999px',
-                                    background: toneStyle.dot,
+                                    background: toneStyle.icon,
+                                    color: toneStyle.iconText,
+                                    display: 'grid',
+                                    placeItems: 'center',
+                                    flex: '0 0 auto',
+                                    fontWeight: 900,
                                 }}
-                            />
-                            <Text size="xs" c="#334155">
-                                {view.activityLabel}
-                            </Text>
-                        </Group>
-                    </Stack>
+                            >
+                                {view.tone === 'danger' ? (
+                                    '!'
+                                ) : view.tone === 'paused' ? (
+                                    'i'
+                                ) : view.tone === 'warning' ? (
+                                    'i'
+                                ) : (
+                                    <CheckIcon
+                                        size={12}
+                                        color={toneStyle.iconText}
+                                    />
+                                )}
+                            </Box>
+                            <Stack gap={3} style={{ minWidth: 0 }}>
+                                <Text size="sm" fw={700} c={toneStyle.title}>
+                                    {view.title}
+                                </Text>
+                                <Text size="xs" c="#64748b">
+                                    {view.description}
+                                </Text>
+                                <Group gap={6} wrap="nowrap">
+                                    <Box
+                                        aria-hidden="true"
+                                        style={{
+                                            width: '0.35rem',
+                                            height: '0.35rem',
+                                            borderRadius: '999px',
+                                            background: toneStyle.dot,
+                                        }}
+                                    />
+                                    <Text size="xs" c="#334155">
+                                        {view.activityLabel}
+                                    </Text>
+                                </Group>
+                            </Stack>
+                        </>
+                    ) : (
+                        <Stack
+                            data-testid="popup-detection-loading"
+                            aria-busy="true"
+                            gap={7}
+                            style={{ flex: 1 }}
+                        >
+                            <Skeleton height={14} width="55%" radius="xl" />
+                            <Skeleton height={10} width="90%" radius="xl" />
+                            <Skeleton height={10} width="70%" radius="xl" />
+                        </Stack>
+                    )}
                 </Group>
             </Paper>
 
@@ -1007,45 +1204,92 @@ export const PopupApp = observer(function PopupApp() {
                     borderBottom: `1px solid ${POPUP_SLATE_BORDER}`,
                 }}
             >
-                <div role="status" aria-live="polite">
-                    <Group justify="space-between" wrap="nowrap" gap="sm">
-                        <Stack gap={2} style={{ minWidth: 0 }}>
-                            <Group gap="xs" wrap="nowrap">
-                                <PromoBlocksIcon size={16} color="#475569" />
-                                <Text fw={700} size="sm">
-                                    Promo blocks detected
+                {!detectionLoaded ? (
+                    <Stack
+                        data-testid="popup-blocks-loading"
+                        role="status"
+                        aria-busy="true"
+                        gap={8}
+                    >
+                        <Skeleton height={14} width="60%" radius="xl" />
+                        <Skeleton height={10} width="85%" radius="xl" />
+                    </Stack>
+                ) : (
+                    <div role="status" aria-live="polite">
+                        <Group justify="space-between" wrap="nowrap" gap="sm">
+                            <Stack gap={2} style={{ minWidth: 0 }}>
+                                <Group gap="xs" wrap="nowrap">
+                                    <PromoBlocksIcon
+                                        size={16}
+                                        color="#475569"
+                                    />
+                                    <Text fw={700} size="sm">
+                                        {hasDetectedBlocks
+                                            ? translator.getMessage(
+                                                  'popup_detection_detected',
+                                              )
+                                            : blocksStatusHeading}
+                                    </Text>
+                                </Group>
+                                <Text size="xs" c="dimmed">
+                                    {view.statusHeadline}
                                 </Text>
-                            </Group>
-                            <Text size="xs" c="dimmed">
-                                {view.statusHeadline}
+                            </Stack>
+                            <Badge
+                                color="blue"
+                                variant="light"
+                                style={{
+                                    flex: '0 0 auto',
+                                    textTransform: 'none',
+                                }}
+                            >
+                                {hasDetectedBlocks
+                                    ? `${detectedBlocks.length} ${
+                                          detectedBlocks.length === 1
+                                              ? 'block'
+                                              : 'blocks'
+                                      }`
+                                    : view.badgeLabel}
+                            </Badge>
+                        </Group>
+                        {view.statusBody !== null ? (
+                            <Text
+                                size="xs"
+                                c="dimmed"
+                                mt={4}
+                                style={{ whiteSpace: 'pre-line' }}
+                            >
+                                {view.statusBody}
                             </Text>
-                        </Stack>
-                        <Badge
-                            color="blue"
-                            variant="light"
-                            style={{
-                                flex: '0 0 auto',
-                                textTransform: 'none',
-                            }}
-                        >
-                            {`${detectedBlocks.length} ${
-                                detectedBlocks.length === 1 ? 'block' : 'blocks'
-                            }`}
-                        </Badge>
-                    </Group>
-                    {view.statusBody !== null ? (
-                        <Text
-                            size="xs"
-                            c="dimmed"
-                            mt={4}
-                            style={{ whiteSpace: 'pre-line' }}
-                        >
-                            {view.statusBody}
-                        </Text>
-                    ) : null}
-                </div>
-                <PromoTimeline blocks={detectedBlocks} />
-                {detectedBlocks.length > 0 ? (
+                        ) : null}
+                        {view.reportAction !== undefined &&
+                        view.reportLabel !== undefined ? (
+                            <Button
+                                data-testid="popup-report-server-issue"
+                                mt="sm"
+                                size="xs"
+                                variant={
+                                    view.reportAction ===
+                                    SERVER_FAILURE_REPORT_ACTION.Primary
+                                        ? 'filled'
+                                        : 'subtle'
+                                }
+                                onClick={() => {
+                                    void browser.runtime.sendMessage({
+                                        type: TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE,
+                                    });
+                                }}
+                            >
+                                {view.reportLabel}
+                            </Button>
+                        ) : null}
+                    </div>
+                )}
+                <PromoTimeline
+                    blocks={detectedBlocks}
+                    durationSec={detectionState?.durationSec}
+                />
+                {hasDetectedBlocks ? (
                     <Stack gap="sm" mt="md">
                         {detectedBlocks.map((block, index) => {
                             const end = getPromoBlockEndSec(block);

@@ -20,7 +20,7 @@ export default defineConfig({
         },
     ],
     webServer: {
-        command: 'pnpm exec serve e2e/fixtures -p 4173 -L',
+        command: 'pnpm exec serve extension/e2e/fixtures -p 4173 -L',
         url: 'http://127.0.0.1:4173',
         reuseExistingServer: !process.env.CI,
         timeout: 30_000,

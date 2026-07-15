@@ -2,8 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { ChunkMerge } from '@/background/messaging/chunk-merge';
 import { BLOCK_MERGE_GAP_SEC } from '@/background/messaging/chunk-plan-config';
-import type { PromoBlock } from '@/shared/promo-types';
-import { mergePromoBlocksWithGap } from '@/shared/promo-dedupe';
+import type { PromoBlock } from '@topskip/common/promo-types';
+import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
 
 describe('ChunkMerge.filterPromoBlocksForChunkTimeRange', () => {
     const blocks: PromoBlock[] = [

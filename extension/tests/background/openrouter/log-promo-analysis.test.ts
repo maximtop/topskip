@@ -1,10 +1,41 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import {
     buildPromoAnalysisLogBundle,
     excerptTimedLinesAroundSec,
     listTimedLinesFromMergedTranscript,
+    LogPromoAnalysis,
+    logChunkPromoEntry,
 } from '@/background/openrouter/log-promo-analysis';
+
+describe('developer logging gate', () => {
+    it('emits transcript-bearing logs only when explicitly enabled', () => {
+        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const chunk = {
+            chunkIndex: 0,
+            chunkCount: 1,
+            chunkStartSec: 0,
+            chunkEndSec: 1,
+            chunkChars: 18,
+            promptVersion: 'test-v1',
+            chunkText: '[0] private words',
+            chunkTextMaxChars: 100,
+            rawAssistant: '{"private":true}',
+            rawAssistantMaxChars: 100,
+            adapterLatencyMs: 1,
+            outcome: 'success' as const,
+        };
+
+        logChunkPromoEntry(chunk, false);
+        LogPromoAnalysis.logAnalysisBundle('private bundle', false);
+        expect(info).not.toHaveBeenCalled();
+
+        logChunkPromoEntry(chunk, true);
+        LogPromoAnalysis.logAnalysisBundle('private bundle', true);
+        expect(info).toHaveBeenCalledTimes(2);
+        info.mockRestore();
+    });
+});
 
 describe('listTimedLinesFromMergedTranscript', () => {
     it('parses [sec] lines', () => {

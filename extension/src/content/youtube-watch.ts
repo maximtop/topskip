@@ -11,9 +11,11 @@ import {
 import {
     buildRefreshServerAnalysisStatusMessage,
     buildRequestServerAnalysisMessage,
+    decideServerAnalysisDuration,
     shouldUseServerAnalysis,
 } from '@/content/server-analysis-request';
 import { contentLog } from '@/content/content-log';
+import { ContentServerAnalysisLog } from '@/content/server-analysis-log';
 import { WatchCaptions } from '@/content/watch-captions';
 import browser from '@/shared/browser';
 import {
@@ -27,7 +29,7 @@ import {
     TOPSKIP_MESSAGE,
     type RequestServerAnalysisResponse,
 } from '@/shared/messages';
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
 import { translator } from '@/shared/i18n/translator';
 import {
     SKIP_TOAST_BOTTOM_PX,
@@ -35,6 +37,7 @@ import {
     SKIP_TOAST_FADE_MS,
     SKIP_TOAST_ID,
     SKIP_TOAST_Z_INDEX,
+    SERVER_ANALYSIS_DURATION_WAIT_MAX_MS,
     VIDEO_BINDING_POLL_INTERVAL_MS,
     YOUTUBE_AD_OVERLAY_SELECTOR,
     YOUTUBE_PLAYER_SELECTOR,
@@ -106,6 +109,10 @@ export class YoutubeWatch {
      */
     private static serverRequestedVideoId: string | null = null;
     /**
+     * Start of the bounded wait for YouTube's asynchronously loaded duration.
+     */
+    private static serverAnalysisDurationWaitStartedAtMs: number | null = null;
+    /**
      * Timer id for the content-owned server job polling loop.
      */
     private static serverAnalysisPollTimerId: number | null = null;
@@ -117,6 +124,10 @@ export class YoutubeWatch {
      * Video id paired with the active backend polling job.
      */
     private static serverAnalysisPollingVideoId: string | null = null;
+    /**
+     * Last emitted route snapshot prevents the binding poll from flooding logs.
+     */
+    private static serverAnalysisRouteLogKey: string | null = null;
     /**
      * Last video id for which BYOK caption capture was scheduled.
      */
@@ -442,6 +453,8 @@ export class YoutubeWatch {
         YoutubeWatch.analysisModeForCurrentVideo = null;
         YoutubeWatch.byokPreflightVideoId = null;
         YoutubeWatch.serverRequestedVideoId = null;
+        YoutubeWatch.serverAnalysisDurationWaitStartedAtMs = null;
+        YoutubeWatch.serverAnalysisRouteLogKey = null;
         YoutubeWatch.captionScheduledVideoId = null;
         YoutubeWatch.lastTime = 0;
         YoutubeWatch.promoBlocks = [];
@@ -450,8 +463,19 @@ export class YoutubeWatch {
 
     /**
      * Stops the pending server-job polling loop for this watch page.
+     *
+     * @param reason - Stable reason included when an active poll is stopped.
      */
-    private static clearServerAnalysisPolling(): void {
+    private static clearServerAnalysisPolling(reason = 'cleared'): void {
+        const jobId = YoutubeWatch.serverAnalysisPollingJobId;
+        const videoId = YoutubeWatch.serverAnalysisPollingVideoId;
+        if (YoutubeWatch.serverAnalysisPollTimerId !== null || jobId !== null) {
+            ContentServerAnalysisLog.info('polling-stopped', {
+                videoId,
+                jobId,
+                reason,
+            });
+        }
         if (YoutubeWatch.serverAnalysisPollTimerId !== null) {
             window.clearTimeout(YoutubeWatch.serverAnalysisPollTimerId);
         }
@@ -520,6 +544,11 @@ export class YoutubeWatch {
         YoutubeWatch.clearServerAnalysisPolling();
         YoutubeWatch.serverAnalysisPollingJobId = input.jobId;
         YoutubeWatch.serverAnalysisPollingVideoId = input.videoId;
+        ContentServerAnalysisLog.info('polling-scheduled', {
+            videoId: input.videoId,
+            jobId: input.jobId,
+            pollAfterSec: input.pollAfterSec,
+        });
         YoutubeWatch.serverAnalysisPollTimerId = window.setTimeout(() => {
             void YoutubeWatch.refreshServerAnalysisStatus();
         }, input.pollAfterSec * MS_PER_SECOND);
@@ -543,17 +572,37 @@ export class YoutubeWatch {
             YoutubeWatch.prefs === null ||
             !shouldUseServerAnalysis(YoutubeWatch.prefs)
         ) {
-            YoutubeWatch.clearServerAnalysisPolling();
+            YoutubeWatch.clearServerAnalysisPolling('route-inactive');
             return;
         }
 
         try {
+            const videoDurationSec = YoutubeWatch.boundVideo?.duration;
+            const durationSec =
+                videoDurationSec !== undefined &&
+                Number.isFinite(videoDurationSec) &&
+                videoDurationSec > 0
+                    ? videoDurationSec
+                    : undefined;
+            ContentServerAnalysisLog.info('poll-request-sent', {
+                videoId,
+                jobId,
+                durationSec,
+            });
             const response = await browser.runtime.sendMessage(
-                buildRefreshServerAnalysisStatusMessage({ videoId, jobId }),
+                buildRefreshServerAnalysisStatusMessage({
+                    videoId,
+                    jobId,
+                    durationSec,
+                }),
             );
             YoutubeWatch.handleServerAnalysisResponse(response, videoId);
         } catch {
-            YoutubeWatch.clearServerAnalysisPolling();
+            ContentServerAnalysisLog.warn('poll-request-failed', {
+                videoId,
+                jobId,
+            });
+            YoutubeWatch.clearServerAnalysisPolling('runtime-error');
         }
     }
 
@@ -573,16 +622,26 @@ export class YoutubeWatch {
             YoutubeWatch.prefs === null ||
             !shouldUseServerAnalysis(YoutubeWatch.prefs)
         ) {
-            YoutubeWatch.clearServerAnalysisPolling();
+            YoutubeWatch.clearServerAnalysisPolling('stale-response');
             return;
         }
         if (!YoutubeWatch.isServerAnalysisResponse(response)) {
-            YoutubeWatch.clearServerAnalysisPolling();
+            ContentServerAnalysisLog.warn('runtime-ack-invalid', { videoId });
+            YoutubeWatch.clearServerAnalysisPolling('invalid-ack');
             return;
         }
 
+        ContentServerAnalysisLog.info('runtime-ack', {
+            videoId,
+            status: response.ok ? response.status : 'failed',
+            jobId:
+                response.ok && response.status === 'processing'
+                    ? response.jobId
+                    : undefined,
+        });
+
         if (!response.ok) {
-            YoutubeWatch.clearServerAnalysisPolling();
+            YoutubeWatch.clearServerAnalysisPolling('background-error');
             return;
         }
 
@@ -598,7 +657,7 @@ export class YoutubeWatch {
         if (response.status === 'inactive') {
             YoutubeWatch.serverRequestedVideoId = null;
         }
-        YoutubeWatch.clearServerAnalysisPolling();
+        YoutubeWatch.clearServerAnalysisPolling('terminal-response');
     }
 
     /**
@@ -632,18 +691,38 @@ export class YoutubeWatch {
      *
      * @param video Active watch player element.
      * @param videoId Current watch video id.
+     * @returns Deduplicated route outcome for development diagnostics.
      */
     private static requestServerAnalysis(
         video: HTMLVideoElement,
         videoId: string,
-    ): void {
+    ): 'already-requested' | 'server-request' | 'waiting-for-duration' {
         if (YoutubeWatch.serverRequestedVideoId === videoId) {
-            return;
+            return 'already-requested';
         }
+
+        const durationDecision = decideServerAnalysisDuration({
+            durationSec: video.duration,
+            waitStartedAtMs: YoutubeWatch.serverAnalysisDurationWaitStartedAtMs,
+            nowMs: Date.now(),
+            maxWaitMs: SERVER_ANALYSIS_DURATION_WAIT_MAX_MS,
+        });
+        if (durationDecision.status === 'waiting') {
+            YoutubeWatch.serverAnalysisDurationWaitStartedAtMs =
+                durationDecision.waitStartedAtMs;
+            return 'waiting-for-duration';
+        }
+
+        YoutubeWatch.serverAnalysisDurationWaitStartedAtMs = null;
         YoutubeWatch.serverRequestedVideoId = videoId;
-        const durationSec = Number.isFinite(video.duration)
-            ? video.duration
-            : undefined;
+        const durationSec =
+            durationDecision.status === 'ready'
+                ? durationDecision.durationSec
+                : undefined;
+        ContentServerAnalysisLog.info('runtime-request-sent', {
+            videoId,
+            durationSec,
+        });
         void browser.runtime
             .sendMessage(
                 buildRequestServerAnalysisMessage({ videoId, durationSec }),
@@ -652,8 +731,38 @@ export class YoutubeWatch {
                 YoutubeWatch.handleServerAnalysisResponse(response, videoId);
             })
             .catch(() => {
-                YoutubeWatch.clearServerAnalysisPolling();
+                ContentServerAnalysisLog.warn('runtime-request-failed', {
+                    videoId,
+                });
+                YoutubeWatch.clearServerAnalysisPolling('runtime-error');
             });
+        return 'server-request';
+    }
+
+    /**
+     * Emits route state only when a meaningful watch prerequisite changes.
+     *
+     * @param input - Current video identity, prerequisite state, and outcome.
+     */
+    private static logServerAnalysisRoute(input: {
+        videoId: string | null;
+        outcome: string;
+        hasVideo: boolean;
+        enabled?: boolean;
+        analysisMode?: AnalysisMode;
+    }): void {
+        const key = [
+            input.videoId ?? 'none',
+            input.outcome,
+            String(input.hasVideo),
+            String(input.enabled),
+            input.analysisMode ?? 'unknown',
+        ].join('|');
+        if (key === YoutubeWatch.serverAnalysisRouteLogKey) {
+            return;
+        }
+        YoutubeWatch.serverAnalysisRouteLogKey = key;
+        ContentServerAnalysisLog.info('route-decision', input);
     }
 
     /**
@@ -661,7 +770,14 @@ export class YoutubeWatch {
      */
     private static syncVideoBinding(): void {
         if (!YoutubeWatch.shouldActivateForPage()) {
-            YoutubeWatch.resetForNewVideo(null);
+            YoutubeWatch.logServerAnalysisRoute({
+                videoId: null,
+                outcome: 'page-inactive',
+                hasVideo: false,
+            });
+            if (YoutubeWatch.currentVideoId !== null) {
+                YoutubeWatch.resetForNewVideo(null);
+            }
             return;
         }
 
@@ -674,6 +790,11 @@ export class YoutubeWatch {
         }
 
         if (!video) {
+            YoutubeWatch.logServerAnalysisRoute({
+                videoId: vid,
+                outcome: 'waiting-for-video',
+                hasVideo: false,
+            });
             return;
         }
 
@@ -683,6 +804,11 @@ export class YoutubeWatch {
 
         const prefs = YoutubeWatch.prefs;
         if (prefs === null) {
+            YoutubeWatch.logServerAnalysisRoute({
+                videoId: vid,
+                outcome: 'waiting-for-prefs',
+                hasVideo: true,
+            });
             return;
         }
 
@@ -693,16 +819,46 @@ export class YoutubeWatch {
             );
         const analysisMode = YoutubeWatch.analysisModeForCurrentVideo;
         if (analysisMode === null) {
+            YoutubeWatch.logServerAnalysisRoute({
+                videoId: vid,
+                outcome: 'disabled',
+                hasVideo: true,
+                enabled: prefs.enabled,
+                analysisMode: prefs.analysisMode,
+            });
             YoutubeWatch.clearServerAnalysisPolling();
             return;
         }
 
         if (analysisMode === ANALYSIS_MODE.Server) {
             if (vid !== null && shouldUseServerAnalysis(prefs)) {
-                YoutubeWatch.requestServerAnalysis(video, vid);
+                const outcome = YoutubeWatch.requestServerAnalysis(video, vid);
+                YoutubeWatch.logServerAnalysisRoute({
+                    videoId: vid,
+                    outcome,
+                    hasVideo: true,
+                    enabled: prefs.enabled,
+                    analysisMode,
+                });
+            } else {
+                YoutubeWatch.logServerAnalysisRoute({
+                    videoId: vid,
+                    outcome: 'server-inactive',
+                    hasVideo: true,
+                    enabled: prefs.enabled,
+                    analysisMode,
+                });
             }
             return;
         }
+
+        YoutubeWatch.logServerAnalysisRoute({
+            videoId: vid,
+            outcome: 'byok',
+            hasVideo: true,
+            enabled: prefs.enabled,
+            analysisMode,
+        });
 
         if (vid !== null) {
             YoutubeWatch.requestByokSetupPreflight(vid);
@@ -736,6 +892,10 @@ export class YoutubeWatch {
                 ) {
                     const prefs = (res as { prefs: UserPreferences }).prefs;
                     YoutubeWatch.prefs = prefs;
+                    ContentServerAnalysisLog.info('prefs-loaded', {
+                        enabled: prefs.enabled,
+                        analysisMode: prefs.analysisMode,
+                    });
                     YoutubeWatch.syncVideoBinding();
                 }
             })
@@ -800,6 +960,9 @@ export class YoutubeWatch {
      * Wires SPA hooks, video binding, and runtime messaging for prefs.
      */
     static init(): void {
+        ContentServerAnalysisLog.info('content-initialized', {
+            videoId: YoutubeWatch.getWatchVideoId(),
+        });
         YoutubeWatch.loadPrefsFromBackground();
         browser.runtime.onMessage.addListener((message: unknown) => {
             YoutubeWatch.onPrefsUpdatedMessage(message);

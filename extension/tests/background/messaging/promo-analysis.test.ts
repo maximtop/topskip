@@ -238,6 +238,21 @@ describe('PromoAnalysis — adapter routing', () => {
             },
         );
 
+        it('does not build transcript logs outside the dev build', async () => {
+            registryMocks.get.mockReturnValue(mockAdapter);
+            PromoAnalysis.onCaptionsReady(baseSender(), basePayload());
+
+            await vi.waitFor(() => {
+                expect(detectionStoreMocks.set).toHaveBeenCalledWith(
+                    42,
+                    expect.objectContaining({ status: 'no_promo' }),
+                );
+            });
+
+            expect(logMocks.buildBundle).not.toHaveBeenCalled();
+            expect(logMocks.logBundle).not.toHaveBeenCalled();
+        });
+
         it('routes to the provider from prefs on each run', () => {
             const chromeAnalyze = makeAnalyzeTranscript();
             const chromeAdapter = makeAdapter({

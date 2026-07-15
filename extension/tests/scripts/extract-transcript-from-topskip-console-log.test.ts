@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     buildUserMessageFromSegments,
     parseCaptionSegmentsFromTopSkipConsoleLog,
-} from '../../scripts/extract-transcript-from-topskip-console-log';
+} from '../../../scripts/extract-transcript-from-topskip-console-log';
 
 describe('parseCaptionSegmentsFromTopSkipConsoleLog', () => {
     it('parses single-quoted text segments', () => {

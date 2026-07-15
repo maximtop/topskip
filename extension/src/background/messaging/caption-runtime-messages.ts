@@ -37,11 +37,13 @@ export class CaptionRuntimeMessages {
             return { ok: true };
         }
 
-        void logTranscriptForDeveloper(
-            payload.videoId,
-            payload.languageCode,
-            payload.segments,
-        );
+        if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+            void logTranscriptForDeveloper(
+                payload.videoId,
+                payload.languageCode,
+                payload.segments,
+            );
+        }
         PromoAnalysis.onCaptionsReady(sender, payload);
         return { ok: true };
     }

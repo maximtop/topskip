@@ -17,8 +17,10 @@ vi.mock('@/background/messaging/promo-analysis', () => ({
     PromoAnalysis: promoMocks,
 }));
 
+const transcriptLogMock = vi.hoisted(() => vi.fn());
+
 vi.mock('@/background/captions/log-transcript-dev', () => ({
-    logTranscriptForDeveloper: vi.fn().mockResolvedValue(undefined),
+    logTranscriptForDeveloper: transcriptLogMock,
 }));
 
 import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
@@ -97,5 +99,6 @@ describe('CaptionRuntimeMessages analysis mode guard', () => {
         } as never);
 
         expect(promoMocks.onCaptionsReady).toHaveBeenCalled();
+        expect(transcriptLogMock).not.toHaveBeenCalled();
     });
 });

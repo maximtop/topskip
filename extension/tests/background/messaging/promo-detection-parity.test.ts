@@ -1,25 +1,38 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 // ------------------------------------------------------------------
 // Hoisted mocks
 // ------------------------------------------------------------------
 
-const { sendMessage, storageGet, storageSet, tabsQuery, tabsSendMessage } =
-    vi.hoisted(() => ({
-        sendMessage: vi.fn().mockResolvedValue(undefined),
-        storageGet: vi.fn(),
-        storageSet: vi.fn().mockResolvedValue(undefined),
-        tabsQuery: vi.fn(),
-        tabsSendMessage: vi.fn().mockResolvedValue(undefined),
-    }));
+const {
+    sendMessage,
+    storageSetAccessLevel,
+    storageGet,
+    storageSet,
+    tabsQuery,
+    tabsSendMessage,
+} = vi.hoisted(() => ({
+    sendMessage: vi.fn().mockResolvedValue(undefined),
+    storageSetAccessLevel: vi.fn().mockResolvedValue(undefined),
+    storageGet: vi.fn(),
+    storageSet: vi.fn().mockResolvedValue(undefined),
+    tabsQuery: vi.fn(),
+    tabsSendMessage: vi.fn().mockResolvedValue(undefined),
+}));
 
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: { sendMessage },
-        storage: { local: { get: storageGet, set: storageSet } },
+        storage: {
+            local: {
+                setAccessLevel: storageSetAccessLevel,
+                get: storageGet,
+                set: storageSet,
+            },
+        },
         tabs: { query: tabsQuery, sendMessage: tabsSendMessage },
     },
 }));

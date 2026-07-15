@@ -7,62 +7,106 @@ import type { PromoDetectionStatePayload } from '@/shared/messages';
 vi.mock('@/shared/browser', () => ({
     default: {
         i18n: {
-            getMessage: vi.fn((key: string) => {
-                const messages: Record<string, string> = {
-                    popup_detection_server_pending_badge: 'Server',
-                    popup_detection_server_pending_title:
-                        'Server analysis pending',
-                    popup_detection_server_pending_description:
-                        'TopSkip asked the local backend to analyze this video.',
-                    popup_detection_server_pending_headline:
-                        'Server analysis is in progress.',
-                    popup_detection_server_pending_body:
-                        'Skipping will start when the TopSkip backend has promo blocks for a future playback position.',
-                    popup_detection_server_error_badge: 'Server',
-                    popup_detection_server_error_title:
-                        'Server analysis unavailable',
-                    popup_detection_server_error_description:
-                        'TopSkip could not use the local backend for this video.',
-                    popup_detection_server_error_headline:
-                        'Server analysis failed.',
-                    popup_detection_server_error_body:
-                        'The local TopSkip backend did not return a usable response. Playback continues without server-detected skips.',
-                    popup_detection_server_cache_badge: 'Server cache',
-                    popup_detection_server_cache_title:
-                        'Server-detected blocks ready',
-                    popup_detection_server_cache_description:
-                        'TopSkip received cached promo blocks from the local backend.',
-                    popup_detection_server_cache_headline: 'Server cache hit.',
-                    popup_detection_server_no_promo_badge: 'Server',
-                    popup_detection_server_no_promo_title:
-                        'Server analysis complete',
-                    popup_detection_server_no_promo_description:
-                        'TopSkip checked the local backend result for this video.',
-                    popup_detection_server_no_promo_headline:
-                        'No server promo blocks detected.',
-                    popup_detection_server_no_promo_body:
-                        'Playback continues normally unless future server results add blocks.',
-                    popup_detection_server_unavailable_badge: 'Server',
-                    popup_detection_server_unavailable_title:
-                        'Server analysis unavailable',
-                    popup_detection_server_unavailable_description:
-                        'The local backend could not produce a result for this video.',
-                    popup_detection_server_unavailable_headline:
-                        'Server analysis is unavailable.',
-                    popup_detection_server_unavailable_body:
-                        'Playback continues without server-detected skips.',
-                    popup_analysis_mode_server: 'TopSkip Server',
-                    popup_analysis_mode_byok: 'Private BYOK',
-                    popup_byok_setup_badge: 'Setup required',
-                    popup_byok_setup_title: 'Private BYOK setup required',
-                    popup_byok_setup_description:
-                        'Configure %provider% in settings before promo analysis can run.',
-                    popup_byok_setup_body:
-                        'Analysis stays with your configured provider and is not shared with TopSkip.',
-                    popup_open_settings: 'Open settings',
-                };
-                return messages[key] ?? key;
-            }),
+            getMessage: vi.fn(
+                (key: string, substitutions?: Record<string, string>) => {
+                    const messages: Record<string, string> = {
+                        popup_detection_server_pending_badge: 'Server',
+                        popup_detection_server_pending_title:
+                            'Server analysis pending',
+                        popup_detection_server_pending_description:
+                            'TopSkip asked the local backend to analyze this video.',
+                        popup_detection_server_pending_headline:
+                            'Server analysis is in progress.',
+                        popup_detection_server_pending_body:
+                            'Skipping will start when the TopSkip backend has promo blocks for a future playback position.',
+                        popup_detection_server_error_badge: 'Server',
+                        popup_detection_server_error_title:
+                            'Server analysis unavailable',
+                        popup_detection_server_error_description:
+                            'TopSkip could not use the local backend for this video.',
+                        popup_detection_server_error_headline:
+                            'Server analysis failed.',
+                        popup_detection_server_error_body:
+                            'The local TopSkip backend did not return a usable response. Playback continues without server-detected skips.',
+                        popup_detection_server_cache_badge: 'Server cache',
+                        popup_detection_server_cache_title:
+                            'Server-detected blocks ready',
+                        popup_detection_server_cache_description:
+                            'TopSkip received cached promo blocks from the local backend.',
+                        popup_detection_server_cache_headline:
+                            'Server cache hit.',
+                        popup_detection_server_no_promo_badge: 'Server',
+                        popup_detection_server_no_promo_title:
+                            'Server analysis complete',
+                        popup_detection_server_no_promo_description:
+                            'TopSkip checked the local backend result for this video.',
+                        popup_detection_server_no_promo_headline:
+                            'No server promo blocks detected.',
+                        popup_detection_server_no_promo_body:
+                            'Playback continues normally unless future server results add blocks.',
+                        popup_detection_server_unavailable_badge: 'Server',
+                        popup_detection_server_unavailable_title:
+                            'Server analysis unavailable',
+                        popup_detection_server_unavailable_description:
+                            'The local backend could not produce a result for this video.',
+                        popup_detection_server_unavailable_headline:
+                            'Server analysis is unavailable.',
+                        popup_detection_server_unavailable_body:
+                            'Playback continues without server-detected skips.',
+                        popup_server_limitation_title:
+                            'This video could not be analyzed',
+                        popup_server_limitation_description:
+                            'Your TopSkip settings are working.',
+                        popup_server_limitation_headline:
+                            'TopSkip could not process this video.',
+                        popup_server_limitation_body:
+                            'Playback continues without server-detected skips.',
+                        popup_server_temporary_title:
+                            'TopSkip Server is temporarily busy',
+                        popup_server_temporary_description:
+                            'Your settings are working. Try again later.',
+                        popup_server_temporary_headline:
+                            'Server capacity is temporarily unavailable.',
+                        popup_server_temporary_body:
+                            'Try this video again later.',
+                        popup_server_temporary_retry:
+                            'Try again in %seconds% seconds.',
+                        popup_server_failure_title: 'TopSkip Server error',
+                        popup_server_failure_description:
+                            'The problem is on the TopSkip server, not in your settings.',
+                        popup_server_failure_headline:
+                            'The server could not analyze this video.',
+                        popup_server_failure_body:
+                            'Playback continues normally. You can report this error on GitHub.',
+                        popup_server_upgrade_title: 'Update TopSkip',
+                        popup_server_upgrade_description:
+                            'This server version requires a newer extension.',
+                        popup_server_upgrade_headline:
+                            'An extension update is required.',
+                        popup_server_upgrade_body:
+                            'Update TopSkip and try this video again.',
+                        popup_server_report_primary: 'Report on GitHub',
+                        popup_server_report_secondary:
+                            'Report if this seems wrong',
+                        popup_analysis_mode_server: 'TopSkip Server',
+                        popup_analysis_mode_byok: 'Private BYOK',
+                        popup_byok_setup_badge: 'Setup required',
+                        popup_byok_setup_title: 'Private BYOK setup required',
+                        popup_byok_setup_description:
+                            'Configure %provider% in settings before promo analysis can run.',
+                        popup_byok_setup_body:
+                            'Analysis stays with your configured provider and is not shared with TopSkip.',
+                        popup_open_settings: 'Open settings',
+                    };
+                    let message = messages[key] ?? key;
+                    for (const [name, value] of Object.entries(
+                        substitutions ?? {},
+                    )) {
+                        message = message.replace(`%${name}%`, value);
+                    }
+                    return message;
+                },
+            ),
         },
         runtime: {
             sendMessage: vi.fn(),
@@ -272,14 +316,41 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'error',
                 source: 'server',
-                error: 'Server analysis timed out.',
+                serverFailure: {
+                    code: 'invalid_server_response',
+                    supportId: 'support-123',
+                    apiVersion: 1,
+                    algorithmVersion: 'server-v5',
+                    extensionVersion: '0.1.0',
+                },
             },
         });
 
-        expect(vm.title).toBe('Server analysis unavailable');
-        expect(vm.statusHeadline).toBe('Server analysis timed out.');
-        expect(vm.statusBody).toContain('local TopSkip backend');
-        expect(vm.statusBody).not.toContain('API key');
+        expect(vm.title).toBe('TopSkip Server error');
+        expect(vm.description).toContain('not in your settings');
+        expect(vm.statusHeadline).toBe(
+            'The server could not analyze this video.',
+        );
+        expect(vm.statusBody).not.toContain('support-123');
+        expect(vm.reportAction).toBe('primary');
+        expect(vm.reportLabel).toBe('Report on GitHub');
+    });
+
+    it('does not label a freshly polled server result as a cache hit', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                status: 'detected',
+                source: 'server',
+                durationSec: 213,
+                promoBlocks: [{ startSec: 4, endSec: 24 }],
+            },
+        });
+
+        expect(vm.title).toBe('1 promo block found');
+        expect(vm.badgeLabel).toBe('Detected');
+        expect(`${vm.title} ${vm.statusHeadline}`).not.toMatch(/cache/i);
     });
 
     it('server rate-limit state explains that skipping remains server-only', () => {
@@ -289,16 +360,18 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
-                error: 'Local cold-analysis limit reached. Retry later.',
+                serverFailure: {
+                    code: 'rate_limited',
+                    retryAfterSec: 60,
+                    apiVersion: 1,
+                    extensionVersion: '0.1.0',
+                },
             },
         });
 
-        expect(vm.title).toBe('Server analysis unavailable');
-        expect(vm.statusHeadline).toBe(
-            'Local cold-analysis limit reached. Retry later.',
-        );
-        expect(vm.statusBody).toContain('server-detected skips');
-        expect(vm.statusBody).not.toContain('API key');
+        expect(vm.title).toBe('TopSkip Server is temporarily busy');
+        expect(vm.statusBody).toBe('Try again in 60 seconds.');
+        expect(vm.reportAction).toBeUndefined();
     });
 
     it.each(['downloading', 'unavailable', 'downloadable'] as const)(
@@ -324,6 +397,65 @@ describe('buildPopupViewModel', () => {
             expect(vm.statusBody).toBe('0:04–0:24');
         },
     );
+
+    it('shows video limitations as not caused by user settings', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                status: 'unavailable',
+                source: 'server',
+                serverFailure: {
+                    code: 'captions_unavailable',
+                    apiVersion: 1,
+                    extensionVersion: '0.1.0',
+                },
+            },
+        });
+
+        expect(vm.title).toBe('This video could not be analyzed');
+        expect(vm.description).toContain('settings are working');
+        expect(vm.reportAction).toBe('secondary');
+        expect(vm.reportLabel).toBe('Report if this seems wrong');
+    });
+
+    it('shows upgrade-required without offering a GitHub report', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                status: 'unavailable',
+                source: 'server',
+                serverFailure: {
+                    code: 'client_upgrade_required',
+                    apiVersion: 1,
+                    extensionVersion: '0.1.0',
+                },
+            },
+        });
+
+        expect(vm.title).toBe('Update TopSkip');
+        expect(vm.reportAction).toBeUndefined();
+    });
+
+    it('shows every server-detected Gemini interval with existing popup formatting', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                status: 'detected',
+                source: 'server_cache',
+                promoBlocks: [
+                    { startSec: 242.12, endSec: 329.44 },
+                    { startSec: 826.56, endSec: 943.519 },
+                    { startSec: 1_583.679, endSec: 1_611.72 },
+                ],
+            },
+        });
+
+        expect(vm.statusBody).toBe('4:02–5:29; 13:46–15:43; 26:23–26:51');
+        expect(vm.modeLabel).toBe('TopSkip Server');
+    });
 
     it.each(['downloading', 'unavailable', 'downloadable'] as const)(
         'server no-promo terminal state takes precedence over Chrome %s state',

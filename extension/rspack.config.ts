@@ -10,15 +10,17 @@ import {
     sources,
 } from '@rspack/core';
 
-import { TopSkipBuild, type TopSkipBuildMode } from './build-modes.ts';
+import {
+    TopSkipBuild,
+    getServerAnalysisBaseUrl,
+    getServerAnalysisManifestMatch,
+    type TopSkipBuildMode,
+} from './build-modes.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /** Local Playwright fixture origin (injected for `TOPSKIP_BUILD=dev` only). */
 const DEV_E2E_MATCH = 'http://127.0.0.1:4173/*';
-
-/** Local backend origin used by the server-first development path. */
-const DEV_BACKEND_MATCH = 'http://127.0.0.1:8787/*';
 
 /**
  * Reads `TOPSKIP_BUILD`: `dev` (default) includes localhost for E2E fixtures;
@@ -35,29 +37,31 @@ function getTopSkipBuild(): TopSkipBuildMode {
 }
 
 /**
- * Adds dev-only manifest entries when building for local / CI browser tests.
+ * Adds the selected backend permission and dev-only fixture access.
  *
- * @param manifest - Parsed MV3 manifest (mutated when build is `dev`)
+ * @param manifest - Parsed MV3 manifest mutated for the selected profile.
  * @param build - Active TopSkip build mode
  */
-function applyDevLocalhostToManifest(
+function applyBuildHostsToManifest(
     manifest: {
         host_permissions?: string[];
         content_scripts?: Array<{ matches: string[] }>;
     },
     build: TopSkipBuildMode,
 ): void {
-    if (build !== TopSkipBuild.Dev) {
-        return;
-    }
     const hostPermissions = manifest.host_permissions;
     if (!hostPermissions) {
         return;
     }
-    for (const match of [DEV_E2E_MATCH, DEV_BACKEND_MATCH]) {
-        if (!hostPermissions.includes(match)) {
-            hostPermissions.push(match);
-        }
+    const serverMatch = getServerAnalysisManifestMatch(build);
+    if (!hostPermissions.includes(serverMatch)) {
+        hostPermissions.push(serverMatch);
+    }
+    if (build !== TopSkipBuild.Dev) {
+        return;
+    }
+    if (!hostPermissions.includes(DEV_E2E_MATCH)) {
+        hostPermissions.push(DEV_E2E_MATCH);
     }
     const firstContentScript = manifest.content_scripts?.[0];
     if (
@@ -98,7 +102,7 @@ function topSkipManifestPlugin(build: TopSkipBuildMode): RspackPluginInstance {
                                 host_permissions?: string[];
                                 content_scripts?: Array<{ matches: string[] }>;
                             };
-                            applyDevLocalhostToManifest(manifest, build);
+                            applyBuildHostsToManifest(manifest, build);
                             const json = `${JSON.stringify(manifest, null, 2)}\n`;
                             compilation.emitAsset(
                                 'manifest.json',
@@ -115,6 +119,8 @@ function topSkipManifestPlugin(build: TopSkipBuildMode): RspackPluginInstance {
 const topSkipBuildMode = getTopSkipBuild();
 
 export default defineConfig({
+    mode: topSkipBuildMode === TopSkipBuild.Dev ? 'development' : 'production',
+    devtool: topSkipBuildMode === TopSkipBuild.Dev ? 'source-map' : false,
     context: __dirname,
     entry: {
         background: './src/background/index.ts',
@@ -168,6 +174,9 @@ export default defineConfig({
             __TOPSKIP_INCLUDE_DEV_LOCAL__: JSON.stringify(
                 topSkipBuildMode === TopSkipBuild.Dev,
             ),
+            __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(
+                getServerAnalysisBaseUrl(topSkipBuildMode),
+            ),
         }),
         topSkipManifestPlugin(topSkipBuildMode),
         new rspack.HtmlRspackPlugin({
@@ -184,13 +193,18 @@ export default defineConfig({
         }),
         new rspack.CopyRspackPlugin({
             patterns: [
-                { from: 'src/public', to: '.', noErrorOnMissing: true },
+                {
+                    from: 'src/public',
+                    to: '.',
+                    noErrorOnMissing: true,
+                    globOptions: {
+                        ignore: ['**/.DS_Store', '**/.gitkeep'],
+                    },
+                },
                 { from: 'src/_locales', to: '_locales' },
             ],
         }),
     ],
-    // FIXME: Disable source maps for beta/release packaging; Chrome counts
-    // emitted `.map` files in unpacked extension size.
     optimization: {
         // FIXME: Popup/options both import Mantine CSS; keeping split chunks off
         // duplicates that CSS across extension pages.

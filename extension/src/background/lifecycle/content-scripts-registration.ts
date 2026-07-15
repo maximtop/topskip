@@ -2,6 +2,7 @@ import browser from '@/shared/browser';
 import { getWatchContentScriptMatches } from '@/shared/content-script-matches';
 
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 
 /**
  * Registers or unregisters the watch `content.js` bundle based on prefs.
@@ -27,6 +28,10 @@ export class ContentScriptsRegistration {
     static async syncFromPrefs(): Promise<void> {
         await PrefsSyncStorage.ready();
         const prefs = await PrefsSyncStorage.load();
+        BackgroundServerAnalysisLog.info('content-script-sync', {
+            enabled: prefs.enabled,
+            analysisMode: prefs.analysisMode,
+        });
         if (prefs.enabled) {
             await ContentScriptsRegistration.registerWatchScript();
         } else {
@@ -58,6 +63,9 @@ export class ContentScriptsRegistration {
                 runAt: 'document_start',
             },
         ]);
+        BackgroundServerAnalysisLog.info('content-scripts-registered', {
+            matchCount: matches.length,
+        });
     }
 
     /**
@@ -73,6 +81,7 @@ export class ContentScriptsRegistration {
                     ContentScriptsRegistration.CAPTION_PAGE_BRIDGE_SCRIPT_ID,
                 ],
             });
+            BackgroundServerAnalysisLog.info('content-scripts-unregistered');
         } catch {
             // not registered
         }

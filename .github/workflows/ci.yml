@@ -1,0 +1,83 @@
+name: CI
+
+on:
+    push:
+        branches: [main, master]
+    pull_request:
+
+permissions:
+    contents: read
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        timeout-minutes: 45
+        steps:
+            - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+              with:
+                  persist-credentials: false
+
+            - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+              with:
+                  version: 10
+
+            - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+              with:
+                  node-version: '24'
+                  cache: pnpm
+
+            - name: Install dependencies
+              run: pnpm install --frozen-lockfile
+
+            - name: Install pinned yt-dlp
+              run: pnpm run yt-dlp:install
+
+            - name: Lint
+              run: pnpm run lint
+
+            - name: Build
+              run: pnpm run build
+
+            - name: Deployment asset tests
+              run: pnpm run test:deployment
+
+            - name: Production container smoke
+              run: pnpm run test:container
+
+            - name: Unit tests
+              run: pnpm run test
+
+            - name: Coverage
+              run: pnpm run test:coverage
+
+            - name: Install Playwright Chromium
+              run: pnpm exec playwright install chromium --with-deps
+
+            - name: E2E tests
+              run: pnpm run test:e2e
+
+            - name: Validate release packaging boundary
+              run: |
+                  pnpm run release
+                  jq --exit-status '
+                    .host_permissions as $hosts |
+                    ($hosts | index("https://topskip.maximtop.dev/*")) != null and
+                    ($hosts | all(.[]; startswith("http://") | not))
+                  ' extension/dist/manifest.json >/dev/null
+                  if find extension/dist -type f -name '*.map' -print -quit | grep --quiet .; then
+                      echo 'Release package must not contain source maps.' >&2
+                      exit 1
+                  fi
+                  if grep --recursive --extended-regexp --files-with-matches \
+                      '127\.0\.0\.1:(8787|4173)' extension/dist; then
+                      echo 'Release package contains a development endpoint.' >&2
+                      exit 1
+                  fi
+                  if grep --recursive --fixed-strings --files-with-matches \
+                      --regexp='--- Raw assistant message' \
+                      --regexp='--- chunkText (user message) ---' \
+                      --regexp='more segment(s); chunked below' \
+                      extension/dist; then
+                      echo 'Release package contains transcript-bearing developer logs.' >&2
+                      exit 1
+                  fi

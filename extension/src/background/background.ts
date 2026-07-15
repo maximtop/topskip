@@ -2,6 +2,7 @@ import { ContentScriptsRegistration } from '@/background/lifecycle/content-scrip
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
 import { defaultRegistry } from '@/background/providers/default-registry';
+import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { i18n } from '@/shared/i18n/i18n';
 
@@ -17,12 +18,16 @@ export class Background {
      * `PrefsSyncStorage.ready()` before prefs work.
      */
     static init(): void {
+        const storageAccess = BackgroundStorageAccess.ready();
         PrefsPortHub.register();
         console.info('[TopSkip] Service worker started');
         void i18n.init();
-        void PrefsSyncStorage.ready().then(async () => {
-            await ContentScriptsRegistration.syncFromPrefs();
-        });
+        void storageAccess
+            .then(() => PrefsSyncStorage.ready())
+            .then(() => ContentScriptsRegistration.syncFromPrefs())
+            .catch(() => {
+                console.error('[TopSkip] Background storage is unavailable.');
+            });
         registerRuntimeMessages(defaultRegistry);
     }
 }

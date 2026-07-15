@@ -5,7 +5,7 @@ import {
     parsePricingNumber,
     rankCompareSummaryRows,
     summarizeVsHumanMetrics,
-} from '../../scripts/lib/openrouter-compare-summary';
+} from '../../../scripts/lib/openrouter-compare-summary';
 
 describe('parsePricingNumber', () => {
     it('parses numeric strings and drops negative sentinels', () => {

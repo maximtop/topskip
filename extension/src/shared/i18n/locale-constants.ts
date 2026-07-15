@@ -1,4 +1,4 @@
-import twosky from '../../../.twosky.json';
+import twosky from '../../../../.twosky.json';
 
 /**
  * Locale code derived from the `.twosky.json` languages object.

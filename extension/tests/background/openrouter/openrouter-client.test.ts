@@ -73,6 +73,46 @@ describe('callOpenRouterChat', () => {
         );
     });
 
+    it('forwards the requested reasoning effort', async () => {
+        let requestBody: BodyInit | null | undefined;
+        const fetchMock = vi.fn(
+            (_input: RequestInfo | URL, init?: RequestInit) => {
+                requestBody = init?.body;
+                return Promise.resolve({
+                    ok: true,
+                    status: 200,
+                    text: (): Promise<string> =>
+                        Promise.resolve(
+                            JSON.stringify({
+                                choices: [
+                                    {
+                                        message: {
+                                            content: '{"hasPromo":false}',
+                                        },
+                                    },
+                                ],
+                            }),
+                        ),
+                });
+            },
+        );
+        vi.stubGlobal('fetch', fetchMock);
+
+        await callOpenRouterChat({
+            apiKey: 'k',
+            model: 'm',
+            messages: [{ role: 'user', content: 'hi' }],
+            reasoningEffort: 'high',
+        });
+
+        expect(typeof requestBody).toBe('string');
+        if (typeof requestBody !== 'string') {
+            throw new Error('Expected a string request body');
+        }
+        const parsed = JSON.parse(requestBody) as unknown;
+        expect(parsed).toMatchObject({ reasoning: { effort: 'high' } });
+    });
+
     it('returns error on non-OK HTTP', async () => {
         vi.stubGlobal(
             'fetch',

@@ -1,12 +1,16 @@
 import * as v from 'valibot';
 
-import { captionSegmentSchema } from '@/shared/caption-types';
+import { captionSegmentSchema } from '@topskip/common/caption-types';
 import {
     type AnalysisMode,
     userPreferencesSchema,
     type UserPreferences,
 } from '@/shared/constants';
-import type { PromoBlock, PromoDetectionStatus } from '@/shared/promo-types';
+import type {
+    PromoBlock,
+    PromoDetectionStatus,
+} from '@topskip/common/promo-types';
+import type { ServerAnalysisFailureCode } from '@topskip/common/server-analysis-contract';
 import type { ProviderId } from '@/shared/providers';
 import type { PROVIDER_AVAILABILITY } from './chrome-prompt-api';
 
@@ -46,6 +50,7 @@ export const TOPSKIP_MESSAGE = {
     PREFLIGHT_BYOK_SETUP: 'TOPSKIP_PREFLIGHT_BYOK_SETUP',
     REQUEST_SERVER_ANALYSIS: 'TOPSKIP_REQUEST_SERVER_ANALYSIS',
     REFRESH_SERVER_ANALYSIS_STATUS: 'TOPSKIP_REFRESH_SERVER_ANALYSIS_STATUS',
+    OPEN_SERVER_ANALYSIS_ISSUE: 'TOPSKIP_OPEN_SERVER_ANALYSIS_ISSUE',
     PROMO_DETECTION_UPDATED: 'TOPSKIP_PROMO_DETECTION_UPDATED',
     PROMO_BLOCKS_DETECTED: 'TOPSKIP_PROMO_BLOCKS_DETECTED',
     DEV_SET_DETECTION_STATUS: 'TOPSKIP_DEV_SET_DETECTION_STATUS',
@@ -221,6 +226,20 @@ export type PromoDetectionSource =
     | 'server_cache';
 
 /**
+ * Message-free server context used for localized popup copy and safe issue
+ * reporting.
+ */
+export type ServerAnalysisFailureContext = {
+    code: ServerAnalysisFailureCode;
+    supportId?: string;
+    retryAfterSec?: number;
+    apiVersion: number;
+    algorithmVersion?: string;
+    extensionVersion: string;
+    supportIssueBaseUrl?: string;
+};
+
+/**
  * Detection snapshot for the active tab’s current video (popup).
  */
 export type PromoDetectionStatePayload = {
@@ -228,7 +247,9 @@ export type PromoDetectionStatePayload = {
     status: PromoDetectionStatus;
     source?: PromoDetectionSource;
     promoBlocks?: PromoBlock[];
+    durationSec?: number;
     error?: string;
+    serverFailure?: ServerAnalysisFailureContext;
     /**
      * True when some transcript regions were not analyzed or a chunk failed
      * (multi-chunk pipeline).
@@ -271,6 +292,7 @@ export type PreflightByokSetupResponse =
 export type RefreshServerAnalysisStatusPayload = {
     videoId: string;
     jobId: string;
+    durationSec?: number;
 };
 
 /**
@@ -296,6 +318,13 @@ export type RequestServerAnalysisResponse =
  * Ack returned after the background refreshes a pollable server job status.
  */
 export type RefreshServerAnalysisStatusResponse = RequestServerAnalysisResponse;
+
+/**
+ * Result of opening a sanitized GitHub server-analysis report.
+ */
+export type OpenServerAnalysisIssueResponse =
+    | { ok: true }
+    | { ok: false; error: string };
 
 /**
  * Serialized provider availability state sent over runtime messages.
@@ -519,6 +548,7 @@ export type TopSkipRuntimeMessage =
           type: typeof TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS;
           payload: RefreshServerAnalysisStatusPayload;
       }
+    | { type: typeof TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE }
     | {
           type: typeof TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS;
           state: PromoDetectionStatePayload | null;

@@ -1,4 +1,4 @@
-import type { CaptionSegment } from '@/shared/caption-types';
+import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * Merges caption segments into one deterministic transcript string for the LLM

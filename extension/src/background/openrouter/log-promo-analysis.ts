@@ -1,4 +1,4 @@
-import type { PromoBlock } from '@/shared/promo-types';
+import type { PromoBlock } from '@topskip/common/promo-types';
 
 const BUNDLE_TITLE = '========== TopSkip promo analysis log bundle ==========';
 const MAX_RAW_ASSISTANT_IN_BUNDLE = 20_000;
@@ -229,23 +229,30 @@ export function truncateForLog(
  * Emits one per-chunk or per-slice analysis record (spec FR-009).
  *
  * @param params - Chunk metadata, latency, optional payloads
+ * @param enabled - Explicit override used by unit tests.
  */
-export function logChunkPromoEntry(params: {
-    chunkIndex: number;
-    chunkCount: number;
-    chunkStartSec: number;
-    chunkEndSec: number;
-    chunkChars: number;
-    promptVersion: string;
-    chunkText: string;
-    chunkTextMaxChars: number;
-    rawAssistant: string | null;
-    rawAssistantMaxChars: number;
-    adapterLatencyMs: number;
-    outcome: ChunkLogOutcome;
-    parsedBlockCount?: number;
-    retryLabel?: string;
-}): void {
+export function logChunkPromoEntry(
+    params: {
+        chunkIndex: number;
+        chunkCount: number;
+        chunkStartSec: number;
+        chunkEndSec: number;
+        chunkChars: number;
+        promptVersion: string;
+        chunkText: string;
+        chunkTextMaxChars: number;
+        rawAssistant: string | null;
+        rawAssistantMaxChars: number;
+        adapterLatencyMs: number;
+        outcome: ChunkLogOutcome;
+        parsedBlockCount?: number;
+        retryLabel?: string;
+    },
+    enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+): void {
+    if (!enabled) {
+        return;
+    }
     const chunkT = truncateForLog(params.chunkText, params.chunkTextMaxChars);
     const rawT =
         params.rawAssistant === null
@@ -412,8 +419,15 @@ export class LogPromoAnalysis {
      * console (FR-002, FR-003, FR-007).
      *
      * @param bundle - Output of {@link buildPromoAnalysisLogBundle}
+     * @param enabled - Explicit override used by unit tests.
      */
-    static logAnalysisBundle(bundle: string): void {
+    static logAnalysisBundle(
+        bundle: string,
+        enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+    ): void {
+        if (!enabled) {
+            return;
+        }
         console.info(bundle);
     }
 }

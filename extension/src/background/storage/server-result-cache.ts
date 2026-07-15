@@ -8,7 +8,7 @@ import {
     readyResponseSchema,
     youtubeVideoIdSchema,
     type ReadyResponse,
-} from '@/shared/server-analysis-contract';
+} from '@topskip/common/server-analysis-contract';
 
 const finiteEpochMsSchema = v.pipe(
     v.number(),
@@ -68,6 +68,90 @@ export class ServerResultCacheStorage {
         } catch {
             // Cache repair is opportunistic; the backend path remains authoritative.
         }
+    }
+
+    /**
+     * Drops rows from obsolete server algorithms after compatibility refresh.
+     *
+     * @param activeAlgorithmVersion - Server-owned algorithm currently in use.
+     * @returns Promise resolved after best-effort cleanup.
+     */
+    static async removeOtherAlgorithmVersions(
+        activeAlgorithmVersion: string,
+    ): Promise<void> {
+        let stored: Record<string, unknown>;
+        try {
+            stored = await browser.storage.local.get(null);
+        } catch {
+            return;
+        }
+
+        const prefix = `${STORAGE_KEY_SERVER_RESULT_CACHE}:`;
+        const obsoleteKeys: string[] = [];
+        for (const [key, raw] of Object.entries(stored)) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            const parsed = v.safeParse(serverResultCacheEntrySchema, raw);
+            if (
+                !parsed.success ||
+                parsed.output.algorithmVersion !== activeAlgorithmVersion
+            ) {
+                obsoleteKeys.push(key);
+            }
+        }
+
+        if (obsoleteKeys.length === 0) {
+            return;
+        }
+        try {
+            await browser.storage.local.remove(obsoleteKeys);
+        } catch {
+            // Cache invalidation is opportunistic; keyed reads still validate versions.
+        }
+    }
+
+    /**
+     * Recovers the newest unexpired row when public config has never loaded,
+     * without guessing a compile-time server algorithm.
+     *
+     * @param input - Video id and optional test clock.
+     * @returns Newest fresh row across server algorithms, otherwise `null`.
+     */
+    static async loadLatestFreshForVideo(input: {
+        videoId: string;
+        nowMs?: number;
+    }): Promise<ServerResultCacheEntry | null> {
+        let stored: Record<string, unknown>;
+        try {
+            stored = await browser.storage.local.get(null);
+        } catch {
+            return null;
+        }
+
+        const nowMs = input.nowMs ?? Date.now();
+        const prefix = `${STORAGE_KEY_SERVER_RESULT_CACHE}:`;
+        let newest: ServerResultCacheEntry | null = null;
+        for (const [key, raw] of Object.entries(stored)) {
+            if (!key.startsWith(prefix)) {
+                continue;
+            }
+            const parsed = v.safeParse(serverResultCacheEntrySchema, raw);
+            if (
+                !parsed.success ||
+                parsed.output.videoId !== input.videoId ||
+                parsed.output.freshness.expiresAtMs <= nowMs
+            ) {
+                continue;
+            }
+            if (
+                newest === null ||
+                parsed.output.storedAtMs > newest.storedAtMs
+            ) {
+                newest = parsed.output;
+            }
+        }
+        return newest;
     }
 
     /**

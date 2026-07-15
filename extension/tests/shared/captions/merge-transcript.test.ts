@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CaptionSegment } from '@/shared/caption-types';
+import type { CaptionSegment } from '@topskip/common/caption-types';
 import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
 
 describe('mergeCaptionSegmentsToTranscript', () => {

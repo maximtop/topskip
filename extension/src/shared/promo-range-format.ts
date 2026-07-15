@@ -1,6 +1,6 @@
 import { SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from '@/shared/constants';
-import type { PromoBlock } from '@/shared/promo-types';
-import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@/shared/promo-block';
+import type { PromoBlock } from '@topskip/common/promo-types';
+import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
 
 /**
  * Formats seconds as `m:ss` or `h:mm:ss` for popup display.

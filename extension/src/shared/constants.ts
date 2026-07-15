@@ -1,5 +1,11 @@
 import * as v from 'valibot';
 
+export {
+    MIME_APPLICATION_JSON,
+    MS_PER_SECOND,
+    SECONDS_PER_HOUR,
+} from '@topskip/common/constants';
+
 import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
 import { PROVIDER_ID } from '@/shared/providers';
 
@@ -34,6 +40,23 @@ export const STORAGE_KEY_OPENAI = 'topskip:openai';
  * Prefix for background-owned local copies of ready server results.
  */
 export const STORAGE_KEY_SERVER_RESULT_CACHE = 'topskip:server-result-cache';
+
+/**
+ * Background-only installation credential used by the public backend.
+ */
+export const STORAGE_KEY_SERVER_INSTALLATION = 'topskip:server-installation';
+
+/**
+ * Background-only snapshot of public server compatibility configuration.
+ */
+export const STORAGE_KEY_SERVER_CONFIG = 'topskip:server-config';
+
+/**
+ * Background-only timestamp that throttles public config refresh attempts even
+ * when the server is unavailable.
+ */
+export const STORAGE_KEY_SERVER_CONFIG_REFRESH_ATTEMPT =
+    'topskip:server-config-refresh-attempt';
 
 /**
  * Max characters for merged caption transcript sent to OpenRouter (tail
@@ -118,20 +141,9 @@ export const YOUTUBE_WATCH_URL_PATH = '/watch';
 // ─────────────────────────────────────────── Unit conversions ─────────────
 
 /**
- * Milliseconds per second — avoids inline `1000` whenever converting between
- * playback time (seconds) and JavaScript timers (ms).
- */
-export const MS_PER_SECOND = 1000;
-
-/**
  * Seconds per minute.
  */
 export const SECONDS_PER_MINUTE = 60;
-
-/**
- * Seconds per hour.
- */
-export const SECONDS_PER_HOUR = 3600;
 
 /**
  * Scale factor to convert a 0–1 fraction into a percentage.
@@ -157,12 +169,6 @@ export const LOG_PREFIX_CAPTIONS = '[TopSkip captions]';
 export const LOG_PREFIX_CONTENT = '[TopSkip content]';
 
 // ──────────────────────────────────────────── HTTP ────────────────────────
-
-/**
- * MIME type for JSON request/response bodies, used in `Content-Type` and
- * `Accept` headers across all extension bundles.
- */
-export const MIME_APPLICATION_JSON = 'application/json';
 
 // ──────────────────────────────────────────── YouTube ─────────────────────
 

@@ -60,6 +60,14 @@ export type CallOpenRouterChatParams = {
     apiKey: string;
     model: string;
     messages: OpenRouterChatMessage[];
+    reasoningEffort?:
+        | 'none'
+        | 'minimal'
+        | 'low'
+        | 'medium'
+        | 'high'
+        | 'xhigh'
+        | 'max';
     signal?: AbortSignal;
 };
 
@@ -285,7 +293,7 @@ export async function callOpenRouterChat(
       }
     | { ok: false; error: string }
 > {
-    const { apiKey, model, messages, signal } = params;
+    const { apiKey, model, messages, reasoningEffort, signal } = params;
     try {
         const res = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
             method: 'POST',
@@ -297,6 +305,10 @@ export async function callOpenRouterChat(
                 model,
                 messages,
                 stream: false,
+                reasoning:
+                    reasoningEffort === undefined
+                        ? undefined
+                        : { effort: reasoningEffort },
             }),
             signal,
         });

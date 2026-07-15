@@ -1,6 +1,6 @@
 import { MAX_PLAYBACK_DELTA_SEC } from '@/content/skip-logic';
-import type { PromoBlock } from '@/shared/promo-types';
-import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@/shared/promo-block';
+import type { PromoBlock } from '@topskip/common/promo-types';
+import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
 
 /**
  * Playback state needed to evaluate promo block skip decisions.

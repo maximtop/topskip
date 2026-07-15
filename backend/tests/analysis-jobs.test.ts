@@ -8,6 +8,7 @@ import type { SubtitleExtractionStrategy } from '@topskip/backend/extraction/sub
 import { LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS } from '@topskip/backend/extraction/local-transcript-fixtures';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
+    SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_UNAVAILABLE_REASON,
 } from '@topskip/common/server-analysis-contract';
 
@@ -716,6 +717,42 @@ describe('BackendAnalysisJobs', () => {
         expect(
             BackendAnalysisJobs.getDiagnosticsForTests(processing.jobId),
         ).toMatchObject({ stage: 'complete', terminalStatus: 'unavailable' });
+        recordFailure.mockRestore();
+    });
+
+    it('retains safe request and server versions with support failures', async () => {
+        const recordFailure = vi
+            .spyOn(BackendPublicState, 'recordFailure')
+            .mockImplementation(() => undefined);
+        const processing = BackendAnalysisJobs.start({
+            videoId: 'dQw4w9WgXcQ',
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            extensionVersion: '0.1.0',
+            nowMs: 1_900_000_000_000,
+            extractionStrategies: [
+                {
+                    name: 'failed_extraction',
+                    extract: () => ({
+                        status: 'failed',
+                        failureReason: 'strategy_error',
+                        diagnostics: { code: 'caption_extraction_failed' },
+                    }),
+                },
+            ],
+        });
+        if (processing.status !== 'processing') {
+            throw new Error('Expected processing response.');
+        }
+
+        await BackendAnalysisJobs.waitForExtractionForTests(processing.jobId);
+
+        expect(recordFailure).toHaveBeenCalledWith(
+            expect.objectContaining({
+                apiVersion: SERVER_ANALYSIS_API_VERSION,
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                extensionVersion: '0.1.0',
+            }),
+        );
         recordFailure.mockRestore();
     });
 

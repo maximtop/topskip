@@ -3,6 +3,7 @@ import * as v from 'valibot';
 
 import { BackendApiProtection } from '@topskip/backend/api-protection';
 import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
+import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
 import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
 import { BackendHttpServer } from '@topskip/backend/server';
 import { BackendPublicState } from '@topskip/backend/public-state';
@@ -10,6 +11,7 @@ import type { SubtitleExtractionStrategyResult } from '@topskip/backend/extracti
 import { MIME_APPLICATION_JSON } from '@topskip/common/constants';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
+    SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_UNAVAILABLE_REASON,
     TOPSKIP_CAPABILITIES_HEADER_NAME,
     noPromoResponseSchema,
@@ -562,6 +564,60 @@ describe('BackendHttpServer request body guard', () => {
         });
     });
 
+    it('rejects overlong public poll job ids with a safe typed error', async () => {
+        BackendPublicState.configureForTests();
+        const server = BackendHttpServer.create({
+            requireAuth: true,
+            now: () => 1_900_000_000_000,
+        });
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+        const baseUrl = localServerUrl(server);
+        try {
+            const registration = await fetch(
+                `${baseUrl}/v1/installations/register`,
+                { method: 'POST' },
+            );
+            const registrationBody: unknown = await registration.json();
+            if (
+                registrationBody === null ||
+                typeof registrationBody !== 'object' ||
+                !('token' in registrationBody) ||
+                typeof registrationBody.token !== 'string'
+            ) {
+                throw new Error('Expected registration token.');
+            }
+            const headers = {
+                authorization: `Bearer ${registrationBody.token}`,
+                [TOPSKIP_CAPABILITIES_HEADER_NAME]: 'typed-server-errors-v1',
+            };
+
+            const maximumLengthResponse = await fetch(
+                `${baseUrl}/v1/analysis/jobs/${'j'.repeat(160)}`,
+                { headers },
+            );
+            expect(maximumLengthResponse.status).toBe(404);
+            await expect(maximumLengthResponse.json()).resolves.toEqual({
+                status: 'error',
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                error: { code: 'job_not_found' },
+            });
+
+            const overlongResponse = await fetch(
+                `${baseUrl}/v1/analysis/jobs/${'j'.repeat(161)}`,
+                { headers },
+            );
+            expect(overlongResponse.status).toBe(404);
+            await expect(overlongResponse.json()).resolves.toEqual({
+                status: 'error',
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                error: { code: 'invalid_request' },
+            });
+        } finally {
+            BackendPublicState.resetForTests();
+        }
+    });
+
     it('keeps undeclared v2 routes outside the v1 compatibility boundary', async () => {
         const server = BackendHttpServer.create();
         servers.push(server);
@@ -831,6 +887,54 @@ describe('BackendHttpServer request body guard', () => {
             expect(supportId).toMatch(/^support-/u);
         } finally {
             authenticate.mockRestore();
+            BackendPublicState.resetForTests();
+        }
+    });
+
+    it('retains a validated extension version for unexpected analysis faults', async () => {
+        BackendPublicState.configureForTests();
+        vi.spyOn(
+            BackendAnalysisApi,
+            'handleAnalysisRequest',
+        ).mockImplementation(() => {
+            throw new Error('unexpected analysis fault');
+        });
+        const server = BackendHttpServer.create({ requireAuth: false });
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+        try {
+            const response = await postJson(
+                `${localServerUrl(server)}/v1/analysis`,
+                {
+                    videoId: 'dQw4w9WgXcQ',
+                    extensionVersion: '0.1.0',
+                    client: {
+                        source: 'chrome-extension',
+                        capabilities: ['typed-server-errors-v1'],
+                    },
+                },
+            );
+            const body: unknown = await response.json();
+            const error: unknown =
+                body !== null && typeof body === 'object'
+                    ? Reflect.get(body, 'error')
+                    : null;
+            const supportId: unknown =
+                error !== null && typeof error === 'object'
+                    ? Reflect.get(error, 'supportId')
+                    : null;
+            if (typeof supportId !== 'string') {
+                throw new Error('Expected persisted support metadata.');
+            }
+
+            expect(
+                BackendPublicState.findFailureForTests(supportId),
+            ).toMatchObject({
+                apiVersion: SERVER_ANALYSIS_API_VERSION,
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                extensionVersion: '0.1.0',
+            });
+        } finally {
             BackendPublicState.resetForTests();
         }
     });

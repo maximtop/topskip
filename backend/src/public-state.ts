@@ -28,7 +28,7 @@ const ARTIFACT_RETENTION_MS = 30 * DAY_MS;
 const MAX_ARTIFACT_RECORD_COUNT = 10_000;
 const LOW_DISK_ARTIFACT_RECORD_COUNT = 100;
 const MIN_FREE_STORAGE_BYTES = 512 * 1024 * 1024;
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const SQLITE_MEMORY_PATH = ':memory:';
 const HOUSEKEEPING_INTERVAL_MS = 5 * MINUTE_MS;
 const STALE_MODEL_RESERVATION_MS = HOUR_MS;
@@ -89,8 +89,22 @@ export type RetainedPublicFailure = {
     code: string;
     videoId?: string;
     jobId?: string;
+    apiVersion: number;
+    algorithmVersion: string;
+    extensionVersion?: string;
     createdAtMs: number;
     expiresAtMs: number;
+};
+
+/**
+ * Legacy rows may predate safe version retention while new writes always carry server versions.
+ */
+type RetainedPublicFailureSnapshot = Omit<
+    RetainedPublicFailure,
+    'apiVersion' | 'algorithmVersion'
+> & {
+    apiVersion?: number;
+    algorithmVersion?: string;
 };
 
 /**
@@ -556,14 +570,18 @@ export class BackendPublicState {
         BackendPublicState.getDatabase()
             .prepare(
                 `INSERT OR REPLACE INTO analysis_failures
-                    (support_id, code, video_id, job_id, created_at_ms, expires_at_ms)
-                 VALUES (?, ?, ?, ?, ?, ?)`,
+                    (support_id, code, video_id, job_id, api_version,
+                     algorithm_version, extension_version, created_at_ms, expires_at_ms)
+                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             )
             .run(
                 input.supportId,
                 input.code,
                 input.videoId ?? null,
                 input.jobId ?? null,
+                input.apiVersion,
+                input.algorithmVersion,
+                input.extensionVersion ?? null,
                 input.createdAtMs,
                 input.expiresAtMs,
             );
@@ -658,10 +676,11 @@ export class BackendPublicState {
      */
     static findFailureForTests(
         supportId: string,
-    ): RetainedPublicFailure | null {
+    ): RetainedPublicFailureSnapshot | null {
         const row = BackendPublicState.getDatabase()
             .prepare(
-                `SELECT support_id, code, video_id, job_id, created_at_ms, expires_at_ms
+                `SELECT support_id, code, video_id, job_id, api_version,
+                        algorithm_version, extension_version, created_at_ms, expires_at_ms
                  FROM analysis_failures
                  WHERE support_id = ?`,
             )
@@ -674,6 +693,15 @@ export class BackendPublicState {
             code: BackendPublicState.readString(row, 'code'),
             videoId: BackendPublicState.readString(row, 'video_id'),
             jobId: BackendPublicState.readString(row, 'job_id'),
+            apiVersion: BackendPublicState.readNumber(row, 'api_version'),
+            algorithmVersion: BackendPublicState.readString(
+                row,
+                'algorithm_version',
+            ),
+            extensionVersion: BackendPublicState.readString(
+                row,
+                'extension_version',
+            ),
             createdAtMs: BackendPublicState.readNumber(row, 'created_at_ms'),
             expiresAtMs: BackendPublicState.readNumber(row, 'expires_at_ms'),
         };
@@ -690,6 +718,15 @@ export class BackendPublicState {
             code: read.code,
             ...(read.videoId === null ? {} : { videoId: read.videoId }),
             ...(read.jobId === null ? {} : { jobId: read.jobId }),
+            ...(read.apiVersion === null
+                ? {}
+                : { apiVersion: read.apiVersion }),
+            ...(read.algorithmVersion === null
+                ? {}
+                : { algorithmVersion: read.algorithmVersion }),
+            ...(read.extensionVersion === null
+                ? {}
+                : { extensionVersion: read.extensionVersion }),
             createdAtMs: read.createdAtMs,
             expiresAtMs: read.expiresAtMs,
         };
@@ -819,12 +856,64 @@ export class BackendPublicState {
                 code TEXT NOT NULL,
                 video_id TEXT,
                 job_id TEXT,
+                api_version INTEGER,
+                algorithm_version TEXT,
+                extension_version TEXT,
                 created_at_ms INTEGER NOT NULL,
                 expires_at_ms INTEGER NOT NULL
             );
             CREATE INDEX IF NOT EXISTS analysis_failures_expiry_idx
                 ON analysis_failures (expires_at_ms);
         `);
+        BackendPublicState.addAnalysisFailureColumnIfMissing(
+            database,
+            'api_version',
+            'INTEGER',
+        );
+        BackendPublicState.addAnalysisFailureColumnIfMissing(
+            database,
+            'algorithm_version',
+            'TEXT',
+        );
+        BackendPublicState.addAnalysisFailureColumnIfMissing(
+            database,
+            'extension_version',
+            'TEXT',
+        );
+        database
+            .prepare(
+                `UPDATE schema_metadata
+                 SET schema_version = ?
+                 WHERE schema_version < ?`,
+            )
+            .run(SCHEMA_VERSION, SCHEMA_VERSION);
+    }
+
+    /**
+     * Extends only the retained-failure table so prior images can ignore the new columns.
+     *
+     * @param database - Open SQLite connection.
+     * @param columnName - Trusted migration-owned column name.
+     * @param columnType - Trusted nullable SQLite type declaration.
+     */
+    private static addAnalysisFailureColumnIfMissing(
+        database: DatabaseSync,
+        columnName: string,
+        columnType: 'INTEGER' | 'TEXT',
+    ): void {
+        const exists = database
+            .prepare('PRAGMA table_info(analysis_failures)')
+            .all()
+            .some(
+                (row) =>
+                    BackendPublicState.readString(row, 'name') === columnName,
+            );
+        if (exists) {
+            return;
+        }
+        database.exec(
+            `ALTER TABLE analysis_failures ADD COLUMN ${columnName} ${columnType}`,
+        );
     }
 
     /**

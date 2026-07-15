@@ -133,8 +133,14 @@ Only close the original session after both commands succeed. If either fails,
 restore the timestamped backup from the still-open session, validate it with
 `sudo /usr/sbin/sshd -t`, and reload `ssh` again.
 
-Authenticate root's Docker client for image pulls using a read-only GitHub token
-without putting the token on the command line:
+`ghcr.io/maximtop/topskip-backend` is published as a public package because the
+source repository is public. The deploy script therefore pulls immutable
+digests anonymously and the VPS does not keep a GitHub credential. Verify this
+from a client without a configured Docker credential before the first deploy.
+
+If the package is intentionally made private later, create a dedicated token
+with only `read:packages` and authenticate root's Docker client without putting
+the token on the command line:
 
 ```bash
 sudo --preserve-env=GHCR_TOKEN sh -c \
@@ -299,6 +305,21 @@ Rotate an application secret by editing `/opt/topskip/production.env` with
 `sudoedit`, then redeploy the current immutable digest. Rotate the Actions key by
 installing a new restricted public key first, replacing the GitHub environment
 secret, testing `status`, and only then removing the old key.
+
+### YouTube anonymous challenges
+
+`caption_extraction_failed` can mean YouTube rejected anonymous metadata access
+from the VPS IP even though the same public video works from a residential
+browser. Production logs intentionally retain only the stable failure code; do
+not add yt-dlp stderr, cookies, signed URLs, or exported browser state to logs or
+support events. Confirm the category with a one-off operator probe that deletes
+its temporary stderr immediately after classifying it.
+
+The yt-dlp project recommends a different egress IP as the safer response when
+an anonymous IP is blocked; account cookies may themselves be blocked and put
+the account at risk. Proxy, cookie, and PO-token operation are not part of the
+current TopSkip production design. See the
+[yt-dlp known-issues guidance](https://github.com/yt-dlp/yt-dlp/issues/3766).
 
 To update yt-dlp, run `make yt-dlp-refresh-pin`, review the tag and SHA-256
 changes, run CI, and deploy a newly built image. Never run `yt-dlp -U` inside the

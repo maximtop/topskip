@@ -238,7 +238,7 @@ components:
                     pattern: '^[A-Za-z0-9_-]{11}$'
                 durationSec:
                     type: number
-                    exclusiveMinimum: 0
+                    minimum: 0.001
                 extensionVersion:
                     $ref: '#/components/schemas/ExtensionVersion'
                 algorithmVersion:

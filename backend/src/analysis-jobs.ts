@@ -11,6 +11,7 @@ import {
     noPromoResponseSchema,
     processingResponseSchema,
     readyResponseSchema,
+    SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_ERROR_CODE,
     SERVER_ANALYSIS_UNAVAILABLE_REASON,
     terminalErrorResponseSchema,
@@ -100,6 +101,7 @@ type AnalysisJobRecord = {
     jobKey: string;
     videoId: string;
     algorithmVersion: string;
+    extensionVersion: string | undefined;
     durationSec: number | undefined;
     pollAfterSec: number;
     createdAtMs: number;
@@ -172,6 +174,7 @@ export class BackendAnalysisJobs {
     static start(input: {
         videoId: string;
         algorithmVersion: string;
+        extensionVersion?: string;
         durationSec?: number;
         nowMs: number;
         analysisAdapter?: BackendLlmAnalysisAdapter;
@@ -205,6 +208,7 @@ export class BackendAnalysisJobs {
             jobKey,
             videoId: input.videoId,
             algorithmVersion: input.algorithmVersion,
+            extensionVersion: input.extensionVersion,
             durationSec: input.durationSec,
             pollAfterSec: DEFAULT_POLL_AFTER_SEC,
             createdAtMs: input.nowMs,
@@ -992,6 +996,11 @@ export class BackendAnalysisJobs {
                 code,
                 videoId: record.videoId,
                 jobId: record.jobId,
+                apiVersion: SERVER_ANALYSIS_API_VERSION,
+                algorithmVersion: record.algorithmVersion,
+                ...(record.extensionVersion === undefined
+                    ? {}
+                    : { extensionVersion: record.extensionVersion }),
                 createdAtMs: nowMs,
                 expiresAtMs: nowMs + FAILURE_RETENTION_MS,
             });

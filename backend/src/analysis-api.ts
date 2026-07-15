@@ -239,6 +239,7 @@ export class BackendAnalysisApi {
         const jobResponse = BackendAnalysisJobs.start({
             videoId: parsed.output.videoId,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            extensionVersion: parsed.output.extensionVersion,
             durationSec: parsed.output.durationSec,
             nowMs,
             ownerInstallationHash: context.installationHash,

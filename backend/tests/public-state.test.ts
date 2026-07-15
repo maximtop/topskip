@@ -5,6 +5,10 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BackendPublicState } from '@topskip/backend/public-state';
+import {
+    SERVER_ANALYSIS_ALGORITHM_VERSION,
+    SERVER_ANALYSIS_API_VERSION,
+} from '@topskip/common/server-analysis-contract';
 
 const MINUTE_MS = 60 * 1_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -365,6 +369,9 @@ describe('BackendPublicState', () => {
             code: 'internal_error',
             videoId: 'dQw4w9WgXcQ',
             jobId: 'job-1',
+            apiVersion: SERVER_ANALYSIS_API_VERSION,
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            extensionVersion: '0.1.0',
             createdAtMs: 1_900_000_000_000,
             expiresAtMs: 1_902_592_000_000,
         });
@@ -383,9 +390,77 @@ describe('BackendPublicState', () => {
             code: 'internal_error',
             videoId: 'dQw4w9WgXcQ',
             jobId: 'job-1',
+            apiVersion: SERVER_ANALYSIS_API_VERSION,
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            extensionVersion: '0.1.0',
             createdAtMs: 1_900_000_000_000,
             expiresAtMs: 1_902_592_000_000,
         });
+    });
+
+    it('adds safe failure versions without breaking legacy failure rows or readers', () => {
+        const path = join(directory, 'legacy-topskip.sqlite');
+        BackendPublicState.closeForTests();
+        const legacyDatabase = new DatabaseSync(path);
+        legacyDatabase.exec(`
+            CREATE TABLE analysis_failures (
+                support_id TEXT PRIMARY KEY,
+                code TEXT NOT NULL,
+                video_id TEXT,
+                job_id TEXT,
+                created_at_ms INTEGER NOT NULL,
+                expires_at_ms INTEGER NOT NULL
+            );
+            INSERT INTO analysis_failures
+                (support_id, code, video_id, job_id, created_at_ms, expires_at_ms)
+            VALUES
+                ('legacy-support', 'internal_error', NULL, NULL, 1900000000000, 1902592000000);
+        `);
+        legacyDatabase.close();
+
+        BackendPublicState.configureForTests(path);
+
+        expect(
+            BackendPublicState.findFailureForTests('legacy-support'),
+        ).toEqual({
+            supportId: 'legacy-support',
+            code: 'internal_error',
+            createdAtMs: 1_900_000_000_000,
+            expiresAtMs: 1_902_592_000_000,
+        });
+        BackendPublicState.recordFailure({
+            supportId: 'versioned-support',
+            code: 'model_provider_error',
+            apiVersion: SERVER_ANALYSIS_API_VERSION,
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            extensionVersion: '0.2.0',
+            createdAtMs: 1_900_000_000_001,
+            expiresAtMs: 1_902_592_000_001,
+        });
+        expect(
+            BackendPublicState.findFailureForTests('versioned-support'),
+        ).toMatchObject({
+            apiVersion: SERVER_ANALYSIS_API_VERSION,
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            extensionVersion: '0.2.0',
+        });
+
+        BackendPublicState.closeForTests();
+        const rollbackDatabase = new DatabaseSync(path);
+        expect(
+            rollbackDatabase
+                .prepare(
+                    `SELECT support_id, code, created_at_ms, expires_at_ms
+                     FROM analysis_failures
+                     WHERE support_id = ?`,
+                )
+                .get('versioned-support'),
+        ).toMatchObject({
+            support_id: 'versioned-support',
+            code: 'model_provider_error',
+        });
+        rollbackDatabase.close();
+        BackendPublicState.configureForTests(path);
     });
 
     it('expires artifacts and safe support failures after thirty days', () => {
@@ -402,6 +477,8 @@ describe('BackendPublicState', () => {
         BackendPublicState.recordFailure({
             supportId: 'expiring-support',
             code: 'internal_error',
+            apiVersion: SERVER_ANALYSIS_API_VERSION,
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             createdAtMs: completedAtMs,
             expiresAtMs,
         });

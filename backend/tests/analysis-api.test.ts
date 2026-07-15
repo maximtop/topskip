@@ -139,6 +139,9 @@ describe('BackendAnalysisApi', () => {
         expect(artifactCacheSpy).toHaveBeenCalledOnce();
         expect(existingJobSpy).toHaveBeenCalledOnce();
         expect(startJobSpy).toHaveBeenCalledOnce();
+        expect(startJobSpy).toHaveBeenCalledWith(
+            expect.objectContaining({ extensionVersion: '0.1.0' }),
+        );
         vi.restoreAllMocks();
     });
 

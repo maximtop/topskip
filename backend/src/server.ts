@@ -45,6 +45,7 @@ const LOCAL_IP_HMAC_SECRET = 'topskip-local-development';
 const MAX_CAPABILITIES_HEADER_BYTES = 2_048;
 const MAX_CAPABILITIES_HEADER_COUNT = 16;
 const MAX_CAPABILITY_NAME_LENGTH = 64;
+const MAX_JOB_ID_LENGTH = 160;
 const FAILURE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const CORS_ALLOW_HEADERS = `Authorization, Content-Type, ${TOPSKIP_CAPABILITIES_HEADER_NAME}`;
@@ -83,6 +84,7 @@ type BackendHttpRequestContext = {
     now: () => number;
     requestId: string;
     typedErrors: boolean;
+    extensionVersion: string | undefined;
 };
 
 /**
@@ -123,6 +125,7 @@ export class BackendHttpServer {
                 now,
                 requestId: `request-${randomUUID()}`,
                 typedErrors: BackendHttpServer.headerSupportsTypedErrors(req),
+                extensionVersion: undefined,
             };
             BackendHttpServer.applyCorsHeaders(req, res, production);
             const route = BackendHttpServer.routeTemplate(url);
@@ -336,6 +339,13 @@ export class BackendHttpServer {
         context.typedErrors =
             context.typedErrors ||
             BackendHttpServer.validBodySupportsTypedErrors(readResult.body);
+        const parsedRequest = v.safeParse(
+            serverAnalysisRequestSchema,
+            readResult.body,
+        );
+        if (parsedRequest.success) {
+            context.extensionVersion = parsedRequest.output.extensionVersion;
+        }
 
         const result = BackendAnalysisApi.handleAnalysisRequest(
             readResult.body,
@@ -833,14 +843,17 @@ export class BackendHttpServer {
     }
 
     /**
-     * Converts encoded route parameters without allowing malformed paths to reject routing.
+     * Enforces the public identifier bound while decoding poll route parameters.
      *
      * @param rawJobId - Percent-encoded route segment.
      * @returns Decoded job id, or `null` for malformed encoding.
      */
     private static decodeJobId(rawJobId: string): string | null {
         try {
-            return decodeURIComponent(rawJobId);
+            const jobId = decodeURIComponent(rawJobId);
+            return jobId.length > 0 && jobId.length <= MAX_JOB_ID_LENGTH
+                ? jobId
+                : null;
         } catch {
             return null;
         }
@@ -935,6 +948,11 @@ export class BackendHttpServer {
             BackendPublicState.recordFailure({
                 supportId,
                 code: SERVER_ANALYSIS_FAILURE_CODE.InternalError,
+                apiVersion: SERVER_ANALYSIS_API_VERSION,
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                ...(context.extensionVersion === undefined
+                    ? {}
+                    : { extensionVersion: context.extensionVersion }),
                 createdAtMs: nowMs,
                 expiresAtMs: nowMs + FAILURE_RETENTION_MS,
             });

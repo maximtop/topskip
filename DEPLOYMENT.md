@@ -93,6 +93,46 @@ authorized key disables PTY, forwarding, agent forwarding, X11, and user rc.
 The home directory and `authorized_keys` stay root-owned so the deployment user
 cannot replace its own forced-command restriction.
 
+Keep the current `deploy` SSH session open while checking whether sshd has an
+explicit user allow-list:
+
+```bash
+sudo grep -RnsE '^[[:space:]]*AllowUsers[[:space:]]' \
+  /etc/ssh/sshd_config /etc/ssh/sshd_config.d 2>/dev/null || true
+sudo /usr/sbin/sshd -T | grep -E '^(allowusers|permitrootlogin) '
+```
+
+If no `AllowUsers` directive exists, do not introduce one solely for TopSkip. If
+one exists, identify the file reported by `grep`, back it up, and add
+`topskip-deploy` to the existing directive. Preserve `deploy` and every other
+existing user or host pattern, and keep `PermitRootLogin no` unchanged. For
+example, after replacing the path below with the file that contains the active
+directive:
+
+```bash
+SSH_CONFIG_FILE=/etc/ssh/sshd_config
+sudo cp --archive -- "$SSH_CONFIG_FILE" \
+  "$SSH_CONFIG_FILE.before-topskip-$(date -u +%Y%m%dT%H%M%SZ)"
+sudoedit "$SSH_CONFIG_FILE"
+sudo /usr/sbin/sshd -t
+sudo systemctl reload ssh
+sudo /usr/sbin/sshd -T | grep -E '^(allowusers|permitrootlogin) '
+```
+
+Do not reload sshd if `sshd -t` reports an error. After a successful reload,
+confirm that the effective output still contains `permitrootlogin no` and that
+the allow-list contains both users. Before closing the original maintenance
+session, verify both login paths from a second local terminal:
+
+```bash
+ssh kojakurtki-vps 'test "$(id -un)" = deploy'
+ssh -i "$HOME/.ssh/topskip-actions" -l topskip-deploy kojakurtki-vps status
+```
+
+Only close the original session after both commands succeed. If either fails,
+restore the timestamped backup from the still-open session, validate it with
+`sudo /usr/sbin/sshd -t`, and reload `ssh` again.
+
 Authenticate root's Docker client for image pulls using a read-only GitHub token
 without putting the token on the command line:
 

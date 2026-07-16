@@ -54,7 +54,7 @@
 
 - [x] **Task 5.1**: Run format, lint, typecheck, unit/coverage, build, and
   Playwright suites.
-- [ ] **Task 5.2**: Validate image security, persistence, health, loopback
+- [x] **Task 5.2**: Validate image security, persistence, health, loopback
   exposure, deploy, and rollback locally/on VPS.
 - [ ] **Task 5.3**: Run real VPS yt-dlp and one paid Gemini smoke through the
   public hostname, then record beta rollout checks.

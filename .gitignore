@@ -12,3 +12,6 @@ tmp/
 .env
 .env.local
 /deploy/production.env
+/deploy/cloudflared/*.json
+/deploy/cloudflared/cert.pem
+/.cloudflared/

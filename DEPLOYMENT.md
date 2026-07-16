@@ -170,14 +170,20 @@ Package upgrades are explicit operator maintenance; the service itself uses
 
 Create the named tunnel `topskip-production` in Cloudflare and route
 `topskip.maximtop.dev` to it. Prepare the service account and protected config
-directory before copying its credential JSON:
+directory before installing its credential JSON. Keep the source credential in
+Cloudflare's user-level directory, never in the repository or Docker build
+context:
 
 ```bash
 id cloudflared >/dev/null 2>&1 || \
   sudo useradd --system --home /var/lib/cloudflared --shell /usr/sbin/nologin cloudflared
 sudo install -d -o root -g cloudflared -m 0750 /etc/cloudflared
-sudo cp TUNNEL_UUID.json /etc/cloudflared/TUNNEL_UUID.json
-sudo cp deploy/cloudflared/topskip.yml.example /etc/cloudflared/topskip.yml
+credential_file="${HOME}/.cloudflared/TUNNEL_UUID.json"
+test -f "${credential_file}"
+sudo install -o root -g cloudflared -m 0640 -- \
+  "${credential_file}" /etc/cloudflared/TUNNEL_UUID.json
+sudo install -o root -g cloudflared -m 0640 -- \
+  deploy/cloudflared/topskip.yml.example /etc/cloudflared/topskip.yml
 sudoedit /etc/cloudflared/topskip.yml
 ```
 
@@ -193,7 +199,13 @@ sudo cp deploy/systemd/cloudflared-topskip.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now cloudflared-topskip.service
 sudo systemctl status cloudflared-topskip.service
+rm -f -- "${credential_file}"
 ```
+
+Remove the user-level credential copy only after the service is healthy. The
+runtime credential remains root-owned under `/etc/cloudflared`; a Cloudflare
+account certificate, when retained for operator maintenance, also stays outside
+the repository with mode `0600`.
 
 Create no TopSkip `A` or `AAAA` record containing the VPS IP. Configure the
 Cloudflare rate rule for `/v1/analysis*` at 30 requests per 10 seconds per IP,

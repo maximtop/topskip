@@ -20,6 +20,7 @@ readonly CONTAINER_NAME=topskip-backend
 readonly HEALTH_ATTEMPTS=18
 readonly HEALTH_INTERVAL_SECONDS=5
 readonly IMAGE_PATTERN='^ghcr\.io/maximtop/topskip-backend@sha256:[a-f0-9]{64}$'
+readonly ENVIRONMENT_KEY_PATTERN='^[A-Z][A-Z0-9_]*$'
 readonly EXTENSION_ORIGINS_PATTERN='^chrome-extension://[a-p]{32}(,chrome-extension://[a-p]{32})*$'
 readonly OPENROUTER_KEY_MINIMUM_LENGTH=20
 readonly IP_HMAC_SECRET_MINIMUM_LENGTH=32
@@ -90,12 +91,61 @@ read_environment_value() {
     printf '%s' "${value}"
 }
 
+validate_environment_syntax() {
+    local environment_file=$1
+    local first_character
+    local key
+    local last_character
+    local line
+    local seen_keys=$'\n'
+    local unquoted_value
+    local value
+
+    while IFS= read -r line || [[ -n ${line} ]]; do
+        line=${line%$'\r'}
+        [[ -z ${line} || ${line} == \#* ]] && continue
+        if [[ ${line} != *=* ]]; then
+            echo 'TopSkip production.env has invalid syntax.' >&2
+            exit 78
+        fi
+
+        key=${line%%=*}
+        value=${line#*=}
+        if [[ ! ${key} =~ ${ENVIRONMENT_KEY_PATTERN} ||
+            ${seen_keys} == *$'\n'"${key}"$'\n'* ]]; then
+            echo 'TopSkip production.env has invalid syntax.' >&2
+            exit 78
+        fi
+        seen_keys+="${key}"$'\n'
+
+        first_character=${value:0:1}
+        last_character=${value: -1}
+        if [[ ${first_character} == '"' || ${first_character} == "'" ]]; then
+            if ((${#value} < 2)) || [[ ${last_character} != "${first_character}" ]]; then
+                echo 'TopSkip production.env has invalid syntax.' >&2
+                exit 78
+            fi
+            unquoted_value=${value:1:${#value}-2}
+            if [[ ${unquoted_value} == *"${first_character}"* ]]; then
+                echo 'TopSkip production.env has invalid syntax.' >&2
+                exit 78
+            fi
+            continue
+        fi
+        if [[ ${value} == *'"'* || ${value} == *"'"* ]]; then
+            echo 'TopSkip production.env has invalid syntax.' >&2
+            exit 78
+        fi
+    done < "${environment_file}"
+}
+
 validate_environment_secrets() {
     local extension_origins
     local environment_file=$1
     local ip_hmac_secret
     local openrouter_key
 
+    validate_environment_syntax "${environment_file}"
     openrouter_key=$(read_environment_value "${environment_file}" OPENROUTER_API_KEY)
     ip_hmac_secret=$(read_environment_value "${environment_file}" TOPSKIP_IP_HMAC_SECRET)
     extension_origins=$(read_environment_value "${environment_file}" TOPSKIP_ALLOWED_EXTENSION_ORIGINS)
@@ -129,6 +179,15 @@ compose() {
         --project-directory "${DEPLOY_DIRECTORY}" \
         --file "${COMPOSE_FILE}" \
         "$@"
+}
+
+validate_compose_configuration() {
+    local image=$1
+
+    if ! compose "${image}" config --quiet >/dev/null 2>&1; then
+        echo 'TopSkip Compose configuration is invalid.' >&2
+        return 1
+    fi
 }
 
 read_state_field() {
@@ -193,7 +252,7 @@ prepare_image() {
     local image=$1
 
     validate_image "${image}"
-    compose "${image}" config --quiet || return 1
+    validate_compose_configuration "${image}" || return 1
     if docker image inspect "${image}" >/dev/null 2>&1; then
         return 0
     fi
@@ -204,7 +263,7 @@ activate_image() {
     local image=$1
 
     validate_image "${image}"
-    compose "${image}" config --quiet || return 1
+    validate_compose_configuration "${image}" || return 1
     compose "${image}" up --detach --no-deps --pull never "${SERVICE_NAME}" || return 1
     wait_for_health
 }

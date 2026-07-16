@@ -6,6 +6,9 @@
 .env.*
 !.env.example
 deploy/production.env
+deploy/cloudflared/*.json
+deploy/cloudflared/cert.pem
+.cloudflared
 **/coverage
 **/dist
 **/node_modules

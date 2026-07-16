@@ -19,6 +19,18 @@ if grep -Fq 'LOCK_FILE=/run/lock/' "${DEPLOY_DIRECTORY}/scripts/topskip-deploy.s
     exit 1
 fi
 
+for hardening_directive in \
+    'CapabilityBoundingSet=' \
+    'PrivateDevices=true' \
+    'ProtectProc=invisible' \
+    'RestrictNamespaces=true' \
+    'RestrictSUIDSGID=true' \
+    'UMask=0077'; do
+    grep -Fxq "${hardening_directive}" "${DEPLOY_DIRECTORY}/systemd/cloudflared-topskip.service"
+done
+grep -Fxq '/deploy/cloudflared/*.json' "${REPOSITORY_DIRECTORY}/.gitignore"
+grep -Fxq 'deploy/cloudflared/*.json' "${REPOSITORY_DIRECTORY}/.dockerignore"
+
 temporary_directory=$(mktemp -d)
 trap 'rm -rf "${temporary_directory}"' EXIT
 
@@ -56,6 +68,43 @@ if TOPSKIP_DEPLOY_DIRECTORY=${temporary_directory} bash -c '
     echo 'The empty production environment example passed secret validation.' >&2
     exit 1
 fi
+secret_marker='TOPSKIP_TEST_SECRET_MUST_NOT_APPEAR'
+malformed_environment=${temporary_directory}/malformed-production.env
+printf 'OPENROUTER_API_KEY="%s\nTOPSKIP_IP_HMAC_SECRET=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nTOPSKIP_ALLOWED_EXTENSION_ORIGINS=chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' \
+    "${secret_marker}" > "${malformed_environment}"
+set +e
+malformed_output=$(TOPSKIP_DEPLOY_DIRECTORY=${temporary_directory} bash -c '
+    source "$1"
+    validate_environment_secrets "$2"
+' bash "${DEPLOY_DIRECTORY}/scripts/topskip-deploy.sh" "${malformed_environment}" 2>&1)
+malformed_status=$?
+set -e
+[[ ${malformed_status} -eq 78 ]]
+grep -Fq 'TopSkip production.env has invalid syntax.' <<< "${malformed_output}"
+if grep -Fq "${secret_marker}" <<< "${malformed_output}"; then
+    echo 'Malformed environment validation exposed a secret value.' >&2
+    exit 1
+fi
+
+set +e
+compose_validation_output=$(TOPSKIP_DEPLOY_DIRECTORY=${temporary_directory} bash -c '
+    source "$1"
+    MOCK_SECRET=$2
+    docker() {
+        printf "Docker Compose leaked %s\n" "${MOCK_SECRET}" >&2
+        return 1
+    }
+    validate_compose_configuration "$3"
+' bash "${DEPLOY_DIRECTORY}/scripts/topskip-deploy.sh" "${secret_marker}" "${VALID_IMAGE}" 2>&1)
+compose_validation_status=$?
+set -e
+[[ ${compose_validation_status} -eq 1 ]]
+grep -Fq 'TopSkip Compose configuration is invalid.' <<< "${compose_validation_output}"
+if grep -Fq "${secret_marker}" <<< "${compose_validation_output}"; then
+    echo 'Compose validation exposed raw parser output.' >&2
+    exit 1
+fi
+
 valid_environment=${temporary_directory}/valid-production.env
 printf 'OPENROUTER_API_KEY=sk-or-v1-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\nTOPSKIP_IP_HMAC_SECRET=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\nTOPSKIP_ALLOWED_EXTENSION_ORIGINS=chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n' > "${valid_environment}"
 TOPSKIP_DEPLOY_DIRECTORY=${temporary_directory} bash -c '

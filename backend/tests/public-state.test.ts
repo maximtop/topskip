@@ -5,6 +5,7 @@ import { DatabaseSync } from 'node:sqlite';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import { BackendPublicState } from '@topskip/backend/public-state';
+import { FrozenPublicStateV2Reader } from './fixtures/public-state-v2-reader';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_API_VERSION,
@@ -18,6 +19,99 @@ const MAX_ARTIFACT_COUNT = 10_000;
 const LOW_DISK_ARTIFACT_COUNT = 100;
 const ARTIFACT_VIDEO_ID = 'dQw4w9WgXcQ';
 const ARTIFACT_ALGORITHM_VERSION = 'server-v4';
+const UPLOAD_ALGORITHM_VERSION = SERVER_ANALYSIS_ALGORITHM_VERSION;
+const TRANSCRIPT_HASH = 'a'.repeat(64);
+const OTHER_TRANSCRIPT_HASH = 'b'.repeat(64);
+
+function buildArtifact(input: {
+    recordId: string;
+    algorithmVersion?: string;
+    languageCode?: string;
+    transcriptHash?: string;
+    sourceType?:
+        | 'extension_caption_upload'
+        | 'local_fixture'
+        | 'youtube_timedtext'
+        | 'youtube_yt_dlp';
+    completedAtMs?: number;
+}): unknown {
+    const algorithmVersion = input.algorithmVersion ?? UPLOAD_ALGORITHM_VERSION;
+    const sourceType = input.sourceType ?? 'extension_caption_upload';
+    const video = {
+        videoId: ARTIFACT_VIDEO_ID,
+        algorithmVersion,
+        ...(input.languageCode === undefined
+            ? {}
+            : { languageCode: input.languageCode }),
+        ...(input.transcriptHash === undefined
+            ? {}
+            : { transcriptHash: input.transcriptHash }),
+        sourceType,
+    };
+    return {
+        recordId: input.recordId,
+        video,
+        selectedTranscriptArtifact: {
+            artifactId: `transcript-${input.recordId}`,
+            videoId: ARTIFACT_VIDEO_ID,
+            algorithmVersion,
+            sourceType,
+            languageCode: input.languageCode ?? null,
+            ...(input.transcriptHash === undefined
+                ? {}
+                : { transcriptHash: input.transcriptHash }),
+        },
+        job: { completedAtMs: input.completedAtMs ?? Date.now() + DAY_MS },
+    };
+}
+
+function createV2Database(path: string): void {
+    const database = new DatabaseSync(path);
+    const oldPayload = buildArtifact({
+        recordId: 'legacy-v2-row',
+        algorithmVersion: 'server-v4',
+        sourceType: 'youtube_yt_dlp',
+        completedAtMs: 1_900_000_000_000,
+    });
+    database.exec(`
+        CREATE TABLE schema_metadata (schema_version INTEGER NOT NULL);
+        INSERT INTO schema_metadata (schema_version) VALUES (2);
+        CREATE TABLE analysis_artifacts (
+            record_id TEXT PRIMARY KEY,
+            video_id TEXT NOT NULL,
+            algorithm_version TEXT NOT NULL,
+            completed_at_ms INTEGER NOT NULL,
+            expires_at_ms INTEGER NOT NULL,
+            payload_json TEXT NOT NULL
+        );
+        CREATE INDEX analysis_artifacts_lookup_idx
+            ON analysis_artifacts (video_id, algorithm_version, completed_at_ms);
+    `);
+    database
+        .prepare(
+            `INSERT INTO analysis_artifacts
+                (record_id, video_id, algorithm_version, completed_at_ms,
+                 expires_at_ms, payload_json)
+             VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+            'legacy-v2-row',
+            ARTIFACT_VIDEO_ID,
+            'server-v4',
+            1_900_000_000_000,
+            2_100_000_000_000,
+            JSON.stringify(oldPayload),
+        );
+    database.close();
+}
+
+function readStringField(value: unknown, key: string): string | null {
+    if (value === null || typeof value !== 'object') {
+        return null;
+    }
+    const field: unknown = Reflect.get(value, key);
+    return typeof field === 'string' ? field : null;
+}
 
 function seedArtifacts(
     path: string,
@@ -76,6 +170,94 @@ describe('BackendPublicState', () => {
 
     it('probes SQLite readiness before serving traffic', () => {
         expect(() => BackendPublicState.assertReady()).not.toThrow();
+    });
+
+    it('migrates v2 additively while a frozen v2 reader survives rollback', () => {
+        const path = join(directory, 'v2.sqlite');
+        BackendPublicState.closeForTests();
+        createV2Database(path);
+        expect(
+            FrozenPublicStateV2Reader.readArtifacts(
+                path,
+                ARTIFACT_VIDEO_ID,
+                'server-v4',
+            ),
+        ).toHaveLength(1);
+
+        BackendPublicState.configureForTests(path);
+        BackendPublicState.upsertArtifact(
+            buildArtifact({
+                recordId: 'v3-upload-row',
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+            }),
+        );
+        BackendPublicState.closeForTests();
+
+        const migrated = new DatabaseSync(path);
+        const columns = migrated
+            .prepare('PRAGMA table_info(analysis_artifacts)')
+            .all()
+            .map((row) => Reflect.get(row, 'name'));
+        expect(columns).toEqual(
+            expect.arrayContaining([
+                'language_code',
+                'transcript_hash',
+                'source_type',
+            ]),
+        );
+        const exactIndex = migrated
+            .prepare(
+                `SELECT sql FROM sqlite_master
+                 WHERE type = 'index' AND name = 'analysis_artifacts_exact_lookup_idx'`,
+            )
+            .get();
+        expect(readStringField(exactIndex, 'sql')).toContain(
+            'WHERE language_code IS NOT NULL AND transcript_hash IS NOT NULL',
+        );
+        expect(
+            migrated
+                .prepare('SELECT schema_version FROM schema_metadata')
+                .get(),
+        ).toEqual({ schema_version: 3 });
+        migrated.close();
+
+        expect(
+            FrozenPublicStateV2Reader.readArtifacts(
+                path,
+                ARTIFACT_VIDEO_ID,
+                'server-v4',
+            ).map((row) => row.recordId),
+        ).toEqual(['legacy-v2-row']);
+        expect(
+            FrozenPublicStateV2Reader.readArtifacts(
+                path,
+                ARTIFACT_VIDEO_ID,
+                UPLOAD_ALGORITHM_VERSION,
+            ),
+        ).toEqual([]);
+        FrozenPublicStateV2Reader.writeArtifact(path, {
+            recordId: 'rollback-v2-row',
+            videoId: ARTIFACT_VIDEO_ID,
+            algorithmVersion: 'server-v4',
+            completedAtMs: 1_900_000_000_001,
+            expiresAtMs: 2_100_000_000_001,
+            payload: buildArtifact({
+                recordId: 'rollback-v2-row',
+                algorithmVersion: 'server-v4',
+                sourceType: 'local_fixture',
+                completedAtMs: 1_900_000_000_001,
+            }),
+        });
+        expect(
+            FrozenPublicStateV2Reader.readArtifacts(
+                path,
+                ARTIFACT_VIDEO_ID,
+                'server-v4',
+            ).map((row) => row.recordId),
+        ).toEqual(['legacy-v2-row', 'rollback-v2-row']);
+
+        BackendPublicState.configureForTests(path);
     });
 
     it('issues hashed installation credentials and distinguishes expiry', () => {
@@ -348,14 +530,14 @@ describe('BackendPublicState', () => {
 
     it('persists artifacts and safe support failures across reopen', () => {
         const path = join(directory, 'topskip.sqlite');
-        BackendPublicState.upsertArtifact({
-            recordId: 'artifact-1',
-            video: {
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v4',
-            },
-            job: { completedAtMs: 1_900_000_000_000 },
-        });
+        BackendPublicState.upsertArtifact(
+            buildArtifact({
+                recordId: 'artifact-1',
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+                completedAtMs: 1_900_000_000_000,
+            }),
+        );
         BackendPublicState.upsertArtifact({
             recordId: 'artifact-2',
             video: {
@@ -380,9 +562,11 @@ describe('BackendPublicState', () => {
         BackendPublicState.configureForTests(path);
 
         expect(
-            BackendPublicState.findArtifacts({
+            BackendPublicState.findArtifactsExact({
                 videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v4',
+                algorithmVersion: UPLOAD_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
             }),
         ).toHaveLength(1);
         expect(BackendPublicState.findFailureForTests('support-1')).toEqual({
@@ -396,6 +580,63 @@ describe('BackendPublicState', () => {
             createdAtMs: 1_900_000_000_000,
             expiresAtMs: 1_902_592_000_000,
         });
+    });
+
+    it('queries uploaded artifacts by every exact identity component', () => {
+        const artifacts = [
+            buildArtifact({
+                recordId: 'exact-en-a',
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+            }),
+            buildArtifact({
+                recordId: 'exact-fr-a',
+                languageCode: 'fr',
+                transcriptHash: TRANSCRIPT_HASH,
+            }),
+            buildArtifact({
+                recordId: 'exact-en-b',
+                languageCode: 'en',
+                transcriptHash: OTHER_TRANSCRIPT_HASH,
+            }),
+            buildArtifact({
+                recordId: 'legacy-null-v5',
+                sourceType: 'youtube_yt_dlp',
+            }),
+            buildArtifact({
+                recordId: 'legacy-v4',
+                algorithmVersion: 'server-v4',
+                sourceType: 'local_fixture',
+            }),
+        ];
+        for (const artifact of artifacts) {
+            BackendPublicState.upsertArtifact(artifact);
+        }
+
+        expect(
+            BackendPublicState.findArtifactsExact({
+                videoId: ARTIFACT_VIDEO_ID,
+                algorithmVersion: UPLOAD_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+            }),
+        ).toEqual([artifacts[0]]);
+        expect(
+            BackendPublicState.findArtifactsExact({
+                videoId: ARTIFACT_VIDEO_ID,
+                algorithmVersion: UPLOAD_ALGORITHM_VERSION,
+                languageCode: 'de',
+                transcriptHash: TRANSCRIPT_HASH,
+            }),
+        ).toEqual([]);
+        expect(
+            BackendPublicState.findArtifactsExact({
+                videoId: ARTIFACT_VIDEO_ID,
+                algorithmVersion: UPLOAD_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: 'c'.repeat(64),
+            }),
+        ).toEqual([]);
     });
 
     it('adds safe failure versions without breaking legacy failure rows or readers', () => {
@@ -466,14 +707,14 @@ describe('BackendPublicState', () => {
     it('expires artifacts and safe support failures after thirty days', () => {
         const completedAtMs = Date.now() + DAY_MS;
         const expiresAtMs = completedAtMs + ARTIFACT_RETENTION_MS;
-        BackendPublicState.upsertArtifact({
-            recordId: 'expiring-artifact',
-            video: {
-                videoId: ARTIFACT_VIDEO_ID,
-                algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
-            },
-            job: { completedAtMs },
-        });
+        BackendPublicState.upsertArtifact(
+            buildArtifact({
+                recordId: 'expiring-artifact',
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+                completedAtMs,
+            }),
+        );
         BackendPublicState.recordFailure({
             supportId: 'expiring-support',
             code: 'internal_error',
@@ -484,9 +725,11 @@ describe('BackendPublicState', () => {
         });
 
         expect(
-            BackendPublicState.findArtifacts({
+            BackendPublicState.findArtifactsExact({
                 videoId: ARTIFACT_VIDEO_ID,
-                algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
+                algorithmVersion: UPLOAD_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
                 nowMs: completedAtMs,
             }),
         ).toHaveLength(1);
@@ -495,9 +738,11 @@ describe('BackendPublicState', () => {
         ).not.toBeNull();
 
         expect(
-            BackendPublicState.findArtifacts({
+            BackendPublicState.findArtifactsExact({
                 videoId: ARTIFACT_VIDEO_ID,
-                algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
+                algorithmVersion: UPLOAD_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
                 nowMs: expiresAtMs,
             }),
         ).toEqual([]);
@@ -514,14 +759,15 @@ describe('BackendPublicState', () => {
             firstCompletedAtMs,
         });
         BackendPublicState.setStorageHeadroomForTests(true);
-        BackendPublicState.upsertArtifact({
-            recordId: 'count-limit-newest',
-            video: {
-                videoId: ARTIFACT_VIDEO_ID,
+        BackendPublicState.upsertArtifact(
+            buildArtifact({
+                recordId: 'count-limit-newest',
                 algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
-            },
-            job: { completedAtMs: firstCompletedAtMs + MAX_ARTIFACT_COUNT },
-        });
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+                completedAtMs: firstCompletedAtMs + MAX_ARTIFACT_COUNT,
+            }),
+        );
 
         const artifacts = BackendPublicState.findArtifacts({
             videoId: ARTIFACT_VIDEO_ID,
@@ -535,6 +781,23 @@ describe('BackendPublicState', () => {
         expect(artifacts).toContainEqual(
             expect.objectContaining({ recordId: 'count-limit-newest' }),
         );
+        expect(
+            BackendPublicState.findArtifactsExact({
+                videoId: ARTIFACT_VIDEO_ID,
+                algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+                nowMs: firstCompletedAtMs,
+            }),
+        ).toEqual([
+            buildArtifact({
+                recordId: 'count-limit-newest',
+                algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+                completedAtMs: firstCompletedAtMs + MAX_ARTIFACT_COUNT,
+            }),
+        ]);
     });
 
     it('retains only one hundred newest artifacts under low disk pressure', () => {
@@ -545,16 +808,15 @@ describe('BackendPublicState', () => {
             firstCompletedAtMs,
         });
         BackendPublicState.setStorageHeadroomForTests(false);
-        BackendPublicState.upsertArtifact({
-            recordId: 'low-disk-newest',
-            video: {
-                videoId: ARTIFACT_VIDEO_ID,
+        BackendPublicState.upsertArtifact(
+            buildArtifact({
+                recordId: 'low-disk-newest',
                 algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
-            },
-            job: {
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
                 completedAtMs: firstCompletedAtMs + LOW_DISK_ARTIFACT_COUNT,
-            },
-        });
+            }),
+        );
 
         const artifacts = BackendPublicState.findArtifacts({
             videoId: ARTIFACT_VIDEO_ID,
@@ -568,5 +830,14 @@ describe('BackendPublicState', () => {
         expect(artifacts).toContainEqual(
             expect.objectContaining({ recordId: 'low-disk-newest' }),
         );
+        expect(
+            BackendPublicState.findArtifactsExact({
+                videoId: ARTIFACT_VIDEO_ID,
+                algorithmVersion: ARTIFACT_ALGORITHM_VERSION,
+                languageCode: 'en',
+                transcriptHash: TRANSCRIPT_HASH,
+                nowMs: firstCompletedAtMs,
+            }),
+        ).toHaveLength(1);
     });
 });

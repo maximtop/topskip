@@ -10,7 +10,12 @@ import type {
     PromoBlock,
     PromoDetectionStatus,
 } from '@topskip/common/promo-types';
-import type { ServerAnalysisFailureCode } from '@topskip/common/server-analysis-contract';
+import {
+    serverTranscriptIdentitySchema,
+    youtubeVideoIdSchema,
+    type ServerAnalysisFailureCode,
+} from '@topskip/common/server-analysis-contract';
+import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
 import type { ProviderId } from '@/shared/providers';
 import type { PROVIDER_AVAILABILITY } from './chrome-prompt-api';
 
@@ -48,6 +53,7 @@ export const TOPSKIP_MESSAGE = {
     VALIDATE_OPENROUTER_MODEL: 'TOPSKIP_VALIDATE_OPENROUTER_MODEL',
     GET_DETECTION_STATUS: 'TOPSKIP_GET_DETECTION_STATUS',
     PREFLIGHT_BYOK_SETUP: 'TOPSKIP_PREFLIGHT_BYOK_SETUP',
+    SERVER_ANALYSIS_SESSION_EVENT: 'TOPSKIP_SERVER_ANALYSIS_SESSION_EVENT',
     REQUEST_SERVER_ANALYSIS: 'TOPSKIP_REQUEST_SERVER_ANALYSIS',
     REFRESH_SERVER_ANALYSIS_STATUS: 'TOPSKIP_REFRESH_SERVER_ANALYSIS_STATUS',
     OPEN_SERVER_ANALYSIS_ISSUE: 'TOPSKIP_OPEN_SERVER_ANALYSIS_ISSUE',
@@ -114,6 +120,13 @@ const captionsFromContentPayloadOkSchema = v.object({
     segments: v.array(captionSegmentSchema),
     diagnostics: v.optional(captionCaptureDiagnosticsSchema),
 });
+
+/**
+ * Validated timed captions returned by one successful player capture.
+ */
+export type CaptionsFromContentSuccessPayload = v.InferOutput<
+    typeof captionsFromContentPayloadOkSchema
+>;
 
 const captionsFromContentPayloadErrSchema = v.strictObject({
     ok: v.literal(false),
@@ -240,12 +253,15 @@ export type ServerAnalysisFailureContext = {
 };
 
 /**
- * Detection snapshot for the active tab’s current video (popup).
+ * Explicit progress phase for one Server-mode caption session.
  */
-export type PromoDetectionStatePayload = {
+export type ServerAnalysisPhase = 'caption_acquisition' | 'server_analysis';
+
+/**
+ * Fields shared by every detection snapshot shown for the active tab.
+ */
+type PromoDetectionStateBase = {
     videoId: string;
-    status: PromoDetectionStatus;
-    source?: PromoDetectionSource;
     promoBlocks?: PromoBlock[];
     durationSec?: number;
     error?: string;
@@ -258,6 +274,44 @@ export type PromoDetectionStatePayload = {
 };
 
 /**
+ * Pending Server work must identify both its session and visible phase.
+ */
+type PendingServerDetectionState = PromoDetectionStateBase & {
+    status: 'analyzing';
+    source: 'server';
+    sessionId: string;
+    serverAnalysisPhase: ServerAnalysisPhase;
+};
+
+/**
+ * Terminal Server-route results retain their session but cannot carry a phase.
+ */
+type TerminalServerDetectionState = PromoDetectionStateBase & {
+    status: Exclude<PromoDetectionStatus, 'analyzing'>;
+    source: Exclude<PromoDetectionSource, 'local_provider'>;
+    sessionId: string;
+    serverAnalysisPhase?: never;
+};
+
+/**
+ * Private BYOK and legacy source-less states cannot impersonate Server sessions.
+ */
+export type LocalDetectionState = PromoDetectionStateBase & {
+    status: PromoDetectionStatus;
+    source?: 'local_provider';
+    sessionId?: never;
+    serverAnalysisPhase?: never;
+};
+
+/**
+ * Detection snapshot for the active tab’s current video (popup).
+ */
+export type PromoDetectionStatePayload =
+    | PendingServerDetectionState
+    | TerminalServerDetectionState
+    | LocalDetectionState;
+
+/**
  * Popup response containing the latest detection state for the active tab.
  */
 export type GetDetectionStatusResponse =
@@ -265,12 +319,83 @@ export type GetDetectionStatusResponse =
     | { ok: false; error: string };
 
 /**
- * Content-to-background payload requesting server-first analysis.
+ * Bounded UUID schema used to reject stale or malformed Server session events.
  */
-export type RequestServerAnalysisPayload = {
-    videoId: string;
-    durationSec?: number;
-};
+export const serverAnalysisSessionIdSchema = v.pipe(
+    v.string(),
+    v.uuid(),
+    v.maxLength(36),
+);
+
+const serverAnalysisSessionEventNameSchema = v.picklist([
+    'acquisition_started',
+    'cancelled',
+    'captions_unavailable',
+    'caption_extraction_failed',
+] as const);
+
+/**
+ * Strict local session event that updates detection state without making HTTP.
+ */
+export const serverAnalysisSessionEventPayloadSchema = v.strictObject({
+    event: serverAnalysisSessionEventNameSchema,
+    sessionId: serverAnalysisSessionIdSchema,
+    videoId: youtubeVideoIdSchema,
+});
+
+/**
+ * Session event payload emitted before submission or after local cancellation.
+ */
+export type ServerAnalysisSessionEventPayload = v.InferOutput<
+    typeof serverAnalysisSessionEventPayloadSchema
+>;
+
+/**
+ * Strict runtime envelope for a local Server-analysis session event.
+ */
+export const serverAnalysisSessionEventRuntimeMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT),
+    payload: serverAnalysisSessionEventPayloadSchema,
+});
+
+const runtimeCaptionSegmentSchema = v.strictObject({
+    startSec: v.pipe(v.number(), v.finite(), v.minValue(0)),
+    durationSec: v.pipe(v.number(), v.finite(), v.minValue(0)),
+    text: v.string(),
+});
+
+/**
+ * Strict transcript submission owned by one content capture session.
+ */
+export const requestServerAnalysisPayloadSchema = v.strictObject({
+    sessionId: serverAnalysisSessionIdSchema,
+    videoId: youtubeVideoIdSchema,
+    durationSec: v.optional(
+        v.pipe(
+            v.number(),
+            v.finite(),
+            v.minValue(0),
+            v.maxValue(MAX_TRANSCRIPT_TIMELINE_SEC),
+        ),
+    ),
+    languageCode: v.pipe(v.string(), v.minLength(1), v.maxLength(80)),
+    segments: v.array(runtimeCaptionSegmentSchema),
+});
+
+/**
+ * Content-to-background payload requesting analysis of captured captions.
+ */
+export type RequestServerAnalysisPayload = v.InferOutput<
+    typeof requestServerAnalysisPayloadSchema
+>;
+
+/**
+ * Strict runtime envelope for an initial Server transcript submission.
+ */
+export const requestServerAnalysisRuntimeMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+    payload: requestServerAnalysisPayloadSchema,
+});
 
 /**
  * Watch-open readiness probe for a video assigned to the Private BYOK route.
@@ -287,13 +412,29 @@ export type PreflightByokSetupResponse =
     | { ok: false; error: string };
 
 /**
+ * Strict identity-bearing poll payload that survives worker suspension.
+ */
+export const refreshServerAnalysisStatusPayloadSchema = v.strictObject({
+    sessionId: serverAnalysisSessionIdSchema,
+    videoId: youtubeVideoIdSchema,
+    jobId: v.pipe(v.string(), v.minLength(1), v.maxLength(160)),
+    identity: serverTranscriptIdentitySchema,
+});
+
+/**
  * Content-to-background payload requesting a pollable server job status.
  */
-export type RefreshServerAnalysisStatusPayload = {
-    videoId: string;
-    jobId: string;
-    durationSec?: number;
-};
+export type RefreshServerAnalysisStatusPayload = v.InferOutput<
+    typeof refreshServerAnalysisStatusPayloadSchema
+>;
+
+/**
+ * Strict runtime envelope for polling one authoritative transcript identity.
+ */
+export const refreshServerAnalysisStatusRuntimeMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS),
+    payload: refreshServerAnalysisStatusPayloadSchema,
+});
 
 /**
  * Terminal server-analysis statuses acknowledged by background polling.
@@ -305,14 +446,50 @@ export type ServerAnalysisTerminalStatus =
     | 'error'
     | 'rate_limited';
 
+const serverProcessingAckSchema = v.strictObject({
+    ok: v.literal(true),
+    status: v.literal('processing'),
+    jobId: v.pipe(v.string(), v.minLength(1), v.maxLength(160)),
+    pollAfterSec: v.pipe(v.number(), v.integer(), v.minValue(1)),
+    identity: serverTranscriptIdentitySchema,
+});
+
+/**
+ * Processing acknowledgement carrying the server-authoritative identity.
+ */
+export type ServerProcessingAck = v.InferOutput<
+    typeof serverProcessingAckSchema
+>;
+
+/**
+ * Strict acknowledgement returned after background handles a Server request.
+ */
+export const requestServerAnalysisResponseSchema = v.union([
+    serverProcessingAckSchema,
+    v.strictObject({ ok: v.literal(true), status: v.literal('inactive') }),
+    v.strictObject({
+        ok: v.literal(true),
+        status: v.literal('resubmit_required'),
+    }),
+    v.strictObject({
+        ok: v.literal(true),
+        status: v.picklist([
+            'ready',
+            'no_promo',
+            'unavailable',
+            'error',
+            'rate_limited',
+        ] as const),
+    }),
+    v.strictObject({ ok: v.literal(false), error: v.string() }),
+]);
+
 /**
  * Ack returned after the background updates server detection state.
  */
-export type RequestServerAnalysisResponse =
-    | { ok: true; status: 'processing'; jobId: string; pollAfterSec: number }
-    | { ok: true; status: 'inactive' }
-    | { ok: true; status: ServerAnalysisTerminalStatus }
-    | { ok: false; error: string };
+export type RequestServerAnalysisResponse = v.InferOutput<
+    typeof requestServerAnalysisResponseSchema
+>;
 
 /**
  * Ack returned after the background refreshes a pollable server job status.
@@ -541,6 +718,10 @@ export type TopSkipRuntimeMessage =
           payload: PreflightByokSetupPayload;
       }
     | {
+          type: typeof TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT;
+          payload: ServerAnalysisSessionEventPayload;
+      }
+    | {
           type: typeof TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS;
           payload: RequestServerAnalysisPayload;
       }
@@ -555,10 +736,12 @@ export type TopSkipRuntimeMessage =
       }
     | {
           type: typeof TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED;
-          payload: PromoDetectionStatePayload;
+          payload: PromoDetectionStatePayload | null;
       }
     | {
           type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
+          source: 'server' | 'local_cache' | 'server_cache';
+          sessionId: string;
           videoId: string;
           promoBlocks: PromoBlock[];
           /**
@@ -566,6 +749,13 @@ export type TopSkipRuntimeMessage =
            * transcript hit the global safety cap (same meaning as detection
            * status payload).
            */
+          partialCoverage?: boolean;
+      }
+    | {
+          type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
+          source: 'local_provider';
+          videoId: string;
+          promoBlocks: PromoBlock[];
           partialCoverage?: boolean;
       }
     | { type: typeof TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS }
@@ -762,7 +952,7 @@ export const triggerChromeModelDownloadMessageSchema = v.object({
 /**
  * Structural schema for a single promo block.
  */
-const promoBlockSchema = v.object({
+const promoBlockSchema = v.strictObject({
     startSec: v.number(),
     endSec: v.optional(v.number()),
     confidence: v.optional(v.picklist(['low', 'medium', 'high'] as const)),
@@ -771,9 +961,27 @@ const promoBlockSchema = v.object({
 /**
  * Valibot schema for {@link TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED}.
  */
-export const promoBlocksDetectedMessageSchema = v.object({
-    type: v.literal(TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED),
-    videoId: v.string(),
-    promoBlocks: v.array(promoBlockSchema),
-    partialCoverage: v.optional(v.boolean()),
-});
+export const promoBlocksDetectedMessageSchema = v.union([
+    v.strictObject({
+        type: v.literal(TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED),
+        source: v.picklist(['server', 'local_cache', 'server_cache'] as const),
+        sessionId: serverAnalysisSessionIdSchema,
+        videoId: youtubeVideoIdSchema,
+        promoBlocks: v.array(promoBlockSchema),
+        partialCoverage: v.optional(v.boolean()),
+    }),
+    v.strictObject({
+        type: v.literal(TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED),
+        source: v.literal('local_provider'),
+        videoId: youtubeVideoIdSchema,
+        promoBlocks: v.array(promoBlockSchema),
+        partialCoverage: v.optional(v.boolean()),
+    }),
+]);
+
+/**
+ * Session-discriminated promo blocks delivered to playback logic.
+ */
+export type PromoBlocksDetectedMessage = v.InferOutput<
+    typeof promoBlocksDetectedMessageSchema
+>;

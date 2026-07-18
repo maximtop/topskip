@@ -9,6 +9,61 @@ readonly PREVIOUS_IMAGE=ghcr.io/maximtop/topskip-backend@sha256:bbbbbbbbbbbbbbbb
 readonly CANDIDATE_IMAGE=ghcr.io/maximtop/topskip-backend@sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
 readonly UNRECORDED_IMAGE=ghcr.io/maximtop/topskip-backend@sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd
 
+setup_command=$(node -p "JSON.parse(require('node:fs').readFileSync(process.argv[1], 'utf8')).scripts.setup" "${REPOSITORY_DIRECTORY}/package.json")
+[[ ${setup_command} == 'pnpm install' ]]
+if grep -Fq 'pnpm run yt-dlp:install' "${REPOSITORY_DIRECTORY}/.github/workflows/ci.yml"; then
+    echo 'Normal CI must not install or update the legacy yt-dlp binary.' >&2
+    exit 1
+fi
+grep -Fq '"yt-dlp:install": "tsx scripts/yt-dlp-manager.ts install"' "${REPOSITORY_DIRECTORY}/package.json"
+grep -Fq '"yt-dlp:refresh-pin": "tsx scripts/refresh-yt-dlp-pin.ts"' "${REPOSITORY_DIRECTORY}/package.json"
+grep -Fq 'yt-dlp-install:' "${REPOSITORY_DIRECTORY}/Makefile"
+grep -Fq 'yt-dlp-refresh-pin:' "${REPOSITORY_DIRECTORY}/Makefile"
+test -f "${REPOSITORY_DIRECTORY}/scripts/yt-dlp-manager.ts"
+test -f "${REPOSITORY_DIRECTORY}/scripts/lib/yt-dlp-release.ts"
+test -f "${REPOSITORY_DIRECTORY}/scripts/refresh-yt-dlp-pin.ts"
+test -f "${REPOSITORY_DIRECTORY}/extension/tests/scripts/yt-dlp-release.test.ts"
+
+workflow=${REPOSITORY_DIRECTORY}/.github/workflows/deploy-production.yml
+grep -Fq 'expected_sha:' "${workflow}"
+grep -Fq 'required: true' "${workflow}"
+grep -Fq 'EXPECTED_SHA: ${{ inputs.expected_sha }}' "${workflow}"
+grep -Fq '[[ "${EXPECTED_SHA}" != "${GITHUB_SHA}" ]]' "${workflow}"
+grep -Fq "SERVER_ANALYSIS_ALGORITHM_VERSION = '(server-v[1-9][0-9]*)'" "${workflow}"
+grep -Fq 'algorithm_version: ${{ steps.algorithm.outputs.version }}' "${workflow}"
+grep -Fq 'EXPECTED_ALGORITHM_VERSION: ${{ needs.validate.outputs.algorithm_version }}' "${workflow}"
+grep -Fq '.apiVersion == 1 and .algorithmVersion == $version' "${workflow}"
+grep -Fq 'remote rollback' "${workflow}"
+if grep -Fq 'server-v5' "${workflow}"; then
+    echo 'The workflow must derive the algorithm version from the dispatched source.' >&2
+    exit 1
+fi
+
+for source_mode_file in \
+    "${REPOSITORY_DIRECTORY}/.env.example" \
+    "${DEPLOY_DIRECTORY}/production.env.example"; do
+    grep -Fxq 'TOPSKIP_CAPTION_SOURCE=extension_upload' "${source_mode_file}"
+done
+
+for documentation_file in \
+    "${REPOSITORY_DIRECTORY}/README.md" \
+    "${REPOSITORY_DIRECTORY}/DEVELOPMENT.md" \
+    "${REPOSITORY_DIRECTORY}/DEPLOYMENT.md" \
+    "${REPOSITORY_DIRECTORY}/extension/DEPLOYMENT.md" \
+    "${REPOSITORY_DIRECTORY}/AGENTS.md"; do
+    grep -Fqi 'extension upload' "${documentation_file}"
+    grep -Fqi 'yt-dlp' "${documentation_file}"
+done
+
+grep -Fq 'common/src/server-analysis-contract.ts' "${REPOSITORY_DIRECTORY}/README.md"
+grep -Fq 'make yt-dlp-install' "${REPOSITORY_DIRECTORY}/DEVELOPMENT.md"
+grep -Fqi '30 days' "${REPOSITORY_DIRECTORY}/DEVELOPMENT.md"
+grep -Fqi 'must not be pasted into issues' "${REPOSITORY_DIRECTORY}/DEVELOPMENT.md"
+grep -Fqi 'zero TopSkip analysis or registration requests' "${REPOSITORY_DIRECTORY}/extension/DEPLOYMENT.md"
+grep -Fqi 'caption acquisition' "${REPOSITORY_DIRECTORY}/DEVELOPMENT.md"
+grep -Fqi 'backend/config verification' "${REPOSITORY_DIRECTORY}/DEPLOYMENT.md"
+grep -Fqi 'no new beta monitor' "${REPOSITORY_DIRECTORY}/DEPLOYMENT.md"
+
 for script in "${DEPLOY_DIRECTORY}"/scripts/*.sh; do
     [[ -x ${script} ]]
     bash -n "${script}"
@@ -261,6 +316,8 @@ TOPSKIP_IMAGE=${VALID_IMAGE} docker compose \
             const port = backend.ports[0];
             const volume = backend.volumes[0];
             if (backend.user !== "1000:1000" || backend.read_only !== true ||
+                backend.environment.TOPSKIP_CAPTION_SOURCE !== "extension_upload" ||
+                backend.environment.TOPSKIP_YT_DLP_PATH !== "/opt/topskip/bin/yt-dlp" ||
                 backend.pids_limit !== 128 || backend.mem_limit !== "1073741824" ||
                 backend.cpus !== 1 || backend.cap_drop[0] !== "ALL" ||
                 !backend.security_opt.includes("no-new-privileges:true") ||

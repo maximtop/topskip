@@ -1,16 +1,85 @@
+import * as v from 'valibot';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
 import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
+import { startAnalysisJobForTest } from './analysis-jobs-test-helpers';
 import { BackendPublicState } from '@topskip/backend/public-state';
+import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
+import { BackendSubtitleExtractionPipeline } from '@topskip/backend/extraction/subtitle-extraction-pipeline';
 import type { BackendLlmAnalysisAdapterResult } from '@topskip/backend/analysis/promo-analysis-types';
-import type { SubtitleExtractionStrategy } from '@topskip/backend/extraction/subtitle-extraction-types';
+import {
+    transcriptArtifactSchema,
+    type SubtitleExtractionStrategy,
+    type TranscriptArtifact,
+} from '@topskip/backend/extraction/subtitle-extraction-types';
 import { LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS } from '@topskip/backend/extraction/local-transcript-fixtures';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_UNAVAILABLE_REASON,
 } from '@topskip/common/server-analysis-contract';
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
+
+const UPLOAD_TEST_NOW_MS = 1_900_000_000_000;
+
+function makeUploadArtifact(
+    input: {
+        videoId?: string;
+        languageCode?: string;
+        text?: string;
+        startSec?: number;
+    } = {},
+): {
+    identity: {
+        videoId: string;
+        algorithmVersion: string;
+        languageCode: string;
+        transcriptHash: string;
+    };
+    artifact: TranscriptArtifact;
+} {
+    const videoId = input.videoId ?? 'dQw4w9WgXcQ';
+    const canonical = CaptionTranscriptCanonicalizer.canonicalize({
+        languageCode: input.languageCode ?? 'en',
+        segments: [
+            {
+                startSec: input.startSec ?? 0,
+                durationSec: 40,
+                text:
+                    input.text ??
+                    'This segment is sponsored before the main topic.',
+            },
+        ],
+    });
+    if (!canonical.ok) {
+        throw new Error('Expected a valid upload fixture transcript.');
+    }
+    const transcriptHash = TranscriptFingerprint.sha256Hex(
+        canonical.transcript.canonicalBytes,
+    );
+    const identity = {
+        videoId,
+        algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+        languageCode: canonical.transcript.languageCode,
+        transcriptHash,
+    };
+    return {
+        identity,
+        artifact: v.parse(transcriptArtifactSchema, {
+            artifactId: 'transcript-upload-fixture',
+            ...identity,
+            strategy: 'extension_caption_upload',
+            sourceType: 'extension_caption_upload',
+            videoDurationSec: canonical.transcript.timelineEndSec,
+            acquiredAtMs: UPLOAD_TEST_NOW_MS,
+            segments: canonical.transcript.segments,
+            transcriptText: canonical.transcript.segments
+                .map((segment) => segment.text)
+                .join(' '),
+        }),
+    };
+}
 
 describe('BackendAnalysisJobs', () => {
     beforeEach(() => {
@@ -21,7 +90,7 @@ describe('BackendAnalysisJobs', () => {
     it('creates a processing job and later completes it as ready', async () => {
         BackendAnalysisJobs.resetForTests();
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -46,7 +115,7 @@ describe('BackendAnalysisJobs', () => {
     it('stores selected transcript artifacts on supported cold jobs', async () => {
         BackendAnalysisJobs.resetForTests();
 
-        const response = BackendAnalysisJobs.start({
+        const response = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -76,7 +145,7 @@ describe('BackendAnalysisJobs', () => {
     it('stores terminal unavailable when extraction cannot select a transcript', async () => {
         BackendAnalysisJobs.resetForTests();
 
-        const response = BackendAnalysisJobs.start({
+        const response = startAnalysisJobForTest({
             videoId: 'unknownVid1',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -93,7 +162,7 @@ describe('BackendAnalysisJobs', () => {
             },
         });
         const diagnostics = BackendAnalysisJobs.getDiagnosticsForTests(
-            'local-unknownVid1-server-v4',
+            `local-unknownVid1-${SERVER_ANALYSIS_ALGORITHM_VERSION}`,
         );
         expect(diagnostics?.stage).toBe('complete');
         expect(diagnostics?.selectedTranscriptArtifact).toBeNull();
@@ -124,7 +193,7 @@ describe('BackendAnalysisJobs', () => {
                     diagnostics: { code },
                 }),
             };
-            const processing = BackendAnalysisJobs.start({
+            const processing = startAnalysisJobForTest({
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000,
@@ -157,7 +226,7 @@ describe('BackendAnalysisJobs', () => {
         BackendAnalysisJobs.resetForTests();
         AnalysisArtifactStore.resetForTests();
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: 'unknownVid1',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -189,12 +258,12 @@ describe('BackendAnalysisJobs', () => {
     it('returns the same active job for duplicate cold starts', () => {
         BackendAnalysisJobs.resetForTests();
 
-        const first = BackendAnalysisJobs.start({
+        const first = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
         });
-        const second = BackendAnalysisJobs.start({
+        const second = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_009_000,
@@ -217,7 +286,7 @@ describe('BackendAnalysisJobs', () => {
                     resolveAnalysis = resolve;
                 }),
         );
-        const first = BackendAnalysisJobs.start({
+        const first = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             durationSec: 120,
@@ -229,7 +298,7 @@ describe('BackendAnalysisJobs', () => {
                 analyze,
             },
         });
-        const second = BackendAnalysisJobs.start({
+        const second = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             durationSec: 120,
@@ -283,6 +352,230 @@ describe('BackendAnalysisJobs', () => {
         });
     });
 
+    it('joins one exact upload job for authorized installations', async () => {
+        let resolveAnalysis:
+            | ((result: BackendLlmAnalysisAdapterResult) => void)
+            | undefined;
+        const analyze = vi.fn(
+            () =>
+                new Promise<BackendLlmAnalysisAdapterResult>((resolve) => {
+                    resolveAnalysis = resolve;
+                }),
+        );
+        const upload = makeUploadArtifact();
+        const first = startAnalysisJobForTest({
+            source: 'extension_upload',
+            identity: upload.identity,
+            transcriptArtifact: upload.artifact,
+            installationHash: 'installation-a',
+            ipHash: 'ip-a',
+            nowMs: UPLOAD_TEST_NOW_MS,
+            analysisAdapter: {
+                providerId: 'test_adapter',
+                model: 'test-model',
+                promptVersion: 'test-prompt',
+                analyze,
+            },
+        });
+        const joined = startAnalysisJobForTest({
+            source: 'extension_upload',
+            identity: upload.identity,
+            transcriptArtifact: upload.artifact,
+            installationHash: 'installation-b',
+            ipHash: 'ip-b',
+            nowMs: UPLOAD_TEST_NOW_MS + 1,
+        });
+
+        expect(joined).toEqual(first);
+        expect(first.status).toBe('processing');
+        if (first.status !== 'processing') {
+            throw new Error('Expected processing response.');
+        }
+        expect(first).toMatchObject(upload.identity);
+        expect(first.jobId).toMatch(/^job-[0-9a-f-]{36}$/u);
+        expect(first.jobId).not.toContain(upload.identity.transcriptHash);
+        expect(
+            BackendAnalysisJobs.getStatus(first.jobId, {
+                ownerInstallationHash: 'installation-a',
+            }),
+        ).toEqual(first);
+        expect(
+            BackendAnalysisJobs.getStatus(first.jobId, {
+                ownerInstallationHash: 'installation-b',
+            }),
+        ).toEqual(first);
+        expect(
+            BackendAnalysisJobs.getStatus(first.jobId, {
+                ownerInstallationHash: 'installation-c',
+            }),
+        ).toBeNull();
+
+        const otherUpload = makeUploadArtifact({ languageCode: 'de' });
+        const otherAnalyze = vi.fn(() =>
+            Promise.resolve({
+                rawModelResponse: '{"hasPromo":false}',
+                model: 'test-model',
+            }),
+        );
+        const other = startAnalysisJobForTest({
+            source: 'extension_upload',
+            identity: otherUpload.identity,
+            transcriptArtifact: otherUpload.artifact,
+            installationHash: 'installation-a',
+            ipHash: 'ip-a',
+            nowMs: UPLOAD_TEST_NOW_MS + 2,
+            analysisAdapter: {
+                providerId: 'test_adapter',
+                model: 'test-model',
+                promptVersion: 'test-prompt',
+                analyze: otherAnalyze,
+            },
+        });
+        expect(other.status).toBe('processing');
+        expect(other).not.toEqual(first);
+        await vi.waitFor(() => {
+            expect(analyze).toHaveBeenCalledTimes(1);
+            expect(otherAnalyze).toHaveBeenCalledTimes(1);
+        });
+
+        if (resolveAnalysis === undefined) {
+            throw new Error('Expected pending upload analysis resolver.');
+        }
+        resolveAnalysis({
+            rawModelResponse:
+                '{"hasPromo":true,"promoBlocks":[{"startSec":4,"endSec":24}]}',
+            model: 'test-model',
+        });
+        const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+            first.jobId,
+        );
+        expect(terminal).toMatchObject({
+            status: 'ready',
+            ...upload.identity,
+        });
+        expect(analyze).toHaveBeenCalledTimes(1);
+        if (other.status === 'processing') {
+            await BackendAnalysisJobs.waitForExtractionForTests(other.jobId);
+        }
+    });
+
+    it('sends an uploaded artifact directly to Gemini', async () => {
+        const extraction = vi.spyOn(
+            BackendSubtitleExtractionPipeline,
+            'extract',
+        );
+        const analyze = vi.fn(() =>
+            Promise.resolve({
+                rawModelResponse:
+                    '{"hasPromo":true,"promoBlocks":[{"startSec":4,"endSec":24}]}',
+                model: 'test-model',
+                usage: {
+                    inputTokens: 100,
+                    outputTokens: 20,
+                    costUsd: 0.002,
+                },
+            }),
+        );
+        const upload = makeUploadArtifact();
+        const processing = startAnalysisJobForTest({
+            source: 'extension_upload',
+            identity: upload.identity,
+            transcriptArtifact: upload.artifact,
+            installationHash: 'installation-a',
+            ipHash: 'ip-a',
+            nowMs: UPLOAD_TEST_NOW_MS,
+            durationSec: 1,
+            analysisAdapter: {
+                providerId: 'test_adapter',
+                model: 'test-model',
+                promptVersion: 'test-prompt',
+                analyze,
+            },
+        });
+        if (processing.status !== 'processing') {
+            throw new Error('Expected processing response.');
+        }
+
+        const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+            processing.jobId,
+        );
+
+        expect(extraction).not.toHaveBeenCalled();
+        expect(analyze).toHaveBeenCalledTimes(1);
+        expect(terminal).toMatchObject({
+            status: 'ready',
+            ...upload.identity,
+            promoBlocks: [{ startSec: 4, endSec: 24 }],
+        });
+        expect(
+            BackendAnalysisJobs.getDiagnosticsForTests(processing.jobId),
+        ).toMatchObject({
+            stage: 'complete',
+            extractionAttempts: [],
+            selectedTranscriptArtifact: {
+                sourceType: 'extension_caption_upload',
+                videoDurationSec: 40,
+            },
+        });
+        expect(
+            AnalysisArtifactStore.findLatestCacheableExact(upload.identity),
+        ).toMatchObject({
+            video: {
+                ...upload.identity,
+                sourceType: 'extension_caption_upload',
+            },
+        });
+    });
+
+    it('preserves upload identity when budget blocks model work', async () => {
+        const previousNodeEnv = process.env.NODE_ENV;
+        process.env.NODE_ENV = 'production';
+        const reserve = vi
+            .spyOn(BackendPublicState, 'reserveModelBudget')
+            .mockReturnValue(null);
+        const extraction = vi.spyOn(
+            BackendSubtitleExtractionPipeline,
+            'extract',
+        );
+        const analyze = vi.fn<() => Promise<BackendLlmAnalysisAdapterResult>>();
+        const upload = makeUploadArtifact();
+        try {
+            const processing = startAnalysisJobForTest({
+                source: 'extension_upload',
+                identity: upload.identity,
+                transcriptArtifact: upload.artifact,
+                installationHash: 'installation-a',
+                ipHash: 'ip-a',
+                nowMs: UPLOAD_TEST_NOW_MS,
+                analysisAdapter: {
+                    providerId: 'test',
+                    model: 'test',
+                    promptVersion: 'test',
+                    analyze,
+                },
+            });
+            if (processing.status !== 'processing') {
+                throw new Error('Expected processing response.');
+            }
+            const terminal =
+                await BackendAnalysisJobs.waitForExtractionForTests(
+                    processing.jobId,
+                );
+
+            expect(terminal).toMatchObject({
+                status: 'error',
+                ...upload.identity,
+                error: { code: 'budget_exhausted' },
+            });
+            expect(reserve).toHaveBeenCalledOnce();
+            expect(extraction).not.toHaveBeenCalled();
+            expect(analyze).not.toHaveBeenCalled();
+        } finally {
+            reserve.mockRestore();
+            process.env.NODE_ENV = previousNodeEnv;
+        }
+    });
+
     it('runs two cold jobs and bounds the global queue at ten', async () => {
         const releases: Array<() => void> = [];
         const processingJobs = Array.from({ length: 12 }, (_, index) => {
@@ -300,7 +593,7 @@ describe('BackendAnalysisJobs', () => {
                         });
                     }),
             };
-            return BackendAnalysisJobs.start({
+            return startAnalysisJobForTest({
                 videoId,
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000 + index,
@@ -361,7 +654,7 @@ describe('BackendAnalysisJobs', () => {
             }),
         };
         try {
-            const processing = BackendAnalysisJobs.start({
+            const processing = startAnalysisJobForTest({
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000,
@@ -395,13 +688,15 @@ describe('BackendAnalysisJobs', () => {
 
         expect(
             BackendAnalysisJobs.findExisting({
+                source: 'legacy_yt_dlp',
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                installationHash: 'local-development',
             }),
         ).toBeNull();
         expect(BackendAnalysisJobs.snapshotForTests().jobCount).toBe(0);
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -409,8 +704,10 @@ describe('BackendAnalysisJobs', () => {
 
         expect(
             BackendAnalysisJobs.findExisting({
+                source: 'legacy_yt_dlp',
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                installationHash: 'local-development',
             }),
         ).toEqual(processing);
         expect(BackendAnalysisJobs.snapshotForTests().jobCount).toBe(1);
@@ -422,8 +719,10 @@ describe('BackendAnalysisJobs', () => {
 
         expect(
             BackendAnalysisJobs.findExisting({
+                source: 'legacy_yt_dlp',
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                installationHash: 'local-development',
             }),
         ).toBeNull();
         expect(BackendAnalysisJobs.snapshotForTests().jobCount).toBe(1);
@@ -432,7 +731,7 @@ describe('BackendAnalysisJobs', () => {
     it('starts fresh work after a terminal job is no longer active', async () => {
         BackendAnalysisJobs.resetForTests();
 
-        const terminal = BackendAnalysisJobs.start({
+        const terminal = startAnalysisJobForTest({
             videoId: 'unknownVid1',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -443,7 +742,7 @@ describe('BackendAnalysisJobs', () => {
         const completed = await BackendAnalysisJobs.waitForExtractionForTests(
             terminal.jobId,
         );
-        const duplicate = BackendAnalysisJobs.start({
+        const duplicate = startAnalysisJobForTest({
             videoId: 'unknownVid1',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_010_000,
@@ -458,7 +757,7 @@ describe('BackendAnalysisJobs', () => {
     it('runs analysis on first status poll for a selected transcript job', async () => {
         BackendAnalysisJobs.resetForTests();
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             durationSec: 120,
@@ -494,7 +793,7 @@ describe('BackendAnalysisJobs', () => {
         BackendAnalysisJobs.resetForTests();
         AnalysisArtifactStore.resetForTests();
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             durationSec: 120,
@@ -528,7 +827,7 @@ describe('BackendAnalysisJobs', () => {
     });
 
     it('persists no-promo worker history with analysis artifacts', async () => {
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Secondary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             durationSec: 120,
@@ -557,7 +856,7 @@ describe('BackendAnalysisJobs', () => {
     it('does not re-run analysis after a terminal response exists', async () => {
         BackendAnalysisJobs.resetForTests();
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             durationSec: 120,
@@ -583,7 +882,7 @@ describe('BackendAnalysisJobs', () => {
         async (status) => {
             BackendAnalysisJobs.resetForTests();
 
-            const processing = BackendAnalysisJobs.start({
+            const processing = startAnalysisJobForTest({
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000,
@@ -608,7 +907,7 @@ describe('BackendAnalysisJobs', () => {
         BackendAnalysisJobs.resetForTests();
         AnalysisArtifactStore.resetForTests();
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -636,7 +935,7 @@ describe('BackendAnalysisJobs', () => {
         BackendAnalysisJobs.resetForTests();
         AnalysisArtifactStore.resetForTests();
 
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -685,7 +984,7 @@ describe('BackendAnalysisJobs', () => {
             .mockImplementation(() => {
                 throw new Error('sqlite unavailable');
             });
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -724,7 +1023,7 @@ describe('BackendAnalysisJobs', () => {
         const recordFailure = vi
             .spyOn(BackendPublicState, 'recordFailure')
             .mockImplementation(() => undefined);
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             extensionVersion: '0.1.0',
@@ -771,7 +1070,7 @@ describe('BackendAnalysisJobs', () => {
             });
         const analyze = vi.fn<() => Promise<BackendLlmAnalysisAdapterResult>>();
         try {
-            const processing = BackendAnalysisJobs.start({
+            const processing = startAnalysisJobForTest({
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000,
@@ -845,7 +1144,7 @@ describe('BackendAnalysisJobs', () => {
                 throw new Error('sqlite unavailable');
             });
         try {
-            const processing = BackendAnalysisJobs.start({
+            const processing = startAnalysisJobForTest({
                 videoId: 'dQw4w9WgXcQ',
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000,
@@ -902,7 +1201,7 @@ describe('BackendAnalysisJobs', () => {
 
     it('does not call the model for yt-dlp artifacts without duration', async () => {
         const analyze = vi.fn<() => Promise<BackendLlmAnalysisAdapterResult>>();
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -956,7 +1255,7 @@ describe('BackendAnalysisJobs', () => {
                 throw new Error('sqlite unavailable');
             });
         try {
-            const processing = BackendAnalysisJobs.start({
+            const processing = startAnalysisJobForTest({
                 videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000,

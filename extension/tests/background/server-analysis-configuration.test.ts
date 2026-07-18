@@ -141,6 +141,31 @@ describe('ServerAnalysisConfiguration', () => {
         ).toHaveBeenCalledWith('server-v5');
     });
 
+    it('uses observed config without equality gating', async () => {
+        configStorageMocks.load.mockResolvedValueOnce(null);
+        clientMocks.requestConfig.mockRejectedValueOnce(new Error('offline'));
+
+        await expect(
+            ServerAnalysisConfiguration.loadActive(NOW_MS),
+        ).resolves.toBeNull();
+        expect(clientMocks.requestConfig).toHaveBeenCalledOnce();
+
+        configStorageMocks.load.mockResolvedValueOnce({
+            config: CONFIG_V4,
+            fetchedAtMs: NOW_MS - 7_200_000,
+        });
+        await ServerAnalysisConfiguration.noteAlgorithmVersion('server-future');
+
+        expect(configStorageMocks.save).toHaveBeenCalledWith(
+            { ...CONFIG_V4, algorithmVersion: 'server-future' },
+            NOW_MS - 7_200_000,
+        );
+        expect(
+            resultCacheMocks.removeOtherAlgorithmVersions,
+        ).toHaveBeenCalledWith('server-future');
+        expect(clientMocks.requestConfig).toHaveBeenCalledOnce();
+    });
+
     it('reads cached support configuration without making HTTP requests', async () => {
         configStorageMocks.load.mockResolvedValue({
             config: CONFIG_V4,

@@ -24,11 +24,8 @@ RUN --mount=type=cache,id=topskip-pnpm,target=/pnpm/store \
 COPY backend/src ./backend/src
 COPY common/src ./common/src
 COPY deploy/rspack.config.ts ./deploy/rspack.config.ts
-COPY scripts/yt-dlp-manager.ts ./scripts/yt-dlp-manager.ts
-COPY scripts/lib/yt-dlp-release.ts ./scripts/lib/yt-dlp-release.ts
 
 RUN pnpm exec rspack build --config deploy/rspack.config.ts
-RUN pnpm run yt-dlp:install
 
 FROM ${NODE_IMAGE} AS runtime
 
@@ -36,15 +33,13 @@ ENV NODE_ENV=production
 ENV TOPSKIP_HOST=0.0.0.0
 ENV TOPSKIP_PORT=8787
 ENV TOPSKIP_DATABASE_PATH=/var/lib/topskip/topskip.sqlite
-ENV TOPSKIP_YT_DLP_PATH=/opt/topskip/bin/yt-dlp
+ENV TOPSKIP_CAPTION_SOURCE=extension_upload
 
 WORKDIR /app
 
-RUN install -d -o node -g node -m 0750 /var/lib/topskip \
-    && install -d -o root -g root -m 0755 /opt/topskip/bin
+RUN install -d -o node -g node -m 0750 /var/lib/topskip
 
 COPY --from=build --chown=node:node /workspace/deployment-dist/server.mjs /app/server.mjs
-COPY --from=build --chmod=0755 /workspace/.tools/yt-dlp /opt/topskip/bin/yt-dlp
 
 USER node
 

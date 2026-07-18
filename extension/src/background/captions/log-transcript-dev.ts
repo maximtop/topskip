@@ -1,65 +1,44 @@
 import type { CaptionSegment } from '@topskip/common/caption-types';
 import { LOG_PREFIX_CAPTIONS } from '@/shared/constants';
 
-const PREVIEW_LINES = 8;
-const CHUNK_SIZE = 40;
-
 /**
- * Logs structured caption data in the service worker for developer inspection.
- * Uses chunked logs to avoid a single unusably large console line.
+ * Exposes capture timing without copying user-visible captions into logs.
  *
  * @param videoId YouTube video id.
  * @param languageCode Track language when known.
  * @param segments Parsed cues.
  * @param enabled Explicit override used by unit tests.
- * @returns A short text preview for messaging acks.
  */
 export function logTranscriptForDeveloper(
     videoId: string,
     languageCode: string | undefined,
     segments: CaptionSegment[],
     enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
-): string {
+): void {
     if (!enabled) {
-        return '';
-    }
-    const head = [
-        LOG_PREFIX_CAPTIONS,
-        `videoId=${videoId}`,
-        `lang=${languageCode ?? '?'}`,
-        `total=${String(segments.length)}`,
-    ].join(' ');
-    console.info(head);
-
-    const previewSlice = segments.slice(0, PREVIEW_LINES);
-    for (const s of previewSlice) {
-        console.info(
-            `${LOG_PREFIX_CAPTIONS} ${s.startSec.toFixed(2)}s\t${s.text}`,
-        );
+        return;
     }
 
-    if (segments.length > PREVIEW_LINES) {
-        const more = segments.length - PREVIEW_LINES;
-        console.info(
-            `${LOG_PREFIX_CAPTIONS} … ${String(more)} more segment(s); chunked below`,
-        );
-    }
+    const firstStartSec = segments.reduce<number | undefined>(
+        (earliest, segment) =>
+            earliest === undefined
+                ? segment.startSec
+                : Math.min(earliest, segment.startSec),
+        undefined,
+    );
+    const lastEndSec = segments.reduce<number | undefined>(
+        (latest, segment) => {
+            const endSec = segment.startSec + segment.durationSec;
+            return latest === undefined ? endSec : Math.max(latest, endSec);
+        },
+        undefined,
+    );
 
-    for (let i = 0; i < segments.length; i += CHUNK_SIZE) {
-        const chunk = segments.slice(i, i + CHUNK_SIZE);
-        const end = i + chunk.length - 1;
-        console.info(
-            `${LOG_PREFIX_CAPTIONS} chunk ${String(i)}–${String(end)}`,
-            chunk.map((s) => ({
-                start: s.startSec,
-                dur: s.durationSec,
-                text: s.text,
-            })),
-        );
-    }
-
-    return previewSlice
-        .map((s) => s.text)
-        .join(' ')
-        .slice(0, 200);
+    console.info(LOG_PREFIX_CAPTIONS, {
+        videoId,
+        languageCode: languageCode ?? null,
+        segmentCount: segments.length,
+        firstStartSec: firstStartSec ?? null,
+        lastEndSec: lastEndSec ?? null,
+    });
 }

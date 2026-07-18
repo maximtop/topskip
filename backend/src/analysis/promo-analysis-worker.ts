@@ -1,4 +1,5 @@
 import * as v from 'valibot';
+import { randomUUID } from 'node:crypto';
 
 import { LocalPromoAnalysisFixtureAdapter } from '@topskip/backend/analysis/local-analysis-fixtures';
 import { OpenRouterGeminiAnalysisAdapter } from '@topskip/backend/analysis/openrouter-gemini-analysis-adapter';
@@ -16,6 +17,12 @@ import {
 } from '@topskip/backend/analysis/promo-analysis-types';
 import { parseBackendPromoResponse } from '@topskip/backend/analysis/promo-response-parser';
 import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
+import {
+    legacyNoPromoResponseSchema,
+    legacyReadyResponseSchema,
+    legacyTerminalErrorResponseSchema,
+    type LegacyServerAnalysisResponse,
+} from '@topskip/backend/legacy/legacy-server-analysis-contract';
 import {
     noPromoResponseSchema,
     readyResponseSchema,
@@ -66,7 +73,14 @@ export type BackendPromoAnalysisWorkerInput = {
  * Worker output always pairs the terminal response with retained run metadata.
  */
 export type BackendPromoAnalysisWorkerResult = {
-    terminalResponse: ReadyResponse | NoPromoResponse | TerminalErrorResponse;
+    terminalResponse:
+        | ReadyResponse
+        | NoPromoResponse
+        | TerminalErrorResponse
+        | Extract<
+              LegacyServerAnalysisResponse,
+              { status: 'ready' | 'no_promo' | 'error' }
+          >;
     analysisRun: AnalysisRunArtifact;
 };
 
@@ -308,10 +322,7 @@ export class BackendPromoAnalysisWorker {
         },
     ): AnalysisRunArtifact {
         return v.parse(analysisRunArtifactSchema, {
-            runId: BackendPromoAnalysisWorker.buildRunId(
-                input.transcriptArtifact,
-                details.provider,
-            ),
+            runId: BackendPromoAnalysisWorker.buildRunId(),
             transcriptArtifactId: input.transcriptArtifact.artifactId,
             videoId: input.transcriptArtifact.videoId,
             algorithmVersion: input.transcriptArtifact.algorithmVersion,
@@ -340,8 +351,10 @@ export class BackendPromoAnalysisWorker {
         input: BackendPromoAnalysisWorkerInput,
         promoBlocks: PromoBlock[],
         completedAtMs: number,
-    ): ReadyResponse {
-        return v.parse(readyResponseSchema, {
+    ):
+        | ReadyResponse
+        | Extract<LegacyServerAnalysisResponse, { status: 'ready' }> {
+        const response = {
             status: 'ready',
             videoId: input.transcriptArtifact.videoId,
             algorithmVersion: input.transcriptArtifact.algorithmVersion,
@@ -353,7 +366,17 @@ export class BackendPromoAnalysisWorker {
                 expiresAtMs: completedAtMs + SERVER_ANALYSIS_RESULT_TTL_MS,
             },
             promoBlocks,
-        });
+        } as const;
+        if (
+            input.transcriptArtifact.sourceType === 'extension_caption_upload'
+        ) {
+            return v.parse(readyResponseSchema, {
+                ...response,
+                languageCode: input.transcriptArtifact.languageCode,
+                transcriptHash: input.transcriptArtifact.transcriptHash,
+            });
+        }
+        return v.parse(legacyReadyResponseSchema, response);
     }
 
     /**
@@ -366,8 +389,10 @@ export class BackendPromoAnalysisWorker {
     private static buildNoPromoResponse(
         input: BackendPromoAnalysisWorkerInput,
         completedAtMs: number,
-    ): NoPromoResponse {
-        return v.parse(noPromoResponseSchema, {
+    ):
+        | NoPromoResponse
+        | Extract<LegacyServerAnalysisResponse, { status: 'no_promo' }> {
+        const response = {
             status: 'no_promo',
             videoId: input.transcriptArtifact.videoId,
             algorithmVersion: input.transcriptArtifact.algorithmVersion,
@@ -377,7 +402,17 @@ export class BackendPromoAnalysisWorker {
             freshness: {
                 expiresAtMs: completedAtMs + SERVER_ANALYSIS_RESULT_TTL_MS,
             },
-        });
+        } as const;
+        if (
+            input.transcriptArtifact.sourceType === 'extension_caption_upload'
+        ) {
+            return v.parse(noPromoResponseSchema, {
+                ...response,
+                languageCode: input.transcriptArtifact.languageCode,
+                transcriptHash: input.transcriptArtifact.transcriptHash,
+            });
+        }
+        return v.parse(legacyNoPromoResponseSchema, response);
     }
 
     /**
@@ -390,8 +425,10 @@ export class BackendPromoAnalysisWorker {
     private static buildErrorResponse(
         input: BackendPromoAnalysisWorkerInput,
         failureReason: BackendAnalysisFailureReason,
-    ): TerminalErrorResponse {
-        return v.parse(terminalErrorResponseSchema, {
+    ):
+        | TerminalErrorResponse
+        | Extract<LegacyServerAnalysisResponse, { status: 'error' }> {
+        const response = {
             status: 'error',
             videoId: input.transcriptArtifact.videoId,
             algorithmVersion: input.transcriptArtifact.algorithmVersion,
@@ -400,7 +437,17 @@ export class BackendPromoAnalysisWorker {
                     failureReason,
                 ),
             },
-        });
+        } as const;
+        if (
+            input.transcriptArtifact.sourceType === 'extension_caption_upload'
+        ) {
+            return v.parse(terminalErrorResponseSchema, {
+                ...response,
+                languageCode: input.transcriptArtifact.languageCode,
+                transcriptHash: input.transcriptArtifact.transcriptHash,
+            });
+        }
+        return v.parse(legacyTerminalErrorResponseSchema, response);
     }
 
     /**
@@ -425,20 +472,10 @@ export class BackendPromoAnalysisWorker {
     /**
      * Builds the retained analysis run id.
      *
-     * @param transcriptArtifact - Transcript consumed by the run.
-     * @param provider - Validated provider id.
-     * @returns Deterministic analysis run id.
+     * @returns Opaque analysis run id that reveals no transcript identity.
      */
-    private static buildRunId(
-        transcriptArtifact: TranscriptArtifact,
-        provider: string,
-    ): string {
-        return [
-            'analysis',
-            transcriptArtifact.videoId,
-            transcriptArtifact.algorithmVersion,
-            provider,
-        ].join('-');
+    private static buildRunId(): string {
+        return `analysis-${randomUUID()}`;
     }
 
     /**
@@ -450,6 +487,8 @@ export class BackendPromoAnalysisWorker {
     private static buildSourceResultId(
         transcriptArtifact: TranscriptArtifact,
     ): string {
-        return `result-${transcriptArtifact.videoId}-${transcriptArtifact.algorithmVersion}`;
+        return transcriptArtifact.sourceType === 'extension_caption_upload'
+            ? `result-${randomUUID()}`
+            : `result-${transcriptArtifact.videoId}-${transcriptArtifact.algorithmVersion}`;
     }
 }

@@ -20,9 +20,9 @@ export class PromoDetectionBroadcast {
      * Fire-and-forget broadcast; rejects when no receiver exists (e.g. popup
      * closed), which is normal and must not surface as an error.
      *
-     * @param payload - Latest detection snapshot (no secrets)
+     * @param payload - Latest detection snapshot or an explicit reset.
      */
-    static notify(payload: PromoDetectionStatePayload): void {
+    static notify(payload: PromoDetectionStatePayload | null): void {
         const msg: TopSkipRuntimeMessage = {
             type: TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED,
             payload,

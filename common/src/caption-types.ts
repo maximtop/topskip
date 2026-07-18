@@ -10,7 +10,7 @@ export const captionSegmentSchema = v.object({
 });
 
 /**
- * One timed cue from a YouTube caption track (after XML parse).
+ * One timed cue from a captured or extracted caption track.
  */
 export type CaptionSegment = v.InferOutput<typeof captionSegmentSchema>;
 

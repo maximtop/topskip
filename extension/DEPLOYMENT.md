@@ -9,26 +9,35 @@ are covered in [`DEPLOYMENT.md`](../DEPLOYMENT.md).
 
 ## Production configuration (reference)
 
-| Area                        | Production behavior                                                                                                                                    |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Environment variables**   | None. The extension bundle does not read `process.env` or similar at runtime.                                                                          |
-| **Infrastructure**          | Server mode targets `https://topskip.maximtop.dev`; the origin is reached through Cloudflare Tunnel and is not encoded in the extension.               |
-| **External APIs / network** | Server mode sends video metadata to TopSkip; Private BYOK skips TopSkip registration/config/analysis and may use the user-configured provider instead. |
-| **Error reporting**         | No Sentry SDK. For eligible failures, the user may explicitly open a sanitized prefilled issue on GitHub; the extension never includes the video ID.   |
-| **Logging**                 | Dev-only browser logs are compiled out of beta/release builds; production backend operations are separate from the extension package.                  |
+| Area                        | Production behavior                                                                                                                                  |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Environment variables**   | None. The extension bundle does not read `process.env` or similar at runtime.                                                                        |
+| **Infrastructure**          | Server mode targets `https://topskip.maximtop.dev`; the origin is reached through Cloudflare Tunnel and is not encoded in the extension.             |
+| **External APIs / network** | Server mode uploads timed captions to TopSkip through the background; Private BYOK makes zero TopSkip analysis or registration requests.             |
+| **Error reporting**         | No Sentry SDK. For eligible failures, the user may explicitly open a sanitized prefilled issue on GitHub; the extension never includes the video ID. |
+| **Logging**                 | Dev-only browser logs are compiled out of beta/release builds; production backend operations are separate from the extension package.                |
 
 User data: preferences, the anonymous 90-day installation token, public server
 config, and ready-result cache are stored in **`browser.storage.local`** and
-owned by the extension’s **background** service worker. Private BYOK does not
-make TopSkip registration, config, analysis, cache, or status requests. State
-the applicable storage and network behavior clearly in the store’s privacy
-fields.
+owned by the extension’s **background** service worker. All TopSkip HTTP,
+authentication, exact cache lookup, polling, validation, and support URLs are
+also background-owned; the content script only sends validated runtime
+messages. This extension upload path is the production Server-mode source.
+Private BYOK does not make TopSkip registration, config, analysis,
+cache, or status requests. State the applicable storage and network behavior
+clearly in the store’s privacy fields.
+
+Server mode sends the current video ID, caption language, and timed caption text
+to TopSkip and its configured model provider. Validated transcripts and bounded
+assistant output may be retained for up to 30 days under access control and
+pruning. Neither the extension nor a prefilled GitHub issue includes transcript
+text or the video ID; users must not paste retained content into issues.
 
 ## Production build
 
-Requires **Node.js ≥ 22** (see `package.json` `engines`). The backend's
-gitignored `.tools/yt-dlp` executable is never included in `extension/dist/` or
-the Chrome Web Store archive.
+Requires **Node.js ≥ 22** (see `package.json` `engines`). No yt-dlp executable,
+manager, or server extraction code is included in `extension/dist/` or the
+Chrome Web Store archive.
 
 ```bash
 pnpm run release
@@ -43,15 +52,18 @@ Run release commands from the repository root. Rspack writes
 ## Package for Chrome Web Store
 
 1. Run a clean release build: `pnpm run release`
-2. Inspect `extension/dist/manifest.json`: it must contain
+2. Verify the deployed backend's `/v1/health` and `/v1/config` before reloading
+   or distributing the matching extension build. The public Valibot contract is
+   `common/src/server-analysis-contract.ts`.
+3. Inspect `extension/dist/manifest.json`: it must contain
    `https://topskip.maximtop.dev/*` and neither development origin.
-3. Zip **only** the contents of `extension/dist/`. On macOS:
+4. Zip **only** the contents of `extension/dist/`. On macOS:
 
     ```bash
     (cd extension/dist && zip -r ../topskip-extension.zip .)
     ```
 
-4. Upload `topskip-extension.zip` in the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole).
+5. Upload `topskip-extension.zip` in the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole).
 
 ## Pre-submit checklist
 

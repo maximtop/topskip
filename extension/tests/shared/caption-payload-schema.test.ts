@@ -6,8 +6,23 @@ import {
     captionsFromContentIncomingMessageSchema,
     captionsFromContentPayloadSchema,
     captionsFromContentRuntimeMessageSchema,
+    promoBlocksDetectedMessageSchema,
+    refreshServerAnalysisStatusRuntimeMessageSchema,
+    requestServerAnalysisResponseSchema,
+    requestServerAnalysisRuntimeMessageSchema,
+    serverAnalysisSessionEventRuntimeMessageSchema,
     TOPSKIP_MESSAGE,
 } from '@/shared/messages';
+
+const SESSION_ID = '123e4567-e89b-42d3-a456-426614174000';
+const VIDEO_ID = 'dQw4w9WgXcQ';
+const IDENTITY = {
+    videoId: VIDEO_ID,
+    languageCode: 'en',
+    transcriptHash:
+        '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
+    algorithmVersion: 'server-v5',
+};
 
 describe('captionSegmentSchema', () => {
     it('accepts a valid segment', () => {
@@ -189,5 +204,147 @@ describe('captionsFromContentIncomingMessageSchema', () => {
             },
         });
         expect(r.success && r.typed && r.output.kind === 'ok').toBe(true);
+    });
+});
+
+describe('Server analysis session messages', () => {
+    it('accepts only bounded UUID session events', () => {
+        expect(
+            v.safeParse(serverAnalysisSessionEventRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                payload: {
+                    event: 'acquisition_started',
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                },
+            }).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(serverAnalysisSessionEventRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                payload: {
+                    event: 'cancelled',
+                    sessionId: 'not-a-uuid',
+                    videoId: VIDEO_ID,
+                },
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(serverAnalysisSessionEventRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                payload: {
+                    event: 'caption_extraction_failed',
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                    rawError: 'must not cross the boundary',
+                },
+            }).success,
+        ).toBe(false);
+    });
+
+    it('requires timed captions in the initial Server request', () => {
+        const request = {
+            type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            payload: {
+                sessionId: SESSION_ID,
+                videoId: VIDEO_ID,
+                durationSec: 213,
+                languageCode: 'en',
+                segments: [{ startSec: 0, durationSec: 1, text: 'caption' }],
+            },
+        };
+        expect(
+            v.safeParse(requestServerAnalysisRuntimeMessageSchema, request)
+                .success,
+        ).toBe(true);
+        expect(
+            v.safeParse(requestServerAnalysisRuntimeMessageSchema, {
+                ...request,
+                payload: { sessionId: SESSION_ID, videoId: VIDEO_ID },
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(requestServerAnalysisRuntimeMessageSchema, {
+                ...request,
+                payload: { ...request.payload, transcriptHash: 'client-owned' },
+            }).success,
+        ).toBe(false);
+    });
+
+    it('binds processing acknowledgements and polling to one identity', () => {
+        expect(
+            v.safeParse(requestServerAnalysisResponseSchema, {
+                ok: true,
+                status: 'processing',
+                jobId: 'opaque-job',
+                pollAfterSec: 2,
+                identity: IDENTITY,
+            }).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(refreshServerAnalysisStatusRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+                payload: {
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                    jobId: 'opaque-job',
+                    identity: IDENTITY,
+                },
+            }).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(refreshServerAnalysisStatusRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+                payload: {
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                    jobId: 'opaque-job',
+                },
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(requestServerAnalysisResponseSchema, {
+                ok: true,
+                status: 'resubmit_required',
+            }).success,
+        ).toBe(true);
+    });
+
+    it('discriminates session-bound Server blocks from Private BYOK blocks', () => {
+        const blocks = [{ startSec: 10, endSec: 20 }];
+        expect(
+            v.safeParse(promoBlocksDetectedMessageSchema, {
+                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'server',
+                sessionId: SESSION_ID,
+                videoId: VIDEO_ID,
+                promoBlocks: blocks,
+            }).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(promoBlocksDetectedMessageSchema, {
+                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'server_cache',
+                videoId: VIDEO_ID,
+                promoBlocks: blocks,
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(promoBlocksDetectedMessageSchema, {
+                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'local_provider',
+                videoId: VIDEO_ID,
+                promoBlocks: blocks,
+            }).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(promoBlocksDetectedMessageSchema, {
+                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'local_provider',
+                sessionId: SESSION_ID,
+                videoId: VIDEO_ID,
+                promoBlocks: blocks,
+            }).success,
+        ).toBe(false);
     });
 });

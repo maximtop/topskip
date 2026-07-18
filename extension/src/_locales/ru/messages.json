@@ -67,6 +67,26 @@
         "message": "Detection error",
         "description": "Detection status shown when detection fails"
     },
+    "popup_detection_server_acquisition_badge": {
+        "message": "Субтитры",
+        "description": "Статус во время получения субтитров расширением."
+    },
+    "popup_detection_server_acquisition_title": {
+        "message": "Получаем субтитры",
+        "description": "Заголовок во время получения субтитров расширением."
+    },
+    "popup_detection_server_acquisition_description": {
+        "message": "TopSkip получает таймкоды субтитров из открытого видео.",
+        "description": "Описание этапа получения субтитров."
+    },
+    "popup_detection_server_acquisition_headline": {
+        "message": "Получаем субтитры видео…",
+        "description": "Статус этапа получения субтитров."
+    },
+    "popup_detection_server_acquisition_body": {
+        "message": "Анализ промо начнётся сразу после получения субтитров.",
+        "description": "Пояснение этапа получения субтитров."
+    },
     "popup_detection_server_pending_badge": {
         "message": "Server",
         "description": "Popup status badge shown while the TopSkip backend is analyzing the current video."

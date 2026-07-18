@@ -1,9 +1,11 @@
 import * as v from 'valibot';
 
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
+import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
 import { ServerInstallationStorage } from '@/background/storage/server-installation-storage';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
 import {
+    SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
     SERVER_ANALYSIS_FAILURE_CODE,
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
     TOPSKIP_CAPABILITIES_HEADER_NAME,
@@ -15,9 +17,12 @@ import {
     type ServerAnalysisFailure,
     type ServerAnalysisResponse,
     type ServerConfigResponse,
+    type ServerTranscriptIdentity,
 } from '@topskip/common/server-analysis-contract';
+import type { CaptionSegment } from '@topskip/common/caption-types';
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 
-const SERVER_ANALYSIS_REQUEST_TIMEOUT_MS = 5_000;
+const SERVER_ANALYSIS_REQUEST_TIMEOUT_MS = 15_000;
 const SERVER_ANALYSIS_CAPABILITIES_HEADER_VALUE =
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
 const DEV_SERVER_ANALYSIS_BASE_URL = 'http://127.0.0.1:8787';
@@ -46,6 +51,14 @@ type BackendJsonResult = {
     ok: boolean;
     json: unknown;
 };
+
+/**
+ * Parsed responses carrying an authoritative transcript identity.
+ */
+type IdentifiedServerAnalysisResponse = Extract<
+    ServerAnalysisResponse,
+    { languageCode: string }
+>;
 
 /**
  * Carries only allow-listed diagnostics when transport or validation fails.
@@ -266,6 +279,73 @@ export class ServerAnalysisClient {
     }
 
     /**
+     * Narrows validated responses that are bound to an accepted transcript.
+     *
+     * @param response - Parsed response with additive fields already stripped.
+     * @returns Whether every authoritative identity field is present.
+     */
+    private static hasTranscriptIdentity(
+        response: ServerAnalysisResponse,
+    ): response is IdentifiedServerAnalysisResponse {
+        return (
+            'languageCode' in response &&
+            'transcriptHash' in response &&
+            'videoId' in response
+        );
+    }
+
+    /**
+     * Rejects a response that is not bound to the captions just uploaded.
+     *
+     * @param response - Parsed initial analysis response.
+     * @param expected - Browser-computed identity excluding server algorithm.
+     * @returns The unchanged known response fields.
+     */
+    private static validateInitialIdentity(
+        response: ServerAnalysisResponse,
+        expected: Omit<ServerTranscriptIdentity, 'algorithmVersion'>,
+    ): ServerAnalysisResponse {
+        if (!ServerAnalysisClient.hasTranscriptIdentity(response)) {
+            return response;
+        }
+        if (
+            response.videoId !== expected.videoId ||
+            response.languageCode !== expected.languageCode ||
+            response.transcriptHash !== expected.transcriptHash
+        ) {
+            throw ServerAnalysisClient.invalidResponseError();
+        }
+        return response;
+    }
+
+    /**
+     * Revalidates polling after worker restart using identity retained by content.
+     *
+     * @param response - Parsed polling response.
+     * @param expected - Full identity from the validated processing response.
+     * @returns The unchanged known response fields.
+     */
+    private static validatePolledIdentity(
+        response: ServerAnalysisResponse,
+        expected: ServerTranscriptIdentity,
+    ): ServerAnalysisResponse {
+        if (response.algorithmVersion !== expected.algorithmVersion) {
+            throw ServerAnalysisClient.invalidResponseError();
+        }
+        if (!ServerAnalysisClient.hasTranscriptIdentity(response)) {
+            return response;
+        }
+        if (
+            response.videoId !== expected.videoId ||
+            response.languageCode !== expected.languageCode ||
+            response.transcriptHash !== expected.transcriptHash
+        ) {
+            throw ServerAnalysisClient.invalidResponseError();
+        }
+        return response;
+    }
+
+    /**
      * Registers one anonymous installation only when server mode first needs it.
      *
      * @returns Newly persisted bearer token.
@@ -431,38 +511,77 @@ export class ServerAnalysisClient {
     /**
      * Requests the current server analysis state for a video.
      *
-     * @param input - Current video metadata and extension version.
+     * @param input - Current video metadata, extension version, and timed captions.
      * @returns Validated server analysis response.
      */
     static async requestAnalysis(input: {
         videoId: string;
         durationSec?: number;
         extensionVersion: string;
+        languageCode: string;
+        segments: readonly CaptionSegment[];
     }): Promise<ServerAnalysisResponse> {
-        const request = buildServerAnalysisRequest(input);
-        return ServerAnalysisClient.requestAuthenticated({
+        const canonical = CaptionTranscriptCanonicalizer.canonicalize(input);
+        if (!canonical.ok) {
+            throw new ServerAnalysisClientError({ code: canonical.code });
+        }
+        const transcriptHash = await ServerTranscriptFingerprint.sha256Hex(
+            canonical.transcript.canonicalBytes,
+        );
+        let request: ReturnType<typeof buildServerAnalysisRequest>;
+        try {
+            request = buildServerAnalysisRequest({
+                ...input,
+                languageCode: canonical.transcript.languageCode,
+                segments: canonical.transcript.segments,
+            });
+        } catch {
+            throw new ServerAnalysisClientError({
+                code: SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
+            });
+        }
+        const body = JSON.stringify(request);
+        if (
+            new TextEncoder().encode(body).byteLength >
+            SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES
+        ) {
+            throw new ServerAnalysisClientError({
+                code: SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
+            });
+        }
+        const response = await ServerAnalysisClient.requestAuthenticated({
             operation: 'analysis',
             videoId: input.videoId,
             path: '/v1/analysis',
             method: 'POST',
-            body: JSON.stringify(request),
+            body,
+        });
+        return ServerAnalysisClient.validateInitialIdentity(response, {
+            videoId: input.videoId,
+            languageCode: canonical.transcript.languageCode,
+            transcriptHash,
         });
     }
 
     /**
      * Requests the latest state for an existing backend analysis job.
      *
-     * @param jobId - Backend job id from a processing response.
+     * @param input - Poll handle plus authoritative identity retained by content.
      * @returns Validated server analysis response.
      */
-    static async requestJobStatus(
-        jobId: string,
-    ): Promise<ServerAnalysisResponse> {
-        return ServerAnalysisClient.requestAuthenticated({
+    static async requestJobStatus(input: {
+        jobId: string;
+        identity: ServerTranscriptIdentity;
+    }): Promise<ServerAnalysisResponse> {
+        const response = await ServerAnalysisClient.requestAuthenticated({
             operation: 'poll',
-            jobId,
-            path: `/v1/analysis/jobs/${encodeURIComponent(jobId)}`,
+            jobId: input.jobId,
+            path: `/v1/analysis/jobs/${encodeURIComponent(input.jobId)}`,
             method: 'GET',
         });
+        return ServerAnalysisClient.validatePolledIdentity(
+            response,
+            input.identity,
+        );
     }
 }

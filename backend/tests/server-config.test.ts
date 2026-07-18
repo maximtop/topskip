@@ -3,7 +3,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { BackendServerConfig } from '@topskip/backend/server-config';
+import {
+    BACKEND_CAPTION_SOURCE,
+    BackendServerConfig,
+} from '@topskip/backend/server-config';
 
 const ORIGINAL_API_KEY = process.env.OPENROUTER_API_KEY;
 const ORIGINAL_HMAC_SECRET = process.env.TOPSKIP_IP_HMAC_SECRET;
@@ -11,6 +14,7 @@ const ORIGINAL_ALLOWED_ORIGINS = process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS;
 const ORIGINAL_SUPPORT_ISSUE_BASE_URL =
     process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL;
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
+const ORIGINAL_CAPTION_SOURCE = process.env.TOPSKIP_CAPTION_SOURCE;
 
 describe('BackendServerConfig', () => {
     afterEach(() => {
@@ -37,6 +41,11 @@ describe('BackendServerConfig', () => {
                 ORIGINAL_SUPPORT_ISSUE_BASE_URL;
         }
         process.env.NODE_ENV = ORIGINAL_NODE_ENV;
+        if (ORIGINAL_CAPTION_SOURCE === undefined) {
+            delete process.env.TOPSKIP_CAPTION_SOURCE;
+        } else {
+            process.env.TOPSKIP_CAPTION_SOURCE = ORIGINAL_CAPTION_SOURCE;
+        }
     });
 
     it('loads OPENROUTER_API_KEY from an env file', () => {
@@ -101,4 +110,36 @@ describe('BackendServerConfig', () => {
             BackendServerConfig.prepare('/missing/topskip/.env');
         }).toThrow();
     });
+
+    it('selects extension upload by default and accepts only exact caption-source values', () => {
+        process.env.OPENROUTER_API_KEY = 'test-key';
+        delete process.env.TOPSKIP_CAPTION_SOURCE;
+
+        expect(BackendServerConfig.prepare('/missing/topskip/.env')).toEqual({
+            captionSource: BACKEND_CAPTION_SOURCE.ExtensionUpload,
+        });
+
+        process.env.TOPSKIP_CAPTION_SOURCE =
+            BACKEND_CAPTION_SOURCE.ExtensionUpload;
+        expect(BackendServerConfig.prepare('/missing/topskip/.env')).toEqual({
+            captionSource: BACKEND_CAPTION_SOURCE.ExtensionUpload,
+        });
+
+        process.env.TOPSKIP_CAPTION_SOURCE = BACKEND_CAPTION_SOURCE.LegacyYtDlp;
+        expect(BackendServerConfig.prepare('/missing/topskip/.env')).toEqual({
+            captionSource: BACKEND_CAPTION_SOURCE.LegacyYtDlp,
+        });
+    });
+
+    it.each([' legacy_yt_dlp', 'legacy_yt_dlp ', 'LEGACY_YT_DLP', 'unknown'])(
+        'fails startup closed for caption source %j',
+        (captionSource) => {
+            process.env.OPENROUTER_API_KEY = 'test-key';
+            process.env.TOPSKIP_CAPTION_SOURCE = captionSource;
+
+            expect(() => {
+                BackendServerConfig.prepare('/missing/topskip/.env');
+            }).toThrow(/TOPSKIP_CAPTION_SOURCE/u);
+        },
+    );
 });

@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest';
 
-import { buildPopupViewModel } from '@/popup/PopupApp';
+import {
+    buildPopupViewModel,
+    chooseMonotonicDetectionSnapshot,
+} from '@/popup/PopupApp';
 import { ANALYSIS_MODE } from '@/shared/constants';
 import type { PromoDetectionStatePayload } from '@/shared/messages';
+
+const SERVER_SESSION_ID = '00000000-0000-4000-8000-000000000001';
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -10,6 +15,15 @@ vi.mock('@/shared/browser', () => ({
             getMessage: vi.fn(
                 (key: string, substitutions?: Record<string, string>) => {
                     const messages: Record<string, string> = {
+                        popup_detection_server_acquisition_badge: 'Captions',
+                        popup_detection_server_acquisition_title:
+                            'Getting captions',
+                        popup_detection_server_acquisition_description:
+                            'TopSkip is reading timed captions from this video.',
+                        popup_detection_server_acquisition_headline:
+                            'Getting video captions…',
+                        popup_detection_server_acquisition_body:
+                            'Promo analysis will start as soon as captions are ready.',
                         popup_detection_server_pending_badge: 'Server',
                         popup_detection_server_pending_title:
                             'Server analysis pending',
@@ -139,15 +153,32 @@ describe('buildPopupViewModel', () => {
 
     it.each([
         null,
-        { videoId: 'v1', status: 'analyzing', source: 'server' },
+        {
+            videoId: 'v1',
+            status: 'analyzing',
+            source: 'server',
+            sessionId: SERVER_SESSION_ID,
+            serverAnalysisPhase: 'server_analysis',
+        },
         {
             videoId: 'v1',
             status: 'detected',
             source: 'server_cache',
+            sessionId: SERVER_SESSION_ID,
             promoBlocks: [{ startSec: 4, endSec: 20 }],
         },
-        { videoId: 'v1', status: 'no_promo', source: 'server' },
-        { videoId: 'v1', status: 'error', source: 'server' },
+        {
+            videoId: 'v1',
+            status: 'no_promo',
+            source: 'server',
+            sessionId: SERVER_SESSION_ID,
+        },
+        {
+            videoId: 'v1',
+            status: 'error',
+            source: 'server',
+            sessionId: SERVER_SESSION_ID,
+        },
     ] satisfies (PromoDetectionStatePayload | null)[])(
         'always identifies Server mode for server state %#',
         (detectionState) => {
@@ -194,6 +225,26 @@ describe('buildPopupViewModel', () => {
             /server|cache|fallback/i,
         );
     });
+
+    it.each(['', '   '])(
+        'uses the BYOK fallback while provider metadata is %j',
+        (providerDisplayName) => {
+            const vm = buildPopupViewModel({
+                ...baseArgs,
+                analysisMode: ANALYSIS_MODE.Byok,
+                providerDisplayName,
+                detectionState: {
+                    videoId: 'v1',
+                    status: 'not_configured',
+                    source: 'local_provider',
+                },
+            });
+
+            expect(vm.description).toBe(
+                'Configure Private BYOK in settings before promo analysis can run.',
+            );
+        },
+    );
 
     it('providerLabel omits separator when modelDisplayName is empty', () => {
         const vm = buildPopupViewModel({
@@ -301,12 +352,67 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'analyzing',
                 source: 'server',
+                sessionId: SERVER_SESSION_ID,
+                serverAnalysisPhase: 'server_analysis',
             },
         });
 
         expect(vm.title).toBe('Server analysis pending');
         expect(vm.statusHeadline).toBe('Server analysis is in progress.');
         expect(vm.statusBody).toContain('TopSkip backend');
+    });
+
+    it('distinguishes caption acquisition from server analysis', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                sessionId: SERVER_SESSION_ID,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            },
+        });
+
+        expect(vm.title).toBe('Getting captions');
+        expect(vm.statusHeadline).toBe('Getting video captions…');
+        expect(`${vm.description} ${vm.statusBody}`).not.toMatch(
+            /backend|server analysis/i,
+        );
+    });
+
+    it('never chooses an earlier phase from the same session', () => {
+        const sessionId = SERVER_SESSION_ID;
+        const acquisition = {
+            videoId: 'dQw4w9WgXcQ',
+            sessionId,
+            status: 'analyzing',
+            source: 'server',
+            serverAnalysisPhase: 'caption_acquisition',
+        } as const;
+        const analysis = {
+            ...acquisition,
+            serverAnalysisPhase: 'server_analysis',
+        } as const;
+        const terminal = {
+            videoId: 'dQw4w9WgXcQ',
+            sessionId,
+            status: 'no_promo',
+            source: 'server',
+        } as const;
+
+        expect(chooseMonotonicDetectionSnapshot(analysis, acquisition)).toBe(
+            analysis,
+        );
+        expect(chooseMonotonicDetectionSnapshot(terminal, analysis)).toBe(
+            terminal,
+        );
+        expect(chooseMonotonicDetectionSnapshot(acquisition, analysis)).toBe(
+            analysis,
+        );
+        expect(chooseMonotonicDetectionSnapshot(analysis, terminal)).toBe(
+            terminal,
+        );
     });
 
     it('server error state explains the backend failure path', () => {
@@ -316,6 +422,7 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'error',
                 source: 'server',
+                sessionId: SERVER_SESSION_ID,
                 serverFailure: {
                     code: 'invalid_server_response',
                     supportId: 'support-123',
@@ -343,6 +450,7 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'detected',
                 source: 'server',
+                sessionId: SERVER_SESSION_ID,
                 durationSec: 213,
                 promoBlocks: [{ startSec: 4, endSec: 24 }],
             },
@@ -360,6 +468,7 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
+                sessionId: SERVER_SESSION_ID,
                 serverFailure: {
                     code: 'rate_limited',
                     retryAfterSec: 60,
@@ -387,6 +496,7 @@ describe('buildPopupViewModel', () => {
                     videoId: 'e2eFixture1',
                     status: 'detected',
                     source: 'server_cache',
+                    sessionId: SERVER_SESSION_ID,
                     promoBlocks: [{ startSec: 4, endSec: 24 }],
                 },
             });
@@ -405,6 +515,7 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
+                sessionId: SERVER_SESSION_ID,
                 serverFailure: {
                     code: 'captions_unavailable',
                     apiVersion: 1,
@@ -426,6 +537,7 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'unavailable',
                 source: 'server',
+                sessionId: SERVER_SESSION_ID,
                 serverFailure: {
                     code: 'client_upgrade_required',
                     apiVersion: 1,
@@ -445,6 +557,7 @@ describe('buildPopupViewModel', () => {
                 videoId: 'dQw4w9WgXcQ',
                 status: 'detected',
                 source: 'server_cache',
+                sessionId: SERVER_SESSION_ID,
                 promoBlocks: [
                     { startSec: 242.12, endSec: 329.44 },
                     { startSec: 826.56, endSec: 943.519 },
@@ -470,6 +583,7 @@ describe('buildPopupViewModel', () => {
                     videoId: 'dQw4w9WgXcQ',
                     status: 'no_promo',
                     source: 'server',
+                    sessionId: SERVER_SESSION_ID,
                 },
             });
 
@@ -491,6 +605,7 @@ describe('buildPopupViewModel', () => {
                     videoId: 'dQw4w9WgXcQ',
                     status: 'unavailable',
                     source: 'server',
+                    sessionId: SERVER_SESSION_ID,
                     error: 'Fixture analysis is unavailable.',
                 },
             });

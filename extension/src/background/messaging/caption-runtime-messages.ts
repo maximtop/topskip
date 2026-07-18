@@ -38,7 +38,7 @@ export class CaptionRuntimeMessages {
         }
 
         if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
-            void logTranscriptForDeveloper(
+            logTranscriptForDeveloper(
                 payload.videoId,
                 payload.languageCode,
                 payload.segments,

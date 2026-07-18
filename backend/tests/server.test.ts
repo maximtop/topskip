@@ -1,24 +1,32 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import * as v from 'valibot';
+import { request as requestHttp } from 'node:http';
+import { connect, type Socket } from 'node:net';
 
 import { BackendApiProtection } from '@topskip/backend/api-protection';
 import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
 import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
 import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
+import { startAnalysisJobForTest } from './analysis-jobs-test-helpers';
 import { BackendHttpServer } from '@topskip/backend/server';
 import { BackendPublicState } from '@topskip/backend/public-state';
+import { BACKEND_CAPTION_SOURCE } from '@topskip/backend/server-config';
+import {
+    legacyProcessingResponseSchema,
+    legacyUnavailableResponseSchema,
+} from '@topskip/backend/legacy/legacy-server-analysis-contract';
 import type { SubtitleExtractionStrategyResult } from '@topskip/backend/extraction/subtitle-extraction-types';
 import { MIME_APPLICATION_JSON } from '@topskip/common/constants';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_API_VERSION,
+    SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
     SERVER_ANALYSIS_UNAVAILABLE_REASON,
     TOPSKIP_CAPABILITIES_HEADER_NAME,
     noPromoResponseSchema,
     processingResponseSchema,
     rateLimitedResponseSchema,
     readyResponseSchema,
-    unavailableResponseSchema,
 } from '@topskip/common/server-analysis-contract';
 
 const ORIGINAL_ALLOWED_EXTENSION_ORIGINS =
@@ -52,6 +60,99 @@ async function postJson(
         headers: { 'content-type': MIME_APPLICATION_JSON, ...headers },
         body: JSON.stringify(body),
     });
+}
+
+async function postChunkedBody(
+    url: string,
+    body: Buffer,
+): Promise<{ statusCode: number; body: string }> {
+    return await new Promise((resolve, reject) => {
+        const request = requestHttp(
+            url,
+            {
+                method: 'POST',
+                headers: { 'content-type': MIME_APPLICATION_JSON },
+            },
+            (response) => {
+                const chunks: Buffer[] = [];
+                response.on('data', (chunk: Buffer) => chunks.push(chunk));
+                response.once('end', () => {
+                    resolve({
+                        statusCode: response.statusCode ?? 0,
+                        body: Buffer.concat(chunks).toString('utf8'),
+                    });
+                });
+            },
+        );
+        request.once('error', reject);
+        request.write(body);
+        request.end();
+    });
+}
+
+async function postWithDeclaredLength(
+    url: string,
+    declaredLength: number,
+): Promise<number> {
+    return await new Promise((resolve, reject) => {
+        const request = requestHttp(
+            url,
+            {
+                method: 'POST',
+                headers: {
+                    'content-type': MIME_APPLICATION_JSON,
+                    'content-length': String(declaredLength),
+                },
+            },
+            (response) => {
+                response.resume();
+                response.once('end', () => resolve(response.statusCode ?? 0));
+            },
+        );
+        request.once('error', reject);
+        request.end('{}');
+    });
+}
+
+async function openHeldAnalysisUpload(baseUrl: string): Promise<Socket> {
+    const url = new URL(baseUrl);
+    return await new Promise((resolve, reject) => {
+        const socket = connect(Number(url.port), url.hostname);
+        socket.once('error', reject);
+        socket.once('connect', () => {
+            socket.write(
+                `POST /v1/analysis HTTP/1.1\r\nHost: ${url.host}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n{\r\n`,
+            );
+            resolve(socket);
+        });
+    });
+}
+
+async function waitForEventLoop(): Promise<void> {
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => setImmediate(resolve));
+}
+
+function validTranscriptUpload(
+    videoId = 'dQw4w9WgXcQ',
+): Record<string, unknown> {
+    return {
+        videoId,
+        durationSec: 120,
+        extensionVersion: '0.1.0',
+        languageCode: 'en',
+        segments: [
+            {
+                startSec: 0,
+                durationSec: 120,
+                text: 'A complete caption transcript for analysis.',
+            },
+        ],
+        client: {
+            source: 'chrome-extension',
+            capabilities: ['processing-status', 'typed-server-errors-v1'],
+        },
+    };
 }
 
 describe('BackendHttpServer request body guard', () => {
@@ -112,6 +213,202 @@ describe('BackendHttpServer request body guard', () => {
         });
     });
 
+    it('rejects unsupported analysis body media and encodings', async () => {
+        const server = BackendHttpServer.create();
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+        const endpoint = `${localServerUrl(server)}/v1/analysis`;
+        const downstream = vi.spyOn(
+            BackendAnalysisApi,
+            'handleAnalysisRequest',
+        );
+
+        const unsupportedHeaders: Array<Record<string, string>> = [
+            {},
+            { 'content-type': 'text/plain' },
+            { 'content-type': 'application/jsonx' },
+            {
+                'content-type': MIME_APPLICATION_JSON,
+                'content-encoding': 'gzip',
+            },
+            {
+                'content-type': MIME_APPLICATION_JSON,
+                'content-encoding': 'br',
+            },
+            {
+                'content-type': MIME_APPLICATION_JSON,
+                'content-encoding': 'deflate',
+            },
+        ];
+
+        for (const headers of unsupportedHeaders) {
+            const response = await fetch(endpoint, {
+                method: 'POST',
+                headers,
+                body: '{}',
+            });
+            expect(response.status).toBe(415);
+            await expect(response.json()).resolves.toMatchObject({
+                status: 'error',
+                error: { code: 'invalid_request' },
+            });
+        }
+
+        const accepted = await fetch(endpoint, {
+            method: 'POST',
+            headers: {
+                'content-type': 'Application/JSON; charset=utf-8',
+                'content-encoding': 'IDENTITY',
+            },
+            body: '{malformed',
+        });
+        expect(accepted.status).toBe(400);
+        expect(downstream).not.toHaveBeenCalled();
+
+        const authenticatedServer = BackendHttpServer.create({
+            requireAuth: true,
+        });
+        servers.push(authenticatedServer);
+        await listenOnEphemeralPort(authenticatedServer);
+        const authenticationFirst = await fetch(
+            `${localServerUrl(authenticatedServer)}/v1/analysis`,
+            {
+                method: 'POST',
+                headers: { 'content-type': 'text/plain' },
+                body: '{}',
+            },
+        );
+        expect(authenticationFirst.status).toBe(401);
+    });
+
+    it('enforces the inclusive raw analysis body limit', async () => {
+        const server = BackendHttpServer.create();
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+        const endpoint = `${localServerUrl(server)}/v1/analysis`;
+        const exactBody = `{}${' '.repeat(
+            SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES - 2,
+        )}`;
+
+        const exact = await fetch(endpoint, {
+            method: 'POST',
+            headers: { 'content-type': MIME_APPLICATION_JSON },
+            body: exactBody,
+        });
+        expect(exact.status).toBe(400);
+        await expect(exact.json()).resolves.toMatchObject({
+            error: { code: 'invalid_request' },
+        });
+
+        const declaredOversize = await postWithDeclaredLength(
+            endpoint,
+            SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES + 1,
+        );
+        expect(declaredOversize).toBe(413);
+
+        const chunkedOversize = await postChunkedBody(
+            endpoint,
+            Buffer.alloc(SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES + 1, 0x20),
+        );
+        expect(chunkedOversize.statusCode).toBe(413);
+        expect(JSON.parse(chunkedOversize.body)).toMatchObject({
+            error: { code: 'request_body_too_large' },
+        });
+    });
+
+    it('bounds concurrent and stalled analysis body reads', async () => {
+        const server = BackendHttpServer.create({
+            analysisBodyReadTimeoutMs: 100,
+        });
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+        const baseUrl = localServerUrl(server);
+        const held = await Promise.all(
+            Array.from({ length: 4 }, () => openHeldAnalysisUpload(baseUrl)),
+        );
+        await waitForEventLoop();
+
+        const capacity = await fetch(`${baseUrl}/v1/analysis`, {
+            method: 'POST',
+            headers: { 'content-type': MIME_APPLICATION_JSON },
+            body: '{}',
+        });
+        expect(capacity.status).toBe(503);
+        expect(capacity.headers.get('retry-after')).toBe('3');
+        await expect(capacity.json()).resolves.toMatchObject({
+            status: 'rate_limited',
+            error: { code: 'capacity_limited', retryAfterSec: 3 },
+        });
+
+        await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        for (const socket of held) {
+            socket.destroy();
+        }
+
+        const released = await fetch(`${baseUrl}/v1/analysis`, {
+            method: 'POST',
+            headers: { 'content-type': MIME_APPLICATION_JSON },
+            body: '{malformed',
+        });
+        expect(released.status).toBe(400);
+    });
+
+    it('rejects invalid transcript uploads before work', async () => {
+        const server = BackendHttpServer.create();
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+        const endpoint = `${localServerUrl(server)}/v1/analysis`;
+        const downstream = vi.spyOn(
+            BackendAnalysisApi,
+            'handleAnalysisRequest',
+        );
+        const valid = validTranscriptUpload();
+        const invalidBodies: unknown[] = [
+            {},
+            {
+                videoId: valid.videoId,
+                extensionVersion: valid.extensionVersion,
+                client: valid.client,
+            },
+            { ...valid, segments: [] },
+            { ...valid, algorithmVersion: 'server-v4' },
+            {
+                ...valid,
+                transcriptHash:
+                    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+            },
+            { ...valid, unknown: true },
+            {
+                ...valid,
+                segments: [
+                    {
+                        startSec: 0,
+                        durationSec: 1,
+                        text: 'Hello',
+                        signedUrl: 'https://example.com/private',
+                    },
+                ],
+            },
+        ];
+
+        for (const body of invalidBodies) {
+            const response = await postJson(endpoint, body);
+            expect(response.status).toBe(400);
+            await expect(response.json()).resolves.toEqual({
+                status: 'error',
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                error: { code: 'invalid_request' },
+            });
+        }
+
+        const malformedUtf8 = await postChunkedBody(
+            endpoint,
+            Buffer.from([0xc3]),
+        );
+        expect(malformedUtf8.statusCode).toBe(400);
+        expect(downstream).not.toHaveBeenCalled();
+    });
+
     it('registers public installations, requires bearer auth, and enforces job ownership', async () => {
         BackendPublicState.configureForTests();
         const server = BackendHttpServer.create({
@@ -151,37 +448,9 @@ describe('BackendHttpServer request body guard', () => {
             };
             const ownerToken = await register();
             const otherToken = await register();
-            const legacyFailure = await fetch(`${baseUrl}/v1/analysis`, {
-                method: 'POST',
-                headers: {
-                    authorization: `Bearer ${ownerToken}`,
-                    'content-type': MIME_APPLICATION_JSON,
-                },
-                body: JSON.stringify({
-                    videoId: 'dQw4w9WgXcQ',
-                    durationSec: 18_001,
-                    extensionVersion: '0.1.0',
-                    client: {
-                        source: 'chrome-extension',
-                        capabilities: ['processing-status'],
-                    },
-                }),
-            });
-            await expect(legacyFailure.json()).resolves.toMatchObject({
-                status: 'unavailable',
-                reason: 'caption_extraction_failed',
-                message: 'Caption extraction failed for this video.',
-            });
             const unauthenticated = await postJson(
                 `${baseUrl}/v1/analysis`,
-                {
-                    videoId: 'dQw4w9WgXcQ',
-                    extensionVersion: '0.1.0',
-                    client: {
-                        source: 'chrome-extension',
-                        capabilities: ['typed-server-errors-v1'],
-                    },
-                },
+                validTranscriptUpload(),
                 {
                     [TOPSKIP_CAPABILITIES_HEADER_NAME]:
                         'typed-server-errors-v1',
@@ -200,14 +469,7 @@ describe('BackendHttpServer request body guard', () => {
                     authorization: `Bearer ${ownerToken}`,
                     'content-type': MIME_APPLICATION_JSON,
                 },
-                body: JSON.stringify({
-                    videoId: 'unknownVid1',
-                    extensionVersion: '0.1.0',
-                    client: {
-                        source: 'chrome-extension',
-                        capabilities: ['typed-server-errors-v1'],
-                    },
-                }),
+                body: JSON.stringify(validTranscriptUpload('unknownVid1')),
             });
             const processing = v.parse(
                 processingResponseSchema,
@@ -236,17 +498,13 @@ describe('BackendHttpServer request body guard', () => {
             throw new Error('Expected an ephemeral TCP port.');
         }
 
-        const response = await fetch(
+        const response = await postChunkedBody(
             `http://127.0.0.1:${address.port}/v1/analysis`,
-            {
-                method: 'POST',
-                headers: { 'content-type': MIME_APPLICATION_JSON },
-                body: 'x'.repeat(32_769),
-            },
+            Buffer.alloc(SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES + 1, 0x20),
         );
 
-        expect(response.status).toBe(413);
-        await expect(response.json()).resolves.toEqual({
+        expect(response.statusCode).toBe(413);
+        expect(JSON.parse(response.body)).toEqual({
             status: 'error',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             error: {
@@ -256,7 +514,9 @@ describe('BackendHttpServer request body guard', () => {
     });
 
     it('responds with HTTP 200 for a seeded ready cache hit', async () => {
-        const server = BackendHttpServer.create();
+        const server = BackendHttpServer.create({
+            captionSource: BACKEND_CAPTION_SOURCE.LegacyYtDlp,
+        });
         servers.push(server);
         await new Promise<void>((resolve) => {
             server.listen(0, '127.0.0.1', () => resolve());
@@ -274,7 +534,6 @@ describe('BackendHttpServer request body guard', () => {
                 body: JSON.stringify({
                     videoId: 'e2eFixture1',
                     extensionVersion: '0.1.0',
-                    algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                     client: {
                         source: 'chrome-extension',
                         capabilities: ['processing-status'],
@@ -288,7 +547,7 @@ describe('BackendHttpServer request body guard', () => {
             status: 'ready',
             videoId: 'e2eFixture1',
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v4',
+            sourceResultId: `result-e2eFixture1-${SERVER_ANALYSIS_ALGORITHM_VERSION}`,
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' }],
         });
@@ -300,16 +559,10 @@ describe('BackendHttpServer request body guard', () => {
         await listenOnEphemeralPort(server);
         const baseUrl = localServerUrl(server);
 
-        const initial = await postJson(`${baseUrl}/v1/analysis`, {
-            videoId: 'dQw4w9WgXcQ',
-            durationSec: 120,
-            extensionVersion: '0.1.0',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            client: {
-                source: 'chrome-extension',
-                capabilities: ['processing-status'],
-            },
-        });
+        const initial = await postJson(
+            `${baseUrl}/v1/analysis`,
+            validTranscriptUpload(),
+        );
 
         expect(initial.status).toBe(202);
         const processing = v.parse(
@@ -325,18 +578,20 @@ describe('BackendHttpServer request body guard', () => {
             readyResponseSchema,
             (await statusBefore.json()) as unknown,
         );
-        expect(ready).toEqual({
+        expect(ready).toMatchObject({
             status: 'ready',
             videoId: 'dQw4w9WgXcQ',
+            languageCode: processing.languageCode,
+            transcriptHash: processing.transcriptHash,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             source: 'server_cache',
-            sourceResultId: 'result-dQw4w9WgXcQ-server-v4',
             freshness: ready.freshness,
             promoBlocks: [
                 { startSec: 4, endSec: 24, confidence: 'high' },
                 { startSec: 35, endSec: 45, confidence: 'medium' },
             ],
         });
+        expect(ready.sourceResultId).toMatch(/^result-[0-9a-f-]{36}$/u);
         expect(ready.freshness.expiresAtMs).toBeGreaterThan(Date.now());
 
         const completed = await postJson(
@@ -360,16 +615,7 @@ describe('BackendHttpServer request body guard', () => {
         servers.push(server);
         await listenOnEphemeralPort(server);
         const baseUrl = localServerUrl(server);
-        const request = {
-            videoId: 'dQw4w9WgXcQ',
-            durationSec: 120,
-            extensionVersion: '0.1.0',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            client: {
-                source: 'chrome-extension',
-                capabilities: ['processing-status'],
-            },
-        };
+        const request = validTranscriptUpload();
 
         const initial = await postJson(`${baseUrl}/v1/analysis`, request);
         expect(initial.status).toBe(202);
@@ -400,16 +646,10 @@ describe('BackendHttpServer request body guard', () => {
         await listenOnEphemeralPort(server);
         const baseUrl = localServerUrl(server);
 
-        const initial = await postJson(`${baseUrl}/v1/analysis`, {
-            videoId: 'M7lc1UVf-VE',
-            durationSec: 120,
-            extensionVersion: '0.1.0',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            client: {
-                source: 'chrome-extension',
-                capabilities: ['processing-status'],
-            },
-        });
+        const initial = await postJson(
+            `${baseUrl}/v1/analysis`,
+            validTranscriptUpload('M7lc1UVf-VE'),
+        );
 
         expect(initial.status).toBe(202);
         const processing = v.parse(
@@ -426,18 +666,22 @@ describe('BackendHttpServer request body guard', () => {
             noPromoResponseSchema,
             (await status.json()) as unknown,
         );
-        expect(noPromo).toEqual({
+        expect(noPromo).toMatchObject({
             status: 'no_promo',
             videoId: 'M7lc1UVf-VE',
+            languageCode: processing.languageCode,
+            transcriptHash: processing.transcriptHash,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            sourceResultId: 'result-M7lc1UVf-VE-server-v4',
             freshness: noPromo.freshness,
         });
+        expect(noPromo.sourceResultId).toMatch(/^result-[0-9a-f-]{36}$/u);
         expect(noPromo.freshness.expiresAtMs).toBeGreaterThan(Date.now());
     });
 
-    it('returns unavailable over HTTP when local extraction has no transcript', async () => {
-        const server = BackendHttpServer.create();
+    it('returns unavailable only in explicit legacy extraction mode', async () => {
+        const server = BackendHttpServer.create({
+            captionSource: BACKEND_CAPTION_SOURCE.LegacyYtDlp,
+        });
         servers.push(server);
         await listenOnEphemeralPort(server);
         const baseUrl = localServerUrl(server);
@@ -445,7 +689,6 @@ describe('BackendHttpServer request body guard', () => {
         const initial = await postJson(`${baseUrl}/v1/analysis`, {
             videoId: 'unknownVid1',
             extensionVersion: '0.1.0',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             client: {
                 source: 'chrome-extension',
                 capabilities: ['processing-status'],
@@ -454,7 +697,7 @@ describe('BackendHttpServer request body guard', () => {
 
         expect(initial.status).toBe(202);
         const processing = v.parse(
-            processingResponseSchema,
+            legacyProcessingResponseSchema,
             (await initial.json()) as unknown,
         );
         await BackendAnalysisJobs.waitForExtractionForTests(processing.jobId);
@@ -464,7 +707,7 @@ describe('BackendHttpServer request body guard', () => {
 
         expect(response.status).toBe(200);
         const unavailable = v.parse(
-            unavailableResponseSchema,
+            legacyUnavailableResponseSchema,
             (await response.json()) as unknown,
         );
         expect(unavailable).toMatchObject({
@@ -484,15 +727,8 @@ describe('BackendHttpServer request body guard', () => {
         await listenOnEphemeralPort(server);
         const baseUrl = localServerUrl(server);
 
-        const requestFor = (videoId: string) => ({
-            videoId,
-            extensionVersion: '0.1.0',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            client: {
-                source: 'chrome-extension',
-                capabilities: ['processing-status'],
-            },
-        });
+        const requestFor = (videoId: string): Record<string, unknown> =>
+            validTranscriptUpload(videoId);
 
         expect(
             (
@@ -684,7 +920,7 @@ describe('BackendHttpServer request body guard', () => {
                 body: '{not-json',
             });
             await expect(legacyMalformed.json()).resolves.toMatchObject({
-                status: 'invalid_request',
+                status: 'error',
                 error: { code: 'invalid_request' },
             });
 
@@ -695,17 +931,19 @@ describe('BackendHttpServer request body guard', () => {
                     'content-type': MIME_APPLICATION_JSON,
                 },
                 body: JSON.stringify({
-                    videoId: 'unknownVid1',
-                    durationSec: 18_001,
-                    extensionVersion: '0.1.0',
-                    client: {
-                        source: 'chrome-extension',
-                        capabilities: ['typed-server-errors-v1'],
-                    },
+                    ...validTranscriptUpload('unknownVid1'),
+                    durationSec: undefined,
+                    segments: [
+                        {
+                            startSec: 0,
+                            durationSec: 18_001,
+                            text: 'An overlong caption transcript.',
+                        },
+                    ],
                 }),
             });
             await expect(bodyNegotiated.json()).resolves.toMatchObject({
-                status: 'unavailable',
+                status: 'error',
                 error: { code: 'video_too_long' },
             });
 
@@ -714,7 +952,7 @@ describe('BackendHttpServer request body guard', () => {
                 { headers: { authorization } },
             );
             await expect(legacyPoll.json()).resolves.toMatchObject({
-                status: 'invalid_request',
+                status: 'error',
                 error: { code: 'job_not_found' },
             });
 
@@ -741,7 +979,7 @@ describe('BackendHttpServer request body guard', () => {
         let release:
             | ((result: SubtitleExtractionStrategyResult) => void)
             | undefined;
-        const processing = BackendAnalysisJobs.start({
+        const processing = startAnalysisJobForTest({
             videoId: 'dQw4w9WgXcQ',
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             nowMs: 1_900_000_000_000,
@@ -758,7 +996,9 @@ describe('BackendHttpServer request body guard', () => {
         if (processing.status !== 'processing') {
             throw new Error('Expected processing response.');
         }
-        const server = BackendHttpServer.create();
+        const server = BackendHttpServer.create({
+            captionSource: BACKEND_CAPTION_SOURCE.LegacyYtDlp,
+        });
         servers.push(server);
         await listenOnEphemeralPort(server);
 
@@ -802,26 +1042,15 @@ describe('BackendHttpServer request body guard', () => {
             TOPSKIP_CAPABILITIES_HEADER_NAME,
         );
 
-        const originless = await postJson(`${baseUrl}/v1/analysis`, {
-            videoId: 'dQw4w9WgXcQ',
-            extensionVersion: '0.1.0',
-            client: {
-                source: 'chrome-extension',
-                capabilities: ['typed-server-errors-v1'],
-            },
-        });
+        const originless = await postJson(
+            `${baseUrl}/v1/analysis`,
+            validTranscriptUpload(),
+        );
         expect(originless.status).toBe(404);
 
         const allowed = await postJson(
             `${baseUrl}/v1/analysis`,
-            {
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '0.1.0',
-                client: {
-                    source: 'chrome-extension',
-                    capabilities: ['typed-server-errors-v1'],
-                },
-            },
+            validTranscriptUpload(),
             { origin: allowedOrigin },
         );
         expect(allowed.status).toBe(202);
@@ -853,14 +1082,7 @@ describe('BackendHttpServer request body guard', () => {
         try {
             const response = await postJson(
                 `${localServerUrl(server)}/v1/analysis`,
-                {
-                    videoId: 'dQw4w9WgXcQ',
-                    extensionVersion: '0.1.0',
-                    client: {
-                        source: 'chrome-extension',
-                        capabilities: ['typed-server-errors-v1'],
-                    },
-                },
+                validTranscriptUpload(),
                 {
                     authorization: 'Bearer unusable-token',
                     [TOPSKIP_CAPABILITIES_HEADER_NAME]:
@@ -905,14 +1127,7 @@ describe('BackendHttpServer request body guard', () => {
         try {
             const response = await postJson(
                 `${localServerUrl(server)}/v1/analysis`,
-                {
-                    videoId: 'dQw4w9WgXcQ',
-                    extensionVersion: '0.1.0',
-                    client: {
-                        source: 'chrome-extension',
-                        capabilities: ['typed-server-errors-v1'],
-                    },
-                },
+                validTranscriptUpload(),
             );
             const body: unknown = await response.json();
             const error: unknown =

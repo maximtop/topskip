@@ -14,6 +14,7 @@ import {
     ServerAnalysisClient,
     ServerAnalysisClientError,
 } from '@/background/server-analysis-client';
+import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
 
 const fetchMock =
@@ -23,6 +24,33 @@ const TOKEN = 'a'.repeat(43);
 const REPLACEMENT_TOKEN = 'b'.repeat(43);
 const TOKEN_EXPIRY_MS = 4_102_444_800_000;
 const CAPABILITIES_HEADER_VALUE = 'processing-status,typed-server-errors-v1';
+const TRANSCRIPT_HASH =
+    '1afb6e4ec112941d35fbb2f6b7009e3d5433c89a4546bada9834f392a20bead0';
+const GOLDEN_CAPTIONS = {
+    languageCode: ' EN-us ',
+    segments: [
+        { startSec: -0, durationSec: 1, text: ' e\u0301\r\n test ' },
+        { startSec: 1.25, durationSec: -0, text: '-0 stays text' },
+    ],
+};
+const IDENTITY = {
+    videoId: 'dQw4w9WgXcQ',
+    languageCode: 'en-us',
+    transcriptHash: TRANSCRIPT_HASH,
+    algorithmVersion: 'server-v5',
+};
+const ANALYSIS_INPUT = {
+    videoId: IDENTITY.videoId,
+    durationSec: 213,
+    extensionVersion: '0.1.0',
+    ...GOLDEN_CAPTIONS,
+};
+const PROCESSING_RESPONSE = {
+    status: 'processing' as const,
+    ...IDENTITY,
+    jobId: 'job-server-v5',
+    pollAfterSec: 3,
+};
 
 describe('ServerAnalysisClient', () => {
     beforeEach(() => {
@@ -42,6 +70,82 @@ describe('ServerAnalysisClient', () => {
     afterEach(() => {
         vi.unstubAllGlobals();
         vi.useRealTimers();
+        vi.restoreAllMocks();
+    });
+
+    it('uploads canonical timed captions once per byte-equivalent token retry', async () => {
+        fetchMock
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        status: 'error',
+                        algorithmVersion: 'server-v5',
+                        error: { code: 'token_expired' },
+                    }),
+                    { status: 401 },
+                ),
+            )
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        status: 'registered',
+                        token: REPLACEMENT_TOKEN,
+                        expiresAtMs: TOKEN_EXPIRY_MS,
+                    }),
+                    { status: 201 },
+                ),
+            )
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        status: 'processing',
+                        videoId: 'dQw4w9WgXcQ',
+                        languageCode: 'en-us',
+                        transcriptHash: TRANSCRIPT_HASH,
+                        algorithmVersion: 'server-v5',
+                        jobId: 'job-server-v5',
+                        pollAfterSec: 3,
+                    }),
+                    { status: 202 },
+                ),
+            );
+
+        await expect(
+            ServerAnalysisClient.requestAnalysis({
+                videoId: 'dQw4w9WgXcQ',
+                durationSec: 213,
+                extensionVersion: '0.1.0',
+                ...GOLDEN_CAPTIONS,
+            }),
+        ).resolves.toMatchObject({
+            status: 'processing',
+            languageCode: 'en-us',
+            transcriptHash: TRANSCRIPT_HASH,
+        });
+
+        const firstBody = fetchMock.mock.calls[0]?.[1]?.body;
+        const retriedBody = fetchMock.mock.calls[2]?.[1]?.body;
+        expect(typeof firstBody).toBe('string');
+        expect(retriedBody).toBe(firstBody);
+        if (typeof firstBody !== 'string') {
+            throw new Error('Expected an analysis JSON body.');
+        }
+        expect(
+            new TextEncoder().encode(firstBody).byteLength,
+        ).toBeLessThanOrEqual(8 * 1024 * 1024);
+        const body = JSON.parse(firstBody) as unknown;
+        expect(body).toMatchObject({
+            videoId: 'dQw4w9WgXcQ',
+            durationSec: 213,
+            extensionVersion: '0.1.0',
+            languageCode: 'en-us',
+            segments: [
+                { startSec: 0, durationSec: 1, text: 'é\n test' },
+                { startSec: 1.25, durationSec: 0, text: '-0 stays text' },
+            ],
+        });
+        expect(body).not.toHaveProperty('algorithmVersion');
+        expect(body).not.toHaveProperty('transcriptHash');
     });
 
     it('gets public config without loading or registering an installation', async () => {
@@ -79,25 +183,13 @@ describe('ServerAnalysisClient', () => {
         expect(installationMocks.save).not.toHaveBeenCalled();
     });
 
-    it('uses a stored bearer token for metadata-only analysis', async () => {
+    it('uses a stored bearer token for timed-caption analysis', async () => {
         fetchMock.mockResolvedValue(
-            new Response(
-                JSON.stringify({
-                    status: 'processing',
-                    videoId: 'dQw4w9WgXcQ',
-                    algorithmVersion: 'server-v5',
-                    jobId: 'job-server-v5',
-                    pollAfterSec: 3,
-                }),
-                { status: 202 },
-            ),
+            new Response(JSON.stringify(PROCESSING_RESPONSE), { status: 202 }),
         );
 
-        const response = await ServerAnalysisClient.requestAnalysis({
-            videoId: 'dQw4w9WgXcQ',
-            durationSec: 213,
-            extensionVersion: '0.1.0',
-        });
+        const response =
+            await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
         expect(response.status).toBe('processing');
         expect(fetchMock).toHaveBeenCalledWith(
@@ -121,14 +213,18 @@ describe('ServerAnalysisClient', () => {
             videoId: 'dQw4w9WgXcQ',
             durationSec: 213,
             extensionVersion: '0.1.0',
+            languageCode: 'en-us',
+            segments: [
+                { startSec: 0, durationSec: 1, text: 'é\n test' },
+                { startSec: 1.25, durationSec: 0, text: '-0 stays text' },
+            ],
             client: {
                 source: 'chrome-extension',
                 capabilities: ['processing-status', 'typed-server-errors-v1'],
             },
         });
         expect(body).not.toHaveProperty('algorithmVersion');
-        expect(body).not.toHaveProperty('captions');
-        expect(body).not.toHaveProperty('transcript');
+        expect(body).not.toHaveProperty('transcriptHash');
     });
 
     it('registers lazily before the first authenticated request', async () => {
@@ -145,22 +241,12 @@ describe('ServerAnalysisClient', () => {
                 ),
             )
             .mockResolvedValueOnce(
-                new Response(
-                    JSON.stringify({
-                        status: 'processing',
-                        videoId: 'dQw4w9WgXcQ',
-                        algorithmVersion: 'server-v5',
-                        jobId: 'job-server-v5',
-                        pollAfterSec: 3,
-                    }),
-                    { status: 202 },
-                ),
+                new Response(JSON.stringify(PROCESSING_RESPONSE), {
+                    status: 202,
+                }),
             );
 
-        await ServerAnalysisClient.requestAnalysis({
-            videoId: 'dQw4w9WgXcQ',
-            extensionVersion: '0.1.0',
-        });
+        await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
         expect(fetchMock.mock.calls[0]?.[0]).toBe(
             'http://127.0.0.1:8787/v1/installations/register',
@@ -191,10 +277,7 @@ describe('ServerAnalysisClient', () => {
         fetchMock.mockRejectedValue(new Error('connection closed'));
 
         await expect(
-            ServerAnalysisClient.requestAnalysis({
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '0.1.0',
-            }),
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
         ).rejects.toMatchObject({
             failure: { code: 'invalid_server_response' },
         });
@@ -207,8 +290,7 @@ describe('ServerAnalysisClient', () => {
             new Response(
                 JSON.stringify({
                     status: 'no_promo',
-                    videoId: 'dQw4w9WgXcQ',
-                    algorithmVersion: 'server-v5',
+                    ...IDENTITY,
                     sourceResultId: 'result-server-v5',
                     freshness: { expiresAtMs: TOKEN_EXPIRY_MS },
                 }),
@@ -216,7 +298,10 @@ describe('ServerAnalysisClient', () => {
             ),
         );
 
-        await ServerAnalysisClient.requestJobStatus('job-server-v5');
+        await ServerAnalysisClient.requestJobStatus({
+            jobId: 'job-server-v5',
+            identity: IDENTITY,
+        });
 
         expect(fetchMock).toHaveBeenCalledWith(
             'http://127.0.0.1:8787/v1/analysis/jobs/job-server-v5',
@@ -229,6 +314,178 @@ describe('ServerAnalysisClient', () => {
                 },
             }),
         );
+    });
+
+    it('validates poll identity after service worker restart', async () => {
+        fetchMock.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    ...PROCESSING_RESPONSE,
+                    futureResponseField: 'ignored',
+                }),
+                { status: 202 },
+            ),
+        );
+        const processing =
+            await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
+        expect(processing).toEqual(PROCESSING_RESPONSE);
+
+        vi.resetModules();
+        const { ServerAnalysisClient: RestartedServerAnalysisClient } =
+            await import('@/background/server-analysis-client');
+        fetchMock.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    status: 'ready',
+                    ...IDENTITY,
+                    source: 'server_cache',
+                    sourceResultId: 'result-after-restart',
+                    freshness: {
+                        expiresAtMs: TOKEN_EXPIRY_MS,
+                        futureFreshnessField: true,
+                    },
+                    promoBlocks: [
+                        {
+                            startSec: 10,
+                            endSec: 20,
+                            confidence: 'high',
+                            futureBlockField: true,
+                        },
+                    ],
+                    futureResponseField: true,
+                }),
+                { status: 200 },
+            ),
+        );
+
+        const ready = await RestartedServerAnalysisClient.requestJobStatus({
+            jobId: PROCESSING_RESPONSE.jobId,
+            identity: IDENTITY,
+        });
+        expect(ready).toEqual({
+            status: 'ready',
+            ...IDENTITY,
+            source: 'server_cache',
+            sourceResultId: 'result-after-restart',
+            freshness: { expiresAtMs: TOKEN_EXPIRY_MS },
+            promoBlocks: [
+                {
+                    startSec: 10,
+                    endSec: 20,
+                    confidence: 'high',
+                },
+            ],
+        });
+
+        const mismatches = [
+            { ...IDENTITY, videoId: 'abcdefghijk' },
+            { ...IDENTITY, languageCode: 'ru' },
+            { ...IDENTITY, transcriptHash: 'f'.repeat(64) },
+            { ...IDENTITY, algorithmVersion: 'server-future' },
+        ];
+        for (const responseIdentity of mismatches) {
+            fetchMock.mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        status: 'no_promo',
+                        ...responseIdentity,
+                        sourceResultId: 'mismatched-result',
+                        freshness: { expiresAtMs: TOKEN_EXPIRY_MS },
+                    }),
+                    { status: 200 },
+                ),
+            );
+            await expect(
+                RestartedServerAnalysisClient.requestJobStatus({
+                    jobId: PROCESSING_RESPONSE.jobId,
+                    identity: IDENTITY,
+                }),
+            ).rejects.toMatchObject({
+                failure: { code: 'invalid_server_response' },
+            });
+        }
+
+        fetchMock.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    ...PROCESSING_RESPONSE,
+                    pollAfterSec: 'soon',
+                }),
+                { status: 202 },
+            ),
+        );
+        await expect(
+            RestartedServerAnalysisClient.requestJobStatus({
+                jobId: PROCESSING_RESPONSE.jobId,
+                identity: IDENTITY,
+            }),
+        ).rejects.toMatchObject({
+            failure: { code: 'invalid_server_response' },
+        });
+    });
+
+    it('accepts a valid future server algorithm without equality gating', async () => {
+        fetchMock.mockResolvedValueOnce(
+            new Response(
+                JSON.stringify({
+                    ...PROCESSING_RESPONSE,
+                    algorithmVersion: 'server-future',
+                }),
+                { status: 202 },
+            ),
+        );
+
+        await expect(
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
+        ).resolves.toMatchObject({
+            status: 'processing',
+            algorithmVersion: 'server-future',
+            transcriptHash: TRANSCRIPT_HASH,
+        });
+    });
+
+    it('rejects local transcript failures without HTTP', async () => {
+        const invalidInputs = [
+            { ...ANALYSIS_INPUT, segments: [] },
+            {
+                ...ANALYSIS_INPUT,
+                segments: [{ startSec: 0, durationSec: 1, text: '   ' }],
+            },
+            {
+                ...ANALYSIS_INPUT,
+                segments: [
+                    {
+                        startSec: Number.NaN,
+                        durationSec: 1,
+                        text: 'caption',
+                    },
+                ],
+            },
+            {
+                ...ANALYSIS_INPUT,
+                segments: [
+                    { startSec: 18_000, durationSec: 1, text: 'caption' },
+                ],
+            },
+            {
+                ...ANALYSIS_INPUT,
+                segments: [
+                    {
+                        startSec: 0,
+                        durationSec: 1,
+                        text: 'x'.repeat(500_001),
+                    },
+                ],
+            },
+        ];
+
+        for (const input of invalidInputs) {
+            await expect(
+                ServerAnalysisClient.requestAnalysis(input),
+            ).rejects.toBeInstanceOf(ServerAnalysisClientError);
+        }
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(installationMocks.loadFresh).not.toHaveBeenCalled();
     });
 
     it.each(['token_expired', 'token_invalid'] as const)(
@@ -256,22 +513,12 @@ describe('ServerAnalysisClient', () => {
                     ),
                 )
                 .mockResolvedValueOnce(
-                    new Response(
-                        JSON.stringify({
-                            status: 'processing',
-                            videoId: 'dQw4w9WgXcQ',
-                            algorithmVersion: 'server-v5',
-                            jobId: 'job-server-v5',
-                            pollAfterSec: 3,
-                        }),
-                        { status: 202 },
-                    ),
+                    new Response(JSON.stringify(PROCESSING_RESPONSE), {
+                        status: 202,
+                    }),
                 );
 
-            await ServerAnalysisClient.requestAnalysis({
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '0.1.0',
-            });
+            await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
             expect(installationMocks.clear).toHaveBeenCalledOnce();
             expect(installationMocks.save).toHaveBeenCalledWith({
@@ -301,10 +548,7 @@ describe('ServerAnalysisClient', () => {
         );
 
         await expect(
-            ServerAnalysisClient.requestAnalysis({
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '0.1.0',
-            }),
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
         ).resolves.toEqual({
             status: 'rate_limited',
             algorithmVersion: 'server-v5',
@@ -319,10 +563,7 @@ describe('ServerAnalysisClient', () => {
             }),
         );
 
-        const failure = ServerAnalysisClient.requestAnalysis({
-            videoId: 'dQw4w9WgXcQ',
-            extensionVersion: '0.1.0',
-        });
+        const failure = ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
         await expect(failure).rejects.toBeInstanceOf(ServerAnalysisClientError);
         await expect(failure).rejects.toMatchObject({
@@ -337,10 +578,10 @@ describe('ServerAnalysisClient', () => {
             new Response(
                 JSON.stringify({
                     status: 'ready',
-                    videoId: 'dQw4w9WgXcQ',
-                    algorithmVersion: 'server-v5',
+                    ...IDENTITY,
+                    source: 'server_cache',
                     sourceResultId: 'result-server-v5',
-                    promoBlocks: [],
+                    promoBlocks: [{ startSec: 10, endSec: 20 }],
                     freshness: { expiresAtMs: TOKEN_EXPIRY_MS },
                 }),
                 { status: 500 },
@@ -348,10 +589,7 @@ describe('ServerAnalysisClient', () => {
         );
 
         await expect(
-            ServerAnalysisClient.requestAnalysis({
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '0.1.0',
-            }),
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
         ).rejects.toMatchObject({
             failure: { code: 'invalid_server_response' },
         });
@@ -362,23 +600,13 @@ describe('ServerAnalysisClient', () => {
         fetchMock
             .mockRejectedValueOnce(new Error('temporary network failure'))
             .mockResolvedValueOnce(
-                new Response(
-                    JSON.stringify({
-                        status: 'processing',
-                        videoId: 'dQw4w9WgXcQ',
-                        algorithmVersion: 'server-v5',
-                        jobId: 'job-server-v5',
-                        pollAfterSec: 3,
-                    }),
-                    { status: 202 },
-                ),
+                new Response(JSON.stringify(PROCESSING_RESPONSE), {
+                    status: 202,
+                }),
             );
 
         await expect(
-            ServerAnalysisClient.requestAnalysis({
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '0.1.0',
-            }),
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
         ).resolves.toMatchObject({ status: 'processing' });
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
@@ -387,10 +615,7 @@ describe('ServerAnalysisClient', () => {
         fetchMock.mockRejectedValue(new Error('signed URL and stderr'));
 
         await expect(
-            ServerAnalysisClient.requestAnalysis({
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '0.1.0',
-            }),
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
         ).rejects.toMatchObject({
             failure: { code: 'invalid_server_response' },
         });
@@ -399,6 +624,9 @@ describe('ServerAnalysisClient', () => {
 
     it('aborts hung requests with the same safe failure contract', async () => {
         vi.useFakeTimers();
+        vi.spyOn(ServerTranscriptIdentity, 'sha256Hex').mockResolvedValue(
+            TRANSCRIPT_HASH,
+        );
         fetchMock.mockImplementation((_url, init) => {
             return new Promise((_resolve, reject) => {
                 init?.signal?.addEventListener('abort', () => {
@@ -407,21 +635,23 @@ describe('ServerAnalysisClient', () => {
             });
         });
 
-        const promise = ServerAnalysisClient.requestAnalysis({
-            videoId: 'dQw4w9WgXcQ',
-            extensionVersion: '0.1.0',
-        });
-        const assertion = expect(promise).rejects.toMatchObject({
+        const promise = ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
+        const rejection = promise.catch((error: unknown) => error);
+
+        await vi.advanceTimersByTimeAsync(15_000);
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        await vi.advanceTimersByTimeAsync(15_000);
+        await expect(rejection).resolves.toMatchObject({
             failure: { code: 'invalid_server_response' },
         });
-
-        await vi.advanceTimersByTimeAsync(10_000);
-        await assertion;
         expect(fetchMock).toHaveBeenCalledTimes(2);
     });
 
     it('retries when the response body stalls until the request timeout', async () => {
         vi.useFakeTimers();
+        vi.spyOn(ServerTranscriptIdentity, 'sha256Hex').mockResolvedValue(
+            TRANSCRIPT_HASH,
+        );
         fetchMock
             .mockImplementationOnce((_url, init) => {
                 const body = new ReadableStream({
@@ -436,23 +666,13 @@ describe('ServerAnalysisClient', () => {
                 return Promise.resolve(new Response(body, { status: 200 }));
             })
             .mockResolvedValueOnce(
-                new Response(
-                    JSON.stringify({
-                        status: 'processing',
-                        videoId: 'dQw4w9WgXcQ',
-                        algorithmVersion: 'server-v5',
-                        jobId: 'job-server-v5',
-                        pollAfterSec: 3,
-                    }),
-                    { status: 202 },
-                ),
+                new Response(JSON.stringify(PROCESSING_RESPONSE), {
+                    status: 202,
+                }),
             );
 
-        const promise = ServerAnalysisClient.requestAnalysis({
-            videoId: 'dQw4w9WgXcQ',
-            extensionVersion: '0.1.0',
-        });
-        await vi.advanceTimersByTimeAsync(5_000);
+        const promise = ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
+        await vi.advanceTimersByTimeAsync(15_000);
 
         await expect(promise).resolves.toMatchObject({ status: 'processing' });
         expect(fetchMock).toHaveBeenCalledTimes(2);

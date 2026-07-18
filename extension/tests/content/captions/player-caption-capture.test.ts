@@ -13,6 +13,7 @@ vi.mock('@/shared/browser', () => ({
 }));
 
 import { PlayerCaptionCapture } from '@/content/captions/player-caption-capture';
+import { WatchCaptions } from '@/content/watch-captions';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 type WindowListener = (event: MessageEvent<unknown>) => void;
@@ -432,5 +433,306 @@ describe('PlayerCaptionCapture', () => {
                 diagnostics: { stage: 'activating' },
             },
         });
+    });
+
+    it('returns ready failed or cancelled', async () => {
+        const readyController = new AbortController();
+        const raw = JSON.stringify({
+            events: [
+                {
+                    tStartMs: 1000,
+                    dDurationMs: 2000,
+                    segs: [{ utf8: 'sponsor message' }],
+                },
+            ],
+        });
+        const readyRun = PlayerCaptionCapture.capture({
+            videoId: 'ready-video',
+            signal: readyController.signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture('ready-video', raw);
+        await finishCleanup();
+
+        await expect(readyRun).resolves.toMatchObject({
+            status: 'ready',
+            payload: {
+                ok: true,
+                videoId: 'ready-video',
+                languageCode: 'en',
+                segments: [
+                    { startSec: 1, durationSec: 2, text: 'sponsor message' },
+                ],
+            },
+        });
+
+        mockSendMessage.mockImplementation((message: unknown) => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
+            ) {
+                return Promise.resolve({
+                    ok: false,
+                    reason: 'captions-unavailable',
+                    error: 'Caption controls are unavailable',
+                });
+            }
+            return Promise.resolve({ ok: true });
+        });
+        await expect(
+            PlayerCaptionCapture.capture({
+                videoId: 'failed-video',
+                signal: new AbortController().signal,
+                captureTimeoutMs: 1000,
+            }),
+        ).resolves.toEqual({
+            status: 'failed',
+            failure: {
+                reason: 'captions-unavailable',
+                message: 'Caption controls are unavailable',
+                diagnostics: { stage: 'activating' },
+            },
+        });
+
+        mockSendMessage.mockResolvedValue({ ok: true });
+        const cancelledController = new AbortController();
+        const cancelledRun = PlayerCaptionCapture.capture({
+            videoId: 'cancelled-video',
+            signal: cancelledController.signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        cancelledController.abort();
+        await finishCleanup();
+
+        await expect(cancelledRun).resolves.toEqual({ status: 'cancelled' });
+        await vi.advanceTimersByTimeAsync(2000);
+        const lateTimeoutMessages = mockSendMessage.mock.calls.filter(
+            (call) => {
+                const message: unknown = call[0];
+                if (message === null || typeof message !== 'object') {
+                    return false;
+                }
+                const payload: unknown = Reflect.get(message, 'payload');
+                return (
+                    Reflect.get(message, 'type') ===
+                        TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT &&
+                    payload !== null &&
+                    typeof payload === 'object' &&
+                    Reflect.get(payload, 'reason') === 'capture-timeout'
+                );
+            },
+        );
+        expect(lateTimeoutMessages).toHaveLength(0);
+        expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('dedupes only inside one capture session', async () => {
+        const raw = JSON.stringify({
+            events: [
+                {
+                    tStartMs: 0,
+                    dDurationMs: 1000,
+                    segs: [{ utf8: 'promo' }],
+                },
+            ],
+        });
+        const firstRun = PlayerCaptionCapture.capture({
+            videoId: 'same-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture('same-video', raw);
+        dispatchTimedtextCapture('same-video', raw);
+        await finishCleanup();
+        await expect(firstRun).resolves.toMatchObject({ status: 'ready' });
+
+        const secondRun = PlayerCaptionCapture.capture({
+            videoId: 'same-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture('same-video', raw);
+        await finishCleanup();
+        await expect(secondRun).resolves.toMatchObject({ status: 'ready' });
+
+        const emptyRun = PlayerCaptionCapture.capture({
+            videoId: 'empty-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture('empty-video', JSON.stringify({ events: [] }));
+        await finishCleanup();
+        await expect(emptyRun).resolves.toMatchObject({
+            status: 'failed',
+            failure: { reason: 'captions-unavailable' },
+        });
+
+        const malformedRun = PlayerCaptionCapture.capture({
+            videoId: 'malformed-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture('malformed-video', '{malformed');
+        await finishCleanup();
+        await expect(malformedRun).resolves.toMatchObject({
+            status: 'failed',
+            failure: { reason: 'parse-failed' },
+        });
+
+        const cleanupMessages = mockSendMessage.mock.calls.filter((call) => {
+            const message: unknown = call[0];
+            return (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE
+            );
+        });
+        expect(cleanupMessages).toHaveLength(4);
+    });
+
+    it('cancels a superseded session before starting the next capture', async () => {
+        const firstController = new AbortController();
+        const firstRun = PlayerCaptionCapture.capture({
+            videoId: 'first-video',
+            signal: firstController.signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+
+        firstController.abort();
+        const secondRun = PlayerCaptionCapture.capture({
+            videoId: 'second-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture(
+            'second-video',
+            JSON.stringify({
+                events: [
+                    {
+                        tStartMs: 0,
+                        dDurationMs: 1000,
+                        segs: [{ utf8: 'next session' }],
+                    },
+                ],
+            }),
+        );
+        await finishCleanup();
+
+        await expect(firstRun).resolves.toEqual({ status: 'cancelled' });
+        await expect(secondRun).resolves.toMatchObject({
+            status: 'ready',
+            payload: { videoId: 'second-video' },
+        });
+    });
+
+    it('returns cancelled while bridge installation remains pending', async () => {
+        let finishInstall: ((value: { ok: true }) => void) | undefined;
+        mockSendMessage.mockImplementation((message: unknown) => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE
+            ) {
+                return new Promise((resolve) => {
+                    finishInstall = resolve;
+                });
+            }
+            return Promise.resolve({ ok: true });
+        });
+        const controller = new AbortController();
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'pending-install-video',
+            signal: controller.signal,
+            captureTimeoutMs: 1000,
+        });
+        const observed = vi.fn();
+        void run.then(observed);
+
+        controller.abort();
+        await finishCleanup();
+        expect(observed).toHaveBeenCalledWith({ status: 'cancelled' });
+
+        finishInstall?.({ ok: true });
+        await finishCleanup();
+        await expect(run).resolves.toEqual({ status: 'cancelled' });
+    });
+
+    it('returns timed captions through the watch facade', async () => {
+        const raw = JSON.stringify({
+            events: [
+                {
+                    tStartMs: 250,
+                    dDurationMs: 750,
+                    segs: [{ utf8: 'facade transcript' }],
+                },
+            ],
+        });
+        const run = WatchCaptions.capture({
+            videoId: 'facade-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+            hostname: 'www.youtube.com',
+        });
+        await acceptActivation();
+        dispatchTimedtextCapture('facade-video', raw);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({
+            status: 'ready',
+            payload: {
+                videoId: 'facade-video',
+                languageCode: 'en',
+                segments: [
+                    {
+                        startSec: 0.25,
+                        durationSec: 0.75,
+                        text: 'facade transcript',
+                    },
+                ],
+            },
+        });
+
+        await expect(
+            WatchCaptions.capture({
+                videoId: 'e2eFixture1',
+                signal: new AbortController().signal,
+                hostname: '127.0.0.1',
+            }),
+        ).resolves.toMatchObject({
+            status: 'ready',
+            payload: {
+                videoId: 'e2eFixture1',
+                languageCode: 'en',
+                segments: [
+                    {
+                        startSec: 0,
+                        durationSec: 1,
+                        text: 'TopSkip deterministic caption fixture',
+                    },
+                ],
+            },
+        });
+
+        const cancelledE2e = new AbortController();
+        cancelledE2e.abort();
+        await expect(
+            WatchCaptions.capture({
+                videoId: 'e2eFixture1',
+                signal: cancelledE2e.signal,
+                hostname: '127.0.0.1',
+            }),
+        ).resolves.toEqual({ status: 'cancelled' });
     });
 });

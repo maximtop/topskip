@@ -81,7 +81,6 @@ Equivalent:
 
 ```bash
 pnpm install
-pnpm run yt-dlp:install
 ```
 
 Use **`pnpm install --frozen-lockfile`** when you need a clean, lockfile-only install (e.g. matching CI).
@@ -133,12 +132,9 @@ make server
 
 The root `.env` is gitignored. An exported `OPENROUTER_API_KEY` takes precedence
 over the file. `make server` validates required configuration before binding
-the HTTP listener or starting extraction and exits with a safe configuration
-error when the key is missing or blank.
-
-`make server` uses the already installed pinned `yt-dlp` and never checks for
-updates. Maintainers update the reviewed release and checksums with
-`make yt-dlp-refresh-pin`, then reinstall through `make yt-dlp-install`.
+the HTTP listener and exits with a safe configuration error when the key is
+missing or blank. The default extension upload source (`extension_upload`)
+neither installs nor requires `yt-dlp`.
 
 It listens on `http://127.0.0.1:8787`. The matching host permission is injected
 only into development builds, so extension-only work and Private BYOK testing
@@ -146,15 +142,14 @@ do not require this process. Beta and release builds instead contain only the
 public `https://topskip.maximtop.dev/*` server permission. See
 [DEPLOYMENT.md](./DEPLOYMENT.md) for the production route and operations.
 
-On a YouTube `/watch?v=…` page, server analysis becomes eligible as soon as the
-content script has loaded preferences and found both the video id and the main
-`<video>` element. It waits up to five seconds for finite duration metadata so
-backend boundary validation and the popup timeline use the real video length;
-playback does not need to start. If duration remains unavailable (for example,
-for a live stream), analysis continues without it. The content script sends a
-runtime message; only the background service worker checks the local cache and
-performs HTTP requests to the backend. A fresh extension-side cache hit
-intentionally produces no backend request.
+On a YouTube `/watch?v=…` page, Server mode starts with **caption acquisition**
+after the content script has loaded preferences and found both the video ID and
+the main `<video>` element. Playback does not need to start. The content script
+captures the player-selected timed captions, canonicalizes them, and sends a
+validated runtime message to the background service worker. Only the background
+computes the exact transcript identity, checks its local cache, authenticates,
+submits captions to TopSkip, and polls the job. A fresh exact cache hit produces
+no analysis HTTP request.
 
 The background lazily registers a random anonymous installation token when
 Server mode first needs the backend. The token never crosses into popup or
@@ -164,26 +159,30 @@ other algorithms. If config is temporarily unreachable, an unexpired cached
 result may still be used. Private BYOK returns before registration, config,
 cache, analysis, and polling paths.
 
-The backend always extracts YouTube subtitles through `yt-dlp`; there is no
-network opt-in flag. It obtains bounded metadata first, selects one manual or
-automatic track, then downloads only that track as JSON3. Video and audio are
-never requested. To use an executable outside `.tools/`, set:
+The retained extractor can be exercised only through an explicit operator
+startup mode. It is never an automatic fallback for a failed upload:
 
 ```bash
-TOPSKIP_YT_DLP_PATH=/absolute/path/to/yt-dlp pnpm run backend:dev
+make yt-dlp-install
+TOPSKIP_CAPTION_SOURCE=legacy_yt_dlp \
+  TOPSKIP_YT_DLP_PATH="$PWD/.tools/yt-dlp" \
+  pnpm run backend:dev
 ```
 
-Repository-managed bootstrap binaries support macOS universal and Linux x64.
-CI and `make server` use the installed version without an update check.
+Legacy mode obtains bounded metadata and downloads one caption track as JSON3;
+it never downloads video or audio. Repository-managed bootstrap binaries
+support macOS universal and Linux x64. `make yt-dlp-refresh-pin` updates the
+reviewed tag and checksums, but normal setup, CI, `make server`, and the
+production image do not install the binary.
 
 ### Server-owned Gemini analysis
 
 Production server analysis uses OpenRouter with the fixed
 `google/gemini-3.5-flash` model. It sends one non-streaming request containing
-the selected transcript as `[startSec] text` lines plus the video ID and caption
-language. The request uses `reasoning.effort=high`, excludes reasoning text from
-the response, has a 45-second timeout, and caps both completion tokens and HTTP
-response size.
+the validated uploaded transcript as `[startSec] text` lines plus the video ID
+and caption language. The request uses `reasoning.effort=high`, excludes
+reasoning text from the response, has a 45-second timeout, and caps both
+completion tokens and HTTP response size.
 
 The system prompt and prompt version live in `common` so server analysis,
 Private BYOK, and the model-comparison script share the same promo definition.
@@ -191,12 +190,15 @@ Only tests select the deterministic fixture adapter; a non-test backend always
 uses Gemini. Analysis failures map to stable terminal codes instead of exposing
 provider response bodies or errors.
 
-Ready and no-promo results expire 30 days after Gemini completes. Requests for
-the same video and active server algorithm join an in-memory job or reuse an
-unexpired artifact. Stored metadata includes provider, model, prompt version,
-latency, token usage, and reported cost. Logs never include the API key,
-installation token, raw IP, transcript, reasoning, subtitle contents, signed
-URLs, or raw provider errors.
+Ready and no-promo results expire 30 days after Gemini completes. Only the same
+algorithm, video, normalized language, and canonical transcript hash may join
+an in-memory job or reuse an unexpired artifact. Validated transcripts and
+bounded assistant output may also be retained for up to 30 days under access
+control and pruning. They must not be pasted into issues, logs, or chat. Stored
+metadata includes provider, model, prompt version, latency, token usage, and
+reported cost. Logs never include the API key, installation token, raw IP,
+transcript, assistant content, reasoning, caption bodies, signed URLs, or raw
+provider errors.
 
 ### Build profiles and public API
 
@@ -211,10 +213,10 @@ storage:
 
 The public compatibility boundary consists of `/v1/installations/register`,
 `/v1/config`, `/v1/analysis`, `/v1/analysis/jobs/{jobId}`, and `/v1/health`.
-Analysis and polling require the installation bearer token. The server ignores
-the deprecated request-side `algorithmVersion`; all processing and terminal
-responses carry the active server version. Wire-breaking changes require a new
-API prefix rather than changing `/v1` in place.
+Analysis and polling require the installation bearer token. The strict public
+contract lives in the Valibot schemas and inferred types in
+`common/src/server-analysis-contract.ts`. The server computes transcript hashes
+and owns the algorithm version; clients cannot submit either field.
 
 ### Server-analysis dev logs
 
@@ -225,10 +227,12 @@ the complete extension-side route, cache, HTTP, polling, and delivery flow.
 The terminal running `make extension` only reports compilation; it does not
 display extension runtime logs.
 
-The terminal running `make server` shows the corresponding backend HTTP, job,
-yt-dlp, extraction, and terminal-analysis stages. Logs include `videoId` and
-`jobId`, but never transcript text, subtitle bodies, signed URLs, stderr,
-cookies, or API keys.
+The terminal running `make server` shows the corresponding backend HTTP,
+validation, cache/join, queue, model, and terminal-analysis stages. The retained
+legacy mode additionally logs safe extraction stages. The allow-list includes
+identifiers, stable codes, counts, latency, tokens, and cost, but never
+transcript text, assistant content, caption bodies, signed URLs, stderr,
+cookies, installation tokens, raw IP, or API keys.
 
 After `make extension` rebuilds, click **Reload** on the extension card and
 reload the YouTube tab. Programmatically registered content scripts are not
@@ -245,7 +249,7 @@ retroactively injected into an already loaded document.
 | `extension/src/popup/`        | **React + Mantine + MobX** toolbar popup; **`preferences-store.ts`** (messaging to background only)                                                                             |
 | `extension/src/shared/`       | **`browser.ts`**, **Valibot** schema + constants, **`messages.ts`**, **`error.ts`** / **`valibot.ts`** (`getErrorMessage`, `extractMessageFromValiError`)                       |
 | `extension/src/public/`       | Static files copied into `extension/dist/` (e.g. icons)                                                                                                                         |
-| `backend/src/`                | Local server-first API, caption extraction, analysis jobs, and durable artifacts                                                                                                |
+| `backend/src/`                | Local server API, transcript validation, analysis jobs, durable artifacts, and an operator-only legacy extractor                                                                |
 | `backend/tests/`              | Backend unit and integration tests                                                                                                                                              |
 | `common/src/`                 | Pure API contracts, promo types, validation schemas, and caption parsing shared by backend and extension                                                                        |
 | `common/tests/`               | Tests for shared contracts and pure helpers                                                                                                                                     |
@@ -276,7 +280,8 @@ The **popup** and **content** scripts must not call **`storage.local`** for pref
 
 | Command                | What it runs                                                   |
 | ---------------------- | -------------------------------------------------------------- |
-| `make setup`           | Install pnpm dependencies and the pinned `yt-dlp`              |
+| `make setup`           | Install pnpm dependencies                                      |
+| `make yt-dlp-install`  | Install pinned `yt-dlp` for explicit legacy mode only          |
 | `make build`           | `pnpm run build`                                               |
 | `make server`          | Load root `.env`, require the OpenRouter key, then run backend |
 | `make extension`       | Watch and rebuild the development extension                    |
@@ -292,7 +297,8 @@ The **popup** and **content** scripts must not call **`storage.local`** for pref
 
 | Script                                       | Description                                                                          |
 | -------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `pnpm run setup`                             | Install dependencies and the pinned `yt-dlp`                                         |
+| `pnpm run setup`                             | Install pnpm dependencies                                                            |
+| `pnpm run yt-dlp:install`                    | Install pinned `yt-dlp` for explicit legacy mode only                                |
 | `pnpm run build`                             | Development build to `extension/dist/`                                               |
 | `pnpm run build:watch`                       | Rspack watch mode                                                                    |
 | `pnpm run format`                            | Apply **oxfmt** formatting (`.oxfmtrc.json`)                                         |
@@ -307,7 +313,7 @@ The **popup** and **content** scripts must not call **`storage.local`** for pref
 | `pnpm run test:coverage`                     | Vitest with coverage (thresholds in `vitest.config.ts`)                              |
 | `pnpm run test:e2e`                          | Playwright (headless extension; set `PW_EXTENSION_HEADED=1` for headed)              |
 | `pnpm run test:deployment`                   | Deployment gateway, rollback-state, Compose, and server bundle checks                |
-| `pnpm run test:container`                    | Production image constraints, pinned yt-dlp, startup failure, and SQLite persistence |
+| `pnpm run test:container`                    | yt-dlp-free production image, startup failure, hardening, and SQLite persistence     |
 | `pnpm run test:e2e:ui`                       | Playwright UI mode                                                                   |
 | `pnpm run openrouter:compare-presets`        | Maintainer-only: same transcript → every built-in OpenRouter preset (see below)      |
 | `pnpm run openrouter:extract-log-transcript` | Rebuild `[sec] text` user message from an exported caption `.log` (see below)        |
@@ -393,14 +399,16 @@ selected extension logic such as **`skip-logic.ts`**, **`page-guards.ts`**, and
 
 1. Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY`.
 2. `make build`, load **`extension/dist/`** unpacked (see [Getting started](#3-load-the-extension-in-chrome)).
-3. Run the local backend with `make server`; it is ready for a real-caption
-   smoke test without another flag.
-4. Open a `/watch` URL and verify the popup first reports server analysis and
-   then a ready, unavailable, or no-promo terminal state.
+3. Run the local backend with `make server`; the default extension-upload mode
+   needs no extractor or source flag.
+4. Open a `/watch` URL and verify the popup moves monotonically from caption
+   acquisition to server analysis and then a ready, unavailable, or no-promo
+   terminal state.
 5. For a ready result, confirm the popup intervals match the server response,
    then let playback reach a detected block start and verify the extension
    skips only that future block once.
-6. Switch to Private BYOK and open a new video; verify no server request occurs.
+6. Switch to Private BYOK and open a new video; verify zero TopSkip analysis or
+   registration requests occur.
 
 ### Manual caption-capture smoke test
 
@@ -564,7 +572,7 @@ stream.
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **`make build` fails**                                | Ensure Node **≥ 22**; run `pnpm install`; check Rspack/TypeScript errors in the terminal                                                                                   |
 | **`make server` reports a missing OpenRouter key**    | Copy `.env.example` to the root `.env`, set `OPENROUTER_API_KEY`, or export it in the shell before starting the server                                                     |
-| **Backend reports missing `yt-dlp`**                  | Run `make yt-dlp-install`, or set `TOPSKIP_YT_DLP_PATH` to a working executable                                                                                            |
+| **Explicit legacy mode reports missing `yt-dlp`**     | Run `make yt-dlp-install`, or set `TOPSKIP_YT_DLP_PATH` to a working executable; default `extension_upload` mode never requires it                                         |
 | **Extension doesn’t update after edits**              | Run `make build` again; on `chrome://extensions`, click **Reload** on the extension; for content scripts, **reload the tab** (or close/reopen YouTube)                     |
 | **Lint errors in IDE but not terminal**               | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service. |
 | **`pnpm run test:e2e` fails (browser)**               | Run `pnpm exec playwright install chromium`                                                                                                                                |

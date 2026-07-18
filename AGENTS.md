@@ -4,11 +4,15 @@ Guidance for LLM agents and human contributors working on this repository.
 
 ## Project overview
 
-**TopSkip** is a pnpm workspace containing a local analysis backend, shared
-contracts, and a **Chrome Manifest V3** extension. Server mode sends video
-metadata to the loopback backend, which extracts captions, analyzes promo
-blocks, and reuses cached results. Private BYOK keeps analysis in the extension
-when the user explicitly opts in. There is **no fixed 30s→60s window**.
+**TopSkip** is a pnpm workspace containing an analysis backend, shared
+contracts, and a **Chrome Manifest V3** extension. Server mode captures timed
+captions through the YouTube player and uploads them through the extension
+background; the backend validates them, analyzes promo blocks, and reuses only
+exact transcript results. This extension upload path is the default local and
+production source; retained yt-dlp extraction is operator-only and never a
+fallback. Private BYOK keeps analysis in the extension and
+makes zero TopSkip analysis or registration requests. There is **no fixed
+30s→60s window**.
 
 Users control the extension from the **toolbar popup** (React + Mantine + MobX)
 and options page. Preferences and provider settings are read/written **only in
@@ -73,9 +77,9 @@ Prefer **`make`** targets; they delegate to **`pnpm run`**.
 
 | Action                | Command                                                                                   |
 | --------------------- | ----------------------------------------------------------------------------------------- |
-| Install deps          | `make setup` (pnpm plus verified `yt-dlp`)                                                |
+| Install deps          | `make setup` (pnpm dependencies only)                                                     |
 | Production build      | `make build` or `pnpm run build`                                                          |
-| Local backend         | `make server` (uses the installed `yt-dlp` without updating it)                           |
+| Local backend         | `make server` (default `extension_upload`; no `yt-dlp` required)                          |
 | Watch extension build | `make extension` or `pnpm run build:watch`                                                |
 | Lint                  | `make lint` or `pnpm run lint`                                                            |
 | Full tests            | `make test` — runs coverage, deployment assets, then E2E (build before E2E)               |
@@ -116,12 +120,13 @@ Use **`pnpm run format`** for repo-wide formatting. `pnpm run lint` includes `fo
 - **Imports**: Use **`@/...`** inside the extension, **`@topskip/backend/...`**
   inside the backend, and **`@topskip/common/...`** for shared contracts.
 - **Backend HTTP ownership**: The watch content script never calls the TopSkip
-  backend directly. It may only send `REQUEST_SERVER_ANALYSIS` and
-  `REFRESH_SERVER_ANALYSIS_STATUS` runtime messages. Only the background
-  service worker may import the backend client or `fetch` the loopback backend;
-  local-cache lookup, timeout handling, response validation, and response
-  mapping remain background-owned. Do not add `127.0.0.1:8787` fetches to
-  content code.
+  backend directly. For Server mode it may only send the non-network
+  `SERVER_ANALYSIS_SESSION_EVENT`, `REQUEST_SERVER_ANALYSIS` with validated
+  timed captions, and `REFRESH_SERVER_ANALYSIS_STATUS` runtime messages. Only
+  the background service worker may import the backend client or `fetch` the
+  TopSkip backend; authentication, exact local-cache lookup, timeout handling,
+  response validation, polling response mapping, and support URLs remain
+  background-owned. Do not add TopSkip backend `fetch` calls to content code.
 - **Content script** matches YouTube + local e2e origin; **activation** for real users is gated in code via **`shouldActivateTopSkip`** (`page-guards.ts`), not only by broad manifest patterns.
 - **Simple abstractions over repeated branching**: Keep code simple by making variation explicit in data/config/registry maps instead of scattering repeated `if` / `switch` chains across handlers and UI. A one-off conditional is fine, but when the same choice affects multiple behaviors (load/save/test/label/render/routing), define a small typed abstraction for those behaviors and keep the orchestration generic.
 - **`extension/src/shared/`**: Reserve for **constants**, **shared types**, **`browser`**, **message type unions**, and **pure helpers** (deterministic, no network/storage/timers/`console` side effects). Do **not** put modules that perform **I/O** or other ambient side effects in `shared/` — keep those next to the bundle that owns them (e.g. YouTube **`fetch`** lives under **`extension/src/content/captions/`**, not `shared/`). Likewise, **interfaces consumed by a single bundle** (e.g. the `LlmProviderAdapter` interface and provider registry, used only by the background promo-detection pipeline) belong in that bundle's directory (`extension/src/background/`), not in `shared/`. Only the serialized payload types that cross bundle boundaries via `runtime.sendMessage` (provider ID literals, display names) go in `extension/src/shared/messages.ts`.

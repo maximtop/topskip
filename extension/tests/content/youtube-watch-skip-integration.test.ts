@@ -1,13 +1,16 @@
 import { describe, expect, it, vi } from 'vitest';
+import * as v from 'valibot';
 
 const {
     addRuntimeMessageListener,
+    capture,
     installPageBridge,
     scheduleForVideoId,
     sendMessage,
 } = vi.hoisted(() => ({
     addRuntimeMessageListener:
         vi.fn<(listener: (message: unknown) => void) => void>(),
+    capture: vi.fn(),
     installPageBridge: vi.fn(),
     scheduleForVideoId: vi.fn(),
     sendMessage: vi.fn<(message: unknown) => Promise<unknown>>(),
@@ -24,6 +27,7 @@ vi.mock('@/shared/browser', () => ({
 
 vi.mock('@/content/watch-captions', () => ({
     WatchCaptions: {
+        capture,
         installPageBridge,
         scheduleForVideoId,
     },
@@ -37,9 +41,12 @@ import {
 } from '@/content/promo-skip-logic';
 import type { PromoBlock } from '@topskip/common/promo-types';
 import { ANALYSIS_MODE, type UserPreferences } from '@/shared/constants';
-import { TOPSKIP_MESSAGE } from '@/shared/messages';
 import {
-    SERVER_ANALYSIS_DURATION_WAIT_MAX_MS,
+    TOPSKIP_MESSAGE,
+    requestServerAnalysisRuntimeMessageSchema,
+} from '@/shared/messages';
+import { shouldAcceptPromoBlocksForActiveRoute } from '@/content/youtube-watch';
+import {
     VIDEO_BINDING_POLL_INTERVAL_MS,
     YOUTUBE_VIDEO_ELEMENT_SELECTOR,
 } from '@/content/youtube-dom';
@@ -95,6 +102,36 @@ function simulateTimeUpdate(params: {
 }
 
 describe('onTimeUpdate skip pipeline integration', () => {
+    it('rejects late same-video blocks from a superseded Server session', () => {
+        expect(
+            shouldAcceptPromoBlocksForActiveRoute({
+                currentVideoId: 'dQw4w9WgXcQ',
+                messageVideoId: 'dQw4w9WgXcQ',
+                source: 'server',
+                activeSessionId: '00000000-0000-4000-8000-000000000002',
+                messageSessionId: '00000000-0000-4000-8000-000000000001',
+            }),
+        ).toBe(false);
+        expect(
+            shouldAcceptPromoBlocksForActiveRoute({
+                currentVideoId: 'dQw4w9WgXcQ',
+                messageVideoId: 'dQw4w9WgXcQ',
+                source: 'server_cache',
+                activeSessionId: '00000000-0000-4000-8000-000000000002',
+                messageSessionId: '00000000-0000-4000-8000-000000000002',
+            }),
+        ).toBe(true);
+        expect(
+            shouldAcceptPromoBlocksForActiveRoute({
+                currentVideoId: 'dQw4w9WgXcQ',
+                messageVideoId: 'dQw4w9WgXcQ',
+                source: 'local_provider',
+                activeSessionId: null,
+                messageSessionId: undefined,
+            }),
+        ).toBe(true);
+    });
+
     it('FR-001: skips when crossing a block start naturally', () => {
         const fired = new Set<number>();
         const blocks: PromoBlock[] = [{ startSec: 105, endSec: 135 }];
@@ -491,6 +528,7 @@ describe('per-video analysis route lifecycle', () => {
         vi.resetModules();
         sendMessage.mockReset();
         addRuntimeMessageListener.mockReset();
+        capture.mockReset();
         installPageBridge.mockReset();
         scheduleForVideoId.mockReset();
 
@@ -504,7 +542,7 @@ describe('per-video analysis route lifecycle', () => {
         const locationState = {
             hostname: 'www.youtube.com',
             pathname: '/watch',
-            search: '?v=video-a',
+            search: '?v=dQw4w9WgXcQ',
         };
         const windowEvents = new EventTarget();
         const fetchMock = vi.fn();
@@ -512,6 +550,28 @@ describe('per-video analysis route lifecycle', () => {
         addRuntimeMessageListener.mockImplementation(
             (listener: RuntimeMessageListener) => {
                 runtimeMessageListener = listener;
+            },
+        );
+        capture.mockImplementation(
+            (input: { videoId: string; signal: AbortSignal }) => {
+                if (input.signal.aborted) {
+                    return Promise.resolve({ status: 'cancelled' });
+                }
+                return Promise.resolve({
+                    status: 'ready',
+                    payload: {
+                        ok: true,
+                        videoId: input.videoId,
+                        languageCode: 'en',
+                        segments: [
+                            {
+                                startSec: 0,
+                                durationSec: 1,
+                                text: 'Caption',
+                            },
+                        ],
+                    },
+                });
             },
         );
         sendMessage.mockImplementation((message: unknown) => {
@@ -528,11 +588,27 @@ describe('per-video analysis route lifecycle', () => {
                     message.type ===
                         TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
                 ) {
+                    const payload: unknown = Reflect.get(message, 'payload');
+                    const payloadVideoId: unknown =
+                        payload !== null && typeof payload === 'object'
+                            ? Reflect.get(payload, 'videoId')
+                            : undefined;
+                    const videoId =
+                        typeof payloadVideoId === 'string'
+                            ? payloadVideoId
+                            : 'dQw4w9WgXcQ';
                     return Promise.resolve({
                         ok: true,
                         status: 'processing',
-                        jobId: 'job-video-a',
+                        jobId: 'job-active-video',
                         pollAfterSec: 1,
+                        identity: {
+                            videoId,
+                            languageCode: 'en',
+                            transcriptHash:
+                                '321d90058849d7ab00a6ed95cf4fb209803d8b8362dc061a9e10fdf324b5e468',
+                            algorithmVersion: 'server-v5',
+                        },
                     });
                 }
             }
@@ -653,65 +729,40 @@ describe('per-video analysis route lifecycle', () => {
         }
     });
 
-    it('waits briefly for YouTube duration before the one server request', async () => {
+    it('captures immediately without waiting for duration or playback', async () => {
         const harness = await createRouteHarness(serverPrefs, true, Number.NaN);
         try {
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
-            ).toHaveLength(0);
-
-            await harness.pollBindings();
-            harness.setVideoDuration(213);
-            await harness.pollBindings();
-
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
-            ).toEqual([
-                {
-                    type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
-                    payload: { videoId: 'video-a', durationSec: 213 },
+            expect(capture).toHaveBeenCalledOnce();
+            const messages = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            );
+            expect(messages).toHaveLength(1);
+            const message = v.parse(
+                requestServerAnalysisRuntimeMessageSchema,
+                messages[0],
+            );
+            expect(typeof message.payload.sessionId).toBe('string');
+            expect(message).toMatchObject({
+                type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                payload: {
+                    videoId: 'dQw4w9WgXcQ',
+                    languageCode: 'en',
+                    segments: [
+                        {
+                            startSec: 0,
+                            durationSec: 1,
+                            text: 'Caption',
+                        },
+                    ],
                 },
-            ]);
+            });
+            expect(harness.fetchCallCount()).toBe(0);
         } finally {
             harness.dispose();
         }
     });
 
-    it('falls back after the bounded duration wait and resets it on navigation', async () => {
-        const harness = await createRouteHarness(serverPrefs, true, Number.NaN);
-        try {
-            await harness.advanceBindingTime(
-                SERVER_ANALYSIS_DURATION_WAIT_MAX_MS -
-                    VIDEO_BINDING_POLL_INTERVAL_MS,
-            );
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
-            ).toHaveLength(0);
-
-            await harness.navigateToVideo('video-b');
-            await harness.advanceBindingTime(VIDEO_BINDING_POLL_INTERVAL_MS);
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
-            ).toHaveLength(0);
-
-            await harness.advanceBindingTime(
-                SERVER_ANALYSIS_DURATION_WAIT_MAX_MS -
-                    VIDEO_BINDING_POLL_INTERVAL_MS,
-            );
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
-            ).toEqual([
-                {
-                    type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
-                    payload: { videoId: 'video-b' },
-                },
-            ]);
-        } finally {
-            harness.dispose();
-        }
-    });
-
-    it('locks Server on video A, cancels polling, and starts BYOK only on video B', async () => {
+    it('cancels Server and switches to BYOK on the same video', async () => {
         const harness = await createRouteHarness(serverPrefs);
         const byokPrefs: UserPreferences = {
             ...serverPrefs,
@@ -736,24 +787,13 @@ describe('per-video analysis route lifecycle', () => {
             ).toHaveLength(0);
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
-            ).toHaveLength(0);
-            expect(scheduleForVideoId).not.toHaveBeenCalled();
-
-            await harness.navigateToVideo('video-b');
-
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
             ).toEqual([
                 {
                     type: TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP,
-                    payload: { videoId: 'video-b' },
+                    payload: { videoId: 'dQw4w9WgXcQ' },
                 },
             ]);
-            expect(scheduleForVideoId).toHaveBeenCalledTimes(1);
-            expect(scheduleForVideoId).toHaveBeenCalledWith(
-                'video-b',
-                'video-id-change',
-            );
+            expect(scheduleForVideoId).toHaveBeenCalled();
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
             ).toHaveLength(1);
@@ -762,7 +802,7 @@ describe('per-video analysis route lifecycle', () => {
         }
     });
 
-    it('locks BYOK through polls and element replacement, then starts Server on video B', async () => {
+    it('switches from BYOK to a fresh Server capture on the same video', async () => {
         const byokPrefs: UserPreferences = {
             ...serverPrefs,
             analysisMode: ANALYSIS_MODE.Byok,
@@ -775,7 +815,7 @@ describe('per-video analysis route lifecycle', () => {
             ).toEqual([
                 {
                     type: TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP,
-                    payload: { videoId: 'video-a' },
+                    payload: { videoId: 'dQw4w9WgXcQ' },
                 },
             ]);
             expect(scheduleForVideoId).toHaveBeenCalledTimes(1);
@@ -783,34 +823,14 @@ describe('per-video analysis route lifecycle', () => {
             await harness.pollBindings();
             await harness.emitPrefs(serverPrefs);
             await harness.pollBindings();
-            await harness.replaceVideoElement();
-            await harness.pollBindings();
 
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
             ).toHaveLength(1);
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
-            ).toHaveLength(0);
-            expect(scheduleForVideoId).toHaveBeenCalledTimes(2);
-            expect(scheduleForVideoId).toHaveBeenLastCalledWith(
-                'video-a',
-                'video-element-ready',
-            );
-
-            await harness.navigateToVideo('video-b');
-
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
-            ).toEqual([
-                {
-                    type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
-                    payload: { videoId: 'video-b', durationSec: 120 },
-                },
-            ]);
-            expect(
-                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
             ).toHaveLength(1);
+            expect(capture).toHaveBeenCalledOnce();
         } finally {
             harness.dispose();
         }

@@ -2,66 +2,167 @@ import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 
 import {
+    SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_CAPABILITY_TYPED_ERRORS,
-    SERVER_ANALYSIS_ERROR_CODE,
-    SERVER_ANALYSIS_ALGORITHM_VERSION,
-    SERVER_ANALYSIS_UNAVAILABLE_REASON,
+    SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
     buildServerAnalysisRequest,
+    installationRegistrationResponseEmissionSchema,
     installationRegistrationResponseSchema,
     isValidYouTubeVideoId,
-    noPromoResponseSchema,
     processingResponseSchema,
-    rateLimitedResponseSchema,
     readyResponseSchema,
+    serverAnalysisResponseEmissionSchema,
     serverAnalysisResponseSchema,
+    serverConfigResponseEmissionSchema,
     serverConfigResponseSchema,
     serverAnalysisRequestSchema,
-    terminalErrorResponseSchema,
-    unavailableResponseSchema,
-    type RateLimitedResponse,
 } from '@topskip/common/server-analysis-contract';
 
+const VIDEO_ID = 'dQw4w9WgXcQ';
+const HASH = 'a'.repeat(64);
+
+const identity = {
+    videoId: VIDEO_ID,
+    languageCode: 'en',
+    transcriptHash: HASH,
+    algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+};
+
 describe('server analysis contract', () => {
-    it('accepts current-video metadata without captions', () => {
+    it('builds a normalized timed-caption upload without client identity fields', () => {
         const request = buildServerAnalysisRequest({
-            videoId: 'dQw4w9WgXcQ',
-            durationSec: 213,
+            videoId: VIDEO_ID,
+            durationSec: 0,
             extensionVersion: '0.1.0',
+            languageCode: ' EN ',
+            segments: [
+                {
+                    startSec: -0,
+                    durationSec: 2,
+                    text: ' e\u0301\r\n caption ',
+                },
+            ],
         });
 
         expect(request).toEqual({
-            videoId: 'dQw4w9WgXcQ',
-            durationSec: 213,
+            videoId: VIDEO_ID,
+            durationSec: 0,
             extensionVersion: '0.1.0',
+            languageCode: 'en',
+            segments: [{ startSec: 0, durationSec: 2, text: 'é\n caption' }],
             client: {
                 source: 'chrome-extension',
                 capabilities: ['processing-status', 'typed-server-errors-v1'],
             },
         });
-        expect(v.safeParse(serverAnalysisRequestSchema, request).success).toBe(
-            true,
-        );
-        expect(JSON.stringify(request)).not.toContain('caption');
-        expect(JSON.stringify(request)).not.toContain('transcript');
+        expect(request).not.toHaveProperty('algorithmVersion');
+        expect(request).not.toHaveProperty('transcriptHash');
     });
 
-    it('keeps the client algorithm version optional and accepts future capabilities', () => {
-        const parsed = v.parse(serverAnalysisRequestSchema, {
-            videoId: 'dQw4w9WgXcQ',
-            extensionVersion: '12.34.56',
-            algorithmVersion: 'server-v1',
+    it('accepts bounded raw language spelling for independent server normalization', () => {
+        expect(
+            v.parse(serverAnalysisRequestSchema, {
+                videoId: VIDEO_ID,
+                extensionVersion: '1.2.3',
+                languageCode: ' EN-us ',
+                segments: [{ startSec: 0, durationSec: 1, text: 'caption' }],
+                client: {
+                    source: 'chrome-extension',
+                    capabilities: [
+                        SERVER_ANALYSIS_CAPABILITY_TYPED_ERRORS,
+                        'future-capability-v2',
+                    ],
+                },
+            }).languageCode,
+        ).toBe(' EN-us ');
+    });
+
+    it.each([
+        {},
+        { languageCode: 'en' },
+        { segments: [{ startSec: 0, durationSec: 1, text: 'caption' }] },
+    ])('rejects metadata-only request variant %#', (captionFields) => {
+        expect(
+            v.safeParse(serverAnalysisRequestSchema, {
+                videoId: VIDEO_ID,
+                extensionVersion: '1.2.3',
+                client: { source: 'chrome-extension', capabilities: [] },
+                ...captionFields,
+            }).success,
+        ).toBe(false);
+    });
+
+    it.each([
+        { algorithmVersion: 'server-v4' },
+        { transcriptHash: HASH },
+        { unknown: true },
+        {
             client: {
                 source: 'chrome-extension',
-                capabilities: [
-                    SERVER_ANALYSIS_CAPABILITY_TYPED_ERRORS,
-                    'future-capability-v2',
-                ],
+                capabilities: [],
+                extra: true,
             },
-        });
+        },
+        {
+            segments: [
+                {
+                    startSec: 0,
+                    durationSec: 1,
+                    text: 'caption',
+                    extra: true,
+                },
+            ],
+        },
+    ])('rejects forbidden or unknown request fields %#', (extra) => {
+        const base = {
+            videoId: VIDEO_ID,
+            extensionVersion: '1.2.3',
+            languageCode: 'en',
+            segments: [{ startSec: 0, durationSec: 1, text: 'caption' }],
+            client: { source: 'chrome-extension', capabilities: [] },
+        };
+        expect(
+            v.safeParse(serverAnalysisRequestSchema, { ...base, ...extra })
+                .success,
+        ).toBe(false);
+    });
 
-        expect(parsed.algorithmVersion).toBe('server-v1');
-        expect(parsed.client.capabilities).toContain('future-capability-v2');
+    it.each([0, 18_000])('accepts duration boundary %s', (durationSec) => {
+        expect(
+            v.safeParse(serverAnalysisRequestSchema, {
+                videoId: VIDEO_ID,
+                durationSec,
+                extensionVersion: '1.2.3',
+                languageCode: 'en',
+                segments: [{ startSec: 0, durationSec: 1, text: 'caption' }],
+                client: { source: 'chrome-extension', capabilities: [] },
+            }).success,
+        ).toBe(true);
+    });
+
+    it.each([-1, 18_000.001, Number.NaN, Number.POSITIVE_INFINITY])(
+        'rejects duration %s',
+        (durationSec) => {
+            expect(
+                v.safeParse(serverAnalysisRequestSchema, {
+                    videoId: VIDEO_ID,
+                    durationSec,
+                    extensionVersion: '1.2.3',
+                    languageCode: 'en',
+                    segments: [
+                        { startSec: 0, durationSec: 1, text: 'caption' },
+                    ],
+                    client: { source: 'chrome-extension', capabilities: [] },
+                }).success,
+            ).toBe(false);
+        },
+    );
+
+    it('uses server-v5 and the 8 MiB public body limit', () => {
+        expect(SERVER_ANALYSIS_ALGORITHM_VERSION).toBe('server-v5');
+        expect(SERVER_ANALYSIS_API_VERSION).toBe(1);
+        expect(SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES).toBe(8 * 1024 * 1024);
     });
 
     it.each([
@@ -75,53 +176,330 @@ describe('server analysis contract', () => {
     ])('rejects unsupported extension version %s', (extensionVersion) => {
         expect(
             v.safeParse(serverAnalysisRequestSchema, {
-                videoId: 'dQw4w9WgXcQ',
+                videoId: VIDEO_ID,
                 extensionVersion,
+                languageCode: 'en',
+                segments: [{ startSec: 0, durationSec: 1, text: 'caption' }],
+                client: { source: 'chrome-extension', capabilities: [] },
+            }).success,
+        ).toBe(false);
+    });
+
+    it('bounds and deduplicates forward-compatible capabilities', () => {
+        const base = {
+            videoId: VIDEO_ID,
+            extensionVersion: '1.2.3',
+            languageCode: 'en',
+            segments: [{ startSec: 0, durationSec: 1, text: 'caption' }],
+        };
+        expect(
+            v.safeParse(serverAnalysisRequestSchema, {
+                ...base,
                 client: {
                     source: 'chrome-extension',
-                    capabilities: ['processing-status'],
+                    capabilities: Array.from(
+                        { length: 17 },
+                        (_, index) => `cap-${index}`,
+                    ),
+                },
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(serverAnalysisRequestSchema, {
+                ...base,
+                client: {
+                    source: 'chrome-extension',
+                    capabilities: ['future', 'future'],
                 },
             }).success,
         ).toBe(false);
     });
 
-    it('bounds capability count and length without rejecting unknown names', () => {
-        const tooMany = Array.from(
-            { length: 17 },
-            (_, index) => `cap-${index}`,
+    it('requires complete authoritative identity in processing and terminal responses', () => {
+        const processing = {
+            status: 'processing',
+            ...identity,
+            jobId: 'job-1',
+            pollAfterSec: 3,
+        };
+        expect(v.parse(processingResponseSchema, processing)).toEqual(
+            processing,
         );
+        for (const missing of [
+            'videoId',
+            'languageCode',
+            'transcriptHash',
+            'algorithmVersion',
+        ] as const) {
+            const incomplete: Record<string, unknown> = { ...processing };
+            delete incomplete[missing];
+            expect(
+                v.safeParse(processingResponseSchema, incomplete).success,
+            ).toBe(false);
+        }
+
         expect(
-            v.safeParse(serverAnalysisRequestSchema, {
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '1.2.3',
-                client: {
-                    source: 'chrome-extension',
-                    capabilities: tooMany,
-                },
-            }).success,
-        ).toBe(false);
+            v.parse(readyResponseSchema, {
+                status: 'ready',
+                ...identity,
+                source: 'server_cache',
+                sourceResultId: 'result-1',
+                freshness: { expiresAtMs: 4_102_444_800_000 },
+                promoBlocks: [{ startSec: 4, endSec: 24 }],
+            }).status,
+        ).toBe('ready');
+    });
+
+    it('keeps pre-identity failures separate', () => {
+        const parsed = v.parse(serverAnalysisResponseEmissionSchema, {
+            status: 'error',
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            error: { code: 'token_expired' },
+        });
+        expect(parsed.status).toBe('error');
         expect(
-            v.safeParse(serverAnalysisRequestSchema, {
-                videoId: 'dQw4w9WgXcQ',
-                extensionVersion: '1.2.3',
-                client: {
-                    source: 'chrome-extension',
-                    capabilities: ['x'.repeat(65)],
-                },
+            v.safeParse(serverAnalysisResponseEmissionSchema, {
+                status: 'processing',
+                videoId: VIDEO_ID,
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                jobId: 'job-1',
+                pollAfterSec: 3,
             }).success,
         ).toBe(false);
     });
 
-    it('validates public registration and server config responses', () => {
+    it('accepts future bounded server algorithms without compile-time equality', () => {
+        const response = v.parse(serverAnalysisResponseSchema, {
+            status: 'no_promo',
+            ...identity,
+            algorithmVersion: 'server-future-opaque',
+            sourceResultId: 'result-1',
+            freshness: { expiresAtMs: 4_102_444_800_000 },
+        });
+        expect(response.algorithmVersion).toBe('server-future-opaque');
         expect(
-            v.parse(installationRegistrationResponseSchema, {
-                status: 'registered',
-                token: 'a'.repeat(43),
-                expiresAtMs: 4_102_444_800_000,
-            }).status,
-        ).toBe('registered');
+            v.safeParse(serverAnalysisResponseSchema, {
+                status: 'no_promo',
+                ...identity,
+                algorithmVersion: 'x'.repeat(65),
+                sourceResultId: 'result-1',
+                freshness: { expiresAtMs: 4_102_444_800_000 },
+            }).success,
+        ).toBe(false);
+    });
 
-        const config = v.parse(serverConfigResponseSchema, {
+    it('keeps backend emission strict while clients tolerate additive fields', () => {
+        const response = {
+            status: 'ready',
+            ...identity,
+            source: 'server_cache',
+            sourceResultId: 'result-1',
+            freshness: {
+                expiresAtMs: 4_102_444_800_000,
+                futureFreshnessField: true,
+            },
+            promoBlocks: [{ startSec: 4, endSec: 24, futureBlockField: true }],
+            futureResponseField: true,
+        };
+
+        expect(
+            v.safeParse(serverAnalysisResponseEmissionSchema, response).success,
+        ).toBe(false);
+        const parsed = v.parse(serverAnalysisResponseSchema, response);
+        expect(parsed).not.toHaveProperty('futureResponseField');
+        if (parsed.status !== 'ready') {
+            throw new Error('Expected ready response.');
+        }
+        expect(parsed.freshness).not.toHaveProperty('futureFreshnessField');
+        expect(parsed.promoBlocks[0]).not.toHaveProperty('futureBlockField');
+        expect(
+            v.safeParse(serverAnalysisResponseSchema, {
+                ...response,
+                promoBlocks: [{ startSec: 'invalid' }],
+            }).success,
+        ).toBe(false);
+    });
+
+    it.each([
+        'video_unavailable',
+        'captions_unavailable',
+        'subtitle_response_too_large',
+        'caption_extraction_failed',
+        'invalid_server_response',
+    ])('rejects local or legacy-only public upload code %s', (code) => {
+        expect(
+            v.safeParse(serverAnalysisResponseEmissionSchema, {
+                status: 'error',
+                ...identity,
+                error: { code },
+            }).success,
+        ).toBe(false);
+    });
+
+    it.each([
+        {
+            status: 'unavailable',
+            code: 'internal_error',
+        },
+        {
+            status: 'unavailable',
+            code: 'rate_limited',
+        },
+        {
+            status: 'unavailable',
+            code: 'budget_exhausted',
+        },
+        {
+            status: 'error',
+            code: 'video_too_long',
+        },
+        {
+            status: 'error',
+            code: 'too_many_caption_segments',
+        },
+        {
+            status: 'error',
+            code: 'capacity_limited',
+        },
+        {
+            status: 'rate_limited',
+            code: 'internal_error',
+            retryAfterSec: 3,
+        },
+        {
+            status: 'rate_limited',
+            code: 'video_too_long',
+            retryAfterSec: 3,
+        },
+    ])(
+        'rejects cross-category $status/$code response combinations',
+        ({ status, code, retryAfterSec }) => {
+            const response = {
+                status,
+                ...identity,
+                error: {
+                    code,
+                    ...(retryAfterSec === undefined ? {} : { retryAfterSec }),
+                },
+            };
+
+            expect(
+                v.safeParse(serverAnalysisResponseEmissionSchema, response)
+                    .success,
+            ).toBe(false);
+        },
+    );
+
+    it('keeps canonical limit rejection pre-identity without weakening terminal errors', () => {
+        const preIdentityLimit = {
+            status: 'error',
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            error: { code: 'video_too_long' },
+        };
+        expect(
+            v.safeParse(serverAnalysisResponseEmissionSchema, preIdentityLimit)
+                .success,
+        ).toBe(true);
+        expect(
+            v.safeParse(serverAnalysisResponseEmissionSchema, {
+                ...preIdentityLimit,
+                ...identity,
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(serverAnalysisResponseSchema, {
+                ...preIdentityLimit,
+                futureResponseField: true,
+                error: {
+                    ...preIdentityLimit.error,
+                    futureErrorField: true,
+                },
+            }).success,
+        ).toBe(true);
+    });
+
+    it.each([
+        {
+            status: 'unavailable',
+            error: { code: 'video_too_long' },
+        },
+        {
+            status: 'error',
+            error: { code: 'model_provider_error' },
+        },
+        {
+            status: 'error',
+            error: { code: 'budget_exhausted' },
+        },
+        {
+            status: 'rate_limited',
+            error: { code: 'rate_limited', retryAfterSec: 3 },
+        },
+        {
+            status: 'rate_limited',
+            error: { code: 'capacity_limited', retryAfterSec: 3 },
+        },
+    ])('accepts the valid $status/$error.code envelope', (response) => {
+        const identifiedResponse = { ...response, ...identity };
+        expect(
+            v.safeParse(
+                serverAnalysisResponseEmissionSchema,
+                identifiedResponse,
+            ).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(serverAnalysisResponseSchema, {
+                ...identifiedResponse,
+                futureResponseField: true,
+                error: {
+                    ...response.error,
+                    futureErrorField: true,
+                },
+            }).success,
+        ).toBe(true);
+    });
+
+    it('restricts rate-limit codes and retry metadata', () => {
+        expect(
+            v.parse(serverAnalysisResponseEmissionSchema, {
+                status: 'rate_limited',
+                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                error: { code: 'capacity_limited', retryAfterSec: 3 },
+            }).status,
+        ).toBe('rate_limited');
+        for (const error of [
+            { code: 'budget_exhausted', retryAfterSec: 3 },
+            { code: 'rate_limited' },
+            { code: 'rate_limited', retryAfterSec: 0 },
+        ]) {
+            expect(
+                v.safeParse(serverAnalysisResponseEmissionSchema, {
+                    status: 'rate_limited',
+                    algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                    error,
+                }).success,
+            ).toBe(false);
+        }
+    });
+
+    it('validates strict emission and tolerant client bootstrap responses', () => {
+        const registration = {
+            status: 'registered',
+            token: 'a'.repeat(43),
+            expiresAtMs: 4_102_444_800_000,
+            future: true,
+        };
+        expect(
+            v.safeParse(
+                installationRegistrationResponseEmissionSchema,
+                registration,
+            ).success,
+        ).toBe(false);
+        expect(
+            v.parse(installationRegistrationResponseSchema, registration),
+        ).not.toHaveProperty('future');
+
+        const config = {
             apiVersion: SERVER_ANALYSIS_API_VERSION,
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             supportedCapabilities: [
@@ -131,46 +509,14 @@ describe('server analysis contract', () => {
             minimumExtensionVersion: '1.2.3',
             supportIssueBaseUrl:
                 'https://github.com/maximtop/topskip/issues/new',
-        });
-        expect(config.apiVersion).toBe(1);
-    });
-
-    it('ignores additive v1 response fields while retaining validated data', () => {
-        const config = v.parse(serverConfigResponseSchema, {
-            apiVersion: SERVER_ANALYSIS_API_VERSION,
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            supportedCapabilities: ['processing-status'],
-            supportIssueBaseUrl:
-                'https://github.com/maximtop/topskip/issues/new',
-            futureConfigField: { enabled: true },
-        });
-        const response = v.parse(serverAnalysisResponseSchema, {
-            status: 'ready',
-            videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            source: 'server_cache',
-            sourceResultId: 'result-dQw4w9WgXcQ-server-v4',
-            freshness: {
-                expiresAtMs: 4_102_444_800_000,
-                futureFreshnessField: true,
-            },
-            promoBlocks: [
-                {
-                    startSec: 4,
-                    endSec: 24,
-                    futureBlockField: 'ignored',
-                },
-            ],
-            futureResponseField: 'ignored',
-        });
-
-        expect(config).not.toHaveProperty('futureConfigField');
-        expect(response).not.toHaveProperty('futureResponseField');
-        if (response.status !== 'ready') {
-            throw new Error('Expected ready response.');
-        }
-        expect(response.freshness).not.toHaveProperty('futureFreshnessField');
-        expect(response.promoBlocks[0]).not.toHaveProperty('futureBlockField');
+            future: true,
+        };
+        expect(
+            v.safeParse(serverConfigResponseEmissionSchema, config).success,
+        ).toBe(false);
+        expect(v.parse(serverConfigResponseSchema, config)).not.toHaveProperty(
+            'future',
+        );
     });
 
     it.each([
@@ -179,345 +525,20 @@ describe('server analysis contract', () => {
         'https://github.com:444/maximtop/topskip/issues/new',
         'https://github.com/maximtop/topskip/other/issues/new',
         'https://github.com/maximtop/topskip/issues/new?template=bug',
-        'https://github.com/maximtop/topskip/issues/new#fragment',
         'https://example.com/maximtop/topskip/issues/new',
     ])('rejects unsafe support issue URL %s', (supportIssueBaseUrl) => {
         expect(
             v.safeParse(serverConfigResponseSchema, {
                 apiVersion: SERVER_ANALYSIS_API_VERSION,
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                supportedCapabilities: ['processing-status'],
+                supportedCapabilities: [],
                 supportIssueBaseUrl,
             }).success,
         ).toBe(false);
     });
 
-    it('validates message-free typed failures in every response wrapper', () => {
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'error',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: { code: 'token_expired' },
-            }),
-        ).toEqual({
-            status: 'error',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            error: { code: 'token_expired' },
-        });
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'unavailable',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: {
-                    code: 'caption_extraction_failed',
-                    supportId: 'support-123',
-                },
-            }).status,
-        ).toBe('unavailable');
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'rate_limited',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: { code: 'rate_limited', retryAfterSec: 60 },
-            }).status,
-        ).toBe('rate_limited');
-    });
-
-    it('rejects malformed video ids', () => {
-        expect(isValidYouTubeVideoId('dQw4w9WgXcQ')).toBe(true);
+    it('validates video ids', () => {
+        expect(isValidYouTubeVideoId(VIDEO_ID)).toBe(true);
         expect(isValidYouTubeVideoId('short')).toBe(false);
-        expect(
-            v.safeParse(serverAnalysisRequestSchema, {
-                videoId: 'short',
-                extensionVersion: '0.1.0',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                client: {
-                    source: 'chrome-extension',
-                    capabilities: ['processing-status'],
-                },
-            }).success,
-        ).toBe(false);
-    });
-
-    it('accepts the deterministic processing response shape', () => {
-        const parsed = v.parse(processingResponseSchema, {
-            status: 'processing',
-            videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            jobId: 'local-dQw4w9WgXcQ-server-v1',
-            pollAfterSec: 3,
-        });
-
-        expect(parsed.status).toBe('processing');
-    });
-
-    it('rejects duplicate capabilities to match OpenAPI uniqueItems', () => {
-        const parsed = v.safeParse(serverAnalysisRequestSchema, {
-            videoId: 'dQw4w9WgXcQ',
-            extensionVersion: '0.1.0',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            client: {
-                source: 'chrome-extension',
-                capabilities: ['processing-status', 'processing-status'],
-            },
-        });
-
-        expect(parsed.success).toBe(false);
-    });
-
-    it('rejects fractional poll intervals to match OpenAPI integer', () => {
-        const parsed = v.safeParse(processingResponseSchema, {
-            status: 'processing',
-            videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            jobId: 'local-dQw4w9WgXcQ-server-v1',
-            pollAfterSec: 1.5,
-        });
-
-        expect(parsed.success).toBe(false);
-    });
-
-    it('accepts a ready server cache response with local cache metadata', () => {
-        const parsed = v.parse(readyResponseSchema, {
-            status: 'ready',
-            videoId: 'e2eFixture1',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v1',
-            freshness: { expiresAtMs: 4_102_444_800_000 },
-            promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' }],
-        });
-
-        expect(parsed.sourceResultId).toBe('result-e2eFixture1-server-v1');
-        expect(parsed.freshness.expiresAtMs).toBe(4_102_444_800_000);
-    });
-
-    it('rejects ready responses without required cache metadata', () => {
-        expect(
-            v.safeParse(readyResponseSchema, {
-                status: 'ready',
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                source: 'server_cache',
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-            }).success,
-        ).toBe(false);
-    });
-
-    it('rejects non-finite ready response freshness', () => {
-        for (const expiresAtMs of [Number.NaN, Number.POSITIVE_INFINITY]) {
-            expect(
-                v.safeParse(readyResponseSchema, {
-                    status: 'ready',
-                    videoId: 'e2eFixture1',
-                    algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                    source: 'server_cache',
-                    sourceResultId: 'result-e2eFixture1-server-v1',
-                    freshness: { expiresAtMs },
-                    promoBlocks: [{ startSec: 4, endSec: 24 }],
-                }).success,
-            ).toBe(false);
-        }
-    });
-
-    it('parses processing and ready responses through one union schema', () => {
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'processing',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                jobId: 'local-dQw4w9WgXcQ-server-v1',
-                pollAfterSec: 3,
-            }).status,
-        ).toBe('processing');
-
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'ready',
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                source: 'server_cache',
-                sourceResultId: 'result-e2eFixture1-server-v1',
-                freshness: { expiresAtMs: 4_102_444_800_000 },
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-            }).status,
-        ).toBe('ready');
-    });
-
-    it('parses terminal job responses through the server response union', () => {
-        expect(
-            v.parse(noPromoResponseSchema, {
-                status: 'no_promo',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                sourceResultId: 'result-dQw4w9WgXcQ-server-v1',
-                freshness: { expiresAtMs: 4_102_444_800_000 },
-            }).status,
-        ).toBe('no_promo');
-
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'no_promo',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                sourceResultId: 'result-dQw4w9WgXcQ-server-v1',
-                freshness: { expiresAtMs: 4_102_444_800_000 },
-            }).status,
-        ).toBe('no_promo');
-
-        expect(
-            v.parse(unavailableResponseSchema, {
-                status: 'unavailable',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: { code: 'fixture_unavailable' },
-            }).status,
-        ).toBe('unavailable');
-
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'unavailable',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: { code: 'fixture_unavailable' },
-            }).status,
-        ).toBe('unavailable');
-
-        const extractionUnavailable = v.parse(unavailableResponseSchema, {
-            status: 'unavailable',
-            videoId: 'unknownVid1',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            error: {
-                code: SERVER_ANALYSIS_UNAVAILABLE_REASON.CaptionExtractionFailed,
-            },
-        });
-
-        expect(extractionUnavailable.error.code).toBe(
-            'caption_extraction_failed',
-        );
-
-        expect(
-            v.safeParse(unavailableResponseSchema, {
-                status: 'unavailable',
-                videoId: 'unknownVid1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: { code: 'raw_provider_error' },
-            }).success,
-        ).toBe(false);
-
-        expect(
-            v.parse(terminalErrorResponseSchema, {
-                status: 'error',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: {
-                    code: 'fixture_error',
-                },
-            }).status,
-        ).toBe('error');
-
-        expect(
-            v.parse(serverAnalysisResponseSchema, {
-                status: 'error',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: {
-                    code: 'fixture_error',
-                },
-            }).status,
-        ).toBe('error');
-    });
-
-    it.each([
-        SERVER_ANALYSIS_ERROR_CODE.InvalidModelResponse,
-        SERVER_ANALYSIS_ERROR_CODE.UnsafeModelBlocks,
-        SERVER_ANALYSIS_ERROR_CODE.ModelProviderError,
-    ] as const)('parses analysis terminal error code %s', (code) => {
-        const parsed = v.parse(terminalErrorResponseSchema, {
-            status: 'error',
-            videoId: 'dQw4w9WgXcQ',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            error: {
-                code,
-            },
-        });
-
-        expect(parsed.error.code).toBe(code);
-    });
-
-    it('rejects unknown analysis terminal error codes', () => {
-        expect(
-            v.safeParse(terminalErrorResponseSchema, {
-                status: 'error',
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: {
-                    code: 'raw_provider_error',
-                },
-            }).success,
-        ).toBe(false);
-    });
-
-    it('rejects invalid ready promo blocks', () => {
-        expect(
-            v.safeParse(readyResponseSchema, {
-                status: 'ready',
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                source: 'server_cache',
-                sourceResultId: 'result-e2eFixture1-server-v1',
-                freshness: { expiresAtMs: 4_102_444_800_000 },
-                promoBlocks: [{ startSec: 24, endSec: 4 }],
-            }).success,
-        ).toBe(false);
-    });
-
-    it('rejects non-finite ready promo block timeline values', () => {
-        for (const promoBlocks of [
-            [{ startSec: Number.POSITIVE_INFINITY, endSec: 24 }],
-            [{ startSec: Number.NaN, endSec: 24 }],
-            [{ startSec: 4, endSec: Number.POSITIVE_INFINITY }],
-            [{ startSec: 4, endSec: Number.NaN }],
-        ]) {
-            expect(
-                v.safeParse(readyResponseSchema, {
-                    status: 'ready',
-                    videoId: 'e2eFixture1',
-                    algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                    source: 'server_cache',
-                    sourceResultId: 'result-e2eFixture1-server-v1',
-                    freshness: { expiresAtMs: 4_102_444_800_000 },
-                    promoBlocks,
-                }).success,
-            ).toBe(false);
-        }
-    });
-
-    it('parses retryable rate-limit responses separately from invalid requests', () => {
-        const parsed: RateLimitedResponse = v.parse(rateLimitedResponseSchema, {
-            status: 'rate_limited',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            error: {
-                code: 'rate_limited',
-                retryAfterSec: 60,
-            },
-        });
-
-        expect(parsed.error.retryAfterSec).toBe(60);
-        expect(parsed.error.code).toBe('rate_limited');
-    });
-
-    it('rejects non-positive retry metadata', () => {
-        expect(
-            v.safeParse(rateLimitedResponseSchema, {
-                status: 'rate_limited',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                error: {
-                    code: 'rate_limited',
-                    retryAfterSec: 0,
-                },
-            }).success,
-        ).toBe(false);
     });
 });

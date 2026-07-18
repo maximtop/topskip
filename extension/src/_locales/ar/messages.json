@@ -67,6 +67,26 @@
         "message": "Detection error",
         "description": "Detection status shown when detection fails"
     },
+    "popup_detection_server_acquisition_badge": {
+        "message": "Captions",
+        "description": "Popup status badge shown while the extension obtains timed captions."
+    },
+    "popup_detection_server_acquisition_title": {
+        "message": "Getting captions",
+        "description": "Popup title shown while the extension obtains timed captions."
+    },
+    "popup_detection_server_acquisition_description": {
+        "message": "TopSkip is reading timed captions from this video.",
+        "description": "Popup description shown during caption acquisition."
+    },
+    "popup_detection_server_acquisition_headline": {
+        "message": "Getting video captions…",
+        "description": "Popup headline shown during caption acquisition."
+    },
+    "popup_detection_server_acquisition_body": {
+        "message": "Promo analysis will start as soon as captions are ready.",
+        "description": "Popup body shown during caption acquisition."
+    },
     "popup_detection_server_pending_badge": {
         "message": "Server",
         "description": "Popup status badge shown while the TopSkip backend is analyzing the current video."

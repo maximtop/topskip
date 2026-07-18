@@ -1,44 +1,54 @@
 import * as v from 'valibot';
 
-/**
- * Server-side cache and algorithm version sent with local analysis requests.
- */
-export const SERVER_ANALYSIS_ALGORITHM_VERSION = 'server-v4';
+import type { CaptionSegment } from '@topskip/common/caption-types';
+import {
+    CaptionTranscriptCanonicalizer,
+    MAX_TRANSCRIPT_SEGMENT_COUNT,
+    MAX_TRANSCRIPT_TIMELINE_SEC,
+} from '@topskip/common/captions/canonical-transcript';
 
 /**
- * Stable wire-contract version for the public analysis API.
+ * Server-owned algorithm version separates exact uploaded-caption artifacts from older results.
+ */
+export const SERVER_ANALYSIS_ALGORITHM_VERSION = 'server-v5';
+
+/**
+ * Stable wire boundary for the current public analysis API.
  */
 export const SERVER_ANALYSIS_API_VERSION = 1;
 
 /**
- * Local backend base URL used by the development server-first path.
+ * Inclusive raw JSON envelope limit for public transcript uploads.
+ */
+export const SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES = 8 * 1024 * 1024;
+
+/**
+ * Loopback endpoint used only by the development extension build.
  */
 export const TOPSKIP_LOCAL_BACKEND_BASE_URL = 'http://127.0.0.1:8787';
 
 /**
- * Chrome host-permission match for the local backend development endpoint.
+ * Chrome host permission corresponding to the loopback development endpoint.
  */
 export const TOPSKIP_LOCAL_BACKEND_HOST_MATCH = 'http://127.0.0.1:8787/*';
 
 /**
- * Client capability that tells the backend the extension can display pending
- * processing status.
+ * Deprecated capability retained because polling is already part of public v1.
  */
 export const SERVER_ANALYSIS_CAPABILITY_PROCESSING_STATUS = 'processing-status';
 
 /**
- * Client capability that opts into stable message-free server error codes.
+ * Capability advertising message-free stable public failure codes.
  */
 export const SERVER_ANALYSIS_CAPABILITY_TYPED_ERRORS = 'typed-server-errors-v1';
 
 /**
- * Carries bounded client capabilities before authentication or body parsing can
- * succeed, allowing stable typed failures at every public API boundary.
+ * Header carrying bounded forward-compatible capability names before body parsing.
  */
 export const TOPSKIP_CAPABILITIES_HEADER_NAME = 'X-TopSkip-Capabilities';
 
 /**
- * Capabilities understood by the current server without rejecting future values.
+ * Capabilities understood by this server without rejecting bounded future values.
  */
 export const SERVER_ANALYSIS_SUPPORTED_CAPABILITIES = [
     SERVER_ANALYSIS_CAPABILITY_PROCESSING_STATUS,
@@ -50,15 +60,37 @@ const MAX_CAPABILITY_COUNT = 16;
 const MAX_CAPABILITY_LENGTH = 64;
 const MAX_INSTALLATION_TOKEN_LENGTH = 128;
 const MAX_SUPPORT_ID_LENGTH = 80;
+const MAX_ALGORITHM_VERSION_LENGTH = 64;
+const MAX_OPAQUE_ID_LENGTH = 160;
+const MAX_INPUT_LANGUAGE_CODE_LENGTH = 80;
 const CHROME_EXTENSION_SEMVER_PATTERN =
     /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+const INPUT_LANGUAGE_CODE_PATTERN = /^\s*[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\s*$/u;
+const NORMALIZED_LANGUAGE_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const GITHUB_HOSTNAME = 'github.com';
 const GITHUB_NEW_ISSUE_PATH_PATTERN = /^\/[^/]+\/[^/]+\/issues\/new\/?$/u;
-
 const YOUTUBE_VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/u;
 
+const finiteNonnegativeSecSchema = v.pipe(
+    v.number(),
+    v.finite('Timeline value must be finite.'),
+    v.minValue(0),
+);
+
+const algorithmVersionSchema = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(MAX_ALGORITHM_VERSION_LENGTH),
+);
+
+const opaqueIdSchema = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(MAX_OPAQUE_ID_LENGTH),
+);
+
 /**
- * Shared schema for canonical YouTube watch video IDs.
+ * Validates canonical YouTube watch identifiers used by every analysis path.
  */
 export const youtubeVideoIdSchema = v.pipe(
     v.string(),
@@ -66,7 +98,7 @@ export const youtubeVideoIdSchema = v.pipe(
 );
 
 /**
- * Validates informational extension versions without coupling server releases to them.
+ * Validates informational Chrome extension versions without server equality gating.
  */
 export const extensionVersionSchema = v.pipe(
     v.string(),
@@ -83,7 +115,27 @@ export const extensionVersionSchema = v.pipe(
 );
 
 /**
- * Validates bounded capability names while leaving future values forward-compatible.
+ * Accepts bounded raw caption-language spelling for independent server normalization.
+ */
+export const inputCaptionLanguageCodeSchema = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(MAX_INPUT_LANGUAGE_CODE_LENGTH),
+    v.regex(INPUT_LANGUAGE_CODE_PATTERN, 'Invalid caption language code.'),
+);
+
+/**
+ * Validates normalized language identity returned by the server.
+ */
+export const normalizedCaptionLanguageCodeSchema = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(64),
+    v.regex(NORMALIZED_LANGUAGE_CODE_PATTERN),
+);
+
+/**
+ * Validates bounded capability names while ignoring unknown supported spellings.
  */
 export const serverAnalysisCapabilitySchema = v.pipe(
     v.string(),
@@ -100,24 +152,37 @@ const requestCapabilitiesSchema = v.pipe(
     ),
 );
 
+const strictCaptionSegmentSchema = v.strictObject({
+    startSec: finiteNonnegativeSecSchema,
+    durationSec: finiteNonnegativeSecSchema,
+    text: v.pipe(v.string(), v.minLength(1)),
+});
+
+const finiteDurationHintSchema = v.pipe(
+    finiteNonnegativeSecSchema,
+    v.maxValue(MAX_TRANSCRIPT_TIMELINE_SEC),
+);
+
 /**
- * Validates metadata-only requests sent from the extension to the backend.
+ * Strict public request requires a complete timed-caption upload and no client identity.
  */
 export const serverAnalysisRequestSchema = v.strictObject({
     videoId: youtubeVideoIdSchema,
-    durationSec: v.optional(v.pipe(v.number(), v.minValue(0.001))),
+    durationSec: v.optional(finiteDurationHintSchema),
     extensionVersion: extensionVersionSchema,
-    algorithmVersion: v.optional(v.pipe(v.string(), v.minLength(1))),
+    languageCode: inputCaptionLanguageCodeSchema,
+    segments: v.pipe(
+        v.array(strictCaptionSegmentSchema),
+        v.minLength(1),
+        v.maxLength(MAX_TRANSCRIPT_SEGMENT_COUNT),
+    ),
     client: v.strictObject({
         source: v.literal('chrome-extension'),
         capabilities: requestCapabilitiesSchema,
     }),
 });
 
-/**
- * Validates installation credentials returned once to an anonymous extension install.
- */
-export const installationRegistrationResponseSchema = v.object({
+const registrationEntries = {
     status: v.literal('registered'),
     token: v.pipe(
         v.string(),
@@ -125,7 +190,19 @@ export const installationRegistrationResponseSchema = v.object({
         v.maxLength(MAX_INSTALLATION_TOKEN_LENGTH),
     ),
     expiresAtMs: v.pipe(v.number(), v.integer(), v.minValue(1)),
-});
+};
+
+/**
+ * Prevents the backend from emitting accidental installation fields.
+ */
+export const installationRegistrationResponseEmissionSchema =
+    v.strictObject(registrationEntries);
+
+/**
+ * Lets older extension clients ignore future additive registration metadata.
+ */
+export const installationRegistrationResponseSchema =
+    v.object(registrationEntries);
 
 const supportIssueBaseUrlSchema = v.pipe(
     v.string(),
@@ -145,12 +222,9 @@ const supportIssueBaseUrlSchema = v.pipe(
     }, 'Support URL must be a GitHub HTTPS new-issue URL.'),
 );
 
-/**
- * Validates public configuration used for cache compatibility and support routing.
- */
-export const serverConfigResponseSchema = v.object({
+const serverConfigEntries = {
     apiVersion: v.literal(SERVER_ANALYSIS_API_VERSION),
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
+    algorithmVersion: algorithmVersionSchema,
     supportedCapabilities: v.pipe(
         v.array(serverAnalysisCapabilitySchema),
         v.maxLength(MAX_CAPABILITY_COUNT),
@@ -162,88 +236,21 @@ export const serverConfigResponseSchema = v.object({
     ),
     minimumExtensionVersion: v.optional(extensionVersionSchema),
     supportIssueBaseUrl: supportIssueBaseUrlSchema,
-});
+};
 
 /**
- * Validates the non-blocking processing response returned by this slice.
+ * Prevents accidental fields from entering the public configuration response.
  */
-export const processingResponseSchema = v.object({
-    status: v.literal('processing'),
-    videoId: youtubeVideoIdSchema,
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-    jobId: v.pipe(v.string(), v.minLength(1)),
-    pollAfterSec: v.pipe(v.number(), v.integer(), v.minValue(1)),
-});
-
-const promoConfidenceSchema = v.picklist(['low', 'medium', 'high'] as const);
-
-const finiteTimelineSecSchema = v.pipe(
-    v.number(),
-    v.check(
-        (value) => Number.isFinite(value),
-        'Promo block timeline values must be finite.',
-    ),
-    v.minValue(0),
-);
+export const serverConfigResponseEmissionSchema =
+    v.strictObject(serverConfigEntries);
 
 /**
- * Validates cached promo block timings returned by the backend.
+ * Lets an older extension consume additive public configuration fields safely.
  */
-export const promoBlockSchema = v.pipe(
-    v.object({
-        startSec: finiteTimelineSecSchema,
-        endSec: v.optional(finiteTimelineSecSchema),
-        confidence: v.optional(promoConfidenceSchema),
-    }),
-    v.check(
-        (block) => block.endSec === undefined || block.endSec > block.startSec,
-        'Promo block endSec must be greater than startSec.',
-    ),
-);
-
-const finiteEpochMsSchema = v.pipe(
-    v.number(),
-    v.check(
-        (value) => Number.isFinite(value),
-        'Epoch milliseconds must be finite.',
-    ),
-    v.integer(),
-    v.minValue(1),
-);
+export const serverConfigResponseSchema = v.object(serverConfigEntries);
 
 /**
- * Validates server-owned freshness metadata mirrored by the extension cache.
- */
-export const readyResponseFreshnessSchema = v.object({
-    expiresAtMs: finiteEpochMsSchema,
-});
-
-/**
- * Validates ready cache-hit responses from the local backend.
- */
-export const readyResponseSchema = v.object({
-    status: v.literal('ready'),
-    videoId: youtubeVideoIdSchema,
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-    source: v.literal('server_cache'),
-    sourceResultId: v.pipe(v.string(), v.minLength(1)),
-    freshness: readyResponseFreshnessSchema,
-    promoBlocks: v.pipe(v.array(promoBlockSchema), v.minLength(1)),
-});
-
-/**
- * Validates terminal responses for videos with no detected server promo blocks.
- */
-export const noPromoResponseSchema = v.object({
-    status: v.literal('no_promo'),
-    videoId: youtubeVideoIdSchema,
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-    sourceResultId: v.pipe(v.string(), v.minLength(1)),
-    freshness: readyResponseFreshnessSchema,
-});
-
-/**
- * Validates terminal responses when deterministic fixture analysis is unavailable.
+ * Stable safe unavailable codes shared with local capture and private legacy mode.
  */
 export const SERVER_ANALYSIS_UNAVAILABLE_REASON = {
     FixtureUnavailable: 'fixture_unavailable',
@@ -257,7 +264,7 @@ export const SERVER_ANALYSIS_UNAVAILABLE_REASON = {
 } as const;
 
 /**
- * Stable public failure codes let the extension localize messages safely.
+ * Full extension-safe vocabulary includes local and private legacy outcomes.
  */
 export const SERVER_ANALYSIS_FAILURE_CODE = {
     ...SERVER_ANALYSIS_UNAVAILABLE_REASON,
@@ -282,16 +289,16 @@ export const SERVER_ANALYSIS_FAILURE_CODE = {
 } as const;
 
 /**
- * Schema for the allow-listed error vocabulary shared across HTTP and runtime layers.
+ * Full safe-code schema remains available to extension UI and private legacy code.
  */
 export const serverAnalysisFailureCodeSchema = v.picklist(
     Object.values(SERVER_ANALYSIS_FAILURE_CODE),
 );
 
 /**
- * Message-free failure details prevent provider text from crossing the API boundary.
+ * Strict internal failure context prevents raw diagnostic fields from crossing boundaries.
  */
-export const serverAnalysisFailureSchema = v.object({
+export const serverAnalysisFailureSchema = v.strictObject({
     code: serverAnalysisFailureCodeSchema,
     supportId: v.optional(
         v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_SUPPORT_ID_LENGTH)),
@@ -299,18 +306,337 @@ export const serverAnalysisFailureSchema = v.object({
     retryAfterSec: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
 });
 
+const serverUploadUnavailableCodeSchema = v.picklist([
+    'video_too_long',
+    'too_many_caption_segments',
+    'transcript_too_large',
+] as const);
+
+const serverUploadErrorCodeSchema = v.picklist([
+    'budget_exhausted',
+    'invalid_request',
+    'model_provider_error',
+    'invalid_model_response',
+    'unsafe_model_blocks',
+    'internal_error',
+    'client_upgrade_required',
+    'invalid_video_id',
+    'request_body_too_large',
+    'token_missing',
+    'token_invalid',
+    'token_expired',
+    'job_not_found',
+    'service_unavailable',
+] as const);
+
+const serverUploadPreIdentityErrorCodeSchema = v.picklist([
+    'video_too_long',
+    'too_many_caption_segments',
+    'transcript_too_large',
+    'budget_exhausted',
+    'invalid_request',
+    'model_provider_error',
+    'invalid_model_response',
+    'unsafe_model_blocks',
+    'internal_error',
+    'client_upgrade_required',
+    'invalid_video_id',
+    'request_body_too_large',
+    'token_missing',
+    'token_invalid',
+    'token_expired',
+    'job_not_found',
+    'service_unavailable',
+] as const);
+
+const uploadUnavailableEntries = {
+    code: serverUploadUnavailableCodeSchema,
+    supportId: v.optional(
+        v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_SUPPORT_ID_LENGTH)),
+    ),
+    retryAfterSec: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+};
+
+const serverUploadUnavailableSchema = v.strictObject(uploadUnavailableEntries);
+const serverUploadUnavailableClientSchema = v.object(uploadUnavailableEntries);
+
+const uploadErrorEntries = {
+    code: serverUploadErrorCodeSchema,
+    supportId: v.optional(
+        v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_SUPPORT_ID_LENGTH)),
+    ),
+    retryAfterSec: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+};
+
+const serverUploadErrorSchema = v.strictObject(uploadErrorEntries);
+const serverUploadErrorClientSchema = v.object(uploadErrorEntries);
+
+const preIdentityErrorEntries = {
+    code: serverUploadPreIdentityErrorCodeSchema,
+    supportId: v.optional(
+        v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_SUPPORT_ID_LENGTH)),
+    ),
+    retryAfterSec: v.optional(v.pipe(v.number(), v.integer(), v.minValue(1))),
+};
+
+const serverUploadPreIdentityErrorSchema = v.strictObject(
+    preIdentityErrorEntries,
+);
+const serverUploadPreIdentityErrorClientSchema = v.object(
+    preIdentityErrorEntries,
+);
+
+const rateFailureEntries = {
+    code: v.picklist(['rate_limited', 'capacity_limited'] as const),
+    supportId: v.optional(
+        v.pipe(v.string(), v.minLength(1), v.maxLength(MAX_SUPPORT_ID_LENGTH)),
+    ),
+    retryAfterSec: v.pipe(v.number(), v.integer(), v.minValue(1)),
+};
+
+const rateFailureSchema = v.strictObject(rateFailureEntries);
+const rateFailureClientSchema = v.object(rateFailureEntries);
+
 /**
- * Validates terminal user-safe unavailable reasons.
+ * Validates authoritative lowercase SHA-256 transcript fingerprints.
  */
-export const unavailableResponseSchema = v.object({
-    status: v.literal('unavailable'),
+export const transcriptHashSchema = v.pipe(
+    v.string(),
+    v.regex(/^[0-9a-f]{64}$/u),
+);
+
+const identityEntries = {
     videoId: youtubeVideoIdSchema,
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-    error: serverAnalysisFailureSchema,
+    languageCode: normalizedCaptionLanguageCodeSchema,
+    transcriptHash: transcriptHashSchema,
+    algorithmVersion: algorithmVersionSchema,
+};
+
+/**
+ * Complete authoritative identity binds every accepted transcript response.
+ */
+export const serverTranscriptIdentitySchema = v.strictObject(identityEntries);
+
+const processingEntries = {
+    status: v.literal('processing'),
+    ...identityEntries,
+    jobId: opaqueIdSchema,
+    pollAfterSec: v.pipe(v.number(), v.integer(), v.minValue(1)),
+};
+
+/**
+ * Strict backend processing response always exposes authoritative identity.
+ */
+export const processingResponseSchema = v.strictObject(processingEntries);
+const processingClientResponseSchema = v.object(processingEntries);
+
+const promoBlockEntries = {
+    startSec: finiteNonnegativeSecSchema,
+    endSec: v.optional(finiteNonnegativeSecSchema),
+    confidence: v.optional(v.picklist(['low', 'medium', 'high'] as const)),
+};
+
+/**
+ * Strict normalized promo block emitted and persisted by the backend.
+ */
+export const promoBlockSchema = v.pipe(
+    v.strictObject(promoBlockEntries),
+    v.check(
+        (block) => block.endSec === undefined || block.endSec > block.startSec,
+        'Promo block endSec must be greater than startSec.',
+    ),
+);
+
+const promoBlockClientSchema = v.pipe(
+    v.object(promoBlockEntries),
+    v.check(
+        (block) => block.endSec === undefined || block.endSec > block.startSec,
+        'Promo block endSec must be greater than startSec.',
+    ),
+);
+
+const freshnessEntries = {
+    expiresAtMs: v.pipe(v.number(), v.integer(), v.minValue(1)),
+};
+
+/**
+ * Strict server-owned freshness stored with exact results.
+ */
+export const readyResponseFreshnessSchema = v.strictObject(freshnessEntries);
+const readyResponseFreshnessClientSchema = v.object(freshnessEntries);
+
+const readyEntries = {
+    status: v.literal('ready'),
+    ...identityEntries,
+    source: v.literal('server_cache'),
+    sourceResultId: opaqueIdSchema,
+    freshness: readyResponseFreshnessSchema,
+    promoBlocks: v.pipe(v.array(promoBlockSchema), v.minLength(1)),
+};
+
+/**
+ * Strict exact-cache result emitted by the backend.
+ */
+export const readyResponseSchema = v.strictObject(readyEntries);
+
+const readyClientResponseSchema = v.object({
+    ...readyEntries,
+    freshness: readyResponseFreshnessClientSchema,
+    promoBlocks: v.pipe(v.array(promoBlockClientSchema), v.minLength(1)),
+});
+
+const noPromoEntries = {
+    status: v.literal('no_promo'),
+    ...identityEntries,
+    sourceResultId: opaqueIdSchema,
+    freshness: readyResponseFreshnessSchema,
+};
+
+/**
+ * Strict clean terminal result emitted by the backend.
+ */
+export const noPromoResponseSchema = v.strictObject(noPromoEntries);
+const noPromoClientResponseSchema = v.object({
+    ...noPromoEntries,
+    freshness: readyResponseFreshnessClientSchema,
+});
+
+const unavailableEntries = {
+    status: v.literal('unavailable'),
+    ...identityEntries,
+    error: serverUploadUnavailableSchema,
+};
+
+/**
+ * Strict transcript-bound public limitation response.
+ */
+export const unavailableResponseSchema = v.strictObject(unavailableEntries);
+const unavailableClientResponseSchema = v.object({
+    ...unavailableEntries,
+    error: serverUploadUnavailableClientSchema,
+});
+
+const identifiedErrorEntries = {
+    status: v.literal('error'),
+    ...identityEntries,
+    error: serverUploadErrorSchema,
+};
+
+/**
+ * Strict transcript-bound model or internal failure response.
+ */
+export const terminalErrorResponseSchema = v.strictObject(
+    identifiedErrorEntries,
+);
+const terminalErrorClientResponseSchema = v.object({
+    ...identifiedErrorEntries,
+    error: serverUploadErrorClientSchema,
+});
+
+const preIdentityResponseErrorEntries = {
+    status: v.literal('error'),
+    algorithmVersion: algorithmVersionSchema,
+    error: serverUploadPreIdentityErrorSchema,
+};
+
+/**
+ * Strict safe failure used before an authoritative transcript identity exists.
+ */
+export const preIdentityErrorResponseSchema = v.strictObject(
+    preIdentityResponseErrorEntries,
+);
+const preIdentityErrorClientResponseSchema = v.object({
+    ...preIdentityResponseErrorEntries,
+    error: serverUploadPreIdentityErrorClientSchema,
+});
+
+const preIdentityRateEntries = {
+    status: v.literal('rate_limited'),
+    algorithmVersion: algorithmVersionSchema,
+    error: rateFailureSchema,
+};
+
+/**
+ * Strict retryable failure before transcript identity is available.
+ */
+export const preIdentityRateLimitedResponseSchema = v.strictObject(
+    preIdentityRateEntries,
+);
+const preIdentityRateLimitedClientResponseSchema = v.object({
+    ...preIdentityRateEntries,
+    error: rateFailureClientSchema,
+});
+
+const identifiedRateEntries = {
+    status: v.literal('rate_limited'),
+    ...identityEntries,
+    error: rateFailureSchema,
+};
+
+/**
+ * Strict retryable failure after transcript identity is available.
+ */
+export const identifiedRateLimitedResponseSchema = v.strictObject(
+    identifiedRateEntries,
+);
+const identifiedRateLimitedClientResponseSchema = v.object({
+    ...identifiedRateEntries,
+    error: rateFailureClientSchema,
 });
 
 /**
- * Stable terminal error codes for deterministic fixture and model analysis failures.
+ * Strict rate-limit union supports both pre-identity and transcript-bound admission.
+ */
+export const rateLimitedResponseSchema = v.union([
+    preIdentityRateLimitedResponseSchema,
+    identifiedRateLimitedResponseSchema,
+]);
+
+/**
+ * Strict terminal result union excludes processing responses.
+ */
+export const terminalAnalysisResponseEmissionSchema = v.union([
+    readyResponseSchema,
+    noPromoResponseSchema,
+    unavailableResponseSchema,
+    terminalErrorResponseSchema,
+    identifiedRateLimitedResponseSchema,
+]);
+
+/**
+ * Strict server emission union prevents accidental response data from escaping.
+ */
+export const serverAnalysisResponseEmissionSchema = v.union([
+    processingResponseSchema,
+    terminalAnalysisResponseEmissionSchema,
+    preIdentityErrorResponseSchema,
+    preIdentityRateLimitedResponseSchema,
+]);
+
+/**
+ * Additive-field-tolerant client parser returns only known validated response data.
+ */
+export const serverAnalysisResponseSchema = v.union([
+    processingClientResponseSchema,
+    readyClientResponseSchema,
+    noPromoClientResponseSchema,
+    unavailableClientResponseSchema,
+    terminalErrorClientResponseSchema,
+    identifiedRateLimitedClientResponseSchema,
+    preIdentityErrorClientResponseSchema,
+    preIdentityRateLimitedClientResponseSchema,
+]);
+
+/**
+ * Strict typed error union used by backend response serialization.
+ */
+export const errorResponseSchema = v.union([
+    preIdentityErrorResponseSchema,
+    terminalErrorResponseSchema,
+]);
+
+/**
+ * Stable model failure constants retained for worker outcome mapping.
  */
 export const SERVER_ANALYSIS_ERROR_CODE = {
     FixtureError: SERVER_ANALYSIS_FAILURE_CODE.FixtureError,
@@ -322,170 +648,141 @@ export const SERVER_ANALYSIS_ERROR_CODE = {
 } as const;
 
 /**
- * Validates terminal responses when deterministic analysis fails safely.
- */
-export const terminalErrorResponseSchema = v.object({
-    status: v.literal('error'),
-    videoId: v.optional(youtubeVideoIdSchema),
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-    error: serverAnalysisFailureSchema,
-});
-
-/**
- * Validates retryable local throttling responses for cold backend work.
- */
-export const rateLimitedResponseSchema = v.object({
-    status: v.literal('rate_limited'),
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-    error: v.pipe(
-        serverAnalysisFailureSchema,
-        v.check(
-            (error) =>
-                (error.code === SERVER_ANALYSIS_FAILURE_CODE.RateLimited ||
-                    error.code ===
-                        SERVER_ANALYSIS_FAILURE_CODE.CapacityLimited) &&
-                error.retryAfterSec !== undefined,
-            'Rate-limited responses require a retryable capacity code.',
-        ),
-    ),
-});
-
-/**
- * Validates every successful analysis response consumed by the extension.
- */
-export const serverAnalysisResponseSchema = v.union([
-    processingResponseSchema,
-    readyResponseSchema,
-    noPromoResponseSchema,
-    unavailableResponseSchema,
-    terminalErrorResponseSchema,
-    rateLimitedResponseSchema,
-]);
-
-/**
- * Validates typed request errors returned before expensive work can start.
- */
-export const errorResponseSchema = terminalErrorResponseSchema;
-
-/**
- * Validated metadata payload sent from the extension to the local backend.
+ * Validated public timed-caption request.
  */
 export type ServerAnalysisRequest = v.InferOutput<
     typeof serverAnalysisRequestSchema
 >;
 
 /**
- * Anonymous installation credential response retained only by background storage.
+ * Anonymous installation credential retained only by background storage.
  */
 export type InstallationRegistrationResponse = v.InferOutput<
     typeof installationRegistrationResponseSchema
 >;
 
 /**
- * Public server configuration used for version and capability negotiation.
+ * Public server configuration consumed by background compatibility logic.
  */
 export type ServerConfigResponse = v.InferOutput<
     typeof serverConfigResponseSchema
 >;
 
 /**
- * Stable message-free failure details shown through localized extension copy.
+ * Complete server-owned transcript identity used by cache and polling.
+ */
+export type ServerTranscriptIdentity = v.InferOutput<
+    typeof serverTranscriptIdentitySchema
+>;
+
+/**
+ * Stable safe failure details used by extension localization.
  */
 export type ServerAnalysisFailure = v.InferOutput<
     typeof serverAnalysisFailureSchema
 >;
 
 /**
- * Stable error-code union shared by server and extension mappings.
+ * Stable full safe-code union shared with local and private legacy paths.
  */
 export type ServerAnalysisFailureCode = v.InferOutput<
     typeof serverAnalysisFailureCodeSchema
 >;
 
 /**
- * Non-blocking server response used while backend analysis is pending.
+ * Non-blocking response for one exact owner-authorized job.
  */
 export type ProcessingResponse = v.InferOutput<typeof processingResponseSchema>;
 
 /**
- * Ready cache-hit response with normalized promo blocks.
+ * Exact ready response containing normalized promo blocks.
  */
 export type ReadyResponse = v.InferOutput<typeof readyResponseSchema>;
 
 /**
- * Terminal clean response for videos with no server-detected promo blocks.
+ * Exact terminal result when the model detects no promo blocks.
  */
 export type NoPromoResponse = v.InferOutput<typeof noPromoResponseSchema>;
 
 /**
- * Terminal response for user-safe server analysis unavailability.
+ * Exact transcript-bound public limitation response.
  */
 export type UnavailableResponse = v.InferOutput<
     typeof unavailableResponseSchema
 >;
 
 /**
- * Terminal response for deterministic fixture job failures.
+ * Exact transcript-bound public model or internal failure.
  */
 export type TerminalErrorResponse = v.InferOutput<
     typeof terminalErrorResponseSchema
 >;
 
 /**
- * Retryable response returned when local cold-work capacity is exhausted.
+ * Retryable response before or after transcript identity is available.
  */
 export type RateLimitedResponse = v.InferOutput<
     typeof rateLimitedResponseSchema
 >;
 
 /**
- * Freshness metadata returned by the backend for local cache reuse.
+ * Server-owned cache freshness mirrored by extension storage.
  */
 export type ReadyResponseFreshness = v.InferOutput<
     typeof readyResponseFreshnessSchema
 >;
 
 /**
- * Successful server analysis response consumed by background messaging.
+ * Known validated response consumed by the extension client.
  */
 export type ServerAnalysisResponse = v.InferOutput<
     typeof serverAnalysisResponseSchema
 >;
 
 /**
- * Typed error response returned before any expensive analysis work starts.
+ * Strict error response emitted before or after transcript identity.
  */
 export type ErrorResponse = v.InferOutput<typeof errorResponseSchema>;
 
 /**
- * Checks the canonical YouTube ID shape accepted by the local backend.
+ * Checks whether a candidate matches the canonical YouTube video-ID shape.
  *
- * @param videoId - Candidate watch-page video ID.
- * @returns `true` when the value matches the supported YouTube ID shape.
+ * @param videoId - Candidate watch-page identifier.
+ * @returns True when the identifier is safe for public analysis.
  */
 export function isValidYouTubeVideoId(videoId: string): boolean {
     return YOUTUBE_VIDEO_ID_PATTERN.test(videoId);
 }
 
 /**
- * Builds the metadata-only request body used by server-first analysis.
+ * Builds the official request from one canonicalized timed-caption payload.
  *
- * @param input - Current video metadata already known to the extension.
- * @returns Validated request body for the local backend.
+ * @param input - Current video metadata and captured caption payload.
+ * @returns Strict public request without client hash or algorithm fields.
  */
 export function buildServerAnalysisRequest(input: {
     videoId: string;
     durationSec?: number;
     extensionVersion: string;
+    languageCode: string;
+    segments: readonly CaptionSegment[];
 }): ServerAnalysisRequest {
-    const maybeDuration =
-        input.durationSec !== undefined && Number.isFinite(input.durationSec)
-            ? { durationSec: input.durationSec }
-            : {};
+    const canonical = CaptionTranscriptCanonicalizer.canonicalize({
+        languageCode: input.languageCode,
+        segments: input.segments,
+    });
+    if (!canonical.ok) {
+        throw new Error(`Invalid caption transcript: ${canonical.code}`);
+    }
+
     return v.parse(serverAnalysisRequestSchema, {
         videoId: input.videoId,
-        ...maybeDuration,
+        ...(input.durationSec === undefined
+            ? {}
+            : { durationSec: input.durationSec }),
         extensionVersion: input.extensionVersion,
+        languageCode: canonical.transcript.languageCode,
+        segments: canonical.transcript.segments,
         client: {
             source: 'chrome-extension',
             capabilities: [...SERVER_ANALYSIS_SUPPORTED_CAPABILITIES],

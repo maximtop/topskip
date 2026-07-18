@@ -1,7 +1,7 @@
 # Feature Specification: Extension-Captured Transcripts for Server Analysis
 
 **Created**: 2026-07-17
-**Status**: Draft
+**Status**: In Progress
 **Model**: GPT-5 Codex high reasoning
 **Input**: Replace default backend-owned YouTube caption extraction with
 extension-captured timed transcript upload, while preserving server-owned Gemini
@@ -594,6 +594,13 @@ under that explicit configuration.
   video's human-reviewed reference, displays stable popup phases, and skips a
   future promo block once; loopback and public health checks pass and no 48-hour
   monitor is started.
+
+  **Validation status (2026-07-18): Pending one live-capture gate.** The paid
+  public analysis, human-window comparison, exact cache reuse, public/loopback
+  health checks, beta popup result, and one native future-block seek passed.
+  The beta browser smoke used a saved real-video JSON3 response because clean
+  automated YouTube profiles returned an empty timedtext body, so the cold paid
+  analysis and browser capture/seek evidence came from two separate runs.
 - **SC-013**: A joined installation can poll the shared job after a valid join,
   an unrelated token and a bare `jobId` cannot, and token-expiry recovery
   resubmits once without creating duplicate model work.

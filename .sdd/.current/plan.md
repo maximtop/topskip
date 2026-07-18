@@ -1,7 +1,7 @@
 # Implementation Plan: Extension-Captured Transcripts for Server Analysis
 
 **Created**: 2026-07-17
-**Status**: Ready for implementation
+**Status**: In Progress
 **Input**: [`spec.md`](./spec.md) and the user's answers approving a breaking
 transcript-upload `/v1`, a startup-only legacy escape hatch, full validation,
 VPS deployment, and no new 48-hour beta monitor.
@@ -1554,7 +1554,7 @@ production container smoke pass.
 ### Task 14 — Run the complete local/CI-equivalent validation gate
 
 **Status**: [x] Completed 2026-07-18. Formatting, lint, build, deployment and
-container assets, 799 unit/coverage tests, 18 headless Chromium E2E tests,
+container assets, 814 unit/coverage tests, 18 headless Chromium E2E tests,
 release packaging, and 31 retained legacy fake-runner tests all pass. The
 release manifest contains only the public TopSkip hostname, content code owns
 no backend fetch, and the dependency graph still uses Valibot as the sole wire
@@ -1612,6 +1612,17 @@ contract library.
    fetch/client import.
 
 ### Task 15 — Deploy backend first, then run the paid extension smoke
+
+**Status**: [ ] In progress 2026-07-18. PR #1, both CI gates, immutable VPS
+deployment, public/loopback checks, no-yt-dlp assertion, rollback rehearsal,
+paid public Gemini analysis, human-window comparison, exact cache reuse, and
+log-privacy checks passed. A beta extension smoke using the saved real Russian
+JSON3 response reached `analyzing → detected`, rendered three blocks in the
+popup, and natively skipped the future second block through the public backend
+cache with no extension errors or additional model call. Clean automated
+YouTube profiles returned an empty timedtext body, so one cold paid browser run
+that also observes live caption acquisition remains pending. No 48-hour monitor
+was started.
 
 This task is deliberately last. Do not reload/distribute the new extension
 until the new public backend reports the transcript contract.

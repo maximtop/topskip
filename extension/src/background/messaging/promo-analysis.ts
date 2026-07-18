@@ -19,7 +19,7 @@ import browser from '@/shared/browser';
 import {
     TOPSKIP_MESSAGE,
     type CaptionsFromContentPayload,
-    type PromoDetectionStatePayload,
+    type LocalDetectionState,
 } from '@/shared/messages';
 import { PROVIDER_ID } from '@/shared/providers';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
@@ -233,7 +233,9 @@ export class PromoAnalysis {
 
         const runStartedAt = performance.now();
 
-        const setStatus = (state: PromoDetectionStatePayload): void => {
+        const setStatus = (
+            state: Omit<LocalDetectionState, 'source'>,
+        ): void => {
             PromoDetectionStore.set(tabId, {
                 ...state,
                 source: 'local_provider',

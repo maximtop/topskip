@@ -1,4 +1,5 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+import * as v from 'valibot';
 
 import browser from '@/shared/browser';
 
@@ -19,7 +20,13 @@ import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
 import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
 import { ServerAnalysisIssueReport } from '@/background/server-analysis-issue-report';
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
-import { TOPSKIP_MESSAGE, type TopSkipRuntimeMessage } from '@/shared/messages';
+import {
+    refreshServerAnalysisStatusRuntimeMessageSchema,
+    requestServerAnalysisRuntimeMessageSchema,
+    serverAnalysisSessionEventRuntimeMessageSchema,
+    TOPSKIP_MESSAGE,
+    type TopSkipRuntimeMessage,
+} from '@/shared/messages';
 
 /**
  * Coerces an unknown runtime message to a `TopSkipRuntimeMessage` when the
@@ -65,16 +72,45 @@ async function dispatchRuntimeMessage(
             return CaptionRuntimeMessages.handle(msg.payload, sender);
         case TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP:
             return ByokSetupRuntimeMessages.handle(msg.payload, sender);
-        case TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS:
+        case TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT: {
+            const parsed = v.safeParse(
+                serverAnalysisSessionEventRuntimeMessageSchema,
+                msg,
+            );
+            if (!parsed.success) {
+                return { ok: false, error: 'Invalid session event.' };
+            }
+            return ServerAnalysisRuntimeMessages.handleSessionEvent(
+                parsed.output.payload,
+                sender,
+            );
+        }
+        case TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS: {
+            const parsed = v.safeParse(
+                requestServerAnalysisRuntimeMessageSchema,
+                msg,
+            );
+            if (!parsed.success) {
+                return { ok: false, error: 'Invalid transcript request.' };
+            }
             return ServerAnalysisRuntimeMessages.handleRequest(
-                msg.payload,
+                parsed.output.payload,
                 sender,
             );
-        case TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS:
+        }
+        case TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS: {
+            const parsed = v.safeParse(
+                refreshServerAnalysisStatusRuntimeMessageSchema,
+                msg,
+            );
+            if (!parsed.success) {
+                return { ok: false, error: 'Invalid analysis poll.' };
+            }
             return ServerAnalysisRuntimeMessages.handleRefreshStatus(
-                msg.payload,
+                parsed.output.payload,
                 sender,
             );
+        }
         case TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE:
             return ServerAnalysisIssueReport.handleOpen();
         case TOPSKIP_MESSAGE.GET_PREFS:

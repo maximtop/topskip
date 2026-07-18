@@ -14,6 +14,8 @@ services:
             TOPSKIP_HOST: 0.0.0.0
             TOPSKIP_PORT: '8787'
             TOPSKIP_DATABASE_PATH: /var/lib/topskip/topskip.sqlite
+            TOPSKIP_CAPTION_SOURCE: extension_upload
+            # Retained only so the previous image remains a valid one-command rollback.
             TOPSKIP_YT_DLP_PATH: /opt/topskip/bin/yt-dlp
         ports:
             - '127.0.0.1:18787:8787'

@@ -6,7 +6,7 @@
     "description": "TopSkip backend and Chrome extension workspace",
     "packageManager": "pnpm@10.33.0",
     "scripts": {
-        "setup": "pnpm install && pnpm run yt-dlp:install",
+        "setup": "pnpm install",
         "build": "rspack build --config extension/rspack.config.ts",
         "build:watch": "rspack build --config extension/rspack.config.ts --watch",
         "backend:dev": "tsx backend/src/server.ts",

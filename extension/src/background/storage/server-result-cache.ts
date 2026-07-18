@@ -3,77 +3,123 @@ import * as v from 'valibot';
 import browser from '@/shared/browser';
 import { STORAGE_KEY_SERVER_RESULT_CACHE } from '@/shared/constants';
 import {
+    noPromoResponseSchema,
+    normalizedCaptionLanguageCodeSchema,
     promoBlockSchema,
     readyResponseFreshnessSchema,
     readyResponseSchema,
+    transcriptHashSchema,
     youtubeVideoIdSchema,
+    type NoPromoResponse,
     type ReadyResponse,
 } from '@topskip/common/server-analysis-contract';
 
+const MAX_ALGORITHM_VERSION_LENGTH = 64;
+const MAX_OPAQUE_ID_LENGTH = 160;
+
 const finiteEpochMsSchema = v.pipe(
     v.number(),
-    v.check(
-        (value) => Number.isFinite(value),
-        'Epoch milliseconds must be finite.',
-    ),
+    v.finite('Epoch milliseconds must be finite.'),
     v.integer(),
     v.minValue(1),
 );
 
-/**
- * Validates one stored local cache row before any skip path can use it.
- */
-export const serverResultCacheEntrySchema = v.strictObject({
+const cacheIdentityEntries = {
     videoId: youtubeVideoIdSchema,
-    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-    sourceResultId: v.pipe(v.string(), v.minLength(1)),
+    languageCode: normalizedCaptionLanguageCodeSchema,
+    transcriptHash: transcriptHashSchema,
+    algorithmVersion: v.pipe(
+        v.string(),
+        v.minLength(1),
+        v.maxLength(MAX_ALGORITHM_VERSION_LENGTH),
+    ),
+};
+
+const cacheResultEntries = {
+    ...cacheIdentityEntries,
+    sourceResultId: v.pipe(
+        v.string(),
+        v.minLength(1),
+        v.maxLength(MAX_OPAQUE_ID_LENGTH),
+    ),
     freshness: readyResponseFreshnessSchema,
-    promoBlocks: v.pipe(v.array(promoBlockSchema), v.minLength(1)),
     storedAtMs: finiteEpochMsSchema,
+};
+
+const readyCacheEntrySchema = v.strictObject({
+    status: v.literal('ready'),
+    ...cacheResultEntries,
+    promoBlocks: v.pipe(v.array(promoBlockSchema), v.minLength(1)),
+});
+
+const noPromoCacheEntrySchema = v.strictObject({
+    status: v.literal('no_promo'),
+    ...cacheResultEntries,
 });
 
 /**
- * Local copy of a ready server result.
+ * Validates one exact result row before any skip or popup path can use it.
+ */
+export const serverResultCacheEntrySchema = v.union([
+    readyCacheEntrySchema,
+    noPromoCacheEntrySchema,
+]);
+
+/**
+ * Local result content bound to one exact server-observed transcript identity.
  */
 export type ServerResultCacheEntry = v.InferOutput<
     typeof serverResultCacheEntrySchema
 >;
 
 /**
- * Background-owned local result cache; static API only.
+ * Exact cache lookup key excludes captions while distinguishing their digest.
+ */
+export type ServerResultCacheIdentity = {
+    videoId: string;
+    languageCode: string;
+    transcriptHash: string;
+    algorithmVersion: string;
+};
+
+/**
+ * Background-owned exact result cache; static API only.
  */
 export class ServerResultCacheStorage {
     /**
-     * Builds the storage key for one video/version cache row.
+     * Builds the private storage key for one exact observed identity.
      *
-     * @param input - Cache namespace and video id.
-     * @returns Stable `browser.storage.local` key.
+     * @param input - Server-owned transcript identity.
+     * @returns Stable browser-storage key.
      */
-    private static keyFor(input: {
-        videoId: string;
-        algorithmVersion: string;
-    }): string {
-        return `${STORAGE_KEY_SERVER_RESULT_CACHE}:${input.algorithmVersion}:${input.videoId}`;
+    private static keyFor(input: ServerResultCacheIdentity): string {
+        return [
+            STORAGE_KEY_SERVER_RESULT_CACHE,
+            input.algorithmVersion,
+            input.videoId,
+            input.languageCode,
+            input.transcriptHash,
+        ].join(':');
     }
 
     /**
      * Best-effort repair keeps cache corruption from blocking server fallback.
      *
      * @param key - Storage row to remove.
-     * @returns Promise resolved after the repair attempt is complete.
+     * @returns Promise resolved after the repair attempt.
      */
     private static async removeInvalidEntry(key: string): Promise<void> {
         try {
             await browser.storage.local.remove(key);
         } catch {
-            // Cache repair is opportunistic; the backend path remains authoritative.
+            // Cache repair is opportunistic; the backend remains authoritative.
         }
     }
 
     /**
-     * Drops rows from obsolete server algorithms after compatibility refresh.
+     * Drops rows from obsolete server algorithms after a validated observation.
      *
-     * @param activeAlgorithmVersion - Server-owned algorithm currently in use.
+     * @param activeAlgorithmVersion - Server-owned algorithm currently observed.
      * @returns Promise resolved after best-effort cleanup.
      */
     static async removeOtherAlgorithmVersions(
@@ -107,64 +153,19 @@ export class ServerResultCacheStorage {
         try {
             await browser.storage.local.remove(obsoleteKeys);
         } catch {
-            // Cache invalidation is opportunistic; keyed reads still validate versions.
+            // Exact keyed reads remain safe when opportunistic cleanup fails.
         }
     }
 
     /**
-     * Recovers the newest unexpired row when public config has never loaded,
-     * without guessing a compile-time server algorithm.
+     * Reads only a fresh row whose complete server identity matches the captions.
      *
-     * @param input - Video id and optional test clock.
-     * @returns Newest fresh row across server algorithms, otherwise `null`.
+     * @param input - Exact identity and optional deterministic clock.
+     * @returns Fresh exact cache entry, otherwise `null`.
      */
-    static async loadLatestFreshForVideo(input: {
-        videoId: string;
-        nowMs?: number;
-    }): Promise<ServerResultCacheEntry | null> {
-        let stored: Record<string, unknown>;
-        try {
-            stored = await browser.storage.local.get(null);
-        } catch {
-            return null;
-        }
-
-        const nowMs = input.nowMs ?? Date.now();
-        const prefix = `${STORAGE_KEY_SERVER_RESULT_CACHE}:`;
-        let newest: ServerResultCacheEntry | null = null;
-        for (const [key, raw] of Object.entries(stored)) {
-            if (!key.startsWith(prefix)) {
-                continue;
-            }
-            const parsed = v.safeParse(serverResultCacheEntrySchema, raw);
-            if (
-                !parsed.success ||
-                parsed.output.videoId !== input.videoId ||
-                parsed.output.freshness.expiresAtMs <= nowMs
-            ) {
-                continue;
-            }
-            if (
-                newest === null ||
-                parsed.output.storedAtMs > newest.storedAtMs
-            ) {
-                newest = parsed.output;
-            }
-        }
-        return newest;
-    }
-
-    /**
-     * Reads a fresh cache row or repairs stale/corrupt data as a miss.
-     *
-     * @param input - Cache lookup key and optional test clock.
-     * @returns Fresh cache entry, otherwise `null`.
-     */
-    static async loadFresh(input: {
-        videoId: string;
-        algorithmVersion: string;
-        nowMs?: number;
-    }): Promise<ServerResultCacheEntry | null> {
+    static async loadExact(
+        input: ServerResultCacheIdentity & { nowMs?: number },
+    ): Promise<ServerResultCacheEntry | null> {
         const key = ServerResultCacheStorage.keyFor(input);
         let raw: unknown;
         try {
@@ -178,49 +179,71 @@ export class ServerResultCacheStorage {
             return null;
         }
 
-        let entry: ServerResultCacheEntry;
-        try {
-            entry = v.parse(serverResultCacheEntrySchema, raw);
-        } catch {
+        const parsed = v.safeParse(serverResultCacheEntrySchema, raw);
+        if (!parsed.success) {
             await ServerResultCacheStorage.removeInvalidEntry(key);
             return null;
         }
 
+        const entry = parsed.output;
         const nowMs = input.nowMs ?? Date.now();
         if (
             entry.videoId !== input.videoId ||
+            entry.languageCode !== input.languageCode ||
+            entry.transcriptHash !== input.transcriptHash ||
             entry.algorithmVersion !== input.algorithmVersion ||
             entry.freshness.expiresAtMs <= nowMs
         ) {
             await ServerResultCacheStorage.removeInvalidEntry(key);
             return null;
         }
-
         return entry;
     }
 
     /**
-     * Persists a validated ready server response for future server-mode starts.
+     * Persists only terminal result data and exact identity, never captions.
      *
-     * @param response - Ready response accepted from the backend.
+     * @param response - Valid ready or no-promo server response.
      * @param nowMs - Local write time, injectable for tests.
-     * @returns Promise resolved after the row is written.
+     * @returns Promise resolved after the exact row is written.
      */
-    static async saveReadyResponse(
-        response: ReadyResponse,
+    static async saveTerminalResponse(
+        response: ReadyResponse | NoPromoResponse,
         nowMs = Date.now(),
     ): Promise<void> {
-        const ready = v.parse(readyResponseSchema, response);
+        const terminal =
+            response.status === 'ready'
+                ? v.parse(readyResponseSchema, response)
+                : v.parse(noPromoResponseSchema, response);
         const entry = v.parse(serverResultCacheEntrySchema, {
-            videoId: ready.videoId,
-            algorithmVersion: ready.algorithmVersion,
-            sourceResultId: ready.sourceResultId,
-            freshness: ready.freshness,
-            promoBlocks: ready.promoBlocks,
+            status: terminal.status,
+            videoId: terminal.videoId,
+            languageCode: terminal.languageCode,
+            transcriptHash: terminal.transcriptHash,
+            algorithmVersion: terminal.algorithmVersion,
+            sourceResultId: terminal.sourceResultId,
+            freshness: terminal.freshness,
+            ...(terminal.status === 'ready'
+                ? { promoBlocks: terminal.promoBlocks }
+                : {}),
             storedAtMs: nowMs,
         });
         await browser.storage.local.set({
             [ServerResultCacheStorage.keyFor(entry)]: entry,
         });
+    }
+
+    /**
+     * Preserves the ready-only call site while orchestration moves to terminal caching.
+     *
+     * @param response - Valid ready server response.
+     * @param nowMs - Local write time, injectable for tests.
+     * @returns Promise resolved after the exact row is written.
+     */
+    static async saveReadyResponse(
+        response: ReadyResponse,
+        nowMs = Date.now(),
+    ): Promise<void> {
+        return ServerResultCacheStorage.saveTerminalResponse(response, nowMs);
     }
 }

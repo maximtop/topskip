@@ -27,9 +27,6 @@ jobs:
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
-            - name: Install pinned yt-dlp
-              run: pnpm run yt-dlp:install
-
             - name: Lint
               run: pnpm run lint
 

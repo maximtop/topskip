@@ -47,6 +47,7 @@ describe('ServerAnalysisIssueReport', () => {
             videoId: 'dQw4w9WgXcQ',
             status: 'error',
             source: 'server',
+            sessionId: '00000000-0000-4000-8000-000000000001',
             serverFailure: {
                 code: 'internal_error',
                 supportId: 'support-safe-123',
@@ -155,6 +156,7 @@ describe('ServerAnalysisIssueReport', () => {
             videoId: 'dQw4w9WgXcQ',
             status: 'unavailable',
             source: 'server',
+            sessionId: '00000000-0000-4000-8000-000000000001',
             serverFailure: {
                 code: 'rate_limited',
                 retryAfterSec: 60,

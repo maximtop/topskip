@@ -56,6 +56,7 @@ run_container() {
         --env "OPENROUTER_API_KEY=${OPENROUTER_KEY}" \
         --env "TOPSKIP_IP_HMAC_SECRET=${IP_HMAC_SECRET}" \
         --env "TOPSKIP_ALLOWED_EXTENSION_ORIGINS=${ORIGIN}" \
+        --env "TOPSKIP_CAPTION_SOURCE=extension_upload" \
         "${IMAGE}" >/dev/null
     wait_for_health
 }
@@ -102,15 +103,24 @@ published_port=${published_address##*:}
 health=$(curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${published_port}/v1/health")
 [[ ${health} == '{"ok":true}' ]]
 
-read -r expected_yt_dlp_version expected_yt_dlp_sha < <(
-    pnpm exec tsx -e \
-        "import {YT_DLP_RELEASE_TAG,selectYtDlpReleaseAsset} from './scripts/lib/yt-dlp-release.ts'; console.log(YT_DLP_RELEASE_TAG, selectYtDlpReleaseAsset('linux','x64').sha256);"
-)
+expected_algorithm_version=$(sed -nE \
+    "s/^export const SERVER_ANALYSIS_ALGORITHM_VERSION = '(server-v[1-9][0-9]*)';$/\1/p" \
+    common/src/server-analysis-contract.ts)
+[[ ${expected_algorithm_version} =~ ^server-v[1-9][0-9]*$ ]]
+config=$(curl --fail --silent --show-error --max-time 5 "http://127.0.0.1:${published_port}/v1/config")
+node -e '
+    const response = JSON.parse(process.argv[1]);
+    if (response.apiVersion !== 1 || response.algorithmVersion !== process.argv[2]) {
+        process.exit(1);
+    }
+' "${config}" "${expected_algorithm_version}"
+
 [[ $(docker exec "${CONTAINER}" id -u) == 1000 ]]
 [[ $(docker exec "${CONTAINER}" node --version) == v24.* ]]
-[[ $(docker exec "${CONTAINER}" /opt/topskip/bin/yt-dlp --version) == "${expected_yt_dlp_version}" ]]
-actual_yt_dlp_sha=$(docker exec "${CONTAINER}" sha256sum /opt/topskip/bin/yt-dlp | awk '{print $1}')
-[[ ${actual_yt_dlp_sha} == "${expected_yt_dlp_sha}" ]]
+if docker exec "${CONTAINER}" test -e /opt/topskip/bin/yt-dlp; then
+    echo 'The extension-upload production image unexpectedly contains yt-dlp.' >&2
+    exit 1
+fi
 [[ $(docker exec "${CONTAINER}" stat -c '%a %u:%g' /var/lib/topskip) == '700 1000:1000' ]]
 [[ $(docker exec "${CONTAINER}" stat -c '%a %u:%g' /var/lib/topskip/topskip.sqlite) == '600 1000:1000' ]]
 if docker exec "${CONTAINER}" touch /app/read-only-probe >/dev/null 2>&1; then

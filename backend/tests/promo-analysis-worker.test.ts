@@ -54,6 +54,39 @@ function makeTranscriptArtifact(input: {
     });
 }
 
+function makeUploadedTranscriptArtifact(input: {
+    videoId: string;
+}): TranscriptArtifact {
+    const segments = [
+        { startSec: 0, durationSec: 2, text: 'Welcome back.' },
+        {
+            startSec: 4,
+            durationSec: 6,
+            text: 'This video is sponsored by Example.',
+        },
+        { startSec: 18, durationSec: 4, text: 'Use the link below.' },
+        {
+            startSec: 32,
+            durationSec: 5,
+            text: 'Now back to the main topic.',
+        },
+    ];
+    return v.parse(transcriptArtifactSchema, {
+        artifactId: 'transcript-upload-fixture',
+        videoId: input.videoId,
+        algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+        strategy: 'extension_caption_upload',
+        sourceType: 'extension_caption_upload',
+        languageCode: 'en',
+        transcriptHash:
+            'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+        acquiredAtMs: 1_900_000_000_000,
+        videoDurationSec: 120,
+        segments,
+        transcriptText: segments.map((segment) => segment.text).join(' '),
+    });
+}
+
 describe('backend promo analysis worker', () => {
     it('validates an analysis run artifact with raw and parsed model output', () => {
         const parsed = v.parse(analysisRunArtifactSchema, {
@@ -249,13 +282,17 @@ describe('backend promo analysis worker', () => {
             status: 'ready',
             videoId: 'dQw4w9WgXcQ',
             source: 'server_cache',
-            sourceResultId: 'result-dQw4w9WgXcQ-server-v4',
+            sourceResultId: `result-dQw4w9WgXcQ-${SERVER_ANALYSIS_ALGORITHM_VERSION}`,
             promoBlocks: [
                 { startSec: 4, endSec: 24, confidence: 'high' },
                 { startSec: 35, endSec: 45, confidence: 'medium' },
             ],
         });
         expect(result.analysisRun.rawModelResponse).toContain('promoBlocks');
+        expect(result.analysisRun.runId).toMatch(
+            /^analysis-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u,
+        );
+        expect(result.analysisRun.runId).not.toContain('dQw4w9WgXcQ');
         expect(result.analysisRun.parsedResult).toMatchObject({
             hasPromo: true,
         });
@@ -276,9 +313,75 @@ describe('backend promo analysis worker', () => {
         expect(result.terminalResponse).toMatchObject({
             status: 'no_promo',
             videoId: 'M7lc1UVf-VE',
-            sourceResultId: 'result-M7lc1UVf-VE-server-v4',
+            sourceResultId: `result-M7lc1UVf-VE-${SERVER_ANALYSIS_ALGORITHM_VERSION}`,
         });
         expect(result.analysisRun.normalizedPromoBlocks).toEqual([]);
+    });
+
+    it('preserves exact identity through upload worker terminal states', async () => {
+        const readyArtifact = makeUploadedTranscriptArtifact({
+            videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
+        });
+        const ready = await BackendPromoAnalysisWorker.analyze({
+            transcriptArtifact: readyArtifact,
+            durationSec: 120,
+            nowMs: 1_900_000_001_000,
+        });
+        expect(ready.terminalResponse).toMatchObject({
+            status: 'ready',
+            videoId: readyArtifact.videoId,
+            algorithmVersion: readyArtifact.algorithmVersion,
+            languageCode: readyArtifact.languageCode,
+            transcriptHash: readyArtifact.transcriptHash,
+        });
+        if (ready.terminalResponse.status === 'ready') {
+            expect(ready.terminalResponse.sourceResultId).toMatch(
+                /^result-[0-9a-f-]{36}$/u,
+            );
+            expect(ready.terminalResponse.sourceResultId).not.toContain(
+                readyArtifact.transcriptHash,
+            );
+        }
+
+        const noPromoArtifact = makeUploadedTranscriptArtifact({
+            videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Secondary,
+        });
+        const noPromo = await BackendPromoAnalysisWorker.analyze({
+            transcriptArtifact: noPromoArtifact,
+            durationSec: 120,
+            nowMs: 1_900_000_001_000,
+        });
+        expect(noPromo.terminalResponse).toMatchObject({
+            status: 'no_promo',
+            videoId: noPromoArtifact.videoId,
+            algorithmVersion: noPromoArtifact.algorithmVersion,
+            languageCode: noPromoArtifact.languageCode,
+            transcriptHash: noPromoArtifact.transcriptHash,
+        });
+
+        const error = await BackendPromoAnalysisWorker.analyze({
+            transcriptArtifact: readyArtifact,
+            durationSec: 120,
+            nowMs: 1_900_000_001_000,
+            adapter: {
+                providerId: 'test',
+                model: 'test',
+                promptVersion: 'test',
+                analyze: () =>
+                    Promise.resolve({
+                        rawModelResponse: 'invalid response',
+                        model: 'test',
+                    }),
+            },
+        });
+        expect(error.terminalResponse).toMatchObject({
+            status: 'error',
+            videoId: readyArtifact.videoId,
+            algorithmVersion: readyArtifact.algorithmVersion,
+            languageCode: readyArtifact.languageCode,
+            transcriptHash: readyArtifact.transcriptHash,
+            error: { code: 'invalid_model_response' },
+        });
     });
 
     it('uses the OpenRouter Gemini adapter outside the test environment', async () => {
@@ -309,7 +412,7 @@ describe('backend promo analysis worker', () => {
             expect(result.analysisRun).toMatchObject({
                 provider: 'openrouter',
                 model: 'google/gemini-3.5-flash-20260519',
-                promptVersion: '3',
+                promptVersion: '4',
             });
             expect(fetchMock).toHaveBeenCalledTimes(1);
         } finally {

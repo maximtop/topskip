@@ -2,7 +2,10 @@ import * as v from 'valibot';
 import { randomUUID } from 'node:crypto';
 
 import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
-import { BackendPromoAnalysisWorker } from '@topskip/backend/analysis/promo-analysis-worker';
+import {
+    BackendPromoAnalysisWorker,
+    type BackendPromoAnalysisWorkerResult,
+} from '@topskip/backend/analysis/promo-analysis-worker';
 import type {
     AnalysisRunArtifact,
     BackendLlmAnalysisAdapter,
@@ -22,15 +25,25 @@ import {
     type ServerAnalysisFailureCode,
     type TerminalErrorResponse,
     type UnavailableResponse,
+    type ServerTranscriptIdentity,
 } from '@topskip/common/server-analysis-contract';
 import { BackendSubtitleExtractionPipeline } from '@topskip/backend/extraction/subtitle-extraction-pipeline';
 import {
+    transcriptArtifactSchema,
     type SubtitleExtractionAttempt,
     type SubtitleExtractionStrategy,
     type TranscriptArtifact,
 } from '@topskip/backend/extraction/subtitle-extraction-types';
 import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
 import { BackendPublicState } from '@topskip/backend/public-state';
+import {
+    legacyNoPromoResponseSchema,
+    legacyProcessingResponseSchema,
+    legacyReadyResponseSchema,
+    legacyTerminalErrorResponseSchema,
+    legacyUnavailableResponseSchema,
+    type LegacyServerAnalysisResponse,
+} from '@topskip/backend/legacy/legacy-server-analysis-contract';
 
 const DEFAULT_POLL_AFTER_SEC = 3;
 const FIXTURE_RESULT_EXPIRES_AT_MS = 4_102_444_800_000;
@@ -71,14 +84,86 @@ export type BackendAnalysisTerminalResponse =
     | ReadyResponse
     | NoPromoResponse
     | UnavailableResponse
-    | TerminalErrorResponse;
+    | TerminalErrorResponse
+    | Extract<
+          LegacyServerAnalysisResponse,
+          { status: 'ready' | 'no_promo' | 'unavailable' | 'error' }
+      >;
+
+/**
+ * Processing response may belong to the public upload or private legacy contract.
+ */
+export type BackendAnalysisProcessingResponse =
+    | ProcessingResponse
+    | Extract<LegacyServerAnalysisResponse, { status: 'processing' }>;
 
 /**
  * Any response a stored local job can currently expose.
  */
 export type BackendAnalysisJobResponse =
-    | ProcessingResponse
+    | BackendAnalysisProcessingResponse
     | BackendAnalysisTerminalResponse;
+
+/**
+ * Authoritative upload identity prevents cross-language or stale-caption reuse.
+ */
+export type ExactTranscriptIdentity = ServerTranscriptIdentity;
+
+/**
+ * Upload jobs receive the already-validated artifact and never enter extraction.
+ */
+export type UploadAnalysisJobStartInput = {
+    source: 'extension_upload';
+    identity: ExactTranscriptIdentity;
+    transcriptArtifact: TranscriptArtifact;
+    installationHash: string;
+    ipHash: string;
+    nowMs: number;
+    extensionVersion?: string;
+    durationSec?: number;
+    analysisAdapter?: BackendLlmAnalysisAdapter;
+    requestId?: string;
+};
+
+/**
+ * Explicit legacy jobs retain metadata-owned extraction for isolated operators.
+ */
+export type LegacyAnalysisJobStartInput = {
+    source: 'legacy_yt_dlp';
+    videoId: string;
+    algorithmVersion: string;
+    installationHash: string;
+    ipHash: string;
+    nowMs: number;
+    extensionVersion?: string;
+    durationSec?: number;
+    analysisAdapter?: BackendLlmAnalysisAdapter;
+    extractionStrategies?: readonly SubtitleExtractionStrategy[];
+    requestId?: string;
+};
+
+/**
+ * Process routing must choose one job source before calling the shared scheduler.
+ */
+export type AnalysisJobStartInput =
+    | UploadAnalysisJobStartInput
+    | LegacyAnalysisJobStartInput;
+
+/**
+ * Exact lookup is selected by startup mode before the in-memory map is consulted.
+ */
+export type AnalysisJobFindInput =
+    | {
+          source: 'extension_upload';
+          identity: ExactTranscriptIdentity;
+          installationHash: string;
+      }
+    | {
+          source: 'legacy_yt_dlp';
+          videoId: string;
+          algorithmVersion: string;
+          installationHash: string;
+      };
 
 /**
  * Stable test-only diagnostics for proving extraction side effects.
@@ -97,6 +182,8 @@ type AnalysisJobDiagnostics = {
  * Internal in-memory record keyed by video id and algorithm version.
  */
 type AnalysisJobRecord = {
+    source: 'extension_upload' | 'legacy_yt_dlp';
+    identity: ExactTranscriptIdentity | null;
     jobId: string;
     jobKey: string;
     videoId: string;
@@ -116,7 +203,7 @@ type AnalysisJobRecord = {
     extractionStrategies: readonly SubtitleExtractionStrategy[] | undefined;
     ownerInstallationHashes: Set<string>;
     requestId: string | undefined;
-    processingResponse: ProcessingResponse;
+    processingResponse: BackendAnalysisProcessingResponse;
     terminalResponse: BackendAnalysisTerminalResponse | null;
     extractionPromise: Promise<void> | null;
 };
@@ -171,23 +258,28 @@ export class BackendAnalysisJobs {
      * @param input - Validated video/version key and creation timestamp.
      * @returns Existing or newly created processing/terminal response.
      */
-    static start(input: {
-        videoId: string;
-        algorithmVersion: string;
-        extensionVersion?: string;
-        durationSec?: number;
-        nowMs: number;
-        analysisAdapter?: BackendLlmAnalysisAdapter;
-        extractionStrategies?: readonly SubtitleExtractionStrategy[];
-        ownerInstallationHash?: string;
-        requestId?: string;
-    }): BackendAnalysisJobResponse {
+    static start(input: AnalysisJobStartInput): BackendAnalysisJobResponse {
         BackendAnalysisJobs.pruneTerminalJobs(input.nowMs);
+        const isUpload = BackendAnalysisJobs.isUploadStartInput(input);
+        const source = input.source;
+        const identity = isUpload ? input.identity : null;
+        const videoId = isUpload ? input.identity.videoId : input.videoId;
+        const algorithmVersion = isUpload
+            ? input.identity.algorithmVersion
+            : input.algorithmVersion;
+        const ownerInstallationHash = input.installationHash;
+        const selectedTranscriptArtifact = isUpload
+            ? BackendAnalysisJobs.validateUploadArtifact(
+                  input.identity,
+                  input.transcriptArtifact,
+              )
+            : null;
         const jobKey = BackendAnalysisJobs.buildJobKey(input);
         const existingJobId = BackendAnalysisJobs.jobIdsByKey.get(jobKey);
         if (existingJobId !== undefined) {
             const existing = BackendAnalysisJobs.jobsById.get(existingJobId);
             if (existing !== undefined && existing.terminalResponse === null) {
+                existing.ownerInstallationHashes.add(ownerInstallationHash);
                 existing.joinedRequestCount += 1;
                 return existing.processingResponse;
             }
@@ -196,20 +288,24 @@ export class BackendAnalysisJobs {
         }
 
         const jobId = BackendAnalysisJobs.buildJobId(input);
-        const processingResponse = v.parse(processingResponseSchema, {
-            status: 'processing',
-            videoId: input.videoId,
-            algorithmVersion: input.algorithmVersion,
+        const processingResponse = BackendAnalysisJobs.buildProcessingResponse({
+            source,
+            identity,
+            videoId,
+            algorithmVersion,
             jobId,
-            pollAfterSec: DEFAULT_POLL_AFTER_SEC,
         });
         const record: AnalysisJobRecord = {
+            source,
+            identity,
             jobId,
             jobKey,
-            videoId: input.videoId,
-            algorithmVersion: input.algorithmVersion,
+            videoId,
+            algorithmVersion,
             extensionVersion: input.extensionVersion,
-            durationSec: input.durationSec,
+            durationSec: isUpload
+                ? selectedTranscriptArtifact?.videoDurationSec
+                : input.durationSec,
             pollAfterSec: DEFAULT_POLL_AFTER_SEC,
             createdAtMs: input.nowMs,
             completedAtMs: null,
@@ -217,13 +313,13 @@ export class BackendAnalysisJobs {
             joinedRequestCount: 0,
             stage: ANALYSIS_JOB_STAGE.Queued,
             extractionAttempts: [],
-            selectedTranscriptArtifact: null,
+            selectedTranscriptArtifact,
             analysisRun: null,
             analysisAdapter: input.analysisAdapter,
-            extractionStrategies: input.extractionStrategies,
-            ownerInstallationHashes: new Set([
-                input.ownerInstallationHash ?? LOCAL_INSTALLATION_HASH,
-            ]),
+            extractionStrategies: isUpload
+                ? undefined
+                : input.extractionStrategies,
+            ownerInstallationHashes: new Set([ownerInstallationHash]),
             requestId: input.requestId,
             processingResponse,
             terminalResponse: null,
@@ -245,11 +341,9 @@ export class BackendAnalysisJobs {
      * @param input - Validated video/version key.
      * @returns Current job response, or `null` when no job exists.
      */
-    static findExisting(input: {
-        videoId: string;
-        algorithmVersion: string;
-        installationHash?: string;
-    }): BackendAnalysisJobResponse | null {
+    static findExisting(
+        input: AnalysisJobFindInput,
+    ): BackendAnalysisJobResponse | null {
         const jobKey = BackendAnalysisJobs.buildJobKey(input);
         const jobId = BackendAnalysisJobs.jobIdsByKey.get(jobKey);
         if (jobId === undefined) {
@@ -260,9 +354,7 @@ export class BackendAnalysisJobs {
         if (record === undefined) {
             return null;
         }
-        record.ownerInstallationHashes.add(
-            input.installationHash ?? LOCAL_INSTALLATION_HASH,
-        );
+        record.ownerInstallationHashes.add(input.installationHash);
         record.joinedRequestCount += 1;
 
         // Durable artifact lookup owns reusable terminal results. The in-memory
@@ -404,11 +496,11 @@ export class BackendAnalysisJobs {
     }
 
     /**
-     * Runs subtitle extraction once for a newly stored job record.
+     * Routes uploads directly to analysis while legacy jobs alone may extract captions.
      *
      * @param record - New in-memory job record to update.
      * @param nowMs - Deterministic extraction timestamp.
-     * @returns Processing response when extraction succeeds, otherwise terminal unavailable.
+     * @returns Completion after analysis or a terminal legacy extraction result.
      */
     private static async runJob(
         record: AnalysisJobRecord,
@@ -416,6 +508,11 @@ export class BackendAnalysisJobs {
     ): Promise<void> {
         try {
             if (record.terminalResponse !== null) {
+                return;
+            }
+            if (record.source === 'extension_upload') {
+                record.stage = ANALYSIS_JOB_STAGE.AwaitingAnalysis;
+                await BackendAnalysisJobs.runAnalysis(record, Date.now());
                 return;
             }
             record.stage = ANALYSIS_JOB_STAGE.Extracting;
@@ -530,14 +627,11 @@ export class BackendAnalysisJobs {
         if (reservation === null) {
             record.completedAtMs = nowMs;
             record.stage = ANALYSIS_JOB_STAGE.Complete;
-            record.terminalResponse = v.parse(terminalErrorResponseSchema, {
-                status: 'error',
-                videoId: record.videoId,
-                algorithmVersion: record.algorithmVersion,
-                error: {
-                    code: SERVER_ANALYSIS_ERROR_CODE.BudgetExhausted,
-                },
-            });
+            record.terminalResponse =
+                BackendAnalysisJobs.buildTerminalErrorResponse(
+                    record,
+                    SERVER_ANALYSIS_ERROR_CODE.BudgetExhausted,
+                );
             BackendAnalysisJobs.persistArtifactRecordSafely(record, nowMs);
             return record.terminalResponse;
         }
@@ -568,7 +662,10 @@ export class BackendAnalysisJobs {
             throw new Error('Model analysis did not return a result.');
         }
         record.analysisRun = result.analysisRun;
-        record.terminalResponse = result.terminalResponse;
+        record.terminalResponse = BackendAnalysisJobs.mapWorkerTerminalResponse(
+            record,
+            result.terminalResponse,
+        );
         record.completedAtMs = result.analysisRun.completedAtMs;
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         if (record.terminalResponse.status === 'error') {
@@ -653,6 +750,13 @@ export class BackendAnalysisJobs {
                 videoId: record.videoId,
                 durationSec: record.durationSec,
                 algorithmVersion: record.algorithmVersion,
+                ...(record.identity === null
+                    ? {}
+                    : {
+                          languageCode: record.identity.languageCode,
+                          transcriptHash: record.identity.transcriptHash,
+                          sourceType: 'extension_caption_upload' as const,
+                      }),
             },
             job: {
                 jobId: record.jobId,
@@ -707,14 +811,11 @@ export class BackendAnalysisJobs {
 
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         record.completedAtMs = completedAtMs;
-        record.terminalResponse = {
-            status: 'error',
-            videoId: record.videoId,
-            algorithmVersion: record.algorithmVersion,
-            error: {
-                code: SERVER_ANALYSIS_ERROR_CODE.InternalError,
-            },
-        };
+        record.terminalResponse =
+            BackendAnalysisJobs.buildTerminalErrorResponse(
+                record,
+                SERVER_ANALYSIS_ERROR_CODE.InternalError,
+            );
         BackendAnalysisJobs.attachSupportIdSafely(
             record,
             SERVER_ANALYSIS_ERROR_CODE.InternalError,
@@ -747,11 +848,22 @@ export class BackendAnalysisJobs {
      * @param input - Validated video/version key.
      * @returns Internal map key.
      */
-    private static buildJobKey(input: {
-        videoId: string;
-        algorithmVersion: string;
-    }): string {
-        return `${input.videoId}:${input.algorithmVersion}`;
+    private static buildJobKey(
+        input: AnalysisJobStartInput | AnalysisJobFindInput,
+    ): string {
+        if (input.source === 'extension_upload') {
+            return JSON.stringify([
+                input.identity.algorithmVersion,
+                input.identity.videoId,
+                input.identity.languageCode,
+                input.identity.transcriptHash,
+            ]);
+        }
+        return JSON.stringify([
+            'legacy_yt_dlp',
+            input.videoId,
+            input.algorithmVersion,
+        ]);
     }
 
     /**
@@ -760,15 +872,180 @@ export class BackendAnalysisJobs {
      * @param input - Validated video/version key.
      * @returns Stable local job id.
      */
-    private static buildJobId(input: {
-        videoId: string;
-        algorithmVersion: string;
-        ownerInstallationHash?: string;
-    }): string {
-        return input.ownerInstallationHash === undefined ||
-            input.ownerInstallationHash === LOCAL_INSTALLATION_HASH
+    private static buildJobId(input: AnalysisJobStartInput): string {
+        if (BackendAnalysisJobs.isUploadStartInput(input)) {
+            return `job-${randomUUID()}`;
+        }
+        return input.installationHash === LOCAL_INSTALLATION_HASH
             ? `local-${input.videoId}-${input.algorithmVersion}`
             : `job-${randomUUID()}`;
+    }
+
+    /**
+     * Narrows the source-tagged union before reading authoritative upload identity.
+     *
+     * @param input - Candidate job start input.
+     * @returns Whether the input owns an uploaded transcript.
+     */
+    private static isUploadStartInput(
+        input: AnalysisJobStartInput,
+    ): input is UploadAnalysisJobStartInput {
+        return input.source === 'extension_upload';
+    }
+
+    /**
+     * Rejects any artifact whose retained identity differs from its computed job key.
+     *
+     * @param identity - Backend-computed canonical identity.
+     * @param artifact - Validated uploaded transcript candidate.
+     * @returns Parsed canonical upload artifact.
+     */
+    private static validateUploadArtifact(
+        identity: ExactTranscriptIdentity,
+        artifact: TranscriptArtifact,
+    ): TranscriptArtifact {
+        const parsed = v.parse(transcriptArtifactSchema, artifact);
+        if (
+            parsed.sourceType !== 'extension_caption_upload' ||
+            parsed.videoId !== identity.videoId ||
+            parsed.algorithmVersion !== identity.algorithmVersion ||
+            parsed.languageCode !== identity.languageCode ||
+            parsed.transcriptHash !== identity.transcriptHash
+        ) {
+            throw new Error(
+                'Uploaded transcript artifact does not match its authoritative identity.',
+            );
+        }
+        return parsed;
+    }
+
+    /**
+     * Builds the mode-specific processing envelope from stored authoritative state.
+     *
+     * @param input - Stored source, identity, and opaque job id.
+     * @returns Strict processing response for the selected process mode.
+     */
+    private static buildProcessingResponse(input: {
+        source: AnalysisJobRecord['source'];
+        identity: ExactTranscriptIdentity | null;
+        videoId: string;
+        algorithmVersion: string;
+        jobId: string;
+    }): BackendAnalysisProcessingResponse {
+        const response = {
+            status: 'processing',
+            videoId: input.videoId,
+            algorithmVersion: input.algorithmVersion,
+            jobId: input.jobId,
+            pollAfterSec: DEFAULT_POLL_AFTER_SEC,
+        } as const;
+        if (input.source === 'legacy_yt_dlp') {
+            return v.parse(legacyProcessingResponseSchema, response);
+        }
+        if (input.identity === null) {
+            throw new Error('Upload processing response requires identity.');
+        }
+        return v.parse(processingResponseSchema, {
+            ...response,
+            languageCode: input.identity.languageCode,
+            transcriptHash: input.identity.transcriptHash,
+        });
+    }
+
+    /**
+     * Rebinds model output to the job's stored identity before public emission.
+     *
+     * @param record - Owning job with authoritative source and identity.
+     * @param response - Validated worker result containing only safe terminal data.
+     * @returns Strict mode-specific terminal response.
+     */
+    private static mapWorkerTerminalResponse(
+        record: AnalysisJobRecord,
+        response: BackendPromoAnalysisWorkerResult['terminalResponse'],
+    ): BackendAnalysisTerminalResponse {
+        if (record.source === 'legacy_yt_dlp') {
+            switch (response.status) {
+                case 'ready':
+                    return v.parse(legacyReadyResponseSchema, response);
+                case 'no_promo':
+                    return v.parse(legacyNoPromoResponseSchema, response);
+                case 'error':
+                    return v.parse(legacyTerminalErrorResponseSchema, response);
+            }
+        }
+        const identity = record.identity;
+        if (identity === null) {
+            throw new Error('Upload worker response requires identity.');
+        }
+        switch (response.status) {
+            case 'ready':
+                return v.parse(readyResponseSchema, {
+                    status: response.status,
+                    ...identity,
+                    source: response.source,
+                    sourceResultId: response.sourceResultId,
+                    freshness: response.freshness,
+                    promoBlocks: response.promoBlocks,
+                });
+            case 'no_promo':
+                return v.parse(noPromoResponseSchema, {
+                    status: response.status,
+                    ...identity,
+                    sourceResultId: response.sourceResultId,
+                    freshness: response.freshness,
+                });
+            case 'error':
+                return v.parse(terminalErrorResponseSchema, {
+                    status: response.status,
+                    ...identity,
+                    error: response.error,
+                });
+        }
+    }
+
+    /**
+     * Creates model, budget, and internal failures without echoing request data.
+     *
+     * @param record - Stored job that owns the response identity.
+     * @param code - Stable safe terminal error code.
+     * @returns Strict mode-specific error response.
+     */
+    private static buildTerminalErrorResponse(
+        record: AnalysisJobRecord,
+        code: TerminalErrorResponse['error']['code'],
+    ): BackendAnalysisTerminalResponse {
+        const response = {
+            status: 'error',
+            videoId: record.videoId,
+            algorithmVersion: record.algorithmVersion,
+            error: { code },
+        } as const;
+        if (record.source === 'legacy_yt_dlp') {
+            return v.parse(legacyTerminalErrorResponseSchema, response);
+        }
+        if (record.identity === null) {
+            throw new Error('Upload error response requires identity.');
+        }
+        return v.parse(terminalErrorResponseSchema, {
+            ...response,
+            languageCode: record.identity.languageCode,
+            transcriptHash: record.identity.transcriptHash,
+        });
+    }
+
+    /**
+     * Makes missing upload identity an internal invariant failure, never a partial response.
+     *
+     * @param record - Upload job record expected to own complete identity.
+     * @returns Stored exact transcript identity.
+     */
+    private static requireUploadIdentity(
+        record: AnalysisJobRecord,
+    ): ExactTranscriptIdentity {
+        if (record.identity === null) {
+            throw new Error('Upload job requires exact transcript identity.');
+        }
+        return record.identity;
     }
 
     /**
@@ -784,10 +1061,26 @@ export class BackendAnalysisJobs {
     ): BackendAnalysisTerminalResponse {
         switch (input.status) {
             case 'ready':
+                if (record.source === 'legacy_yt_dlp') {
+                    return v.parse(legacyReadyResponseSchema, {
+                        status: 'ready',
+                        videoId: record.videoId,
+                        algorithmVersion: record.algorithmVersion,
+                        source: 'server_cache',
+                        sourceResultId:
+                            BackendAnalysisJobs.buildSourceResultId(record),
+                        freshness: {
+                            expiresAtMs: FIXTURE_RESULT_EXPIRES_AT_MS,
+                        },
+                        promoBlocks: [
+                            { startSec: 4, endSec: 24, confidence: 'high' },
+                            { startSec: 35, endSec: 45, confidence: 'medium' },
+                        ],
+                    });
+                }
                 return v.parse(readyResponseSchema, {
                     status: 'ready',
-                    videoId: record.videoId,
-                    algorithmVersion: record.algorithmVersion,
+                    ...BackendAnalysisJobs.requireUploadIdentity(record),
                     source: 'server_cache',
                     sourceResultId:
                         BackendAnalysisJobs.buildSourceResultId(record),
@@ -798,30 +1091,59 @@ export class BackendAnalysisJobs {
                     ],
                 });
             case 'no_promo':
+                if (record.source === 'legacy_yt_dlp') {
+                    return v.parse(legacyNoPromoResponseSchema, {
+                        status: 'no_promo',
+                        videoId: record.videoId,
+                        algorithmVersion: record.algorithmVersion,
+                        sourceResultId:
+                            BackendAnalysisJobs.buildSourceResultId(record),
+                        freshness: {
+                            expiresAtMs: FIXTURE_RESULT_EXPIRES_AT_MS,
+                        },
+                    });
+                }
                 return v.parse(noPromoResponseSchema, {
                     status: 'no_promo',
-                    videoId: record.videoId,
-                    algorithmVersion: record.algorithmVersion,
+                    ...BackendAnalysisJobs.requireUploadIdentity(record),
                     sourceResultId:
                         BackendAnalysisJobs.buildSourceResultId(record),
                     freshness: { expiresAtMs: FIXTURE_RESULT_EXPIRES_AT_MS },
                 });
             case 'unavailable':
+                if (record.source === 'legacy_yt_dlp') {
+                    return v.parse(legacyUnavailableResponseSchema, {
+                        status: 'unavailable',
+                        videoId: record.videoId,
+                        algorithmVersion: record.algorithmVersion,
+                        error: {
+                            code: SERVER_ANALYSIS_UNAVAILABLE_REASON.FixtureUnavailable,
+                        },
+                    });
+                }
                 return v.parse(unavailableResponseSchema, {
                     status: 'unavailable',
-                    videoId: record.videoId,
-                    algorithmVersion: record.algorithmVersion,
+                    ...BackendAnalysisJobs.requireUploadIdentity(record),
                     error: {
-                        code: SERVER_ANALYSIS_UNAVAILABLE_REASON.FixtureUnavailable,
+                        code: SERVER_ANALYSIS_ERROR_CODE.InternalError,
                     },
                 });
             case 'error':
+                if (record.source === 'legacy_yt_dlp') {
+                    return v.parse(legacyTerminalErrorResponseSchema, {
+                        status: 'error',
+                        videoId: record.videoId,
+                        algorithmVersion: record.algorithmVersion,
+                        error: {
+                            code: SERVER_ANALYSIS_ERROR_CODE.FixtureError,
+                        },
+                    });
+                }
                 return v.parse(terminalErrorResponseSchema, {
                     status: 'error',
-                    videoId: record.videoId,
-                    algorithmVersion: record.algorithmVersion,
+                    ...BackendAnalysisJobs.requireUploadIdentity(record),
                     error: {
-                        code: SERVER_ANALYSIS_ERROR_CODE.FixtureError,
+                        code: SERVER_ANALYSIS_ERROR_CODE.InternalError,
                     },
                 });
         }
@@ -834,7 +1156,9 @@ export class BackendAnalysisJobs {
      * @returns Stable source result id.
      */
     private static buildSourceResultId(record: AnalysisJobRecord): string {
-        return `result-${record.videoId}-${record.algorithmVersion}`;
+        return record.source === 'extension_upload'
+            ? `result-${randomUUID()}`
+            : `result-${record.videoId}-${record.algorithmVersion}`;
     }
 
     /**
@@ -908,12 +1232,19 @@ export class BackendAnalysisJobs {
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         record.selectedTranscriptArtifact = null;
         record.completedAtMs = completedAtMs;
-        record.terminalResponse = {
-            status: 'unavailable',
-            videoId: record.videoId,
-            algorithmVersion: record.algorithmVersion,
-            error: { code },
-        };
+        record.terminalResponse =
+            record.source === 'legacy_yt_dlp'
+                ? v.parse(legacyUnavailableResponseSchema, {
+                      status: 'unavailable',
+                      videoId: record.videoId,
+                      algorithmVersion: record.algorithmVersion,
+                      error: { code },
+                  })
+                : v.parse(unavailableResponseSchema, {
+                      status: 'unavailable',
+                      ...BackendAnalysisJobs.requireUploadIdentity(record),
+                      error: { code },
+                  });
         if (
             code === SERVER_ANALYSIS_UNAVAILABLE_REASON.CaptionExtractionFailed
         ) {

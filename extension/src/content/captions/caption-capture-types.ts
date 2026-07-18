@@ -1,4 +1,7 @@
-import type { CaptionCaptureFailureReason } from '@/shared/messages';
+import type {
+    CaptionCaptureFailureReason,
+    CaptionsFromContentSuccessPayload,
+} from '@/shared/messages';
 
 /**
  * State names for one player-mediated caption capture session.
@@ -61,4 +64,27 @@ export type CapturedTimedtextPayload = {
 export type CaptionCaptureFailure = {
     reason: CaptionCaptureFailureReason;
     message: string;
+    diagnostics?: {
+        stage: string;
+        bodyLength?: number;
+        languageCode?: string;
+        urlShape?: CapturedTimedtextUrlShape;
+    };
+};
+
+/**
+ * Terminal result returned to the watch route that owns the capture session.
+ */
+export type CaptionCaptureResult =
+    | { status: 'ready'; payload: CaptionsFromContentSuccessPayload }
+    | { status: 'failed'; failure: CaptionCaptureFailure }
+    | { status: 'cancelled' };
+
+/**
+ * Input that binds one player capture to its owning watch session.
+ */
+export type CaptionCaptureInput = {
+    videoId: string;
+    signal: AbortSignal;
+    captureTimeoutMs?: number;
 };

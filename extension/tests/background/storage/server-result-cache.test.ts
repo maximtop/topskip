@@ -16,15 +16,36 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-const { SERVER_ANALYSIS_ALGORITHM_VERSION } =
-    await import('@topskip/common/server-analysis-contract');
 const { STORAGE_KEY_SERVER_RESULT_CACHE } = await import('@/shared/constants');
 const { ServerResultCacheStorage } =
     await import('@/background/storage/server-result-cache');
 
 const NOW_MS = 1_900_000_000_000;
 const EXPIRES_AT_MS = NOW_MS + 60_000;
-const CACHE_KEY = `${STORAGE_KEY_SERVER_RESULT_CACHE}:${SERVER_ANALYSIS_ALGORITHM_VERSION}:e2eFixture1`;
+const VIDEO_ID = 'e2eFixture1';
+const ALGORITHM_VERSION = 'server-v5';
+const LANGUAGE_CODE = 'en';
+const TRANSCRIPT_HASH = 'a'.repeat(64);
+const OTHER_TRANSCRIPT_HASH = 'b'.repeat(64);
+const CACHE_KEY = [
+    STORAGE_KEY_SERVER_RESULT_CACHE,
+    ALGORITHM_VERSION,
+    VIDEO_ID,
+    LANGUAGE_CODE,
+    TRANSCRIPT_HASH,
+].join(':');
+
+const EXACT_ENTRY = {
+    status: 'ready' as const,
+    videoId: VIDEO_ID,
+    languageCode: LANGUAGE_CODE,
+    transcriptHash: TRANSCRIPT_HASH,
+    algorithmVersion: ALGORITHM_VERSION,
+    sourceResultId: 'result-exact',
+    freshness: { expiresAtMs: EXPIRES_AT_MS },
+    promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' as const }],
+    storedAtMs: NOW_MS - 1_000,
+};
 
 describe('ServerResultCacheStorage', () => {
     beforeEach(() => {
@@ -33,237 +54,158 @@ describe('ServerResultCacheStorage', () => {
         storageRemove.mockReset();
     });
 
-    it('returns a fresh cache entry for the current video and algorithm', async () => {
-        storageGet.mockResolvedValue({
-            [CACHE_KEY]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                sourceResultId: 'result-e2eFixture1-server-v1',
-                freshness: { expiresAtMs: EXPIRES_AT_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' }],
-                storedAtMs: NOW_MS - 1_000,
-            },
-        });
-
-        const hit = await ServerResultCacheStorage.loadFresh({
-            videoId: 'e2eFixture1',
-            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-            nowMs: NOW_MS,
-        });
-
-        expect(hit?.sourceResultId).toBe('result-e2eFixture1-server-v1');
-        expect(hit?.promoBlocks).toEqual([
-            { startSec: 4, endSec: 24, confidence: 'high' },
-        ]);
-        expect(storageRemove).not.toHaveBeenCalled();
-    });
-
-    it('removes stale entries and returns a miss', async () => {
-        storageGet.mockResolvedValue({
-            [CACHE_KEY]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                sourceResultId: 'result-e2eFixture1-server-v1',
-                freshness: { expiresAtMs: NOW_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-                storedAtMs: NOW_MS - 120_000,
-            },
-        });
+    it('loads only an exact server result by algorithm, video, language, and hash', async () => {
+        storageGet.mockImplementation((key: string) =>
+            Promise.resolve(
+                key === CACHE_KEY ? { [CACHE_KEY]: EXACT_ENTRY } : {},
+            ),
+        );
 
         await expect(
-            ServerResultCacheStorage.loadFresh({
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            ServerResultCacheStorage.loadExact({
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
+                nowMs: NOW_MS,
+            }),
+        ).resolves.toMatchObject({ sourceResultId: 'result-exact' });
+
+        await expect(
+            ServerResultCacheStorage.loadExact({
+                videoId: VIDEO_ID,
+                languageCode: 'ru',
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
+                nowMs: NOW_MS,
+            }),
+        ).resolves.toBeNull();
+        await expect(
+            ServerResultCacheStorage.loadExact({
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: OTHER_TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
+                nowMs: NOW_MS,
+            }),
+        ).resolves.toBeNull();
+
+        expect(
+            Reflect.get(ServerResultCacheStorage, 'loadLatestFreshForVideo'),
+        ).toBeUndefined();
+    });
+
+    it('removes stale or corrupt exact rows and treats storage failures as misses', async () => {
+        storageGet.mockResolvedValueOnce({
+            [CACHE_KEY]: { ...EXACT_ENTRY, freshness: { expiresAtMs: NOW_MS } },
+        });
+        await expect(
+            ServerResultCacheStorage.loadExact({
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
                 nowMs: NOW_MS,
             }),
         ).resolves.toBeNull();
         expect(storageRemove).toHaveBeenCalledWith(CACHE_KEY);
-    });
 
-    it('removes corrupt entries and returns a miss', async () => {
-        storageGet.mockResolvedValue({
-            [CACHE_KEY]: { videoId: 'e2eFixture1', promoBlocks: 'bad' },
-        });
-
+        storageGet.mockResolvedValueOnce({ [CACHE_KEY]: { nope: true } });
         await expect(
-            ServerResultCacheStorage.loadFresh({
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            ServerResultCacheStorage.loadExact({
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
                 nowMs: NOW_MS,
             }),
         ).resolves.toBeNull();
-        expect(storageRemove).toHaveBeenCalledWith(CACHE_KEY);
-    });
 
-    it('removes algorithm-version mismatches and returns a miss', async () => {
-        storageGet.mockResolvedValue({
-            [CACHE_KEY]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: 'server-v0',
-                sourceResultId: 'result-e2eFixture1-server-v0',
-                freshness: { expiresAtMs: EXPIRES_AT_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-                storedAtMs: NOW_MS - 1_000,
-            },
-        });
-
-        await expect(
-            ServerResultCacheStorage.loadFresh({
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                nowMs: NOW_MS,
-            }),
-        ).resolves.toBeNull();
-        expect(storageRemove).toHaveBeenCalledWith(CACHE_KEY);
-    });
-
-    it('treats storage read failures as cache misses', async () => {
         storageGet.mockRejectedValueOnce(new Error('storage unavailable'));
-
         await expect(
-            ServerResultCacheStorage.loadFresh({
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            ServerResultCacheStorage.loadExact({
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
                 nowMs: NOW_MS,
             }),
         ).resolves.toBeNull();
-        expect(storageRemove).not.toHaveBeenCalled();
     });
 
-    it('treats corrupt-entry repair failures as cache misses', async () => {
-        storageGet.mockResolvedValue({
-            [CACHE_KEY]: { videoId: 'e2eFixture1', promoBlocks: 'bad' },
-        });
-        storageRemove.mockRejectedValueOnce(new Error('remove failed'));
-
-        await expect(
-            ServerResultCacheStorage.loadFresh({
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                nowMs: NOW_MS,
-            }),
-        ).resolves.toBeNull();
-        expect(storageRemove).toHaveBeenCalledWith(CACHE_KEY);
-    });
-
-    it('stores a validated ready response for future use', async () => {
-        await ServerResultCacheStorage.saveReadyResponse(
+    it('stores ready and no-promo results without captions', async () => {
+        await ServerResultCacheStorage.saveTerminalResponse(
             {
                 status: 'ready',
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
                 source: 'server_cache',
-                sourceResultId: 'result-e2eFixture1-server-v1',
+                sourceResultId: 'result-exact',
                 freshness: { expiresAtMs: EXPIRES_AT_MS },
                 promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' }],
             },
             NOW_MS,
         );
-
-        expect(storageSet).toHaveBeenCalledWith({
-            [CACHE_KEY]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                sourceResultId: 'result-e2eFixture1-server-v1',
+        await ServerResultCacheStorage.saveTerminalResponse(
+            {
+                status: 'no_promo',
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
+                sourceResultId: 'result-clean',
                 freshness: { expiresAtMs: EXPIRES_AT_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' }],
+            },
+            NOW_MS,
+        );
+
+        expect(storageSet).toHaveBeenNthCalledWith(1, {
+            [CACHE_KEY]: {
+                ...EXACT_ENTRY,
                 storedAtMs: NOW_MS,
             },
         });
+        expect(storageSet).toHaveBeenNthCalledWith(2, {
+            [CACHE_KEY]: {
+                status: 'no_promo',
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
+                sourceResultId: 'result-clean',
+                freshness: { expiresAtMs: EXPIRES_AT_MS },
+                storedAtMs: NOW_MS,
+            },
+        });
+        expect(JSON.stringify(storageSet.mock.calls)).not.toContain('segments');
+        expect(JSON.stringify(storageSet.mock.calls)).not.toContain(
+            'transcriptText',
+        );
     });
 
-    it('removes cached rows from every inactive algorithm version', async () => {
-        const activeKey = `${STORAGE_KEY_SERVER_RESULT_CACHE}:server-v5:e2eFixture1`;
-        const oldKey = `${STORAGE_KEY_SERVER_RESULT_CACHE}:server-v4:dQw4w9WgXcQ`;
-        const corruptKey = `${STORAGE_KEY_SERVER_RESULT_CACHE}:broken:bad`;
+    it('removes rows from obsolete algorithms while preserving exact active rows', async () => {
+        const oldKey = [
+            STORAGE_KEY_SERVER_RESULT_CACHE,
+            'server-v4',
+            VIDEO_ID,
+            LANGUAGE_CODE,
+            TRANSCRIPT_HASH,
+        ].join(':');
+        const corruptKey = `${STORAGE_KEY_SERVER_RESULT_CACHE}:broken`;
         storageGet.mockResolvedValue({
             unrelated: { keep: true },
-            [activeKey]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: 'server-v5',
-                sourceResultId: 'result-v5',
-                freshness: { expiresAtMs: EXPIRES_AT_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-                storedAtMs: NOW_MS,
-            },
-            [oldKey]: {
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: 'server-v4',
-                sourceResultId: 'result-v4',
-                freshness: { expiresAtMs: EXPIRES_AT_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-                storedAtMs: NOW_MS,
-            },
+            [CACHE_KEY]: EXACT_ENTRY,
+            [oldKey]: { ...EXACT_ENTRY, algorithmVersion: 'server-v4' },
             [corruptKey]: { nope: true },
         });
 
         await ServerResultCacheStorage.removeOtherAlgorithmVersions(
-            'server-v5',
+            ALGORITHM_VERSION,
         );
 
         expect(storageGet).toHaveBeenCalledWith(null);
         expect(storageRemove).toHaveBeenCalledWith([oldKey, corruptKey]);
-    });
-
-    it('treats algorithm cache cleanup as best effort', async () => {
-        storageGet.mockRejectedValueOnce(new Error('storage unavailable'));
-
-        await expect(
-            ServerResultCacheStorage.removeOtherAlgorithmVersions('server-v5'),
-        ).resolves.toBeUndefined();
-        expect(storageRemove).not.toHaveBeenCalled();
-    });
-
-    it('finds the newest fresh video row when config has never loaded', async () => {
-        const oldVersionKey = `${STORAGE_KEY_SERVER_RESULT_CACHE}:server-v4:e2eFixture1`;
-        const latestVersionKey = `${STORAGE_KEY_SERVER_RESULT_CACHE}:server-v5:e2eFixture1`;
-        storageGet.mockResolvedValue({
-            [oldVersionKey]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: 'server-v4',
-                sourceResultId: 'result-v4',
-                freshness: { expiresAtMs: EXPIRES_AT_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-                storedAtMs: NOW_MS - 10_000,
-            },
-            [latestVersionKey]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: 'server-v5',
-                sourceResultId: 'result-v5',
-                freshness: { expiresAtMs: EXPIRES_AT_MS },
-                promoBlocks: [{ startSec: 5, endSec: 25 }],
-                storedAtMs: NOW_MS - 1_000,
-            },
-        });
-
-        const result = await ServerResultCacheStorage.loadLatestFreshForVideo({
-            videoId: 'e2eFixture1',
-            nowMs: NOW_MS,
-        });
-
-        expect(storageGet).toHaveBeenCalledWith(null);
-        expect(result?.algorithmVersion).toBe('server-v5');
-        expect(result?.promoBlocks).toEqual([{ startSec: 5, endSec: 25 }]);
-    });
-
-    it('does not use expired rows for the offline cache fallback', async () => {
-        const key = `${STORAGE_KEY_SERVER_RESULT_CACHE}:server-v4:e2eFixture1`;
-        storageGet.mockResolvedValue({
-            [key]: {
-                videoId: 'e2eFixture1',
-                algorithmVersion: 'server-v4',
-                sourceResultId: 'result-v4',
-                freshness: { expiresAtMs: NOW_MS },
-                promoBlocks: [{ startSec: 4, endSec: 24 }],
-                storedAtMs: NOW_MS - 1_000,
-            },
-        });
-
-        await expect(
-            ServerResultCacheStorage.loadLatestFreshForVideo({
-                videoId: 'e2eFixture1',
-                nowMs: NOW_MS,
-            }),
-        ).resolves.toBeNull();
     });
 });

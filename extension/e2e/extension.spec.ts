@@ -25,16 +25,45 @@ import {
     openPopupAndWaitForUi,
     trackPageErrors,
     trackServiceWorkerConsoleErrors,
+    waitForPopupUi,
 } from './extension-helpers';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const extensionPath = path.resolve(__dirname, '../dist');
-const E2E_SERVER_ALGORITHM_VERSION = 'server-v4';
+const E2E_SERVER_API_VERSION = 1;
+const E2E_SERVER_ALGORITHM_VERSION = 'server-v5';
+const E2E_VIDEO_ID = 'e2eFixture1';
+const E2E_CAPTION_LANGUAGE = 'en';
+const E2E_CAPTION_SEGMENTS = [
+    {
+        startSec: 0,
+        durationSec: 1,
+        text: 'TopSkip deterministic caption fixture',
+    },
+] as const;
+const E2E_TRANSCRIPT_HASH =
+    '7587903459454f21f7b2d9a0b3e22f21617a4d80a2622137ba8db86675887542';
+const E2E_TRANSCRIPT_IDENTITY = {
+    videoId: E2E_VIDEO_ID,
+    languageCode: E2E_CAPTION_LANGUAGE,
+    transcriptHash: E2E_TRANSCRIPT_HASH,
+    algorithmVersion: E2E_SERVER_ALGORITHM_VERSION,
+} as const;
 const E2E_INSTALLATION_TOKEN =
     'e2e-installation-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const E2E_INSTALLATION_EXPIRES_AT_MS = 4_102_444_800_000;
 const E2E_CAPABILITIES_HEADER =
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
+const POPUP_RACE_TEST_TIMEOUT_MS = 20_000;
+const RUNTIME_MESSAGE_GATE_TIMEOUT_MS = 5_000;
+const GET_MODEL_SETTINGS_MESSAGE_TYPE = 'TOPSKIP_GET_MODEL_SETTINGS';
+const GET_PREFS_MESSAGE_TYPE = 'TOPSKIP_GET_PREFS';
+const BYOK_ANALYSIS_MODE = 'byok';
+const RUNTIME_MESSAGE_GATE_STATE_KEY = '__topskipE2eRuntimeMessageGateState';
+const RUNTIME_MESSAGE_GATE_RELEASE_KEY =
+    '__topskipE2eReleaseRuntimeMessageGate';
+const RUNTIME_MESSAGE_GATE_HELD_STATE = 'held';
+const RUNTIME_MESSAGE_GATE_RELEASED_STATE = 'released';
 
 /**
  * Serves the public bootstrap endpoints shared by every server-mode fixture.
@@ -65,7 +94,7 @@ function handlePublicApiBootstrap(
         res.writeHead(200, { 'content-type': 'application/json' });
         res.end(
             JSON.stringify({
-                apiVersion: 'v1',
+                apiVersion: E2E_SERVER_API_VERSION,
                 algorithmVersion: E2E_SERVER_ALGORITHM_VERSION,
                 supportedCapabilities: [
                     ...SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
@@ -113,9 +142,9 @@ function expectAuthenticatedServerRequest(req: IncomingMessage): void {
  */
 const extensionHeadless = process.env.PW_EXTENSION_HEADED !== '1';
 
-function extensionContextOptions() {
+function extensionContextOptions(headless = extensionHeadless) {
     return {
-        headless: extensionHeadless,
+        headless,
         args: [
             `--disable-extensions-except=${extensionPath}`,
             `--load-extension=${extensionPath}`,
@@ -141,12 +170,16 @@ async function getExtensionId(context: BrowserContext): Promise<string> {
 }
 
 /**
- * Seeds detected promo blocks through a dev-only background message.
+ * Seeds one tab's detection snapshot through a dev-only background message.
  *
- * @param popupPage - Open extension popup page.
+ * @param extensionPage - Extension page whose tab owns the snapshot.
+ * @param state - Serializable detection snapshot to store.
  */
-async function seedDetectedPopupState(popupPage: Page): Promise<void> {
-    await popupPage.evaluate(async () => {
+async function seedPopupState(
+    extensionPage: Page,
+    state: unknown,
+): Promise<void> {
+    await extensionPage.evaluate(async (state) => {
         const chromeApi = Reflect.get(globalThis, 'chrome');
         if (typeof chromeApi !== 'object' || chromeApi === null) {
             throw new Error('Missing chrome API');
@@ -162,15 +195,7 @@ async function seedDetectedPopupState(popupPage: Page): Promise<void> {
 
         const message = {
             type: 'TOPSKIP_DEV_SET_DETECTION_STATUS',
-            state: {
-                videoId: 'visual-fixture',
-                status: 'detected',
-                durationSec: 600,
-                promoBlocks: [
-                    { startSec: 92, endSec: 125 },
-                    { startSec: 490, endSec: 522 },
-                ],
-            },
+            state,
         };
         const response: unknown = await new Promise((resolve, reject) => {
             Reflect.apply(sendMessage, runtime, [
@@ -198,69 +223,329 @@ async function seedDetectedPopupState(popupPage: Page): Promise<void> {
             response === null ||
             Reflect.get(response, 'ok') !== true
         ) {
-            throw new Error('Failed to seed detected popup state');
+            throw new Error('Failed to seed popup state');
         }
-    });
+    }, state);
+}
+
+/**
+ * Holds one runtime message until the test explicitly releases it, making the
+ * popup's intermediate provider-loading state deterministic.
+ *
+ * @param popupPage - Popup page before its extension URL is loaded.
+ * @param messageType - Runtime message type whose dispatch should be held.
+ */
+async function installRuntimeMessageGate(
+    popupPage: Page,
+    messageType: string,
+): Promise<void> {
+    await popupPage.addInitScript(
+        ({ messageType, stateKey, releaseKey, heldState, releasedState }) => {
+            const chromeApi = Reflect.get(globalThis, 'chrome');
+            if (typeof chromeApi !== 'object' || chromeApi === null) {
+                throw new Error('Missing chrome API');
+            }
+            const runtime = Reflect.get(chromeApi, 'runtime');
+            if (typeof runtime !== 'object' || runtime === null) {
+                throw new Error('Missing chrome.runtime API');
+            }
+            const sendMessage = Reflect.get(runtime, 'sendMessage');
+            if (typeof sendMessage !== 'function') {
+                throw new Error('Missing chrome.runtime.sendMessage API');
+            }
+
+            let heldCalls: unknown[][] = [];
+            const gatedSendMessage = (...args: unknown[]): unknown => {
+                const matchingMessage = args.find(
+                    (argument) =>
+                        typeof argument === 'object' &&
+                        argument !== null &&
+                        Reflect.get(argument, 'type') === messageType,
+                );
+                if (matchingMessage === undefined) {
+                    return Reflect.apply(sendMessage, runtime, args);
+                }
+
+                heldCalls.push(args);
+                Reflect.set(globalThis, stateKey, heldState);
+                return undefined;
+            };
+
+            const release = (): void => {
+                if (heldCalls.length === 0) {
+                    throw new Error('Runtime message gate has no held call');
+                }
+                const calls = heldCalls;
+                heldCalls = [];
+                Reflect.set(globalThis, stateKey, releasedState);
+                for (const args of calls) {
+                    Reflect.apply(sendMessage, runtime, args);
+                }
+            };
+
+            Reflect.set(globalThis, releaseKey, release);
+            if (!Reflect.set(runtime, 'sendMessage', gatedSendMessage)) {
+                throw new Error('Could not gate chrome.runtime.sendMessage');
+            }
+        },
+        {
+            messageType,
+            stateKey: RUNTIME_MESSAGE_GATE_STATE_KEY,
+            releaseKey: RUNTIME_MESSAGE_GATE_RELEASE_KEY,
+            heldState: RUNTIME_MESSAGE_GATE_HELD_STATE,
+            releasedState: RUNTIME_MESSAGE_GATE_RELEASED_STATE,
+        },
+    );
+}
+
+/**
+ * Waits until the popup has actually attempted the gated runtime request.
+ *
+ * @param popupPage - Popup page with an installed runtime-message gate.
+ * @returns Promise resolving only after the message is held.
+ */
+async function waitForHeldRuntimeMessage(popupPage: Page): Promise<void> {
+    await expect
+        .poll(
+            () =>
+                popupPage.evaluate((stateKey) => {
+                    const state: unknown = Reflect.get(globalThis, stateKey);
+                    return state;
+                }, RUNTIME_MESSAGE_GATE_STATE_KEY),
+            { timeout: RUNTIME_MESSAGE_GATE_TIMEOUT_MS },
+        )
+        .toBe(RUNTIME_MESSAGE_GATE_HELD_STATE);
+}
+
+/**
+ * Releases the held runtime request after the intermediate UI is verified.
+ *
+ * @param popupPage - Popup page with a held runtime request.
+ * @returns Promise resolving after the real Chrome API receives the request.
+ */
+async function releaseHeldRuntimeMessage(popupPage: Page): Promise<void> {
+    await popupPage.evaluate(
+        ({ releaseKey, stateKey, releasedState }) => {
+            const release: unknown = Reflect.get(globalThis, releaseKey);
+            if (typeof release !== 'function') {
+                throw new Error('Missing runtime message gate release');
+            }
+            Reflect.apply(release, globalThis, []);
+            if (Reflect.get(globalThis, stateKey) !== releasedState) {
+                throw new Error('Runtime message gate did not release');
+            }
+        },
+        {
+            releaseKey: RUNTIME_MESSAGE_GATE_RELEASE_KEY,
+            stateKey: RUNTIME_MESSAGE_GATE_STATE_KEY,
+            releasedState: RUNTIME_MESSAGE_GATE_RELEASED_STATE,
+        },
+    );
+}
+
+/**
+ * Confirms the background persisted a mode instead of trusting optimistic UI.
+ *
+ * @param extensionPage - Extension page allowed to call the runtime API.
+ * @param expectedMode - Analysis mode expected from background preferences.
+ * @returns Promise resolving after GET_PREFS reports the expected mode.
+ */
+async function waitForStoredAnalysisMode(
+    extensionPage: Page,
+    expectedMode: string,
+): Promise<void> {
+    await expect
+        .poll(
+            () =>
+                extensionPage.evaluate(async (messageType) => {
+                    const chromeApi = Reflect.get(globalThis, 'chrome');
+                    if (typeof chromeApi !== 'object' || chromeApi === null) {
+                        throw new Error('Missing chrome API');
+                    }
+                    const runtime = Reflect.get(chromeApi, 'runtime');
+                    if (typeof runtime !== 'object' || runtime === null) {
+                        throw new Error('Missing chrome.runtime API');
+                    }
+                    const sendMessage = Reflect.get(runtime, 'sendMessage');
+                    if (typeof sendMessage !== 'function') {
+                        throw new Error(
+                            'Missing chrome.runtime.sendMessage API',
+                        );
+                    }
+
+                    const response: unknown = await new Promise(
+                        (resolve, reject) => {
+                            Reflect.apply(sendMessage, runtime, [
+                                { type: messageType },
+                                (result: unknown) => {
+                                    const lastError = Reflect.get(
+                                        runtime,
+                                        'lastError',
+                                    );
+                                    if (
+                                        typeof lastError === 'object' &&
+                                        lastError !== null
+                                    ) {
+                                        reject(
+                                            new Error(
+                                                String(
+                                                    Reflect.get(
+                                                        lastError,
+                                                        'message',
+                                                    ) ??
+                                                        'runtime.sendMessage failed',
+                                                ),
+                                            ),
+                                        );
+                                        return;
+                                    }
+                                    resolve(result);
+                                },
+                            ]);
+                        },
+                    );
+                    if (typeof response !== 'object' || response === null) {
+                        return null;
+                    }
+                    const prefs: unknown = Reflect.get(response, 'prefs');
+                    if (typeof prefs !== 'object' || prefs === null) {
+                        return null;
+                    }
+                    const analysisMode: unknown = Reflect.get(
+                        prefs,
+                        'analysisMode',
+                    );
+                    return analysisMode;
+                }, GET_PREFS_MESSAGE_TYPE),
+            { timeout: RUNTIME_MESSAGE_GATE_TIMEOUT_MS },
+        )
+        .toBe(expectedMode);
 }
 
 /**
  * Seeds a ready server result through extension storage for no-network e2e.
  *
  * @param popupPage - Open extension popup page.
+ * @param transcriptHash - Cache identity used to exercise exact hits or misses.
  */
-async function seedFreshLocalServerCache(popupPage: Page): Promise<void> {
-    await popupPage.evaluate(async () => {
-        const chromeApi = Reflect.get(globalThis, 'chrome');
-        if (typeof chromeApi !== 'object' || chromeApi === null) {
-            throw new Error('Missing chrome API');
-        }
-        const storage = Reflect.get(chromeApi, 'storage');
-        if (typeof storage !== 'object' || storage === null) {
-            throw new Error('Missing chrome.storage API');
-        }
-        const local = Reflect.get(storage, 'local');
-        if (typeof local !== 'object' || local === null) {
-            throw new Error('Missing chrome.storage.local API');
-        }
-        const set = Reflect.get(local, 'set');
-        if (typeof set !== 'function') {
-            throw new Error('Missing chrome.storage.local.set API');
-        }
+async function seedFreshLocalServerCache(
+    popupPage: Page,
+    transcriptHash = E2E_TRANSCRIPT_HASH,
+): Promise<void> {
+    await popupPage.evaluate(
+        async (fixture) => {
+            const chromeApi = Reflect.get(globalThis, 'chrome');
+            if (typeof chromeApi !== 'object' || chromeApi === null) {
+                throw new Error('Missing chrome API');
+            }
+            const storage = Reflect.get(chromeApi, 'storage');
+            if (typeof storage !== 'object' || storage === null) {
+                throw new Error('Missing chrome.storage API');
+            }
+            const local = Reflect.get(storage, 'local');
+            if (typeof local !== 'object' || local === null) {
+                throw new Error('Missing chrome.storage.local API');
+            }
+            const set = Reflect.get(local, 'set');
+            const remove = Reflect.get(local, 'remove');
+            if (typeof set !== 'function' || typeof remove !== 'function') {
+                throw new Error('Missing chrome.storage.local mutation API');
+            }
 
-        const key = 'topskip:server-result-cache:server-v4:e2eFixture1';
-        await new Promise<void>((resolve, reject) => {
-            Reflect.apply(set, local, [
-                {
-                    [key]: {
-                        videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v4',
-                        sourceResultId: 'result-e2eFixture1-server-v4',
-                        freshness: { expiresAtMs: 4_102_444_800_000 },
-                        promoBlocks: [
-                            { startSec: 4, endSec: 24, confidence: 'high' },
-                        ],
-                        storedAtMs: 1_900_000_000_000,
+            const keyForHash = (hash: string): string =>
+                [
+                    'topskip:server-result-cache',
+                    fixture.algorithmVersion,
+                    fixture.videoId,
+                    fixture.languageCode,
+                    hash,
+                ].join(':');
+            const key = keyForHash(fixture.transcriptHash);
+            await new Promise<void>((resolve, reject) => {
+                Reflect.apply(remove, local, [
+                    [keyForHash(fixture.defaultTranscriptHash), key],
+                    () => {
+                        const runtime = Reflect.get(chromeApi, 'runtime');
+                        const lastError =
+                            typeof runtime === 'object' && runtime !== null
+                                ? Reflect.get(runtime, 'lastError')
+                                : undefined;
+                        if (
+                            typeof lastError === 'object' &&
+                            lastError !== null
+                        ) {
+                            reject(
+                                new Error(
+                                    String(Reflect.get(lastError, 'message')),
+                                ),
+                            );
+                            return;
+                        }
+                        resolve();
                     },
-                },
-                () => {
-                    const runtime = Reflect.get(chromeApi, 'runtime');
-                    const lastError =
-                        typeof runtime === 'object' && runtime !== null
-                            ? Reflect.get(runtime, 'lastError')
-                            : undefined;
-                    if (typeof lastError === 'object' && lastError !== null) {
-                        reject(
-                            new Error(
-                                String(Reflect.get(lastError, 'message')),
-                            ),
-                        );
-                        return;
-                    }
-                    resolve();
-                },
-            ]);
-        });
-    });
+                ]);
+            });
+            const storedAtMs = Date.now();
+            await new Promise<void>((resolve, reject) => {
+                Reflect.apply(set, local, [
+                    {
+                        'topskip:server-config': {
+                            config: {
+                                apiVersion: fixture.apiVersion,
+                                algorithmVersion: fixture.algorithmVersion,
+                                supportedCapabilities: fixture.capabilities,
+                                supportIssueBaseUrl:
+                                    'https://github.com/maximtop/topskip/issues/new',
+                            },
+                            fetchedAtMs: storedAtMs,
+                        },
+                        'topskip:server-config-refresh-attempt': storedAtMs,
+                        [key]: {
+                            status: 'ready',
+                            videoId: fixture.videoId,
+                            languageCode: fixture.languageCode,
+                            transcriptHash: fixture.transcriptHash,
+                            algorithmVersion: fixture.algorithmVersion,
+                            sourceResultId: 'result-e2eFixture1-server-v5',
+                            freshness: { expiresAtMs: 4_102_444_800_000 },
+                            promoBlocks: [
+                                { startSec: 4, endSec: 24, confidence: 'high' },
+                            ],
+                            storedAtMs,
+                        },
+                    },
+                    () => {
+                        const runtime = Reflect.get(chromeApi, 'runtime');
+                        const lastError =
+                            typeof runtime === 'object' && runtime !== null
+                                ? Reflect.get(runtime, 'lastError')
+                                : undefined;
+                        if (
+                            typeof lastError === 'object' &&
+                            lastError !== null
+                        ) {
+                            reject(
+                                new Error(
+                                    String(Reflect.get(lastError, 'message')),
+                                ),
+                            );
+                            return;
+                        }
+                        resolve();
+                    },
+                ]);
+            });
+        },
+        {
+            apiVersion: E2E_SERVER_API_VERSION,
+            algorithmVersion: E2E_SERVER_ALGORITHM_VERSION,
+            capabilities: [...SERVER_ANALYSIS_SUPPORTED_CAPABILITIES],
+            videoId: E2E_VIDEO_ID,
+            languageCode: E2E_CAPTION_LANGUAGE,
+            transcriptHash,
+            defaultTranscriptHash: E2E_TRANSCRIPT_HASH,
+        },
+    );
 }
 
 test.describe('TopSkip extension', () => {
@@ -284,6 +569,74 @@ test.describe('TopSkip extension', () => {
             );
             await popupPage.close();
 
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('headless popup survives delayed BYOK provider metadata', async () => {
+        test.setTimeout(POPUP_RACE_TEST_TIMEOUT_MS);
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(true),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const setupPage = await context.newPage();
+            trackPageErrors(setupPage, 'popup-race-setup', errors);
+            await setupPage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            const byokMode = setupPage.getByRole('radio', {
+                name: 'Private BYOK',
+            });
+            await setupPage.getByText('Private BYOK', { exact: true }).click();
+            await expect(byokMode).toBeChecked();
+            await waitForStoredAnalysisMode(setupPage, BYOK_ANALYSIS_MODE);
+            const popupState = {
+                videoId: 'popup-provider-race',
+                status: 'not_configured',
+                source: 'local_provider',
+            };
+            await seedPopupState(setupPage, popupState);
+
+            const popupPage = await context.newPage();
+            trackPageErrors(popupPage, 'popup-provider-race', errors);
+            await installRuntimeMessageGate(
+                popupPage,
+                GET_MODEL_SETTINGS_MESSAGE_TYPE,
+            );
+            await setupPage.bringToFront();
+            await popupPage.goto(
+                `chrome-extension://${extensionId}/popup.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            await waitForPopupUi(popupPage);
+            await waitForHeldRuntimeMessage(popupPage);
+            await setupPage.bringToFront();
+            await seedPopupState(setupPage, popupState);
+
+            await expect(
+                popupPage.getByText('Private BYOK setup required'),
+            ).toBeVisible();
+            await expect(
+                popupPage.getByText(
+                    'Configure Private BYOK in settings before promo analysis can run.',
+                ),
+            ).toBeVisible();
+            await releaseHeldRuntimeMessage(popupPage);
+            await expect(popupPage.getByRole('alert')).toHaveCount(0);
+            await expect(
+                popupPage.getByText('Something went wrong'),
+            ).toHaveCount(0);
+            await expect(
+                popupPage.getByText(/Value 'provider' for 'placeholder'/),
+            ).toHaveCount(0);
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();
@@ -370,12 +723,11 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('server mode reports pending analysis from local backend', async () => {
-        const jobId = 'local-e2eFixture1-server-v4';
+    test('server transcript contract fixture reaches analysis phase', async () => {
+        const jobId = 'local-e2eFixture1-server-v5';
         const processingResponse = {
             status: 'processing',
-            videoId: 'e2eFixture1',
-            algorithmVersion: 'server-v4',
+            ...E2E_TRANSCRIPT_IDENTITY,
             jobId,
             pollAfterSec: 3,
         };
@@ -408,9 +760,12 @@ test.describe('TopSkip extension', () => {
                 body = body + chunk;
             });
             req.on('end', () => {
-                expect(JSON.parse(body)).toMatchObject({
-                    videoId: 'e2eFixture1',
+                const request: unknown = JSON.parse(body) as unknown;
+                expect(request).toMatchObject({
+                    videoId: E2E_VIDEO_ID,
                     extensionVersion: '0.1.0',
+                    languageCode: E2E_CAPTION_LANGUAGE,
+                    segments: E2E_CAPTION_SEGMENTS,
                     client: {
                         source: 'chrome-extension',
                         capabilities: [
@@ -418,8 +773,8 @@ test.describe('TopSkip extension', () => {
                         ],
                     },
                 });
-                expect(JSON.parse(body)).not.toHaveProperty('algorithmVersion');
-                expect(body).not.toContain('transcript');
+                expect(request).not.toHaveProperty('algorithmVersion');
+                expect(request).not.toHaveProperty('transcriptHash');
                 res.writeHead(202, { 'content-type': 'application/json' });
                 res.end(JSON.stringify(processingResponse));
                 resolveRequestSeen();
@@ -510,18 +865,20 @@ test.describe('TopSkip extension', () => {
             });
             req.on('end', () => {
                 expect(JSON.parse(body)).toMatchObject({
-                    videoId: 'e2eFixture1',
+                    videoId: E2E_VIDEO_ID,
                     extensionVersion: '0.1.0',
+                    languageCode: E2E_CAPTION_LANGUAGE,
+                    segments: E2E_CAPTION_SEGMENTS,
                 });
                 expect(JSON.parse(body)).not.toHaveProperty('algorithmVersion');
+                expect(JSON.parse(body)).not.toHaveProperty('transcriptHash');
                 res.writeHead(200, { 'content-type': 'application/json' });
                 res.end(
                     JSON.stringify({
                         status: 'ready',
-                        videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v4',
+                        ...E2E_TRANSCRIPT_IDENTITY,
                         source: 'server_cache',
-                        sourceResultId: 'result-e2eFixture1-server-v4',
+                        sourceResultId: 'result-e2eFixture1-server-v5',
                         freshness: { expiresAtMs: 4_102_444_800_000 },
                         promoBlocks: [
                             { startSec: 4, endSec: 24, confidence: 'high' },
@@ -626,9 +983,12 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('server processing job polls fixture completion and skips only future blocks', async () => {
-        const jobId = 'local-e2eFixture1-server-v4';
+    test('caption phase reaches ready and skips only future blocks', async () => {
+        const jobId = 'local-e2eFixture1-server-v5';
         let terminalReady = false;
+        const heldAnalysis: { response: ServerResponse | null } = {
+            response: null,
+        };
         let resolveRequestSeen: () => void = () => {};
         let resolveProcessingPollSeen: () => void = () => {};
         let resolveReadyPollSeen: () => void = () => {};
@@ -643,10 +1003,9 @@ test.describe('TopSkip extension', () => {
         });
         const readyResponse = {
             status: 'ready',
-            videoId: 'e2eFixture1',
-            algorithmVersion: 'server-v4',
+            ...E2E_TRANSCRIPT_IDENTITY,
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v4',
+            sourceResultId: 'result-e2eFixture1-server-v5',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: [
                 { startSec: 4, endSec: 24, confidence: 'high' },
@@ -666,24 +1025,18 @@ test.describe('TopSkip extension', () => {
                 });
                 req.on('end', () => {
                     expect(JSON.parse(body)).toMatchObject({
-                        videoId: 'e2eFixture1',
+                        videoId: E2E_VIDEO_ID,
                         extensionVersion: '0.1.0',
+                        languageCode: E2E_CAPTION_LANGUAGE,
+                        segments: E2E_CAPTION_SEGMENTS,
                     });
                     expect(JSON.parse(body)).not.toHaveProperty(
                         'algorithmVersion',
                     );
-                    res.writeHead(202, {
-                        'content-type': 'application/json',
-                    });
-                    res.end(
-                        JSON.stringify({
-                            status: 'processing',
-                            videoId: 'e2eFixture1',
-                            algorithmVersion: 'server-v4',
-                            jobId,
-                            pollAfterSec: 1,
-                        }),
+                    expect(JSON.parse(body)).not.toHaveProperty(
+                        'transcriptHash',
                     );
+                    heldAnalysis.response = res;
                     resolveRequestSeen();
                 });
                 return;
@@ -706,23 +1059,12 @@ test.describe('TopSkip extension', () => {
                 res.end(
                     JSON.stringify({
                         status: 'processing',
-                        videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v4',
+                        ...E2E_TRANSCRIPT_IDENTITY,
                         jobId,
                         pollAfterSec: 1,
                     }),
                 );
                 resolveProcessingPollSeen();
-                return;
-            }
-
-            if (
-                req.method === 'POST' &&
-                req.url === `/v1/analysis/jobs/${jobId}/fixture-result`
-            ) {
-                terminalReady = true;
-                res.writeHead(200, { 'content-type': 'application/json' });
-                res.end(JSON.stringify(readyResponse));
                 return;
             }
 
@@ -753,17 +1095,48 @@ test.describe('TopSkip extension', () => {
             trackPageErrors(page, 'fixture-polling', errors);
             await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
             await requestSeen;
+
+            const acquisitionPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await page.bringToFront();
+            await expect(
+                acquisitionPopup.getByText('Getting captions'),
+            ).toBeVisible({ timeout: 10_000 });
+            await acquisitionPopup.close();
+
+            const pendingAnalysisResponse = heldAnalysis.response;
+            if (pendingAnalysisResponse === null) {
+                throw new Error('Missing held analysis response.');
+            }
+            pendingAnalysisResponse.writeHead(202, {
+                'content-type': 'application/json',
+            });
+            pendingAnalysisResponse.end(
+                JSON.stringify({
+                    status: 'processing',
+                    ...E2E_TRANSCRIPT_IDENTITY,
+                    jobId,
+                    pollAfterSec: 1,
+                }),
+            );
+            heldAnalysis.response = null;
             await processingPollSeen;
 
-            const completed = await fetch(
-                `http://127.0.0.1:8787/v1/analysis/jobs/${jobId}/fixture-result`,
-                {
-                    method: 'POST',
-                    headers: { 'content-type': 'application/json' },
-                    body: JSON.stringify({ status: 'ready' }),
-                },
+            const analysisPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
             );
-            expect(completed.status).toBe(200);
+            await page.bringToFront();
+            await expect(
+                analysisPopup.getByText('Server analysis pending'),
+            ).toBeVisible({ timeout: 10_000 });
+            await analysisPopup.close();
+
+            terminalReady = true;
             await readyPollSeen;
             await page.waitForTimeout(300);
 
@@ -780,9 +1153,10 @@ test.describe('TopSkip extension', () => {
                 resultPopup.getByText('Server cache hit.', { exact: true }),
             ).toHaveCount(0);
             await expect(
-                resultPopup
-                    .getByTestId('popup-promo-timeline')
-                    .getByText('2:00', { exact: true }),
+                resultPopup.getByText('0:04 - 0:24', { exact: true }),
+            ).toBeVisible();
+            await expect(
+                resultPopup.getByText('0:35 - 0:45', { exact: true }),
             ).toBeVisible();
             await resultPopup.close();
 
@@ -855,7 +1229,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('prefs update cancellation stops scheduled server status polling', async () => {
-        const jobId = 'local-e2eFixture1-server-v4';
+        const jobId = 'local-e2eFixture1-server-v5';
         let statusRequestCount = 0;
         let resolveRequestSeen: () => void = () => {};
         const requestSeen = new Promise<void>((resolve) => {
@@ -871,8 +1245,7 @@ test.describe('TopSkip extension', () => {
                 res.end(
                     JSON.stringify({
                         status: 'processing',
-                        videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v4',
+                        ...E2E_TRANSCRIPT_IDENTITY,
                         jobId,
                         pollAfterSec: 4,
                     }),
@@ -891,8 +1264,7 @@ test.describe('TopSkip extension', () => {
                 res.end(
                     JSON.stringify({
                         status: 'processing',
-                        videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v4',
+                        ...E2E_TRANSCRIPT_IDENTITY,
                         jobId,
                         pollAfterSec: 4,
                     }),
@@ -950,34 +1322,299 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('Private BYOK keeps the local backend idle until a fresh Server watch lifecycle', async () => {
-        const backendRequests: string[] = [];
-        let resolveServerRequestSeen: () => void = () => {};
-        const serverRequestSeen = new Promise<void>((resolve) => {
-            resolveServerRequestSeen = resolve;
-        });
+    test('job loss resubmits one exact captured transcript', async () => {
+        const jobId = 'lost-e2eFixture1-server-v5';
+        const requestBodies: string[] = [];
+        let pollRequestCount = 0;
         const backend = createServer((req, res) => {
-            backendRequests.push(`${req.method ?? 'UNKNOWN'} ${req.url ?? ''}`);
             if (handlePublicApiBootstrap(req, res)) {
                 return;
             }
             if (req.method === 'POST' && req.url === '/v1/analysis') {
                 expectAuthenticatedServerRequest(req);
-                res.writeHead(200, { 'content-type': 'application/json' });
+                let body = '';
+                req.setEncoding('utf8');
+                req.on('data', (chunk) => {
+                    body = body + chunk;
+                });
+                req.on('end', () => {
+                    requestBodies.push(body);
+                    res.writeHead(requestBodies.length === 1 ? 202 : 200, {
+                        'content-type': 'application/json',
+                    });
+                    if (requestBodies.length === 1) {
+                        res.end(
+                            JSON.stringify({
+                                status: 'processing',
+                                ...E2E_TRANSCRIPT_IDENTITY,
+                                jobId,
+                                pollAfterSec: 1,
+                            }),
+                        );
+                        return;
+                    }
+                    res.end(
+                        JSON.stringify({
+                            status: 'ready',
+                            ...E2E_TRANSCRIPT_IDENTITY,
+                            source: 'server_cache',
+                            sourceResultId:
+                                'result-e2eFixture1-resubmitted-server-v5',
+                            freshness: {
+                                expiresAtMs: 4_102_444_800_000,
+                            },
+                            promoBlocks: [
+                                {
+                                    startSec: 35,
+                                    endSec: 45,
+                                    confidence: 'high',
+                                },
+                            ],
+                        }),
+                    );
+                });
+                return;
+            }
+            if (
+                req.method === 'GET' &&
+                req.url === `/v1/analysis/jobs/${jobId}`
+            ) {
+                expectAuthenticatedServerRequest(req);
+                pollRequestCount += 1;
+                res.writeHead(404, { 'content-type': 'application/json' });
                 res.end(
                     JSON.stringify({
-                        status: 'no_promo',
-                        videoId: 'e2eFixture1',
-                        algorithmVersion: 'server-v4',
-                        sourceResultId: 'result-e2eFixture1-server-v4',
-                        freshness: { expiresAtMs: 4_102_444_800_000 },
+                        status: 'error',
+                        ...E2E_TRANSCRIPT_IDENTITY,
+                        error: { code: 'job_not_found' },
                     }),
                 );
-                resolveServerRequestSeen();
                 return;
             }
             res.writeHead(404);
             res.end();
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const warmupPopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await warmupPopup.close();
+
+            const page = await context.newPage();
+            trackPageErrors(page, 'fixture-job-resubmit', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+
+            await expect
+                .poll(() => requestBodies.length, { timeout: 15_000 })
+                .toBe(2);
+            expect(requestBodies[1]).toBe(requestBodies[0]);
+            expect(pollRequestCount).toBe(1);
+
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await page.bringToFront();
+            await expect(
+                popupPage.getByText('Server-detected blocks ready'),
+            ).toBeVisible({ timeout: 10_000 });
+            await popupPage.close();
+            await page.waitForTimeout(1_200);
+            expect(requestBodies).toHaveLength(2);
+            expect(pollRequestCount).toBe(1);
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
+        }
+    });
+
+    test('caption failure never contacts TopSkip', async () => {
+        const backendRequests: string[] = [];
+        const backend = createServer((req, res) => {
+            backendRequests.push(`${req.method ?? 'UNKNOWN'} ${req.url ?? ''}`);
+            res.writeHead(500, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ status: 'unexpected-request' }));
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const setupPage = await context.newPage();
+            trackPageErrors(setupPage, 'fixture-caption-failure', errors);
+            await setupPage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            const baseFailureState = {
+                videoId: E2E_VIDEO_ID,
+                sessionId: '00000000-0000-4000-8000-000000000012',
+                source: 'server',
+                serverFailure: {
+                    apiVersion: E2E_SERVER_API_VERSION,
+                    extensionVersion: '0.1.0',
+                },
+            } as const;
+            await seedPopupState(setupPage, {
+                videoId: baseFailureState.videoId,
+                sessionId: baseFailureState.sessionId,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            });
+            await seedPopupState(setupPage, {
+                ...baseFailureState,
+                status: 'unavailable',
+                serverFailure: {
+                    ...baseFailureState.serverFailure,
+                    code: 'captions_unavailable',
+                },
+            });
+
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await setupPage.bringToFront();
+            await expect(
+                popupPage.getByRole('button', {
+                    name: 'Report if this seems wrong',
+                }),
+            ).toBeVisible();
+            await expect(popupPage.getByText(/support id/iu)).toHaveCount(0);
+
+            await seedPopupState(setupPage, {
+                ...baseFailureState,
+                status: 'error',
+                serverFailure: {
+                    ...baseFailureState.serverFailure,
+                    code: 'caption_extraction_failed',
+                },
+            });
+            await expect(
+                popupPage.getByRole('button', { name: 'Report on GitHub' }),
+            ).toBeVisible({ timeout: 10_000 });
+            await popupPage.close();
+
+            expect(backendRequests).toEqual([]);
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
+        }
+    });
+
+    test('stale navigation session cannot replace the current result', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const setupPage = await context.newPage();
+            trackPageErrors(setupPage, 'fixture-stale-session', errors);
+            await setupPage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await setupPage.bringToFront();
+
+            const staleSessionId = '00000000-0000-4000-8000-000000000021';
+            const currentSessionId = '00000000-0000-4000-8000-000000000022';
+            await seedPopupState(setupPage, {
+                videoId: 'stale-video',
+                sessionId: staleSessionId,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            });
+            await seedPopupState(setupPage, {
+                videoId: E2E_VIDEO_ID,
+                sessionId: currentSessionId,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            });
+            await seedPopupState(setupPage, {
+                videoId: E2E_VIDEO_ID,
+                sessionId: currentSessionId,
+                status: 'detected',
+                source: 'server_cache',
+                durationSec: 60,
+                promoBlocks: [{ startSec: 35, endSec: 45, confidence: 'high' }],
+            });
+            await seedPopupState(setupPage, {
+                videoId: 'stale-video',
+                sessionId: staleSessionId,
+                status: 'error',
+                source: 'server',
+                serverFailure: {
+                    code: 'internal_error',
+                    apiVersion: E2E_SERVER_API_VERSION,
+                    algorithmVersion: E2E_SERVER_ALGORITHM_VERSION,
+                    extensionVersion: '0.1.0',
+                },
+            });
+
+            await expect(
+                popupPage.getByText('Server-detected blocks ready'),
+            ).toBeVisible({ timeout: 10_000 });
+            await expect(
+                popupPage.getByText('0:35 - 0:45', { exact: true }),
+            ).toBeVisible();
+            await expect(
+                popupPage.getByText('TopSkip Server error'),
+            ).toHaveCount(0);
+            await popupPage.close();
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('Private BYOK remains isolated', async () => {
+        const backendRequests: string[] = [];
+        const backend = createServer((req, res) => {
+            backendRequests.push(`${req.method ?? 'UNKNOWN'} ${req.url ?? ''}`);
+            res.writeHead(500, { 'content-type': 'application/json' });
+            res.end(JSON.stringify({ status: 'unexpected-request' }));
         });
         await new Promise<void>((resolve) => {
             backend.listen(8787, '127.0.0.1', () => resolve());
@@ -1027,45 +1664,6 @@ test.describe('TopSkip extension', () => {
             await popupPage.close();
             await byokWatchPage.waitForTimeout(1_200);
             expect(backendRequests).toEqual([]);
-
-            await optionsPage.bringToFront();
-            await optionsPage
-                .getByText('TopSkip Server', { exact: true })
-                .click();
-            await expect(serverMode).toBeChecked();
-            await byokWatchPage.bringToFront();
-            await byokWatchPage.waitForTimeout(1_200);
-            expect(backendRequests).toEqual([]);
-
-            await byokWatchPage.close();
-            const serverWatchPage = await context.newPage();
-            trackPageErrors(
-                serverWatchPage,
-                'fixture-server-route-smoke',
-                errors,
-            );
-            await serverWatchPage.goto('/video.html', {
-                waitUntil: 'domcontentloaded',
-            });
-            await Promise.race([
-                serverRequestSeen,
-                new Promise<never>((_resolve, reject) => {
-                    setTimeout(
-                        () =>
-                            reject(
-                                new Error(
-                                    'Timed out waiting for resumed Server request.',
-                                ),
-                            ),
-                        15_000,
-                    );
-                }),
-            ]);
-            expect(backendRequests).toEqual([
-                'GET /v1/config',
-                'POST /v1/installations/register',
-                'POST /v1/analysis',
-            ]);
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();
@@ -1075,7 +1673,52 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('fresh local cache hit skips fixture playback without a backend', async () => {
+    test('local cache requires recaptured exact transcript identity', async () => {
+        const backendRequests: string[] = [];
+        const backend = createServer((req, res) => {
+            backendRequests.push(`${req.method ?? 'UNKNOWN'} ${req.url ?? ''}`);
+            if (handlePublicApiBootstrap(req, res)) {
+                return;
+            }
+            if (req.method === 'POST' && req.url === '/v1/analysis') {
+                expectAuthenticatedServerRequest(req);
+                let body = '';
+                req.setEncoding('utf8');
+                req.on('data', (chunk) => {
+                    body = body + chunk;
+                });
+                req.on('end', () => {
+                    const request: unknown = JSON.parse(body) as unknown;
+                    expect(request).toMatchObject({
+                        videoId: E2E_VIDEO_ID,
+                        languageCode: E2E_CAPTION_LANGUAGE,
+                        segments: E2E_CAPTION_SEGMENTS,
+                    });
+                    expect(request).not.toHaveProperty('transcriptHash');
+                    res.writeHead(200, {
+                        'content-type': 'application/json',
+                    });
+                    res.end(
+                        JSON.stringify({
+                            status: 'no_promo',
+                            ...E2E_TRANSCRIPT_IDENTITY,
+                            sourceResultId:
+                                'result-e2eFixture1-exact-miss-server-v5',
+                            freshness: {
+                                expiresAtMs: 4_102_444_800_000,
+                            },
+                        }),
+                    );
+                });
+                return;
+            }
+            res.writeHead(404);
+            res.end();
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
+
         const errors: string[] = [];
         const context = await chromium.launchPersistentContext(
             '',
@@ -1132,10 +1775,43 @@ test.describe('TopSkip extension', () => {
                     { timeout: 12_000 },
                 )
                 .toBeGreaterThan(23);
+            expect(backendRequests).toEqual([]);
+
+            await page.close();
+            const setupPage = await context.newPage();
+            trackPageErrors(setupPage, 'fixture-local-cache-miss', errors);
+            await setupPage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            await seedFreshLocalServerCache(setupPage, 'f'.repeat(64));
+            await setupPage.close();
+
+            const recapturedPage = await context.newPage();
+            trackPageErrors(recapturedPage, 'fixture-recaptured-cache', errors);
+            await recapturedPage.goto('/video.html', {
+                waitUntil: 'domcontentloaded',
+            });
+            await expect
+                .poll(
+                    () =>
+                        backendRequests.filter(
+                            (request) => request === 'POST /v1/analysis',
+                        ).length,
+                    { timeout: 15_000 },
+                )
+                .toBe(1);
+            expect(backendRequests).toEqual([
+                'POST /v1/installations/register',
+                'POST /v1/analysis',
+            ]);
 
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
         }
     });
 
@@ -1229,7 +1905,15 @@ test.describe('TopSkip extension', () => {
                 extensionId,
                 errors,
             );
-            await seedDetectedPopupState(popupPage);
+            await seedPopupState(popupPage, {
+                videoId: 'visual-fixture',
+                status: 'detected',
+                durationSec: 600,
+                promoBlocks: [
+                    { startSec: 92, endSec: 125 },
+                    { startSec: 490, endSec: 522 },
+                ],
+            });
 
             await popupPage.setViewportSize({ width: 340, height: 700 });
             await expect(popupPage.getByTestId('popup-shell')).toBeVisible();

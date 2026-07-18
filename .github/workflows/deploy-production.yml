@@ -2,6 +2,11 @@ name: Deploy TopSkip production
 
 on:
     workflow_dispatch:
+        inputs:
+            expected_sha:
+                description: Exact default-branch commit SHA approved for production
+                required: true
+                type: string
 
 permissions: {}
 
@@ -19,7 +24,25 @@ jobs:
             contents: read
         outputs:
             image_repository: ${{ steps.image.outputs.repository }}
+            algorithm_version: ${{ steps.algorithm.outputs.version }}
         steps:
+            - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+              with:
+                  persist-credentials: false
+
+            - name: Require the explicitly approved commit
+              env:
+                  EXPECTED_SHA: ${{ inputs.expected_sha }}
+              run: |
+                  if ! [[ "${EXPECTED_SHA}" =~ ^[a-f0-9]{40}$ ]]; then
+                      echo 'expected_sha must be a lowercase 40-hex commit SHA.' >&2
+                      exit 1
+                  fi
+                  if [[ "${EXPECTED_SHA}" != "${GITHUB_SHA}" ]]; then
+                      echo 'expected_sha does not match the dispatched commit.' >&2
+                      exit 1
+                  fi
+
             - name: Require the official repository and default branch
               env:
                   DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
@@ -53,6 +76,16 @@ jobs:
             - name: Resolve the allow-listed image repository
               id: image
               run: echo 'repository=ghcr.io/maximtop/topskip-backend' >> "${GITHUB_OUTPUT}"
+
+            - name: Resolve the source-owned algorithm version
+              id: algorithm
+              run: |
+                  algorithm_version=$(sed -nE "s/^export const SERVER_ANALYSIS_ALGORITHM_VERSION = '(server-v[1-9][0-9]*)';$/\1/p" common/src/server-analysis-contract.ts)
+                  if ! [[ "${algorithm_version}" =~ ^server-v[1-9][0-9]*$ ]]; then
+                      echo 'Could not extract one allow-listed algorithm version.' >&2
+                      exit 1
+                  fi
+                  echo "version=${algorithm_version}" >> "${GITHUB_OUTPUT}"
 
     build:
         name: Build immutable backend image
@@ -141,6 +174,8 @@ jobs:
                   DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
                   IMAGE_REFERENCE: ${{ needs.validate.outputs.image_repository }}@${{ needs.build.outputs.digest }}
                   PUBLIC_HEALTH_URL: https://topskip.maximtop.dev/v1/health
+                  PUBLIC_CONFIG_URL: https://topskip.maximtop.dev/v1/config
+                  EXPECTED_ALGORITHM_VERSION: ${{ needs.validate.outputs.algorithm_version }}
               run: |
                   if [[ -z "${DEPLOY_PORT}" ]]; then
                       DEPLOY_PORT=22
@@ -164,8 +199,9 @@ jobs:
                           "topskip-deploy@${DEPLOY_HOST}" \
                           "$@"
                   }
-                  public_health() {
+                  public_api() {
                       local deadline=$((SECONDS + 90))
+                      local config
                       local response
                       while ((SECONDS < deadline)); do
                           response=$(curl \
@@ -176,7 +212,18 @@ jobs:
                               --max-time 10 \
                               "${PUBLIC_HEALTH_URL}" 2>/dev/null || true)
                           if [[ $(tr -d '[:space:]' <<<"${response}") == '{"ok":true}' ]]; then
-                              return 0
+                              config=$(curl \
+                                  --fail \
+                                  --silent \
+                                  --show-error \
+                                  --connect-timeout 5 \
+                                  --max-time 10 \
+                                  "${PUBLIC_CONFIG_URL}" 2>/dev/null || true)
+                              if jq --exit-status --arg version "${EXPECTED_ALGORITHM_VERSION}" \
+                                  '.apiVersion == 1 and .algorithmVersion == $version' \
+                                  <<<"${config}" >/dev/null 2>&1; then
+                                  return 0
+                              fi
                           fi
                           sleep 3
                       done
@@ -187,14 +234,14 @@ jobs:
                       echo 'Remote deployment failed; its loopback check already attempted restoration.' >&2
                       exit 1
                   fi
-                  if public_health; then
+                  if public_api; then
                       remote status
                       exit 0
                   fi
 
                   echo 'Public health check failed; requesting rollback.' >&2
                   remote rollback || echo 'Automatic rollback failed and needs operator attention.' >&2
-                  public_health || true
+                  public_api || true
                   exit 1
 
             - name: Remove SSH credentials

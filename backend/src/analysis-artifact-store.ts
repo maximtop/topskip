@@ -8,6 +8,7 @@ import {
     unlinkSync,
     writeFileSync,
 } from 'node:fs';
+import { randomUUID } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import * as v from 'valibot';
@@ -15,6 +16,7 @@ import * as v from 'valibot';
 import {
     analysisRunArtifactSchema,
     BACKEND_ANALYSIS_PROVIDER_ID,
+    BACKEND_ANALYSIS_PROVIDER_ID_MAX_LENGTH,
     type AnalysisRunArtifact,
 } from '@topskip/backend/analysis/promo-analysis-types';
 import {
@@ -32,7 +34,6 @@ import {
 import { MS_PER_SECOND, SECONDS_PER_HOUR } from '@topskip/common/constants';
 import { BackendPublicState } from '@topskip/backend/public-state';
 
-const REDACTED_VALUE = '[REDACTED]';
 const TEST_TRANSCRIPT_TEXT =
     'Intro content. This segment is sponsored by a local fixture.';
 const TEST_RAW_MODEL_RESPONSE =
@@ -80,6 +81,49 @@ const safeOperationalValueSchema = v.union([
     v.null(),
 ]);
 
+const operationalArtifactSourceSchema = v.picklist([
+    'local_backend',
+    'test_fixture',
+] as const);
+
+const operationalProviderSchema = v.pipe(
+    v.string(),
+    v.minLength(1),
+    v.maxLength(BACKEND_ANALYSIS_PROVIDER_ID_MAX_LENGTH),
+    v.regex(/^[a-z0-9][a-z0-9._-]*$/u),
+);
+
+/**
+ * Only non-payload identifiers may survive in durable operational diagnostics.
+ */
+type SafeOperationalDiagnostics = {
+    artifactSource?: v.InferOutput<typeof operationalArtifactSourceSchema>;
+    provider?: string;
+};
+
+const safeOperationalDiagnosticsSchema = v.pipe(
+    v.record(v.string(), safeOperationalValueSchema),
+    v.transform((input): SafeOperationalDiagnostics => {
+        const diagnostics: SafeOperationalDiagnostics = {};
+        const artifactSource = v.safeParse(
+            operationalArtifactSourceSchema,
+            input.artifactSource,
+        );
+        if (artifactSource.success) {
+            diagnostics.artifactSource = artifactSource.output;
+        }
+        const provider = v.safeParse(operationalProviderSchema, input.provider);
+        if (provider.success) {
+            diagnostics.provider = provider.output;
+        }
+        return diagnostics;
+    }),
+    v.strictObject({
+        artifactSource: v.optional(operationalArtifactSourceSchema),
+        provider: v.optional(operationalProviderSchema),
+    }),
+);
+
 const legacyUnavailableResponseSchema = v.strictObject({
     status: v.literal('unavailable'),
     videoId: v.pipe(v.string(), v.minLength(1)),
@@ -106,17 +150,92 @@ const legacyTerminalErrorResponseSchema = v.strictObject({
     }),
 });
 
+const legacyReadyResponseSchema = v.strictObject({
+    status: v.literal('ready'),
+    videoId: v.pipe(v.string(), v.minLength(1)),
+    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
+    source: v.literal('server_cache'),
+    sourceResultId: v.pipe(v.string(), v.minLength(1)),
+    freshness: v.strictObject({
+        expiresAtMs: finiteEpochMsSchema,
+    }),
+    promoBlocks: v.pipe(
+        v.array(
+            v.strictObject({
+                startSec: v.pipe(v.number(), v.minValue(0)),
+                endSec: v.optional(v.pipe(v.number(), v.minValue(0))),
+                confidence: v.optional(
+                    v.picklist(['low', 'medium', 'high'] as const),
+                ),
+            }),
+        ),
+        v.minLength(1),
+    ),
+});
+
+const legacyNoPromoResponseSchema = v.strictObject({
+    status: v.literal('no_promo'),
+    videoId: v.pipe(v.string(), v.minLength(1)),
+    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
+    sourceResultId: v.pipe(v.string(), v.minLength(1)),
+    freshness: v.strictObject({
+        expiresAtMs: finiteEpochMsSchema,
+    }),
+});
+
+const legacyStructuredUnavailableResponseSchema = v.strictObject({
+    status: v.literal('unavailable'),
+    videoId: v.pipe(v.string(), v.minLength(1)),
+    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
+    error: v.strictObject({
+        code: v.pipe(v.string(), v.minLength(1)),
+        supportId: v.optional(v.pipe(v.string(), v.minLength(1))),
+        retryAfterSec: v.optional(
+            v.pipe(v.number(), v.integer(), v.minValue(1)),
+        ),
+    }),
+});
+
+const legacyStructuredTerminalErrorResponseSchema = v.strictObject({
+    status: v.literal('error'),
+    videoId: v.optional(v.pipe(v.string(), v.minLength(1))),
+    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
+    error: v.strictObject({
+        code: v.pipe(v.string(), v.minLength(1)),
+        supportId: v.optional(v.pipe(v.string(), v.minLength(1))),
+        retryAfterSec: v.optional(
+            v.pipe(v.number(), v.integer(), v.minValue(1)),
+        ),
+    }),
+});
+
 const terminalResponseSchema = v.union([
     readyResponseSchema,
     noPromoResponseSchema,
     unavailableResponseSchema,
     terminalErrorResponseSchema,
+    legacyReadyResponseSchema,
+    legacyNoPromoResponseSchema,
+    legacyStructuredUnavailableResponseSchema,
+    legacyStructuredTerminalErrorResponseSchema,
     legacyUnavailableResponseSchema,
     legacyTerminalErrorResponseSchema,
 ]);
 
+const storedTranscriptHashSchema = v.pipe(
+    v.string(),
+    v.regex(/^[0-9a-f]{64}$/u),
+);
+
+const storedSourceTypeSchema = v.picklist([
+    'extension_caption_upload',
+    'local_fixture',
+    'youtube_timedtext',
+    'youtube_yt_dlp',
+] as const);
+
 /**
- * Redacted metadata keeps operational history useful without persisting credentials.
+ * Bounded metadata keeps operational history useful without persisting payloads.
  */
 export const analysisOperationalMetadataSchema = v.strictObject({
     promptVersion: v.pipe(v.string(), v.minLength(1)),
@@ -132,7 +251,7 @@ export const analysisOperationalMetadataSchema = v.strictObject({
         inputTokens: v.nullable(v.number()),
         outputTokens: v.nullable(v.number()),
     }),
-    diagnostics: v.record(v.string(), safeOperationalValueSchema),
+    diagnostics: safeOperationalDiagnosticsSchema,
 });
 
 const analysisArtifactBaseRecordSchema = v.strictObject({
@@ -141,6 +260,11 @@ const analysisArtifactBaseRecordSchema = v.strictObject({
         videoId: v.pipe(v.string(), v.minLength(1)),
         durationSec: v.optional(v.pipe(v.number(), v.minValue(0.001))),
         algorithmVersion: v.pipe(v.string(), v.minLength(1)),
+        languageCode: v.optional(
+            v.nullable(v.pipe(v.string(), v.minLength(1))),
+        ),
+        transcriptHash: v.optional(v.nullable(storedTranscriptHashSchema)),
+        sourceType: v.optional(v.nullable(storedSourceTypeSchema)),
     }),
     job: v.strictObject({
         jobId: v.pipe(v.string(), v.minLength(1)),
@@ -167,11 +291,22 @@ const analysisArtifactBaseRecordSchema = v.strictObject({
  */
 export const analysisArtifactRecordSchema = v.pipe(
     analysisArtifactBaseRecordSchema,
-    v.check(
-        (record) =>
-            record.terminalResponse.status !== 'ready' ||
-            AnalysisArtifactStore.hasValidCacheArtifacts(record),
-    ),
+    v.check((record) => {
+        if (
+            record.terminalResponse.status !== 'ready' &&
+            record.terminalResponse.status !== 'no_promo'
+        ) {
+            return true;
+        }
+        if (
+            record.terminalResponse.status === 'no_promo' &&
+            record.selectedTranscriptArtifact === null &&
+            record.analysisRun === null
+        ) {
+            return true;
+        }
+        return AnalysisArtifactStore.hasValidCacheArtifacts(record);
+    }),
 );
 
 const persistedArtifactStoreSchema = v.strictObject({
@@ -231,6 +366,16 @@ type ArtifactVideoQuery = {
 };
 
 /**
+ * Exact uploaded-transcript identity prevents cache reuse across caption variants.
+ */
+export type ExactArtifactIdentity = {
+    videoId: string;
+    algorithmVersion: string;
+    languageCode: string;
+    transcriptHash: string;
+};
+
+/**
  * Owns durable local backend analysis artifacts behind a stable repository API.
  *
  * History is retained for 30 days, while ready cache records expire earlier when
@@ -250,7 +395,7 @@ export class AnalysisArtifactStore {
     private static storagePathForTests: string | null = null;
 
     /**
-     * Saves one validated artifact record after redacting operational metadata.
+     * Saves one validated artifact record after filtering operational metadata.
      *
      * @param record - Completed artifact record from a backend job.
      * @returns Defensive copy of the saved record.
@@ -331,54 +476,89 @@ export class AnalysisArtifactStore {
     }
 
     /**
-     * Finds the newest unexpired successful analysis result for a video and algorithm.
+     * Temporarily preserves the pre-v5 lookup until all legacy call sites are isolated.
      *
      * @param input - Exact video and algorithm version cache key.
      * @returns Latest ready or no-promo artifact record, or `null` when absent.
+     * @deprecated Call the explicit exact or legacy method after routing by startup mode.
      */
     static findLatestCacheable(input: {
         videoId: string;
         algorithmVersion: string;
     }): AnalysisArtifactRecord | null {
-        const latest = AnalysisArtifactStore.findHistory(input)
-            .filter(
-                (record) =>
-                    (record.terminalResponse.status === 'ready' ||
-                        record.terminalResponse.status === 'no_promo') &&
-                    AnalysisArtifactStore.hasValidCacheArtifacts(record) &&
-                    Date.now() < record.terminalResponse.freshness.expiresAtMs,
-            )
-            .at(-1);
-        return latest ?? null;
+        return AnalysisArtifactStore.findLatestLegacyCacheable(
+            input.videoId,
+            input.algorithmVersion,
+        );
     }
 
     /**
-     * Builds a stable record id from the completed job identity.
+     * Finds only an uploaded-caption result with the complete authoritative identity.
      *
-     * @param input - Job/video/result identity.
-     * @param completedAtMs - Completion timestamp used to preserve reanalysis history.
-     * @returns Deterministic artifact record id.
+     * @param identity - Exact video, algorithm, language, and transcript fingerprint.
+     * @returns Latest unexpired exact record, or `null` when any component differs.
+     */
+    static findLatestCacheableExact(
+        identity: ExactArtifactIdentity,
+    ): AnalysisArtifactRecord | null {
+        const records = AnalysisArtifactStore.usesSqlitePersistence()
+            ? BackendPublicState.findArtifactsExact(identity).flatMap(
+                  (record) => {
+                      const parsed = v.safeParse(
+                          analysisArtifactRecordSchema,
+                          record,
+                      );
+                      return parsed.success ? [parsed.output] : [];
+                  },
+              )
+            : AnalysisArtifactStore.findHistory({
+                  videoId: identity.videoId,
+                  algorithmVersion: identity.algorithmVersion,
+              }).filter((record) =>
+                  AnalysisArtifactStore.matchesExactIdentity(record, identity),
+              );
+        return AnalysisArtifactStore.latestCacheable(records);
+    }
+
+    /**
+     * Preserves the old video/version cache path for the process-wide legacy mode only.
+     *
+     * @param videoId - Legacy video identity.
+     * @param algorithmVersion - Legacy algorithm identity.
+     * @returns Latest unexpired legacy-source result, or `null`.
+     */
+    static findLatestLegacyCacheable(
+        videoId: string,
+        algorithmVersion: string,
+    ): AnalysisArtifactRecord | null {
+        const records = AnalysisArtifactStore.findHistory({
+            videoId,
+            algorithmVersion,
+        }).filter(
+            (record) =>
+                record.selectedTranscriptArtifact?.sourceType !==
+                'extension_caption_upload',
+        );
+        return AnalysisArtifactStore.latestCacheable(records);
+    }
+
+    /**
+     * Builds an opaque record id without embedding transcript identity.
+     *
+     * @param _input - Ignored historical identity retained for call-site compatibility.
+     * @param _completedAtMs - Ignored historical timestamp retained for compatibility.
+     * @returns UUID-based artifact record id.
      */
     static buildRecordId(
-        input: {
+        _input: {
             videoId: string;
             algorithmVersion: string;
             jobId: string;
             terminalResponse: AnalysisArtifactTerminalResponse;
         },
-        completedAtMs: number,
+        _completedAtMs: number,
     ): string {
-        const sourceId =
-            'sourceResultId' in input.terminalResponse
-                ? input.terminalResponse.sourceResultId
-                : input.jobId;
-        return [
-            'artifact',
-            input.videoId,
-            input.algorithmVersion,
-            sourceId,
-            String(completedAtMs),
-        ].join('-');
+        return `artifact-${randomUUID()}`;
     }
 
     /**
@@ -428,26 +608,15 @@ export class AnalysisArtifactStore {
     }
 
     /**
-     * Redacts obvious credential keys and token-like values before validation.
+     * Retains only explicitly approved bounded identifiers before validation.
      *
      * @param metadata - Operational metadata supplied by backend callers.
-     * @returns Metadata with unsafe diagnostic entries replaced.
+     * @returns Metadata with every non-allow-listed diagnostic entry removed.
      */
     static redactOperationalMetadata(
         metadata: AnalysisOperationalMetadata,
     ): AnalysisOperationalMetadata {
-        const diagnostics: Record<string, string | number | boolean | null> =
-            {};
-        for (const [key, value] of Object.entries(metadata.diagnostics)) {
-            diagnostics[key] = AnalysisArtifactStore.isSecretLike(key, value)
-                ? REDACTED_VALUE
-                : value;
-        }
-
-        return v.parse(analysisOperationalMetadataSchema, {
-            ...metadata,
-            diagnostics,
-        });
+        return v.parse(analysisOperationalMetadataSchema, metadata);
     }
 
     /**
@@ -516,11 +685,6 @@ export class AnalysisArtifactStore {
         input: BuildRecordForTestsInput,
     ): AnalysisArtifactRecord {
         const completedAtMs = input.completedAtMs ?? TEST_COMPLETED_AT_MS;
-        const terminalResponse =
-            AnalysisArtifactStore.buildTerminalResponseForTests(
-                input,
-                completedAtMs,
-            );
         const isAnalyzedResult =
             input.terminalStatus === 'ready' ||
             input.terminalStatus === 'no_promo';
@@ -534,6 +698,11 @@ export class AnalysisArtifactStore {
                         TEST_CREATED_AT_MS,
                     )
                   : null;
+        const terminalResponse =
+            AnalysisArtifactStore.buildTerminalResponseForTests(
+                input,
+                selectedTranscriptArtifact,
+            );
         const analysisRun =
             'analysisRun' in input && input.analysisRun !== undefined
                 ? input.analysisRun
@@ -563,6 +732,15 @@ export class AnalysisArtifactStore {
                 videoId: input.videoId,
                 durationSec: TEST_DURATION_SEC,
                 algorithmVersion: input.algorithmVersion,
+                ...(selectedTranscriptArtifact?.sourceType ===
+                'extension_caption_upload'
+                    ? {
+                          languageCode: selectedTranscriptArtifact.languageCode,
+                          transcriptHash:
+                              selectedTranscriptArtifact.transcriptHash,
+                          sourceType: selectedTranscriptArtifact.sourceType,
+                      }
+                    : {}),
             },
             job: {
                 jobId: TEST_JOB_ID,
@@ -631,6 +809,27 @@ export class AnalysisArtifactStore {
         ) {
             return false;
         }
+        if (
+            record.selectedTranscriptArtifact.sourceType ===
+            'extension_caption_upload'
+        ) {
+            if (
+                record.video.languageCode !==
+                    record.selectedTranscriptArtifact.languageCode ||
+                record.video.transcriptHash !==
+                    record.selectedTranscriptArtifact.transcriptHash ||
+                record.video.sourceType !==
+                    record.selectedTranscriptArtifact.sourceType ||
+                !('languageCode' in record.terminalResponse) ||
+                record.terminalResponse.languageCode !==
+                    record.selectedTranscriptArtifact.languageCode ||
+                !('transcriptHash' in record.terminalResponse) ||
+                record.terminalResponse.transcriptHash !==
+                    record.selectedTranscriptArtifact.transcriptHash
+            ) {
+                return false;
+            }
+        }
         if (record.terminalResponse.status === 'no_promo') {
             return (
                 !record.analysisRun.parsedResult.hasPromo &&
@@ -641,6 +840,47 @@ export class AnalysisArtifactStore {
             record.analysisRun.parsedResult.hasPromo &&
             JSON.stringify(record.analysisRun.normalizedPromoBlocks) ===
                 JSON.stringify(record.terminalResponse.promoBlocks)
+        );
+    }
+
+    /**
+     * Selects the newest valid, unexpired result from already scoped candidates.
+     *
+     * @param records - Records already constrained to one cache identity.
+     * @returns Latest cacheable record or null.
+     */
+    private static latestCacheable(
+        records: AnalysisArtifactRecord[],
+    ): AnalysisArtifactRecord | null {
+        const latest = records
+            .filter(
+                (record) =>
+                    (record.terminalResponse.status === 'ready' ||
+                        record.terminalResponse.status === 'no_promo') &&
+                    AnalysisArtifactStore.hasValidCacheArtifacts(record) &&
+                    Date.now() < record.terminalResponse.freshness.expiresAtMs,
+            )
+            .at(-1);
+        return latest ?? null;
+    }
+
+    /**
+     * Keeps JSON-test persistence subject to the same identity checks as SQLite.
+     *
+     * @param record - Validated persisted artifact.
+     * @param identity - Exact requested upload identity.
+     * @returns Whether every identity component and source match.
+     */
+    private static matchesExactIdentity(
+        record: AnalysisArtifactRecord,
+        identity: ExactArtifactIdentity,
+    ): boolean {
+        return (
+            record.video.videoId === identity.videoId &&
+            record.video.algorithmVersion === identity.algorithmVersion &&
+            record.video.languageCode === identity.languageCode &&
+            record.video.transcriptHash === identity.transcriptHash &&
+            record.video.sourceType === 'extension_caption_upload'
         );
     }
 
@@ -877,74 +1117,66 @@ export class AnalysisArtifactStore {
     }
 
     /**
-     * Redaction applies to both sensitive diagnostic keys and token-shaped values.
-     *
-     * @param key - Diagnostic field name.
-     * @param value - Diagnostic value to inspect.
-     * @returns Whether the entry must be replaced before storage.
-     */
-    private static isSecretLike(
-        key: string,
-        value: string | number | boolean | null,
-    ): boolean {
-        const lowerKey = key.toLowerCase();
-        if (
-            lowerKey.includes('authorization') ||
-            lowerKey.includes('cookie') ||
-            lowerKey.includes('token') ||
-            lowerKey.includes('secret') ||
-            lowerKey.includes('apikey')
-        ) {
-            return true;
-        }
-        if (typeof value !== 'string') {
-            return false;
-        }
-        return /Bearer\s+|sk-|SID=|SAPISID=/iu.test(value);
-    }
-
-    /**
      * Builds schema-valid terminal payloads for repository tests.
      *
      * @param input - Test-specific terminal status.
-     * @param completedAtMs - Timestamp used in result identifiers.
+     * @param transcriptArtifact - Selected transcript used to choose exact or legacy shape.
      * @returns Terminal response matching the requested state.
      */
     private static buildTerminalResponseForTests(
         input: BuildRecordForTestsInput,
-        completedAtMs: number,
+        transcriptArtifact: TranscriptArtifact | null,
     ): AnalysisArtifactTerminalResponse {
-        const resultId = `result-${input.videoId}-${input.algorithmVersion}-${completedAtMs}`;
+        const resultId = `result-${randomUUID()}`;
+        const uploadIdentity =
+            transcriptArtifact?.sourceType === 'extension_caption_upload'
+                ? {
+                      languageCode: transcriptArtifact.languageCode,
+                      transcriptHash: transcriptArtifact.transcriptHash,
+                  }
+                : null;
         switch (input.terminalStatus) {
             case 'ready':
-                return v.parse(readyResponseSchema, {
-                    status: 'ready',
-                    videoId: input.videoId,
-                    algorithmVersion: input.algorithmVersion,
-                    source: 'server_cache',
-                    sourceResultId: resultId,
-                    freshness: { expiresAtMs: TEST_EXPIRES_AT_MS },
-                    promoBlocks: [
-                        { startSec: 4, endSec: 24, confidence: 'high' },
-                    ],
-                });
+                return v.parse(
+                    uploadIdentity === null
+                        ? legacyReadyResponseSchema
+                        : readyResponseSchema,
+                    {
+                        status: 'ready',
+                        videoId: input.videoId,
+                        algorithmVersion: input.algorithmVersion,
+                        ...(uploadIdentity ?? {}),
+                        source: 'server_cache',
+                        sourceResultId: resultId,
+                        freshness: { expiresAtMs: TEST_EXPIRES_AT_MS },
+                        promoBlocks: [
+                            { startSec: 4, endSec: 24, confidence: 'high' },
+                        ],
+                    },
+                );
             case 'no_promo':
-                return v.parse(noPromoResponseSchema, {
-                    status: 'no_promo',
-                    videoId: input.videoId,
-                    algorithmVersion: input.algorithmVersion,
-                    sourceResultId: resultId,
-                    freshness: { expiresAtMs: TEST_EXPIRES_AT_MS },
-                });
+                return v.parse(
+                    uploadIdentity === null
+                        ? legacyNoPromoResponseSchema
+                        : noPromoResponseSchema,
+                    {
+                        status: 'no_promo',
+                        videoId: input.videoId,
+                        algorithmVersion: input.algorithmVersion,
+                        ...(uploadIdentity ?? {}),
+                        sourceResultId: resultId,
+                        freshness: { expiresAtMs: TEST_EXPIRES_AT_MS },
+                    },
+                );
             case 'unavailable':
-                return v.parse(unavailableResponseSchema, {
+                return v.parse(legacyStructuredUnavailableResponseSchema, {
                     status: 'unavailable',
                     videoId: input.videoId,
                     algorithmVersion: input.algorithmVersion,
                     error: { code: 'caption_extraction_failed' },
                 });
             case 'error':
-                return v.parse(terminalErrorResponseSchema, {
+                return v.parse(legacyStructuredTerminalErrorResponseSchema, {
                     status: 'error',
                     videoId: input.videoId,
                     algorithmVersion: input.algorithmVersion,
@@ -967,7 +1199,7 @@ export class AnalysisArtifactStore {
         acquiredAtMs: number,
     ): TranscriptArtifact {
         return v.parse(transcriptArtifactSchema, {
-            artifactId: `transcript-${input.videoId}-${input.algorithmVersion}`,
+            artifactId: `transcript-${randomUUID()}`,
             videoId: input.videoId,
             algorithmVersion: input.algorithmVersion,
             strategy: 'local_transcript_fixture',
@@ -1000,7 +1232,7 @@ export class AnalysisArtifactStore {
     ): AnalysisRunArtifact {
         const hasPromo = input.terminalStatus === 'ready';
         return v.parse(analysisRunArtifactSchema, {
-            runId: `analysis-${input.videoId}-${input.algorithmVersion}`,
+            runId: `analysis-${randomUUID()}`,
             transcriptArtifactId: transcriptArtifact.artifactId,
             videoId: input.videoId,
             algorithmVersion: input.algorithmVersion,

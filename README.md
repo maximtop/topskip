@@ -3,10 +3,10 @@
 Chrome extension that **skips detected sponsor/promo blocks** on YouTube watch
 pages. **Server** mode is the default: beta and release builds use the public
 TopSkip backend, while development builds use the loopback backend. The server
-extracts captions, analyzes them with Gemini through OpenRouter, and reuses
-cached results. **Private BYOK** is an explicit opt-in for users who prefer
-their own provider and do not want video IDs sent to the TopSkip backend. There
-is no fixed 30s→60s skip window.
+receives timed captions captured through the YouTube player, analyzes them with
+Gemini through OpenRouter, and reuses cached results. **Private BYOK** is an
+explicit opt-in for users who prefer their own provider and want zero TopSkip
+analysis or registration requests. There is no fixed 30s→60s skip window.
 
 ## Requirements
 
@@ -18,7 +18,7 @@ is no fixed 30s→60s skip window.
 ## Quick start
 
 ```bash
-make setup    # installs pnpm dependencies and the verified yt-dlp binary
+make setup    # installs pnpm dependencies
 make build    # or: pnpm run build
 cp .env.example .env
 ```
@@ -38,8 +38,8 @@ Load the extension in Chrome:
 
 | Command                | Description                                               |
 | ---------------------- | --------------------------------------------------------- |
-| `make setup`           | Install dependencies and pinned `yt-dlp`                  |
-| `make yt-dlp-install`  | Install/check the pinned `yt-dlp` bootstrap binary        |
+| `make setup`           | Install dependencies                                      |
+| `make yt-dlp-install`  | Install pinned `yt-dlp` for explicit legacy mode only     |
 | `make build`           | Development extension build into `extension/dist/`        |
 | `make server`          | Run the local backend; requires `OPENROUTER_API_KEY`      |
 | `make extension`       | Watch and rebuild the extension continuously              |
@@ -53,14 +53,22 @@ Load the extension in Chrome:
 
 ## Server analysis
 
-On an enabled YouTube watch page, the extension background asks the configured
-TopSkip backend to analyze the video. Development builds use
+On an enabled YouTube watch page, the content script captures the player's
+timed captions, then asks the background service worker to submit them to the
+configured TopSkip backend. Development builds use
 `http://127.0.0.1:8787`; beta/release builds use
-`https://topskip.maximtop.dev`. The backend extracts one caption track with
-`yt-dlp`, sends the timed transcript to the fixed
+`https://topskip.maximtop.dev`. This **extension upload** is the default local
+and production source; the new image does not contain or invoke `yt-dlp`. The
+backend sends the validated timed transcript to the fixed
 `google/gemini-3.5-flash` model through OpenRouter with high reasoning effort,
 and returns validated promo intervals. The content script skips future blocks
 at their returned end times, while the popup displays the same intervals.
+
+All TopSkip HTTP, authentication, exact-result caching, polling, and support
+URL handling belong to the background service worker. The content script only
+sends validated runtime messages. The retained `legacy_yt_dlp` source is an
+explicit rollback/debug mode and requires `make yt-dlp-install`; it is never an
+automatic fallback.
 
 Server mode lazily registers an anonymous 90-day installation credential in
 background-owned extension storage. `/v1/config` supplies the active
@@ -70,6 +78,10 @@ remain fresh for 30 days. The backend stores state in SQLite, and the extension
 mirrors ready results in its own versioned cache. The server API key stays in
 the backend process; it is not bundled with or returned to the extension.
 OpenRouter does receive the timed transcript needed for model analysis.
+Validated transcripts and bounded assistant output may be retained for up to
+30 days under access control and pruning; do not paste them into GitHub issues.
+The stable `/v1` wire contract is defined by Valibot schemas and their inferred
+types in `common/src/server-analysis-contract.ts`.
 
 ## Documentation
 

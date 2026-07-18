@@ -1,10 +1,10 @@
 import * as v from 'valibot';
 
 import {
-    SERVER_ANALYSIS_ALGORITHM_VERSION,
-    readyResponseSchema,
-    type ReadyResponse,
-} from '@topskip/common/server-analysis-contract';
+    legacyReadyResponseSchema,
+    type LegacyServerAnalysisResponse,
+} from '@topskip/backend/legacy/legacy-server-analysis-contract';
+import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 
 /**
  * Valid YouTube-shaped id used by the Playwright watch fixture.
@@ -12,9 +12,9 @@ import {
 export const SEEDED_SERVER_CACHE_VIDEO_ID = 'e2eFixture1';
 
 const SEEDED_READY_RESPONSE_EXPIRES_AT_MS = 4_102_444_800_000;
-const SEEDED_READY_SOURCE_RESULT_ID = 'result-e2eFixture1-server-v4';
+const SEEDED_READY_SOURCE_RESULT_ID = 'result-e2eFixture1-server-v5';
 
-const SEEDED_READY_RESPONSE = v.parse(readyResponseSchema, {
+const SEEDED_READY_RESPONSE = v.parse(legacyReadyResponseSchema, {
     status: 'ready',
     videoId: SEEDED_SERVER_CACHE_VIDEO_ID,
     algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
@@ -25,19 +25,19 @@ const SEEDED_READY_RESPONSE = v.parse(readyResponseSchema, {
 });
 
 /**
- * In-memory server cache fixture for the local tracer bullet; static API only.
+ * In-memory metadata cache remains reachable only in explicit legacy mode; static API only.
  */
 export class BackendCacheFixtures {
     /**
      * Returns a ready cache response when the fixture key matches exactly.
      *
      * @param input - Validated request cache key.
-     * @returns Ready response for the seeded video, otherwise `null`.
+     * @returns Legacy ready response for the seeded video, otherwise `null`.
      */
     static findReady(input: {
         videoId: string;
         algorithmVersion: string;
-    }): ReadyResponse | null {
+    }): Extract<LegacyServerAnalysisResponse, { status: 'ready' }> | null {
         if (process.env.NODE_ENV !== 'test') {
             return null;
         }

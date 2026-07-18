@@ -28,7 +28,7 @@ const ARTIFACT_RETENTION_MS = 30 * DAY_MS;
 const MAX_ARTIFACT_RECORD_COUNT = 10_000;
 const LOW_DISK_ARTIFACT_RECORD_COUNT = 100;
 const MIN_FREE_STORAGE_BYTES = 512 * 1024 * 1024;
-const SCHEMA_VERSION = 2;
+const SCHEMA_VERSION = 3;
 const SQLITE_MEMORY_PATH = ':memory:';
 const HOUSEKEEPING_INTERVAL_MS = 5 * MINUTE_MS;
 const STALE_MODEL_RESERVATION_MS = HOUR_MS;
@@ -487,11 +487,16 @@ export class BackendPublicState {
             database
                 .prepare(
                     `INSERT INTO analysis_artifacts
-                        (record_id, video_id, algorithm_version, completed_at_ms, expires_at_ms, payload_json)
-                     VALUES (?, ?, ?, ?, ?, ?)
+                        (record_id, video_id, algorithm_version, language_code,
+                         transcript_hash, source_type, completed_at_ms,
+                         expires_at_ms, payload_json)
+                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                      ON CONFLICT(record_id) DO UPDATE SET
                         video_id = excluded.video_id,
                         algorithm_version = excluded.algorithm_version,
+                        language_code = excluded.language_code,
+                        transcript_hash = excluded.transcript_hash,
+                        source_type = excluded.source_type,
                         completed_at_ms = excluded.completed_at_ms,
                         expires_at_ms = excluded.expires_at_ms,
                         payload_json = excluded.payload_json`,
@@ -500,6 +505,9 @@ export class BackendPublicState {
                     identity.recordId,
                     identity.videoId,
                     identity.algorithmVersion,
+                    identity.languageCode,
+                    identity.transcriptHash,
+                    identity.sourceType,
                     identity.completedAtMs,
                     identity.completedAtMs + ARTIFACT_RETENTION_MS,
                     JSON.stringify(record),
@@ -547,6 +555,53 @@ export class BackendPublicState {
                            ORDER BY completed_at_ms ASC`,
                       )
                       .all(input.videoId, input.algorithmVersion, nowMs);
+        return rows.flatMap((row) => {
+            const payload = BackendPublicState.readString(row, 'payload_json');
+            if (payload === null) {
+                return [];
+            }
+            try {
+                return [JSON.parse(payload) as unknown];
+            } catch {
+                return [];
+            }
+        });
+    }
+
+    /**
+     * Queries only rows matching the authoritative uploaded-caption identity.
+     *
+     * @param input - Exact indexed identity and deterministic read timestamp.
+     * @returns Parsed unknown payloads for validation by the artifact repository.
+     */
+    static findArtifactsExact(input: {
+        videoId: string;
+        algorithmVersion: string;
+        languageCode: string;
+        transcriptHash: string;
+        nowMs?: number;
+    }): unknown[] {
+        const nowMs = input.nowMs ?? Date.now();
+        BackendPublicState.runHousekeeping(nowMs);
+        const rows = BackendPublicState.getDatabase()
+            .prepare(
+                `SELECT payload_json
+                 FROM analysis_artifacts
+                 WHERE video_id = ?
+                   AND algorithm_version = ?
+                   AND language_code = ?
+                   AND transcript_hash = ?
+                   AND source_type = 'extension_caption_upload'
+                   AND expires_at_ms > ?
+                 ORDER BY completed_at_ms ASC`,
+            )
+            .all(
+                input.videoId,
+                input.algorithmVersion,
+                input.languageCode,
+                input.transcriptHash,
+                nowMs,
+            );
         return rows.flatMap((row) => {
             const payload = BackendPublicState.readString(row, 'payload_json');
             if (payload === null) {
@@ -875,6 +930,29 @@ export class BackendPublicState {
             'algorithm_version',
             'TEXT',
         );
+        BackendPublicState.addAnalysisArtifactColumnIfMissing(
+            database,
+            'language_code',
+        );
+        BackendPublicState.addAnalysisArtifactColumnIfMissing(
+            database,
+            'transcript_hash',
+        );
+        BackendPublicState.addAnalysisArtifactColumnIfMissing(
+            database,
+            'source_type',
+        );
+        database.exec(`
+            CREATE INDEX IF NOT EXISTS analysis_artifacts_exact_lookup_idx
+            ON analysis_artifacts (
+                video_id,
+                algorithm_version,
+                language_code,
+                transcript_hash,
+                completed_at_ms
+            )
+            WHERE language_code IS NOT NULL AND transcript_hash IS NOT NULL;
+        `);
         BackendPublicState.addAnalysisFailureColumnIfMissing(
             database,
             'extension_version',
@@ -913,6 +991,31 @@ export class BackendPublicState {
         }
         database.exec(
             `ALTER TABLE analysis_failures ADD COLUMN ${columnName} ${columnType}`,
+        );
+    }
+
+    /**
+     * Appends one nullable identity column without invalidating a v2 reader.
+     *
+     * @param database - Open SQLite connection.
+     * @param columnName - Trusted migration-owned artifact column.
+     */
+    private static addAnalysisArtifactColumnIfMissing(
+        database: DatabaseSync,
+        columnName: 'language_code' | 'transcript_hash' | 'source_type',
+    ): void {
+        const exists = database
+            .prepare('PRAGMA table_info(analysis_artifacts)')
+            .all()
+            .some(
+                (row) =>
+                    BackendPublicState.readString(row, 'name') === columnName,
+            );
+        if (exists) {
+            return;
+        }
+        database.exec(
+            `ALTER TABLE analysis_artifacts ADD COLUMN ${columnName} TEXT`,
         );
     }
 
@@ -1129,6 +1232,9 @@ export class BackendPublicState {
         recordId: string;
         videoId: string;
         algorithmVersion: string;
+        languageCode: string | null;
+        transcriptHash: string | null;
+        sourceType: string | null;
         completedAtMs: number;
     } {
         if (record === null || typeof record !== 'object') {
@@ -1146,6 +1252,15 @@ export class BackendPublicState {
             job,
             'completedAtMs',
         );
+        const languageCode = BackendPublicState.readString(
+            video,
+            'languageCode',
+        );
+        const transcriptHash = BackendPublicState.readString(
+            video,
+            'transcriptHash',
+        );
+        const sourceType = BackendPublicState.readString(video, 'sourceType');
         if (
             recordId === null ||
             videoId === null ||
@@ -1154,7 +1269,15 @@ export class BackendPublicState {
         ) {
             throw new Error('Invalid artifact record.');
         }
-        return { recordId, videoId, algorithmVersion, completedAtMs };
+        return {
+            recordId,
+            videoId,
+            algorithmVersion,
+            languageCode,
+            transcriptHash,
+            sourceType,
+            completedAtMs,
+        };
     }
 
     /**

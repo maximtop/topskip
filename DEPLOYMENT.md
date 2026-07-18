@@ -27,12 +27,13 @@ does not make the shared VPS IP undiscoverable through unrelated services.
   `rollback`.
 - Images are deployed as `ghcr.io/...@sha256:...`; tags are never accepted by
   the server-side gateway.
-- yt-dlp is installed from the repository pin during image build. Startup does
-  not update it and the runtime image contains no yt-dlp manager or update
-  script.
+- Production explicitly uses extension upload mode through
+  `TOPSKIP_CAPTION_SOURCE=extension_upload`. The
+  image contains no yt-dlp executable or manager and startup never initializes,
+  downloads, updates, or requires one.
 - The root filesystem is read-only. `/tmp` is a private 256 MiB tmpfs with
-  `nosuid,nodev`; it must permit execution because the official standalone
-  yt-dlp is a PyInstaller one-file binary that extracts its runtime there.
+  `nosuid,nodev`. Temporary execution and the old `TOPSKIP_YT_DLP_PATH` Compose
+  value remain only so the previous image is still a one-command rollback.
 
 ## One-time VPS provisioning
 
@@ -66,6 +67,8 @@ may be comma-separated during a controlled extension migration; wildcards and
 spaces are rejected. Do not commit the real beta extension ID to the repository.
 Production artifacts, installation records, quotas, and budget state use the
 SQLite database at `/var/lib/topskip/topskip.sqlite`.
+Keep `TOPSKIP_CAPTION_SOURCE=extension_upload` in the protected production
+environment. The request cannot select a source mode.
 
 Create a separate Actions key locally. Do not reuse the KojaKurtki key:
 
@@ -238,13 +241,17 @@ successful `ci.yml` run.
 ## Deploy and rollback
 
 Run **Deploy TopSkip production** using GitHub's `workflow_dispatch` UI on the
-default branch. The workflow builds `linux/amd64`, publishes an immutable GHCR
+default branch and paste the exact 40-character commit SHA into `expected_sha`.
+The workflow rejects a different commit, derives the algorithm version from
+that checked-out source, builds `linux/amd64`, publishes an immutable GHCR
 digest, waits for production approval, then invokes the restricted gateway.
 
 The root-owned deployment script serializes changes with `flock`, pulls before
 replacement, waits for the Docker health check, and restores the previous image
-if loopback health fails. Afterward Actions checks the public Tunnel endpoint.
-A public failure requests `rollback` and fails the workflow.
+if loopback health fails. Afterward Actions checks public health plus API 1 and
+the source-owned algorithm from `/v1/config`. A public failure requests
+`rollback` and fails the workflow. This backend/config verification must pass
+before the matching extension is reloaded, packaged, or distributed.
 
 Operator commands use the existing maintenance account rather than the Actions
 key:
@@ -262,8 +269,10 @@ application releases require only the Actions workflow.
 ## Operations
 
 Back up application secrets and deployment configuration separately. The
-analysis cache is disposable and has no off-site backup requirement. Do not
-copy transcripts or raw model output into tickets or chat.
+analysis cache is disposable and has no off-site backup requirement. Validated
+transcripts and bounded assistant output may persist for up to 30 days under
+access control and pruning; they must not be pasted into issues, tickets, logs,
+or chat.
 
 Inspect storage and health:
 
@@ -318,21 +327,20 @@ Rotate an application secret by editing `/opt/topskip/production.env` with
 installing a new restricted public key first, replacing the GitHub environment
 secret, testing `status`, and only then removing the old key.
 
-### YouTube anonymous challenges
+### Retained legacy yt-dlp mode
 
-`caption_extraction_failed` can mean YouTube rejected anonymous metadata access
-from the VPS IP even though the same public video works from a residential
-browser. Production logs intentionally retain only the stable failure code; do
-not add yt-dlp stderr, cookies, signed URLs, or exported browser state to logs or
-support events. Confirm the category with a one-off operator probe that deletes
-its temporary stderr immediately after classifying it.
+The default and VPS modes never use yt-dlp and never fall back to it after an
+upload or caption-acquisition failure. The implementation, pin metadata, fake
+runner tests, and operator commands remain temporarily for isolated debugging
+and rollback work. To run it locally, use `make yt-dlp-install`, then start with
+`TOPSKIP_CAPTION_SOURCE=legacy_yt_dlp`; optionally point
+`TOPSKIP_YT_DLP_PATH` at another reviewed executable.
 
-The yt-dlp project recommends a different egress IP as the safer response when
-an anonymous IP is blocked; account cookies may themselves be blocked and put
-the account at risk. Proxy, cookie, and PO-token operation are not part of the
-current TopSkip production design. See the
-[yt-dlp known-issues guidance](https://github.com/yt-dlp/yt-dlp/issues/3766).
+The new production image intentionally has no executable, so do not select
+legacy mode for it. `make yt-dlp-refresh-pin` is a manual PR-producing
+maintenance action, never a runtime update. The previous immutable image still
+has its binary and can use the retained Compose path and executable `/tmp` mount
+during rollback.
 
-To update yt-dlp, run `make yt-dlp-refresh-pin`, review the tag and SHA-256
-changes, run CI, and deploy a newly built image. Never run `yt-dlp -U` inside the
-production container.
+This rollout requires the automated gates, one paid smoke, deployment, and an
+extension end-to-end check. It starts no new beta monitor.

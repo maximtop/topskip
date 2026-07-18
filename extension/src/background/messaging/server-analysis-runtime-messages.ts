@@ -5,6 +5,7 @@ import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { ServerAnalysisConfiguration } from '@/background/server-analysis-configuration';
 import { ServerAnalysisClient } from '@/background/server-analysis-client';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
+import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { ServerResultCacheStorage } from '@/background/storage/server-result-cache';
 import browser from '@/shared/browser';
@@ -15,16 +16,20 @@ import type {
     RequestServerAnalysisPayload,
     RequestServerAnalysisResponse,
     ServerAnalysisFailureContext,
+    ServerAnalysisSessionEventPayload,
     TopSkipRuntimeMessage,
 } from '@/shared/messages';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import type { PromoBlock } from '@topskip/common/promo-types';
 import {
     SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_FAILURE_CODE,
     serverAnalysisFailureSchema,
+    serverTranscriptIdentitySchema,
     type ServerAnalysisFailure,
     type ServerAnalysisResponse,
+    type ServerTranscriptIdentity,
 } from '@topskip/common/server-analysis-contract';
 import {
     SERVER_FAILURE_CATEGORY,
@@ -35,15 +40,9 @@ const WATCH_VIDEO_ID_QUERY_PARAMETER = 'v';
 const LOCAL_E2E_HOST = '127.0.0.1';
 
 /**
- * Handles server-first analysis requests from the watch content script; static
- * API only.
+ * Handles session-bound Server analysis while keeping every HTTP operation in background.
  */
 export class ServerAnalysisRuntimeMessages {
-    /**
-     * Remembers the one deploy-recovery resubmission allowed for each active tab.
-     */
-    private static readonly restartedJobVideoByTab = new Map<number, string>();
-
     /**
      * Converts unknown client failures to the allow-listed response vocabulary.
      *
@@ -66,19 +65,17 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Enriches stable failure details with public compatibility metadata for
-     * popup localization and background-owned issue reporting.
+     * Enriches stable failure details only from already validated local metadata.
      *
-     * @param failure - Validated message-free server details.
-     * @param algorithmVersion - Version carried by the terminal response.
-     * @returns Runtime-safe failure context.
+     * @param failure - Validated message-free failure details.
+     * @param algorithmVersion - Version observed in config or a response.
+     * @returns Runtime-safe failure context for localized popup copy.
      */
     private static async buildFailureContext(
         failure: ServerAnalysisFailure,
         algorithmVersion?: string,
     ): Promise<ServerAnalysisFailureContext> {
         const config = await ServerAnalysisConfiguration.loadCached();
-        const extensionVersion = browser.runtime.getManifest().version;
         return {
             code: failure.code,
             ...(failure.supportId === undefined
@@ -88,7 +85,7 @@ export class ServerAnalysisRuntimeMessages {
                 ? {}
                 : { retryAfterSec: failure.retryAfterSec }),
             apiVersion: config?.apiVersion ?? SERVER_ANALYSIS_API_VERSION,
-            extensionVersion,
+            extensionVersion: browser.runtime.getManifest().version,
             ...(algorithmVersion === undefined
                 ? config?.algorithmVersion === undefined
                     ? {}
@@ -101,25 +98,26 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Publishes a localized server failure without storing raw backend text.
+     * Publishes one safe Server failure without retaining captions or raw responses.
      *
-     * @param input - Target tab/video, typed failure, and optional algorithm.
-     * @returns Promise resolved after the state update.
+     * @param input - Target session, stable failure, and optional server version.
+     * @returns Promise resolved after the detection snapshot is stored.
      */
     private static async publishFailure(input: {
         tabId: number;
+        sessionId: string;
         videoId: string;
         failure: ServerAnalysisFailure;
         algorithmVersion?: string;
     }): Promise<void> {
         const category = classifyServerFailure(input.failure.code);
-        const status =
-            category === SERVER_FAILURE_CATEGORY.ServerFailure
-                ? 'error'
-                : 'unavailable';
         PromoDetectionStore.set(input.tabId, {
             videoId: input.videoId,
-            status,
+            sessionId: input.sessionId,
+            status:
+                category === SERVER_FAILURE_CATEGORY.ServerFailure
+                    ? 'error'
+                    : 'unavailable',
             source: 'server',
             serverFailure:
                 await ServerAnalysisRuntimeMessages.buildFailureContext(
@@ -130,13 +128,14 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Sends active promo blocks through the existing content and popup paths.
+     * Delivers exact-session blocks through content and popup paths.
      *
-     * @param input - Current tab, video, blocks, and detection source.
-     * @returns Promise resolved after delivery and popup state update.
+     * @param input - Current tab/session, blocks, and cache origin.
+     * @returns Promise resolved after best-effort content delivery.
      */
     private static async deliverDetectedBlocks(input: {
         tabId: number;
+        sessionId: string;
         videoId: string;
         promoBlocks: PromoBlock[];
         source: 'server' | 'local_cache' | 'server_cache';
@@ -157,24 +156,26 @@ export class ServerAnalysisRuntimeMessages {
         }
         const message = {
             type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+            source: input.source,
+            sessionId: input.sessionId,
             videoId: input.videoId,
             promoBlocks: input.promoBlocks,
         } satisfies TopSkipRuntimeMessage;
-
         try {
             await browser.tabs.sendMessage(input.tabId, message);
         } catch {
-            // The tab may have navigated away after requesting analysis.
+            // Navigation may remove the content context after the final guard.
         }
 
         const durationState =
             input.durationSec !== undefined &&
             Number.isFinite(input.durationSec) &&
-            input.durationSec > 0
+            input.durationSec >= 0
                 ? { durationSec: input.durationSec }
                 : {};
         PromoDetectionStore.set(input.tabId, {
             videoId: input.videoId,
+            sessionId: input.sessionId,
             status: 'detected',
             source: input.source,
             promoBlocks: input.promoBlocks,
@@ -189,9 +190,9 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Reloads current preferences before a backend request can be made.
+     * Reloads background-owned preferences before any server operation.
      *
-     * @returns Whether server analysis is still enabled.
+     * @returns Whether Server mode is still enabled.
      */
     private static async loadServerModeActive(): Promise<boolean> {
         await PrefsSyncStorage.ready();
@@ -200,11 +201,11 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Avoids applying delayed results after the tab has navigated to another video.
+     * Avoids applying delayed results after the tab leaves the requested video.
      *
-     * @param tabId - Source tab that initiated the backend request.
-     * @param videoId - Video id tied to the backend response.
-     * @returns Whether the tab still displays the requested watch video.
+     * @param tabId - Source tab that initiated the session.
+     * @param videoId - Video id tied to the session.
+     * @returns Whether the tab still displays that watch video.
      */
     private static async isTabStillOnRequestedVideo(
         tabId: number,
@@ -221,34 +222,50 @@ export class ServerAnalysisRuntimeMessages {
                 url.searchParams.get(WATCH_VIDEO_ID_QUERY_PARAMETER) === videoId
             );
         } catch {
-            // Some browser implementations do not expose a tab URL to this
-            // extension context; content-side video guards remain authoritative.
+            // Content still enforces video/session identity when tab URLs are hidden.
             return true;
         }
     }
 
     /**
-     * Maps backend analysis responses into popup state and content delivery.
+     * Extracts authoritative identity only from an identified response variant.
      *
-     * @param input - Sender tab, requested video metadata, response, and ready-result origin.
-     * @returns Runtime ack for the content script.
+     * @param response - Validated public server response.
+     * @returns Complete identity, or `null` for pre-identity failures.
+     */
+    private static responseIdentity(
+        response: ServerAnalysisResponse,
+    ): ServerTranscriptIdentity | null {
+        if (
+            !('videoId' in response) ||
+            !('languageCode' in response) ||
+            !('transcriptHash' in response)
+        ) {
+            return null;
+        }
+        const parsed = v.safeParse(serverTranscriptIdentitySchema, {
+            videoId: response.videoId,
+            languageCode: response.languageCode,
+            transcriptHash: response.transcriptHash,
+            algorithmVersion: response.algorithmVersion,
+        });
+        return parsed.success ? parsed.output : null;
+    }
+
+    /**
+     * Maps a validated backend response into one session-bound runtime acknowledgement.
+     *
+     * @param input - Tab/session request metadata and known response.
+     * @returns Runtime acknowledgement consumed by the content-owned lifecycle.
      */
     private static async applyServerResponse(input: {
         tabId: number;
+        sessionId: string;
         requestedVideoId: string;
         response: ServerAnalysisResponse;
         durationSec?: number;
         readySource: 'server' | 'server_cache';
     }): Promise<RequestServerAnalysisResponse> {
-        BackgroundServerAnalysisLog.info('response-applying', {
-            tabId: input.tabId,
-            videoId: input.requestedVideoId,
-            status: input.response.status,
-            jobId:
-                input.response.status === 'processing'
-                    ? input.response.jobId
-                    : undefined,
-        });
         if (
             !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
             !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
@@ -256,86 +273,46 @@ export class ServerAnalysisRuntimeMessages {
                 input.requestedVideoId,
             ))
         ) {
-            ServerAnalysisRuntimeMessages.restartedJobVideoByTab.delete(
-                input.tabId,
-            );
-            BackgroundServerAnalysisLog.info('response-skipped', {
-                tabId: input.tabId,
-                videoId: input.requestedVideoId,
-                reason: 'inactive-or-stale',
-            });
             return { ok: true, status: 'inactive' };
         }
-        if (input.response.status !== 'processing') {
-            ServerAnalysisRuntimeMessages.restartedJobVideoByTab.delete(
-                input.tabId,
-            );
-        }
-        if (input.response.status === 'rate_limited') {
-            if (input.response.algorithmVersion !== undefined) {
-                await ServerAnalysisConfiguration.noteAlgorithmVersion(
-                    input.response.algorithmVersion,
-                );
-            }
-            await ServerAnalysisRuntimeMessages.publishFailure({
-                tabId: input.tabId,
-                videoId: input.requestedVideoId,
-                failure: input.response.error,
-                algorithmVersion: input.response.algorithmVersion,
-            });
-            return { ok: true, status: 'rate_limited' };
-        }
 
-        const responseVideoId =
-            'videoId' in input.response ? input.response.videoId : undefined;
-        const responseAlgorithmVersion =
-            'algorithmVersion' in input.response
-                ? input.response.algorithmVersion
-                : undefined;
-        if (
-            responseVideoId !== undefined &&
-            responseVideoId !== input.requestedVideoId
-        ) {
-            await ServerAnalysisRuntimeMessages.publishFailure({
-                tabId: input.tabId,
-                videoId: input.requestedVideoId,
-                failure: {
-                    code: SERVER_ANALYSIS_FAILURE_CODE.InvalidServerResponse,
-                },
-                algorithmVersion: responseAlgorithmVersion,
-            });
-            return { ok: false, error: 'Invalid server response.' };
-        }
-        if (responseAlgorithmVersion !== undefined) {
-            await ServerAnalysisConfiguration.noteAlgorithmVersion(
-                responseAlgorithmVersion,
-            );
-        }
+        await ServerAnalysisConfiguration.noteAlgorithmVersion(
+            input.response.algorithmVersion,
+        );
+        const identity = ServerAnalysisRuntimeMessages.responseIdentity(
+            input.response,
+        );
 
         switch (input.response.status) {
             case 'processing':
+                if (identity === null) {
+                    return { ok: false, error: 'Invalid server response.' };
+                }
                 PromoDetectionStore.set(input.tabId, {
                     videoId: input.requestedVideoId,
+                    sessionId: input.sessionId,
                     status: 'analyzing',
                     source: 'server',
+                    serverAnalysisPhase: 'server_analysis',
                 });
                 return {
                     ok: true,
                     status: 'processing',
                     jobId: input.response.jobId,
                     pollAfterSec: input.response.pollAfterSec,
+                    identity,
                 };
             case 'ready':
                 try {
-                    await ServerResultCacheStorage.saveReadyResponse(
+                    await ServerResultCacheStorage.saveTerminalResponse(
                         input.response,
                     );
                 } catch {
-                    // Local cache persistence must never block a valid server result.
+                    // Cache persistence cannot block a valid terminal result.
                 }
-
                 await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
                     tabId: input.tabId,
+                    sessionId: input.sessionId,
                     videoId: input.response.videoId,
                     promoBlocks: input.response.promoBlocks,
                     source: input.readySource,
@@ -343,37 +320,121 @@ export class ServerAnalysisRuntimeMessages {
                 });
                 return { ok: true, status: 'ready' };
             case 'no_promo':
+                try {
+                    await ServerResultCacheStorage.saveTerminalResponse(
+                        input.response,
+                    );
+                } catch {
+                    // Cache persistence cannot block a valid terminal result.
+                }
                 PromoDetectionStore.set(input.tabId, {
                     videoId: input.requestedVideoId,
+                    sessionId: input.sessionId,
                     status: 'no_promo',
                     source: 'server',
                 });
                 return { ok: true, status: 'no_promo' };
             case 'unavailable':
-                await ServerAnalysisRuntimeMessages.publishFailure({
-                    tabId: input.tabId,
-                    videoId: input.requestedVideoId,
-                    failure: input.response.error,
-                    algorithmVersion: input.response.algorithmVersion,
-                });
-                return { ok: true, status: 'unavailable' };
             case 'error':
+            case 'rate_limited':
                 await ServerAnalysisRuntimeMessages.publishFailure({
                     tabId: input.tabId,
+                    sessionId: input.sessionId,
                     videoId: input.requestedVideoId,
                     failure: input.response.error,
                     algorithmVersion: input.response.algorithmVersion,
                 });
-                return { ok: true, status: 'error' };
+                return { ok: true, status: input.response.status };
         }
     }
 
     /**
-     * Calls the local backend and maps the response into popup/content state.
+     * Applies caption acquisition phases locally without contacting TopSkip.
      *
-     * @param payload - Current video metadata from the content script.
-     * @param sender - Runtime sender containing the source tab id.
-     * @returns Processing ack or a user-safe server error.
+     * @param payload - Validated session event from content.
+     * @param sender - Browser sender containing the source tab.
+     * @returns Safe acknowledgement after the local state update.
+     */
+    static async handleSessionEvent(
+        payload: ServerAnalysisSessionEventPayload,
+        sender: Runtime.MessageSender,
+    ): Promise<{ ok: true } | { ok: false; error: string }> {
+        const tabId = sender.tab?.id;
+        if (tabId === undefined) {
+            return { ok: false, error: 'Missing sender tab id.' };
+        }
+        if (payload.event === 'cancelled') {
+            PromoDetectionStore.clear(tabId, payload.sessionId);
+            return { ok: true };
+        }
+        if (
+            !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
+            !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
+                tabId,
+                payload.videoId,
+            ))
+        ) {
+            return { ok: true };
+        }
+        if (payload.event === 'acquisition_started') {
+            PromoDetectionStore.set(tabId, {
+                videoId: payload.videoId,
+                sessionId: payload.sessionId,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            });
+            return { ok: true };
+        }
+
+        const code =
+            payload.event === 'captions_unavailable'
+                ? SERVER_ANALYSIS_FAILURE_CODE.CaptionsUnavailable
+                : SERVER_ANALYSIS_FAILURE_CODE.CaptionExtractionFailed;
+        await ServerAnalysisRuntimeMessages.publishFailure({
+            tabId,
+            sessionId: payload.sessionId,
+            videoId: payload.videoId,
+            failure: { code },
+        });
+        return { ok: true };
+    }
+
+    /**
+     * Canonicalizes captions before cache/config/network work can begin.
+     *
+     * @param payload - Validated runtime transcript submission.
+     * @returns Exact browser identity excluding the server algorithm, or a safe failure.
+     */
+    private static async buildLocalIdentity(
+        payload: RequestServerAnalysisPayload,
+    ): Promise<
+        | {
+              ok: true;
+              languageCode: string;
+              transcriptHash: string;
+          }
+        | { ok: false; failure: ServerAnalysisFailure }
+    > {
+        const canonical = CaptionTranscriptCanonicalizer.canonicalize(payload);
+        if (!canonical.ok) {
+            return { ok: false, failure: { code: canonical.code } };
+        }
+        return {
+            ok: true,
+            languageCode: canonical.transcript.languageCode,
+            transcriptHash: await ServerTranscriptFingerprint.sha256Hex(
+                canonical.transcript.canonicalBytes,
+            ),
+        };
+    }
+
+    /**
+     * Looks up one exact cache entry and otherwise submits complete captions.
+     *
+     * @param payload - Session-bound timed caption upload.
+     * @param sender - Browser sender containing the source tab.
+     * @returns Processing or terminal acknowledgement.
      */
     static async handleRequest(
         payload: RequestServerAnalysisPayload,
@@ -381,61 +442,45 @@ export class ServerAnalysisRuntimeMessages {
     ): Promise<RequestServerAnalysisResponse> {
         const tabId = sender.tab?.id;
         if (tabId === undefined) {
-            BackgroundServerAnalysisLog.warn('runtime-request-rejected', {
-                videoId: payload.videoId,
-                reason: 'missing-tab-id',
-            });
             return { ok: false, error: 'Missing sender tab id.' };
         }
-        ServerAnalysisRuntimeMessages.restartedJobVideoByTab.delete(tabId);
-
-        BackgroundServerAnalysisLog.info('runtime-request-received', {
-            tabId,
-            videoId: payload.videoId,
-            durationSec: payload.durationSec,
-        });
-
-        if (!(await ServerAnalysisRuntimeMessages.loadServerModeActive())) {
-            BackgroundServerAnalysisLog.info('runtime-request-inactive', {
-                tabId,
-                videoId: payload.videoId,
-                reason: 'prefs',
-            });
-            return { ok: true, status: 'inactive' };
-        }
         if (
+            !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
             !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
                 tabId,
                 payload.videoId,
             ))
         ) {
-            BackgroundServerAnalysisLog.info('runtime-request-inactive', {
-                tabId,
-                videoId: payload.videoId,
-                reason: 'stale-tab',
-            });
             return { ok: true, status: 'inactive' };
+        }
+
+        const localIdentity =
+            await ServerAnalysisRuntimeMessages.buildLocalIdentity(payload);
+        if (!localIdentity.ok) {
+            await ServerAnalysisRuntimeMessages.publishFailure({
+                tabId,
+                sessionId: payload.sessionId,
+                videoId: payload.videoId,
+                failure: localIdentity.failure,
+            });
+            return { ok: true, status: 'unavailable' };
         }
 
         try {
             const config = await ServerAnalysisConfiguration.loadActive();
             const cached =
                 config === null
-                    ? await ServerResultCacheStorage.loadLatestFreshForVideo({
+                    ? null
+                    : await ServerResultCacheStorage.loadExact({
                           videoId: payload.videoId,
-                      })
-                    : await ServerResultCacheStorage.loadFresh({
-                          videoId: payload.videoId,
+                          languageCode: localIdentity.languageCode,
+                          transcriptHash: localIdentity.transcriptHash,
                           algorithmVersion: config.algorithmVersion,
                       });
-            if (cached !== null) {
-                BackgroundServerAnalysisLog.info('local-cache-hit', {
-                    tabId,
-                    videoId: payload.videoId,
-                    blockCount: cached.promoBlocks.length,
-                });
+            if (cached?.status === 'ready') {
                 await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
                     tabId,
+                    sessionId: payload.sessionId,
                     videoId: cached.videoId,
                     promoBlocks: cached.promoBlocks,
                     source: 'local_cache',
@@ -443,35 +488,37 @@ export class ServerAnalysisRuntimeMessages {
                 });
                 return { ok: true, status: 'ready' };
             }
-
-            BackgroundServerAnalysisLog.info('local-cache-miss', {
-                tabId,
-                videoId: payload.videoId,
-            });
+            if (cached?.status === 'no_promo') {
+                PromoDetectionStore.set(tabId, {
+                    videoId: cached.videoId,
+                    sessionId: payload.sessionId,
+                    status: 'no_promo',
+                    source: 'local_cache',
+                });
+                return { ok: true, status: 'no_promo' };
+            }
 
             const response = await ServerAnalysisClient.requestAnalysis({
                 videoId: payload.videoId,
                 durationSec: payload.durationSec,
                 extensionVersion: browser.runtime.getManifest().version,
+                languageCode: payload.languageCode,
+                segments: payload.segments,
             });
-
             return await ServerAnalysisRuntimeMessages.applyServerResponse({
                 tabId,
+                sessionId: payload.sessionId,
                 requestedVideoId: payload.videoId,
                 response,
                 durationSec: payload.durationSec,
                 readySource: 'server_cache',
             });
-        } catch (e) {
+        } catch (error) {
             const failure =
-                ServerAnalysisRuntimeMessages.normalizeClientFailure(e);
-            BackgroundServerAnalysisLog.warn('runtime-request-error', {
-                tabId,
-                videoId: payload.videoId,
-                code: 'backend-request-failed',
-            });
+                ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
             await ServerAnalysisRuntimeMessages.publishFailure({
                 tabId,
+                sessionId: payload.sessionId,
                 videoId: payload.videoId,
                 failure,
             });
@@ -480,11 +527,11 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Refreshes a pollable backend job after content-owned timer scheduling.
+     * Polls one owner-authorized job using identity retained by content.
      *
-     * @param payload - Current video id and backend job id.
-     * @param sender - Runtime sender containing the source tab id.
-     * @returns Polling ack or terminal status.
+     * @param payload - Session/job identity that survives worker restart.
+     * @param sender - Browser sender containing the source tab.
+     * @returns Processing, resubmission, or terminal acknowledgement.
      */
     static async handleRefreshStatus(
         payload: RefreshServerAnalysisStatusPayload,
@@ -492,89 +539,46 @@ export class ServerAnalysisRuntimeMessages {
     ): Promise<RefreshServerAnalysisStatusResponse> {
         const tabId = sender.tab?.id;
         if (tabId === undefined) {
-            BackgroundServerAnalysisLog.warn('poll-rejected', {
-                videoId: payload.videoId,
-                jobId: payload.jobId,
-                reason: 'missing-tab-id',
-            });
             return { ok: false, error: 'Missing sender tab id.' };
         }
-
-        BackgroundServerAnalysisLog.info('poll-received', {
-            tabId,
-            videoId: payload.videoId,
-            jobId: payload.jobId,
-            durationSec: payload.durationSec,
-        });
-
-        if (!(await ServerAnalysisRuntimeMessages.loadServerModeActive())) {
-            ServerAnalysisRuntimeMessages.restartedJobVideoByTab.delete(tabId);
-            BackgroundServerAnalysisLog.info('poll-inactive', {
-                tabId,
-                videoId: payload.videoId,
-                jobId: payload.jobId,
-                reason: 'prefs',
-            });
-            return { ok: true, status: 'inactive' };
-        }
         if (
+            payload.videoId !== payload.identity.videoId ||
+            !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
             !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
                 tabId,
                 payload.videoId,
             ))
         ) {
-            ServerAnalysisRuntimeMessages.restartedJobVideoByTab.delete(tabId);
-            BackgroundServerAnalysisLog.info('poll-inactive', {
-                tabId,
-                videoId: payload.videoId,
-                jobId: payload.jobId,
-                reason: 'stale-tab',
-            });
             return { ok: true, status: 'inactive' };
         }
 
         try {
-            let response = await ServerAnalysisClient.requestJobStatus(
-                payload.jobId,
-            );
+            const response = await ServerAnalysisClient.requestJobStatus({
+                jobId: payload.jobId,
+                identity: payload.identity,
+            });
             if (
                 response.status === 'error' &&
-                response.error.code ===
-                    SERVER_ANALYSIS_FAILURE_CODE.JobNotFound &&
-                ServerAnalysisRuntimeMessages.restartedJobVideoByTab.get(
-                    tabId,
-                ) !== payload.videoId
+                response.error.code === SERVER_ANALYSIS_FAILURE_CODE.JobNotFound
             ) {
-                ServerAnalysisRuntimeMessages.restartedJobVideoByTab.set(
-                    tabId,
-                    payload.videoId,
-                );
-                response = await ServerAnalysisClient.requestAnalysis({
-                    videoId: payload.videoId,
-                    durationSec: payload.durationSec,
-                    extensionVersion: browser.runtime.getManifest().version,
-                });
+                return { ok: true, status: 'resubmit_required' };
             }
             return await ServerAnalysisRuntimeMessages.applyServerResponse({
                 tabId,
+                sessionId: payload.sessionId,
                 requestedVideoId: payload.videoId,
                 response,
-                durationSec: payload.durationSec,
                 readySource: 'server',
             });
-        } catch (e) {
+        } catch (error) {
             const failure =
-                ServerAnalysisRuntimeMessages.normalizeClientFailure(e);
-            BackgroundServerAnalysisLog.warn('poll-error', {
-                tabId,
-                videoId: payload.videoId,
-                jobId: payload.jobId,
-                code: 'backend-request-failed',
-            });
+                ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
             await ServerAnalysisRuntimeMessages.publishFailure({
                 tabId,
+                sessionId: payload.sessionId,
                 videoId: payload.videoId,
                 failure,
+                algorithmVersion: payload.identity.algorithmVersion,
             });
             return { ok: false, error: 'Server analysis failed.' };
         }

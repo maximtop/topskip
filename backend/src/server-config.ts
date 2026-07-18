@@ -18,6 +18,28 @@ const DEFAULT_SUPPORT_ISSUE_BASE_URL =
     'https://github.com/maximtop/topskip/issues/new';
 const SUPPORT_ISSUE_BASE_URL_ENVIRONMENT_VARIABLE =
     'TOPSKIP_SUPPORT_ISSUE_BASE_URL';
+const CAPTION_SOURCE_ENVIRONMENT_VARIABLE = 'TOPSKIP_CAPTION_SOURCE';
+
+/**
+ * Process-wide caption ownership cannot be selected or changed by a request.
+ */
+export const BACKEND_CAPTION_SOURCE = {
+    ExtensionUpload: 'extension_upload',
+    LegacyYtDlp: 'legacy_yt_dlp',
+} as const;
+
+/**
+ * Allowed startup modes keep legacy extraction explicit and fail closed.
+ */
+export type BackendCaptionSource =
+    (typeof BACKEND_CAPTION_SOURCE)[keyof typeof BACKEND_CAPTION_SOURCE];
+
+/**
+ * Frozen startup configuration prevents environment mutation from changing routing.
+ */
+export type BackendRuntimeConfig = Readonly<{
+    captionSource: BackendCaptionSource;
+}>;
 
 /**
  * Loads local secrets and rejects incomplete server configuration before I/O starts.
@@ -27,8 +49,11 @@ export class BackendServerConfig {
      * Applies the optional root env file while preserving exported shell values.
      *
      * @param envPath - Explicit path used by tests, or the workspace root `.env`.
+     * @returns Frozen process-wide caption source configuration.
      */
-    static prepare(envPath = resolve(process.cwd(), ROOT_ENV_FILE_NAME)): void {
+    static prepare(
+        envPath = resolve(process.cwd(), ROOT_ENV_FILE_NAME),
+    ): BackendRuntimeConfig {
         if (existsSync(envPath)) {
             process.loadEnvFile(envPath);
         }
@@ -56,6 +81,9 @@ export class BackendServerConfig {
             );
         }
         BackendServerConfig.supportIssueBaseUrl();
+        return Object.freeze({
+            captionSource: BackendServerConfig.captionSource(),
+        });
     }
 
     /**
@@ -99,5 +127,26 @@ export class BackendServerConfig {
                 process.env[SUPPORT_ISSUE_BASE_URL_ENVIRONMENT_VARIABLE] ??
                 DEFAULT_SUPPORT_ISSUE_BASE_URL,
         }).supportIssueBaseUrl;
+    }
+
+    /**
+     * Accepts only exact operator values so typos cannot silently enable another path.
+     *
+     * @returns Valid process-wide caption source.
+     */
+    private static captionSource(): BackendCaptionSource {
+        const raw = process.env[CAPTION_SOURCE_ENVIRONMENT_VARIABLE];
+        if (
+            raw === undefined ||
+            raw === BACKEND_CAPTION_SOURCE.ExtensionUpload
+        ) {
+            return BACKEND_CAPTION_SOURCE.ExtensionUpload;
+        }
+        if (raw === BACKEND_CAPTION_SOURCE.LegacyYtDlp) {
+            return BACKEND_CAPTION_SOURCE.LegacyYtDlp;
+        }
+        throw new Error(
+            'TOPSKIP_CAPTION_SOURCE must be exactly extension_upload or legacy_yt_dlp.',
+        );
     }
 }

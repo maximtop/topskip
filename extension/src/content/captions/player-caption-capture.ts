@@ -4,6 +4,9 @@ import {
 } from '@/content/captions/caption-capture-state';
 import { contentLog } from '@/content/content-log';
 import type {
+    CaptionCaptureFailure,
+    CaptionCaptureInput,
+    CaptionCaptureResult,
     CaptionCaptureSession,
     CapturedTimedtextUrlShape,
     CapturedTimedtextPayload,
@@ -22,6 +25,7 @@ const ACTIVATION_RETRY_DELAY_MS = 250;
 const MAX_ACTIVATION_ATTEMPTS = 6;
 const PAGE_SOURCE = 'TOPSKIP_CAPTION_CAPTURE_PAGE';
 const PAGE_EVENT = 'topskip:caption-capture-page';
+const EMPTY_TRANSCRIPT_PARSE_ERROR = 'No caption cues found in JSON transcript';
 
 /**
  * Optional timing knobs for caption capture tests and runtime calls.
@@ -31,20 +35,14 @@ type CaptureOptions = {
 };
 
 /**
- * Terminal wait result for a caption capture attempt.
- */
-type CaptureWaitResult =
-    | { kind: 'captured' }
-    | { kind: 'timeout' }
-    | { kind: 'failed' };
-
-/**
  * Pending capture promise and timeout tied to the active session.
  */
 type ActiveCaptureWait = {
     session: CaptionCaptureSession;
     timeoutId: ReturnType<typeof setTimeout>;
-    resolve: (result: CaptureWaitResult) => void;
+    signal: AbortSignal;
+    abortListener: () => void;
+    resolve: (result: CaptionCaptureResult) => void;
 };
 
 /**
@@ -115,11 +113,6 @@ export class PlayerCaptionCapture {
     private static activeWait: ActiveCaptureWait | null = null;
 
     /**
-     * Successful payload ids already sent from this document.
-     */
-    private static readonly sentVideoIds = new Set<string>();
-
-    /**
      * Avoids adding duplicate window message listeners after SPA navigation.
      */
     private static listenerInstalled = false;
@@ -186,8 +179,8 @@ export class PlayerCaptionCapture {
     static resetForTest(): void {
         PlayerCaptionCapture.scheduledVideoId = null;
         PlayerCaptionCapture.activeSession = null;
+        PlayerCaptionCapture.resolveActiveWait({ status: 'cancelled' });
         PlayerCaptionCapture.activeWait = null;
-        PlayerCaptionCapture.sentVideoIds.clear();
         PlayerCaptionCapture.listenerInstalled = false;
         PlayerCaptionCapture.cleanupStarted = false;
         PlayerCaptionCapture.bridgeInstallPromise = null;
@@ -203,71 +196,130 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Starts a bounded caption capture attempt for a YouTube watch video.
+     * Preserves the old BYOK delivery path while route owners migrate to the
+     * reusable capture result.
      *
      * @param videoId Current YouTube watch video id.
-     * @param options Capture timing overrides used by tests and future callers.
-     * @returns Resolves after capture succeeds or reports a bounded failure.
+     * @param options Capture timing overrides used by focused tests.
+     * @returns Resolves after the legacy captions message is delivered.
      */
     static async captureForVideoId(
         videoId: string,
         options: CaptureOptions = {},
     ): Promise<void> {
+        const result = await PlayerCaptionCapture.capture({
+            videoId,
+            signal: new AbortController().signal,
+            captureTimeoutMs: options.captureTimeoutMs,
+        });
+        if (result.status === 'ready') {
+            await browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,
+                payload: result.payload,
+            });
+            return;
+        }
+        if (result.status === 'failed') {
+            await PlayerCaptionCapture.sendFailure(videoId, result.failure);
+        }
+    }
+
+    /**
+     * Runs one bounded player-mediated caption acquisition for its caller.
+     *
+     * @param input Video identity, cancellation signal, and optional test timeout.
+     * @returns A ready, failed, or explicitly cancelled terminal result.
+     */
+    static async capture(
+        input: CaptionCaptureInput,
+    ): Promise<CaptionCaptureResult> {
+        if (input.signal.aborted) {
+            return { status: 'cancelled' };
+        }
         PlayerCaptionCapture.ensureMessageListener();
         const session = createCaptureSession(
-            videoId,
-            options.captureTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS,
+            input.videoId,
+            input.captureTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS,
         );
         PlayerCaptionCapture.activeSession = session;
         PlayerCaptionCapture.cleanupStarted = false;
-        const waitForCapture = PlayerCaptionCapture.waitForCapture(session);
+        const waitForCapture = PlayerCaptionCapture.waitForCapture(
+            session,
+            input.signal,
+        );
         PlayerCaptionCapture.log('capture-start', {
-            videoId,
+            videoId: input.videoId,
             captureTimeoutMs: session.captureTimeoutMs,
             activationId: session.activationId,
         });
 
         try {
-            const installResult: unknown =
-                await PlayerCaptionCapture.getOrInstallBridge();
+            const installStage = await Promise.race([
+                PlayerCaptionCapture.getOrInstallBridge().then((value) => ({
+                    kind: 'installed' as const,
+                    value,
+                })),
+                waitForCapture.then((result) => ({
+                    kind: 'terminal' as const,
+                    result,
+                })),
+            ]);
+            if (installStage.kind === 'terminal') {
+                return installStage.result;
+            }
+            const installResult: unknown = installStage.value;
             if (PlayerCaptionCapture.isInstallFailure(installResult)) {
                 PlayerCaptionCapture.log('bridge-install-failed', {
-                    videoId,
+                    videoId: input.videoId,
                     error: installResult.error,
                 });
-                PlayerCaptionCapture.resolveActiveWait({ kind: 'failed' });
-                await PlayerCaptionCapture.sendFailure(
-                    videoId,
-                    CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed,
-                    installResult.error,
-                    { stage: 'installing' },
-                );
-                return;
+                return PlayerCaptionCapture.resolveFailure({
+                    reason: CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed,
+                    message: installResult.error,
+                    diagnostics: { stage: 'installing' },
+                });
             }
-            PlayerCaptionCapture.log('bridge-installed', { videoId });
-            const activated =
-                await PlayerCaptionCapture.activateCaptions(videoId);
-            if (!activated) {
-                PlayerCaptionCapture.resolveActiveWait({ kind: 'failed' });
-                return;
+            PlayerCaptionCapture.log('bridge-installed', {
+                videoId: input.videoId,
+            });
+            const activationStage = await Promise.race([
+                PlayerCaptionCapture.activateCaptions(
+                    input.videoId,
+                    input.signal,
+                ).then((failure) => ({
+                    kind: 'activated' as const,
+                    failure,
+                })),
+                waitForCapture.then((result) => ({
+                    kind: 'terminal' as const,
+                    result,
+                })),
+            ]);
+            if (activationStage.kind === 'terminal') {
+                return activationStage.result;
+            }
+            const activationFailure = activationStage.failure;
+            if (activationFailure !== null) {
+                return PlayerCaptionCapture.resolveFailure(activationFailure);
             }
             const result = await waitForCapture;
-            if (result.kind === 'timeout') {
+            if (
+                result.status === 'failed' &&
+                result.failure.reason ===
+                    CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout
+            ) {
                 PlayerCaptionCapture.log('capture-timeout', {
-                    videoId,
+                    videoId: input.videoId,
                     captureTimeoutMs: session.captureTimeoutMs,
                 });
-                await PlayerCaptionCapture.sendFailure(
-                    videoId,
-                    CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
-                    'Caption capture timed out',
-                    { stage: 'waiting-capture' },
-                );
             }
+            return result;
         } finally {
             await PlayerCaptionCapture.cleanupActiveSession();
-            PlayerCaptionCapture.activeSession = null;
-            PlayerCaptionCapture.activeWait = null;
+            if (PlayerCaptionCapture.activeSession === session) {
+                PlayerCaptionCapture.activeSession = null;
+            }
+            PlayerCaptionCapture.clearActiveWaitForSession(session);
             PlayerCaptionCapture.cleanupStarted = false;
         }
     }
@@ -365,20 +417,21 @@ export class PlayerCaptionCapture {
             }
             return;
         }
-        void PlayerCaptionCapture.handleTimedtextCapture(data);
+        PlayerCaptionCapture.handleTimedtextCapture(data);
     }
 
     /**
      * Converts a captured `json3` body into the existing captions payload.
      *
      * @param data Raw page-world timedtext capture message.
-     * @returns Resolves after forwarding success/failure to the background.
      */
-    private static async handleTimedtextCapture(data: object): Promise<void> {
+    private static handleTimedtextCapture(data: object): void {
         const session = PlayerCaptionCapture.activeSession;
-        if (session === null) {
+        const activeWait = PlayerCaptionCapture.activeWait;
+        if (session === null || activeWait === null) {
             PlayerCaptionCapture.log('capture-event-ignored', {
-                reason: 'no-active-session',
+                reason:
+                    session === null ? 'no-active-session' : 'settled-session',
             });
             return;
         }
@@ -420,19 +473,10 @@ export class PlayerCaptionCapture {
             urlShape,
         });
         if (shouldIgnoreCapturedTimedtext(session, payload)) {
-            PlayerCaptionCapture.resolveActiveWait({ kind: 'failed' });
-            await PlayerCaptionCapture.sendFailure(
-                session.videoId,
-                CAPTION_CAPTURE_FAILURE_REASON.StaleVideo,
-                'Captured captions belonged to a different video',
-                { stage: 'waiting-capture', urlShape },
-            );
-            return;
-        }
-        if (PlayerCaptionCapture.sentVideoIds.has(videoId)) {
-            PlayerCaptionCapture.log('capture-event-ignored', {
-                videoId,
-                reason: 'duplicate-success',
+            PlayerCaptionCapture.resolveFailure({
+                reason: CAPTION_CAPTURE_FAILURE_REASON.StaleVideo,
+                message: 'Captured captions belonged to a different video',
+                diagnostics: { stage: 'waiting-capture', urlShape },
             });
             return;
         }
@@ -446,22 +490,22 @@ export class PlayerCaptionCapture {
                 urlShape,
                 error: parsed.error,
             });
-            PlayerCaptionCapture.resolveActiveWait({ kind: 'failed' });
-            await PlayerCaptionCapture.sendFailure(
-                videoId,
-                CAPTION_CAPTURE_FAILURE_REASON.ParseFailed,
-                parsed.error,
-                {
+            const reason =
+                parsed.error === EMPTY_TRANSCRIPT_PARSE_ERROR
+                    ? CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable
+                    : CAPTION_CAPTURE_FAILURE_REASON.ParseFailed;
+            PlayerCaptionCapture.resolveFailure({
+                reason,
+                message: parsed.error,
+                diagnostics: {
                     stage: 'parsing',
                     bodyLength,
                     languageCode,
                     urlShape,
                 },
-            );
+            });
             return;
         }
-
-        PlayerCaptionCapture.sentVideoIds.add(videoId);
         PlayerCaptionCapture.log('capture-parsed', {
             videoId,
             languageCode,
@@ -469,8 +513,8 @@ export class PlayerCaptionCapture {
             segmentCount: parsed.segments.length,
             urlShape,
         });
-        await browser.runtime.sendMessage({
-            type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,
+        PlayerCaptionCapture.resolveActiveWait({
+            status: 'ready',
             payload: {
                 ok: true,
                 videoId,
@@ -485,7 +529,6 @@ export class PlayerCaptionCapture {
                 },
             },
         });
-        PlayerCaptionCapture.resolveActiveWait({ kind: 'captured' });
     }
 
     /**
@@ -517,14 +560,21 @@ export class PlayerCaptionCapture {
      * Retries activation while the page reports a transient player state.
      *
      * @param videoId Current YouTube watch video id.
-     * @returns Whether activation was accepted by the page bridge.
+     * @param signal Route-owned cancellation signal.
+     * @returns A bounded failure, or `null` when activation was accepted.
      */
-    private static async activateCaptions(videoId: string): Promise<boolean> {
+    private static async activateCaptions(
+        videoId: string,
+        signal: AbortSignal,
+    ): Promise<CaptionCaptureFailure | null> {
         for (
             let attempt = 1;
             attempt <= MAX_ACTIVATION_ATTEMPTS;
             attempt += 1
         ) {
+            if (signal.aborted) {
+                return null;
+            }
             PlayerCaptionCapture.log('activation-attempt', {
                 videoId,
                 attempt,
@@ -534,6 +584,9 @@ export class PlayerCaptionCapture {
                 await PlayerCaptionCapture.runBridgeCommand(
                     'activate-captions',
                 );
+            if (signal.aborted) {
+                return null;
+            }
             const failure = PlayerCaptionCapture.getBridgeFailure(result);
             if (failure === null) {
                 PlayerCaptionCapture.log('activation-accepted', {
@@ -541,7 +594,7 @@ export class PlayerCaptionCapture {
                     attempt,
                     ...PlayerCaptionCapture.getBridgeCommandDetails(result),
                 });
-                return true;
+                return null;
             }
             PlayerCaptionCapture.log('activation-failed', {
                 videoId,
@@ -553,53 +606,107 @@ export class PlayerCaptionCapture {
                 failure.reason ===
                 CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady;
             if (!canRetry || attempt === MAX_ACTIVATION_ATTEMPTS) {
-                await PlayerCaptionCapture.sendFailure(
-                    videoId,
-                    failure.reason,
-                    failure.error,
-                    { stage: 'activating' },
-                );
-                return false;
+                return {
+                    reason: failure.reason,
+                    message: failure.error,
+                    diagnostics: { stage: 'activating' },
+                };
             }
             await PlayerCaptionCapture.delay(ACTIVATION_RETRY_DELAY_MS);
         }
-        return false;
+        return {
+            reason: CAPTION_CAPTURE_FAILURE_REASON.ActivationUnavailable,
+            message: 'Caption activation is unavailable',
+            diagnostics: { stage: 'activating' },
+        };
     }
 
     /**
      * Waits until page capture resolves or the bounded timer expires.
      *
      * @param session Active capture session.
-     * @returns Capture wait result.
+     * @param signal Route-owned cancellation signal.
+     * @returns Capture terminal result.
      */
     private static waitForCapture(
         session: CaptionCaptureSession,
-    ): Promise<CaptureWaitResult> {
+        signal: AbortSignal,
+    ): Promise<CaptionCaptureResult> {
         return new Promise((resolve) => {
             const timeoutId = globalThis.setTimeout(() => {
-                PlayerCaptionCapture.resolveActiveWait({ kind: 'timeout' });
+                PlayerCaptionCapture.resolveFailure({
+                    reason: CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
+                    message: 'Caption capture timed out',
+                    diagnostics: { stage: 'waiting-capture' },
+                });
             }, session.captureTimeoutMs);
+            const abortListener = (): void => {
+                PlayerCaptionCapture.resolveActiveWait({
+                    status: 'cancelled',
+                });
+            };
             PlayerCaptionCapture.activeWait = {
                 session,
                 timeoutId,
+                signal,
+                abortListener,
                 resolve,
             };
+            signal.addEventListener('abort', abortListener, { once: true });
+            if (signal.aborted) {
+                abortListener();
+            }
         });
     }
 
     /**
      * Resolves the active capture waiter exactly once.
      *
-     * @param result Capture result to send to the waiting run.
+     * @param result Capture result to return to the owning route.
      */
-    private static resolveActiveWait(result: CaptureWaitResult): void {
+    private static resolveActiveWait(result: CaptionCaptureResult): void {
         const activeWait = PlayerCaptionCapture.activeWait;
         if (activeWait === null) {
             return;
         }
         globalThis.clearTimeout(activeWait.timeoutId);
+        activeWait.signal.removeEventListener(
+            'abort',
+            activeWait.abortListener,
+        );
         PlayerCaptionCapture.activeWait = null;
         activeWait.resolve(result);
+    }
+
+    /**
+     * Resolves the active session with one normalized capture failure.
+     *
+     * @param failure Safe failure returned to the route owner.
+     * @returns The same terminal result for immediate control flow.
+     */
+    private static resolveFailure(
+        failure: CaptionCaptureFailure,
+    ): CaptionCaptureResult {
+        const result: CaptionCaptureResult = {
+            status: 'failed',
+            failure,
+        };
+        PlayerCaptionCapture.resolveActiveWait(result);
+        return result;
+    }
+
+    /**
+     * Clears a waiter left behind by an operation that failed before awaiting it.
+     *
+     * @param session Session whose timers and abort listener must be released.
+     */
+    private static clearActiveWaitForSession(
+        session: CaptionCaptureSession,
+    ): void {
+        if (PlayerCaptionCapture.activeWait?.session !== session) {
+            return;
+        }
+        PlayerCaptionCapture.resolveActiveWait({ status: 'cancelled' });
     }
 
     /**
@@ -731,37 +838,28 @@ export class PlayerCaptionCapture {
      * Sends a bounded failure reason through the existing captions channel.
      *
      * @param videoId Current YouTube watch video id.
-     * @param reason Safe failure reason.
-     * @param error Human-readable failure message.
-     * @param diagnostics Safe metadata for troubleshooting capture failures.
+     * @param failure Safe failure returned by the reusable capture API.
      * @returns Resolves after the message send settles.
      */
     private static async sendFailure(
         videoId: string,
-        reason: CaptionCaptureFailureReason,
-        error: string,
-        diagnostics: {
-            stage: string;
-            bodyLength?: number;
-            languageCode?: string;
-            urlShape?: CapturedTimedtextUrlShape;
-        },
+        failure: CaptionCaptureFailure,
     ): Promise<void> {
         await browser.runtime.sendMessage({
             type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,
             payload: {
                 ok: false,
                 videoId,
-                reason,
-                error,
-                diagnostics,
+                reason: failure.reason,
+                error: failure.message,
+                diagnostics: failure.diagnostics,
             },
         });
         PlayerCaptionCapture.log('failure-sent', {
             videoId,
-            reason,
-            error,
-            diagnostics,
+            reason: failure.reason,
+            error: failure.message,
+            diagnostics: failure.diagnostics,
         });
     }
 

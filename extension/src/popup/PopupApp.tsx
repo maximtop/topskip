@@ -233,6 +233,47 @@ type PopupViewModelArgs = {
     chromeModelAvailability: ProviderAvailabilityMessage | null;
 };
 
+const SERVER_POPUP_PHASE_RANK = {
+    caption_acquisition: 0,
+    server_analysis: 1,
+    terminal: 2,
+} as const;
+
+/**
+ * Prevents delayed popup polling from rendering an earlier phase of one session.
+ *
+ * @param current - Snapshot already visible in the popup.
+ * @param incoming - Newly observed background snapshot.
+ * @returns Incoming state unless it moves the same Server session backwards.
+ */
+export function chooseMonotonicDetectionSnapshot(
+    current: PromoDetectionStatePayload | null,
+    incoming: PromoDetectionStatePayload | null,
+): PromoDetectionStatePayload | null {
+    if (current === null || incoming === null) {
+        return incoming;
+    }
+    if (
+        current.sessionId === undefined ||
+        incoming.sessionId === undefined ||
+        current.sessionId !== incoming.sessionId
+    ) {
+        return incoming;
+    }
+    const currentPhase =
+        current.status === 'analyzing'
+            ? (current.serverAnalysisPhase ?? 'server_analysis')
+            : 'terminal';
+    const incomingPhase =
+        incoming.status === 'analyzing'
+            ? (incoming.serverAnalysisPhase ?? 'server_analysis')
+            : 'terminal';
+    return SERVER_POPUP_PHASE_RANK[incomingPhase] <
+        SERVER_POPUP_PHASE_RANK[currentPhase]
+        ? current
+        : incoming;
+}
+
 /**
  * Builds localized public-server failure copy from stable codes only.
  *
@@ -436,25 +477,20 @@ function buildPopupStatusViewModel(
         detectionState.status === 'analyzing' &&
         detectionState.source === 'server'
     ) {
+        const isCaptionAcquisition =
+            detectionState.serverAnalysisPhase === 'caption_acquisition';
+        const keyPrefix = isCaptionAcquisition
+            ? 'popup_detection_server_acquisition'
+            : 'popup_detection_server_pending';
         return {
             tone: 'brand',
-            badgeLabel: translator.getMessage(
-                'popup_detection_server_pending_badge',
-            ),
+            badgeLabel: translator.getMessage(`${keyPrefix}_badge`),
             badgeColor: 'brand',
-            title: translator.getMessage(
-                'popup_detection_server_pending_title',
-            ),
-            description: translator.getMessage(
-                'popup_detection_server_pending_description',
-            ),
+            title: translator.getMessage(`${keyPrefix}_title`),
+            description: translator.getMessage(`${keyPrefix}_description`),
             activityLabel: ACTIVITY_LABEL_ACTIVE,
-            statusHeadline: translator.getMessage(
-                'popup_detection_server_pending_headline',
-            ),
-            statusBody: translator.getMessage(
-                'popup_detection_server_pending_body',
-            ),
+            statusHeadline: translator.getMessage(`${keyPrefix}_headline`),
+            statusBody: translator.getMessage(`${keyPrefix}_body`),
             settingsLabel: translator.getMessage('popup_open_settings'),
             providerLabel,
         };
@@ -578,7 +614,7 @@ function buildPopupStatusViewModel(
         detectionState.source === 'local_provider'
     ) {
         const providerName =
-            providerDisplayName ??
+            providerDisplayName.trim() ||
             translator.getMessage('popup_analysis_mode_byok');
         return {
             tone: 'warning',
@@ -758,20 +794,6 @@ function buildPopupStatusViewModel(
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
-        default:
-            return {
-                tone: 'neutral',
-                badgeLabel: detectionLabel(detectionState.status),
-                badgeColor: 'gray',
-                title: 'Status update',
-                description:
-                    'TopSkip reported a state update ' + 'for the current tab.',
-                activityLabel: ACTIVITY_LABEL_ACTIVE,
-                statusHeadline: detectionLabel(detectionState.status),
-                statusBody: null,
-                settingsLabel: 'Open settings',
-                providerLabel,
-            };
     }
 }
 
@@ -939,7 +961,12 @@ export const PopupApp = observer(function PopupApp() {
                     detectionRefreshGuard.markSuccessfulSnapshot();
                     setDetectionLoaded(true);
                     setDetectionError(null);
-                    setDetectionState(res.state);
+                    setDetectionState((current) => {
+                        return chooseMonotonicDetectionSnapshot(
+                            current,
+                            res.state,
+                        );
+                    });
                 });
             } catch (e) {
                 handleRefreshCompletion(() => {

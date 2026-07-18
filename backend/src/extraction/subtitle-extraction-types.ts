@@ -4,6 +4,7 @@ import {
     type ServerAnalysisFailureCode,
     youtubeVideoIdSchema,
 } from '@topskip/common/server-analysis-contract';
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 
 const finiteNonNegativeNumberSchema = v.pipe(
     v.number(),
@@ -69,26 +70,94 @@ const timedTranscriptSegmentSchema = v.strictObject({
     text: v.pipe(v.string(), v.trim(), v.minLength(1)),
 });
 
+const canonicalUploadTranscriptSegmentSchema = v.strictObject({
+    startSec: finiteNonNegativeNumberSchema,
+    durationSec: finiteNonNegativeNumberSchema,
+    text: v.pipe(v.string(), v.minLength(1)),
+});
+
+const transcriptHashSchema = v.pipe(v.string(), v.regex(/^[0-9a-f]{64}$/u));
+
+const transcriptArtifactSharedEntries = {
+    artifactId: v.pipe(v.string(), v.minLength(1)),
+    videoId: youtubeVideoIdSchema,
+    algorithmVersion: v.pipe(v.string(), v.minLength(1)),
+    strategy: v.pipe(v.string(), v.minLength(1)),
+    videoDurationSec: v.optional(finiteNonNegativeNumberSchema),
+    acquiredAtMs: finitePositiveIntegerSchema,
+    segments: v.pipe(v.array(timedTranscriptSegmentSchema), v.minLength(1)),
+    transcriptText: v.pipe(v.string(), v.trim(), v.minLength(1)),
+};
+
+const legacyTranscriptArtifactIdentityEntries = {
+    languageCode: v.nullable(v.pipe(v.string(), v.minLength(1))),
+    transcriptHash: v.optional(v.nullable(transcriptHashSchema)),
+};
+
+const localFixtureTranscriptArtifactSchema = v.strictObject({
+    ...transcriptArtifactSharedEntries,
+    sourceType: v.literal('local_fixture'),
+    ...legacyTranscriptArtifactIdentityEntries,
+});
+
+const timedTextTranscriptArtifactSchema = v.strictObject({
+    ...transcriptArtifactSharedEntries,
+    sourceType: v.literal('youtube_timedtext'),
+    ...legacyTranscriptArtifactIdentityEntries,
+});
+
+const ytDlpTranscriptArtifactSchema = v.strictObject({
+    ...transcriptArtifactSharedEntries,
+    sourceType: v.literal('youtube_yt_dlp'),
+    ...legacyTranscriptArtifactIdentityEntries,
+});
+
+const extensionCaptionUploadArtifactSchema = v.pipe(
+    v.strictObject({
+        ...transcriptArtifactSharedEntries,
+        sourceType: v.literal('extension_caption_upload'),
+        languageCode: v.pipe(v.string(), v.minLength(1)),
+        transcriptHash: transcriptHashSchema,
+        segments: v.pipe(
+            v.array(canonicalUploadTranscriptSegmentSchema),
+            v.minLength(1),
+        ),
+        transcriptText: v.pipe(v.string(), v.minLength(1)),
+    }),
+    v.check((artifact) => {
+        const canonical = CaptionTranscriptCanonicalizer.canonicalize({
+            languageCode: artifact.languageCode,
+            segments: artifact.segments,
+        });
+        if (!canonical.ok) {
+            return false;
+        }
+        return (
+            canonical.transcript.languageCode === artifact.languageCode &&
+            canonical.transcript.canonicalJson ===
+                JSON.stringify(
+                    artifact.segments.map((segment) => [
+                        segment.startSec,
+                        segment.durationSec,
+                        segment.text,
+                    ]),
+                ) &&
+            artifact.transcriptText ===
+                artifact.segments.map((segment) => segment.text).join(' ')
+        );
+    }, 'Uploaded transcript artifacts must already be canonical.'),
+);
+
 /**
  * Validates selected transcripts before any later model-analysis worker can use them.
  */
 export const transcriptArtifactSchema = v.pipe(
-    v.strictObject({
-        artifactId: v.pipe(v.string(), v.minLength(1)),
-        videoId: youtubeVideoIdSchema,
-        algorithmVersion: v.pipe(v.string(), v.minLength(1)),
-        strategy: v.pipe(v.string(), v.minLength(1)),
-        sourceType: v.picklist([
-            'local_fixture',
-            'youtube_timedtext',
-            'youtube_yt_dlp',
-        ] as const),
-        languageCode: v.nullable(v.pipe(v.string(), v.minLength(1))),
-        videoDurationSec: v.optional(finiteNonNegativeNumberSchema),
-        acquiredAtMs: finitePositiveIntegerSchema,
-        segments: v.pipe(v.array(timedTranscriptSegmentSchema), v.minLength(1)),
-        transcriptText: v.pipe(v.string(), v.trim(), v.minLength(1)),
-    }),
+    v.variant('sourceType', [
+        localFixtureTranscriptArtifactSchema,
+        timedTextTranscriptArtifactSchema,
+        ytDlpTranscriptArtifactSchema,
+        extensionCaptionUploadArtifactSchema,
+    ]),
     v.check(
         (artifact) =>
             artifact.segments.every((segment, index, segments) => {

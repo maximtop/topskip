@@ -10,30 +10,41 @@ import * as v from 'valibot';
 
 import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
 import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
+import { BackendServerAnalysisBoundary } from '@topskip/backend/server-analysis-boundary';
 import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
-import { BackendServerConfig } from '@topskip/backend/server-config';
+import {
+    BACKEND_CAPTION_SOURCE,
+    BackendServerConfig,
+    type BackendCaptionSource,
+} from '@topskip/backend/server-config';
 import { BackendPublicState } from '@topskip/backend/public-state';
 import { MIME_APPLICATION_JSON } from '@topskip/common/constants';
 import {
     errorResponseSchema,
-    installationRegistrationResponseSchema,
+    installationRegistrationResponseEmissionSchema,
     isValidYouTubeVideoId,
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_API_VERSION,
-    SERVER_ANALYSIS_CAPABILITY_TYPED_ERRORS,
     SERVER_ANALYSIS_FAILURE_CODE,
+    SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
-    serverAnalysisRequestSchema,
-    serverConfigResponseSchema,
+    serverConfigResponseEmissionSchema,
     TOPSKIP_CAPABILITIES_HEADER_NAME,
     type ErrorResponse,
 } from '@topskip/common/server-analysis-contract';
 
 const DEFAULT_BACKEND_HOST = '127.0.0.1';
 const DEFAULT_BACKEND_PORT = 8787;
-const MAX_ANALYSIS_REQUEST_BODY_BYTES = 32_768;
+const MAX_AUXILIARY_JSON_BODY_BYTES = 32_768;
+const ANALYSIS_BODY_READ_TIMEOUT_MS = 12_000;
+const MAX_CONCURRENT_ANALYSIS_BODY_READS = 4;
+const CAPACITY_RETRY_AFTER_SEC = 3;
 const HTTP_STATUS_OK = 200;
 const HTTP_STATUS_NO_CONTENT = 204;
+const HTTP_STATUS_REQUEST_TIMEOUT = 408;
+const HTTP_STATUS_CONTENT_TOO_LARGE = 413;
+const HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE = 415;
+const HTTP_STATUS_SERVICE_UNAVAILABLE = 503;
 const HTTP_STATUS_INTERNAL_SERVER_ERROR = 500;
 const HTTP_STATUS_NOT_FOUND = 404;
 const LOCAL_URL_BASE = 'http://127.0.0.1';
@@ -42,21 +53,34 @@ const FIXTURE_COMPLETION_ENABLED = process.env.NODE_ENV === 'test';
 const AUTHORIZATION_BEARER_PREFIX = 'Bearer ';
 const IP_HMAC_SECRET_ENVIRONMENT_VARIABLE = 'TOPSKIP_IP_HMAC_SECRET';
 const LOCAL_IP_HMAC_SECRET = 'topskip-local-development';
-const MAX_CAPABILITIES_HEADER_BYTES = 2_048;
-const MAX_CAPABILITIES_HEADER_COUNT = 16;
-const MAX_CAPABILITY_NAME_LENGTH = 64;
 const MAX_JOB_ID_LENGTH = 160;
 const FAILURE_RETENTION_MS = 30 * 24 * 60 * 60 * 1_000;
 const CORS_ALLOW_METHODS = 'GET, POST, OPTIONS';
 const CORS_ALLOW_HEADERS = `Authorization, Content-Type, ${TOPSKIP_CAPABILITIES_HEADER_NAME}`;
 const CORS_MAX_AGE_SEC = 86_400;
 
+let activeAnalysisBodyReads = 0;
+
 /**
  * Result of parsing the local API request body at the HTTP boundary.
  */
 type ReadJsonBodyResult =
     | { ok: true; body: unknown }
-    | { ok: false; statusCode: 400 | 413; body: ErrorResponse };
+    | {
+          ok: false;
+          statusCode: 400 | 408 | 413 | 415 | 503;
+          body: unknown;
+          closeConnection?: boolean;
+      };
+
+/**
+ * Raw reader settings keep the large public upload isolated from small fixture routes.
+ */
+type ReadJsonBodyOptions = {
+    maxBytes: number;
+    timeoutMs: number;
+    reserveAnalysisSlot: boolean;
+};
 
 /**
  * Server factory options keep public auth tests explicit while preserving local fixtures.
@@ -65,6 +89,8 @@ type BackendHttpServerOptions = {
     requireAuth?: boolean;
     now?: () => number;
     production?: boolean;
+    captionSource?: BackendCaptionSource;
+    analysisBodyReadTimeoutMs?: number;
 };
 
 /**
@@ -82,9 +108,10 @@ type BackendHttpRequestContext = {
     requireAuth: boolean;
     production: boolean;
     now: () => number;
+    captionSource: BackendCaptionSource;
     requestId: string;
-    typedErrors: boolean;
     extensionVersion: string | undefined;
+    analysisBodyReadTimeoutMs: number;
 };
 
 /**
@@ -116,6 +143,8 @@ export class BackendHttpServer {
         const production =
             options.production ?? process.env.NODE_ENV === 'production';
         const now = options.now ?? Date.now;
+        const captionSource =
+            options.captionSource ?? BACKEND_CAPTION_SOURCE.ExtensionUpload;
         return createServer((req, res) => {
             const startedAtMs = Date.now();
             const url = BackendHttpServer.parseRequestUrl(req.url);
@@ -123,9 +152,12 @@ export class BackendHttpServer {
                 requireAuth,
                 production,
                 now,
+                captionSource,
                 requestId: `request-${randomUUID()}`,
-                typedErrors: BackendHttpServer.headerSupportsTypedErrors(req),
                 extensionVersion: undefined,
+                analysisBodyReadTimeoutMs:
+                    options.analysisBodyReadTimeoutMs ??
+                    ANALYSIS_BODY_READ_TIMEOUT_MS,
             };
             BackendHttpServer.applyCorsHeaders(req, res, production);
             const route = BackendHttpServer.routeTemplate(url);
@@ -155,11 +187,17 @@ export class BackendHttpServer {
      * @returns Nothing.
      */
     static listen(): void {
-        BackendServerConfig.prepare();
+        const runtimeConfig = BackendServerConfig.prepare();
         BackendPublicState.assertReady();
         BackendServerAnalysisLog.enable();
-        const ytDlpVersion = YtDlpBinary.assertAvailable();
-        const server = BackendHttpServer.create();
+        if (
+            runtimeConfig.captionSource === BACKEND_CAPTION_SOURCE.LegacyYtDlp
+        ) {
+            YtDlpBinary.assertAvailable();
+        }
+        const server = BackendHttpServer.create({
+            captionSource: runtimeConfig.captionSource,
+        });
         const host = process.env.TOPSKIP_HOST ?? DEFAULT_BACKEND_HOST;
         const port = BackendHttpServer.readPort(
             process.env.TOPSKIP_PORT,
@@ -167,7 +205,7 @@ export class BackendHttpServer {
         );
         server.listen(port, host, () => {
             console.info(
-                `TopSkip backend listening on http://${host}:${port} (yt-dlp ${ytDlpVersion})`,
+                `TopSkip backend listening on http://${host}:${port} (captionSource ${runtimeConfig.captionSource})`,
             );
         });
     }
@@ -205,7 +243,7 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 HTTP_STATUS_OK,
-                v.parse(serverConfigResponseSchema, {
+                v.parse(serverConfigResponseEmissionSchema, {
                     apiVersion: SERVER_ANALYSIS_API_VERSION,
                     algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                     supportedCapabilities: [
@@ -252,12 +290,10 @@ export class BackendHttpServer {
                 BackendHttpServer.sendJson(
                     res,
                     result.statusCode,
-                    context.requireAuth
-                        ? BackendHttpServer.formatNegotiatedResponse(
-                              result.body,
-                              context.typedErrors,
-                          )
-                        : result.body,
+                    BackendHttpServer.serializeAnalysisResponse(
+                        result.body,
+                        context,
+                    ),
                 );
                 return;
             }
@@ -282,12 +318,7 @@ export class BackendHttpServer {
         BackendHttpServer.sendJson(
             res,
             HTTP_STATUS_NOT_FOUND,
-            context.requireAuth
-                ? BackendHttpServer.formatNegotiatedResponse(
-                      notFound,
-                      context.typedErrors,
-                  )
-                : notFound,
+            BackendHttpServer.serializeAnalysisResponse(notFound, context),
         );
     }
 
@@ -311,12 +342,7 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 HTTP_STATUS_NOT_FOUND,
-                context.requireAuth
-                    ? BackendHttpServer.formatNegotiatedResponse(
-                          failure,
-                          context.typedErrors,
-                      )
-                    : failure,
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
             );
             return;
         }
@@ -324,31 +350,43 @@ export class BackendHttpServer {
         if (authenticated === null) {
             return;
         }
-        const readResult = await BackendHttpServer.readJsonBody(req);
+        const readResult = await BackendHttpServer.readJsonBody(req, {
+            maxBytes: SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
+            timeoutMs: context.analysisBodyReadTimeoutMs,
+            reserveAnalysisSlot: true,
+        });
         if (!readResult.ok) {
-            const body = context.requireAuth
-                ? BackendHttpServer.formatNegotiatedResponse(
-                      readResult.body,
-                      context.typedErrors,
-                  )
-                : readResult.body;
+            BackendHttpServer.prepareBodyReadFailureConnection(
+                req,
+                res,
+                readResult,
+            );
+            const body = BackendHttpServer.serializeAnalysisResponse(
+                readResult.body,
+                context,
+            );
             BackendHttpServer.sendJson(res, readResult.statusCode, body);
             return;
         }
 
-        context.typedErrors =
-            context.typedErrors ||
-            BackendHttpServer.validBodySupportsTypedErrors(readResult.body);
-        const parsedRequest = v.safeParse(
-            serverAnalysisRequestSchema,
-            readResult.body,
-        );
-        if (parsedRequest.success) {
-            context.extensionVersion = parsedRequest.output.extensionVersion;
+        const parsedRequest = BackendServerAnalysisBoundary.forSource(
+            context.captionSource,
+        ).parseRequest(readResult.body);
+        if (!parsedRequest.success) {
+            const failure = BackendHttpServer.error(
+                SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
+            );
+            BackendHttpServer.sendJson(
+                res,
+                400,
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
+            );
+            return;
         }
+        context.extensionVersion = parsedRequest.output.extensionVersion;
 
         const result = BackendAnalysisApi.handleAnalysisRequest(
-            readResult.body,
+            parsedRequest.output,
             {
                 nowMs: context.now(),
                 context: context.requireAuth
@@ -357,6 +395,7 @@ export class BackendHttpServer {
                           requestId: context.requestId,
                       }
                     : undefined,
+                captionSource: context.captionSource,
             },
         );
         BackendServerAnalysisLog.info('analysis-request-handled', {
@@ -371,12 +410,7 @@ export class BackendHttpServer {
         BackendHttpServer.sendJson(
             res,
             result.statusCode,
-            context.requireAuth
-                ? BackendHttpServer.formatNegotiatedResponse(
-                      result.body,
-                      context.typedErrors,
-                  )
-                : result.body,
+            BackendHttpServer.serializeAnalysisResponse(result.body, context),
         );
     }
 
@@ -399,12 +433,7 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 HTTP_STATUS_NOT_FOUND,
-                context.requireAuth
-                    ? BackendHttpServer.formatNegotiatedResponse(
-                          failure,
-                          context.typedErrors,
-                      )
-                    : failure,
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
             );
             return;
         }
@@ -424,19 +453,14 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 429,
-                context.requireAuth
-                    ? BackendHttpServer.formatNegotiatedResponse(
-                          failure,
-                          context.typedErrors,
-                      )
-                    : failure,
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
             );
             return;
         }
         BackendHttpServer.sendJson(
             res,
             201,
-            v.parse(installationRegistrationResponseSchema, {
+            v.parse(installationRegistrationResponseEmissionSchema, {
                 status: 'registered',
                 token: registration.token,
                 expiresAtMs: registration.expiresAtMs,
@@ -474,10 +498,7 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 401,
-                BackendHttpServer.formatNegotiatedResponse(
-                    failure,
-                    context.typedErrors,
-                ),
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
             );
             return null;
         }
@@ -491,10 +512,7 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 401,
-                BackendHttpServer.formatNegotiatedResponse(
-                    failure,
-                    context.typedErrors,
-                ),
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
             );
             return null;
         }
@@ -514,10 +532,7 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 429,
-                BackendHttpServer.formatNegotiatedResponse(
-                    failure,
-                    context.typedErrors,
-                ),
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
             );
             return null;
         }
@@ -550,8 +565,17 @@ export class BackendHttpServer {
             );
             return;
         }
-        const readResult = await BackendHttpServer.readJsonBody(req);
+        const readResult = await BackendHttpServer.readJsonBody(req, {
+            maxBytes: MAX_AUXILIARY_JSON_BODY_BYTES,
+            timeoutMs: ANALYSIS_BODY_READ_TIMEOUT_MS,
+            reserveAnalysisSlot: false,
+        });
         if (!readResult.ok) {
+            BackendHttpServer.prepareBodyReadFailureConnection(
+                req,
+                res,
+                readResult,
+            );
             BackendHttpServer.sendJson(
                 res,
                 readResult.statusCode,
@@ -631,63 +655,221 @@ export class BackendHttpServer {
     }
 
     /**
-     * Reads JSON while bounding stored body text and guarding parse failures.
+     * Reads raw JSON bytes within one deadline and an optional large-body slot.
      *
      * @param req - Incoming Node request stream.
+     * @param options - Per-route byte, deadline, and concurrency policy.
      * @returns Parsed JSON body or a typed request error.
      */
     private static async readJsonBody(
         req: IncomingMessage,
+        options: ReadJsonBodyOptions,
     ): Promise<ReadJsonBodyResult> {
-        if (!BackendHttpServer.hasJsonContentType(req)) {
+        if (
+            !BackendHttpServer.hasJsonContentType(req) ||
+            !BackendHttpServer.hasIdentityContentEncoding(req)
+        ) {
+            return {
+                ok: false,
+                statusCode: HTTP_STATUS_UNSUPPORTED_MEDIA_TYPE,
+                body: BackendHttpServer.error(
+                    SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
+                ),
+                closeConnection: true,
+            };
+        }
+
+        const declaredLength = BackendHttpServer.readContentLength(req);
+        if (declaredLength === 'invalid') {
             return {
                 ok: false,
                 statusCode: 400,
                 body: BackendHttpServer.error(
                     SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
                 ),
+                closeConnection: true,
             };
         }
-        let body = '';
-        let byteLength = 0;
-        let tooLarge = false;
-
-        req.setEncoding('utf8');
-        for await (const chunk of req) {
-            const text = String(chunk);
-            byteLength += Buffer.byteLength(text, 'utf8');
-            if (byteLength > MAX_ANALYSIS_REQUEST_BODY_BYTES) {
-                tooLarge = true;
-                continue;
-            }
-            body += text;
-        }
-
-        if (tooLarge) {
+        if (
+            typeof declaredLength === 'number' &&
+            declaredLength > options.maxBytes
+        ) {
             return {
                 ok: false,
-                statusCode: 413,
+                statusCode: HTTP_STATUS_CONTENT_TOO_LARGE,
                 body: BackendHttpServer.error(
                     SERVER_ANALYSIS_FAILURE_CODE.RequestBodyTooLarge,
                 ),
+                closeConnection: true,
             };
         }
 
-        if (body.length === 0) {
-            return { ok: true, body: {} };
-        }
-
-        try {
-            return { ok: true, body: JSON.parse(body) as unknown };
-        } catch {
+        const releaseSlot = options.reserveAnalysisSlot
+            ? BackendHttpServer.reserveAnalysisBodyReadSlot()
+            : () => undefined;
+        if (releaseSlot === null) {
             return {
                 ok: false,
-                statusCode: 400,
-                body: BackendHttpServer.error(
-                    SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
+                statusCode: HTTP_STATUS_SERVICE_UNAVAILABLE,
+                body: BackendHttpServer.rateLimitedError(
+                    SERVER_ANALYSIS_FAILURE_CODE.CapacityLimited,
+                    CAPACITY_RETRY_AFTER_SEC,
                 ),
+                closeConnection: true,
             };
         }
+
+        return await new Promise<ReadJsonBodyResult>((resolve) => {
+            const chunks: Buffer[] = [];
+            let byteLength = 0;
+            let settled = false;
+
+            const cleanup = (): void => {
+                clearTimeout(timeout);
+                req.off('data', onData);
+                req.off('end', onEnd);
+                req.off('aborted', onAborted);
+                req.off('close', onClose);
+                req.off('error', onError);
+                releaseSlot();
+            };
+            const finish = (result: ReadJsonBodyResult): void => {
+                if (settled) {
+                    return;
+                }
+                settled = true;
+                cleanup();
+                resolve(result);
+            };
+            const invalidRequest = (closeConnection: boolean): void => {
+                finish({
+                    ok: false,
+                    statusCode: 400,
+                    body: BackendHttpServer.error(
+                        SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
+                    ),
+                    ...(closeConnection ? { closeConnection: true } : {}),
+                });
+            };
+            const onData = (chunk: Buffer): void => {
+                byteLength += chunk.byteLength;
+                if (byteLength > options.maxBytes) {
+                    req.pause();
+                    finish({
+                        ok: false,
+                        statusCode: HTTP_STATUS_CONTENT_TOO_LARGE,
+                        body: BackendHttpServer.error(
+                            SERVER_ANALYSIS_FAILURE_CODE.RequestBodyTooLarge,
+                        ),
+                        closeConnection: true,
+                    });
+                    return;
+                }
+                chunks.push(chunk);
+            };
+            const onEnd = (): void => {
+                if (byteLength === 0) {
+                    finish({ ok: true, body: {} });
+                    return;
+                }
+                try {
+                    const decoded = new TextDecoder('utf-8', {
+                        fatal: true,
+                    }).decode(Buffer.concat(chunks, byteLength));
+                    finish({
+                        ok: true,
+                        body: JSON.parse(decoded) as unknown,
+                    });
+                } catch {
+                    invalidRequest(false);
+                }
+            };
+            const onAborted = (): void => invalidRequest(true);
+            const onClose = (): void => {
+                if (!req.complete) {
+                    invalidRequest(true);
+                }
+            };
+            const onError = (): void => invalidRequest(true);
+            const timeout = setTimeout(() => {
+                req.pause();
+                finish({
+                    ok: false,
+                    statusCode: HTTP_STATUS_REQUEST_TIMEOUT,
+                    body: BackendHttpServer.error(
+                        SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
+                    ),
+                    closeConnection: true,
+                });
+            }, options.timeoutMs);
+            timeout.unref();
+
+            req.on('data', onData);
+            req.once('end', onEnd);
+            req.once('aborted', onAborted);
+            req.once('close', onClose);
+            req.once('error', onError);
+        });
+    }
+
+    /**
+     * Reserves one of four process-wide upload buffers and returns an idempotent release.
+     *
+     * @returns Release callback, or `null` when the fail-fast capacity is full.
+     */
+    private static reserveAnalysisBodyReadSlot(): (() => void) | null {
+        if (activeAnalysisBodyReads >= MAX_CONCURRENT_ANALYSIS_BODY_READS) {
+            return null;
+        }
+        activeAnalysisBodyReads += 1;
+        let released = false;
+        return (): void => {
+            if (released) {
+                return;
+            }
+            released = true;
+            activeAnalysisBodyReads -= 1;
+        };
+    }
+
+    /**
+     * Parses a decimal Content-Length without accepting ambiguous or unsafe values.
+     *
+     * @param req - Incoming request carrying the optional length header.
+     * @returns Nonnegative length, `undefined`, or the invalid marker.
+     */
+    private static readContentLength(
+        req: IncomingMessage,
+    ): number | 'invalid' | undefined {
+        const raw = req.headers['content-length'];
+        if (raw === undefined) {
+            return undefined;
+        }
+        if (!/^\d+$/u.test(raw)) {
+            return 'invalid';
+        }
+        const parsed = Number(raw);
+        return Number.isSafeInteger(parsed) ? parsed : 'invalid';
+    }
+
+    /**
+     * Closes uploads that were deliberately left unread only after the safe response flushes.
+     *
+     * @param req - Incoming body stream to stop reusing.
+     * @param res - Response whose completion precedes socket destruction.
+     * @param failure - Body-read failure carrying the connection policy.
+     * @returns Nothing.
+     */
+    private static prepareBodyReadFailureConnection(
+        req: IncomingMessage,
+        res: ServerResponse,
+        failure: Extract<ReadJsonBodyResult, { ok: false }>,
+    ): void {
+        if (failure.closeConnection !== true) {
+            return;
+        }
+        res.setHeader('connection', 'close');
+        res.once('finish', () => req.destroy());
     }
 
     /**
@@ -783,12 +965,7 @@ export class BackendHttpServer {
         BackendHttpServer.sendJson(
             res,
             HTTP_STATUS_NOT_FOUND,
-            context.requireAuth
-                ? BackendHttpServer.formatNegotiatedResponse(
-                      failure,
-                      context.typedErrors,
-                  )
-                : failure,
+            BackendHttpServer.serializeAnalysisResponse(failure, context),
         );
     }
 
@@ -816,9 +993,32 @@ export class BackendHttpServer {
      */
     private static hasJsonContentType(req: IncomingMessage): boolean {
         const contentType = req.headers['content-type'];
+        if (typeof contentType !== 'string') {
+            return false;
+        }
+        const separatorIndex = contentType.indexOf(';');
+        const mediaType = contentType
+            .slice(
+                0,
+                separatorIndex === -1 ? contentType.length : separatorIndex,
+            )
+            .trim()
+            .toLowerCase();
+        return mediaType === MIME_APPLICATION_JSON;
+    }
+
+    /**
+     * Refuses compressed request bodies because the byte bound applies to wire input directly.
+     *
+     * @param req - Incoming request whose content encoding is evaluated.
+     * @returns Whether the body is absent from encoding transforms.
+     */
+    private static hasIdentityContentEncoding(req: IncomingMessage): boolean {
+        const contentEncoding = req.headers['content-encoding'];
         return (
-            typeof contentType === 'string' &&
-            contentType.toLowerCase().startsWith(MIME_APPLICATION_JSON)
+            contentEncoding === undefined ||
+            (typeof contentEncoding === 'string' &&
+                contentEncoding.trim().toLowerCase() === 'identity')
         );
     }
 
@@ -892,12 +1092,7 @@ export class BackendHttpServer {
             BackendHttpServer.sendJson(
                 res,
                 HTTP_STATUS_INTERNAL_SERVER_ERROR,
-                context.requireAuth
-                    ? BackendHttpServer.formatNegotiatedResponse(
-                          failure,
-                          context.typedErrors,
-                      )
-                    : failure,
+                BackendHttpServer.serializeAnalysisResponse(failure, context),
             );
         }
         BackendServerAnalysisLog.warn('request-failed', {
@@ -931,6 +1126,24 @@ export class BackendHttpServer {
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             error: { code, ...(supportId === undefined ? {} : { supportId }) },
         });
+    }
+
+    /**
+     * Builds a bounded retry response for pre-buffer process capacity.
+     *
+     * @param code - Safe rate or capacity code.
+     * @param retryAfterSec - Whole-second retry delay mirrored into HTTP headers.
+     * @returns Strict response candidate for the process-selected serializer.
+     */
+    private static rateLimitedError(
+        code: 'rate_limited' | 'capacity_limited',
+        retryAfterSec: number,
+    ): unknown {
+        return {
+            status: 'rate_limited',
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            error: { code, retryAfterSec },
+        };
     }
 
     /**
@@ -986,163 +1199,19 @@ export class BackendHttpServer {
     }
 
     /**
-     * Reads a bounded comma-separated capability header before auth or body parsing.
+     * Prevents a response from crossing the process-selected contract boundary.
      *
-     * @param req - Incoming public API request.
-     * @returns Whether this request explicitly opts into typed errors.
+     * @param body - Candidate analysis response produced by backend orchestration.
+     * @param context - Immutable caption-source selection captured by `create`.
+     * @returns Strictly validated response for the selected process mode.
      */
-    private static headerSupportsTypedErrors(req: IncomingMessage): boolean {
-        const raw = req.headers[TOPSKIP_CAPABILITIES_HEADER_NAME.toLowerCase()];
-        if (typeof raw !== 'string') {
-            return false;
-        }
-        if (Buffer.byteLength(raw, 'utf8') > MAX_CAPABILITIES_HEADER_BYTES) {
-            return false;
-        }
-        const capabilities = raw
-            .split(',')
-            .map((capability) => capability.trim());
-        if (
-            capabilities.length > MAX_CAPABILITIES_HEADER_COUNT ||
-            capabilities.some(
-                (capability) =>
-                    capability.length === 0 ||
-                    capability.length > MAX_CAPABILITY_NAME_LENGTH,
-            ) ||
-            new Set(capabilities).size !== capabilities.length
-        ) {
-            return false;
-        }
-        return capabilities.includes(SERVER_ANALYSIS_CAPABILITY_TYPED_ERRORS);
-    }
-
-    /**
-     * Accepts body negotiation only after the entire analysis request validates.
-     *
-     * @param raw - Parsed request body at the analysis boundary.
-     * @returns Whether a valid analysis body opts into typed errors.
-     */
-    private static validBodySupportsTypedErrors(raw: unknown): boolean {
-        const parsed = v.safeParse(serverAnalysisRequestSchema, raw);
-        return (
-            parsed.success &&
-            parsed.output.client.capabilities.includes(
-                SERVER_ANALYSIS_CAPABILITY_TYPED_ERRORS,
-            )
-        );
-    }
-
-    /**
-     * Maps stable typed failures onto the previous safe v1 envelopes for old installations.
-     *
-     * @param body - Typed API response produced by current backend code.
-     * @param typedErrors - Request-scoped capability negotiation result.
-     * @returns Typed response or a message-bearing legacy envelope with no provider details.
-     */
-    private static formatNegotiatedResponse(
+    private static serializeAnalysisResponse(
         body: unknown,
-        typedErrors: boolean,
+        context: BackendHttpRequestContext,
     ): unknown {
-        if (typedErrors || body === null || typeof body !== 'object') {
-            return body;
-        }
-        const status: unknown = Reflect.get(body, 'status');
-        const error: unknown = Reflect.get(body, 'error');
-        const errorCode = BackendHttpServer.readErrorCode(error);
-        if (status === 'rate_limited') {
-            const retryAfterSec = BackendHttpServer.readRetryAfterSec(error);
-            return {
-                status: 'rate_limited',
-                retryAfterSec,
-                error: {
-                    code: 'rate_limited',
-                    message: 'Server analysis is temporarily limited.',
-                },
-            };
-        }
-        if (status === 'unavailable') {
-            const videoId: unknown = Reflect.get(body, 'videoId');
-            const algorithmVersion: unknown = Reflect.get(
-                body,
-                'algorithmVersion',
-            );
-            if (
-                typeof videoId !== 'string' ||
-                typeof algorithmVersion !== 'string'
-            ) {
-                return body;
-            }
-            return {
-                status: 'unavailable',
-                videoId,
-                algorithmVersion,
-                reason:
-                    errorCode === 'fixture_unavailable'
-                        ? 'fixture_unavailable'
-                        : 'caption_extraction_failed',
-                message: 'Caption extraction failed for this video.',
-            };
-        }
-        if (status !== 'error') {
-            return body;
-        }
-        const videoId: unknown = Reflect.get(body, 'videoId');
-        const algorithmVersion: unknown = Reflect.get(body, 'algorithmVersion');
-        if (
-            typeof videoId === 'string' &&
-            typeof algorithmVersion === 'string'
-        ) {
-            return {
-                status: 'error',
-                videoId,
-                algorithmVersion,
-                error: {
-                    code: BackendHttpServer.legacyTerminalCode(errorCode),
-                    message: 'Server analysis failed.',
-                },
-            };
-        }
-        return {
-            status: 'invalid_request',
-            error: {
-                code: BackendHttpServer.legacyRequestCode(errorCode),
-                message: 'The server could not process this request.',
-            },
-        };
-    }
-
-    /**
-     * Reads one stable error code from a typed failure object.
-     *
-     * @param error - Unknown failure details.
-     * @returns Stable code or a generic fallback.
-     */
-    private static readErrorCode(error: unknown): string {
-        if (error === null || typeof error !== 'object') {
-            return 'internal_error';
-        }
-        const code: unknown = Reflect.get(error, 'code');
-        return typeof code === 'string' ? code : 'internal_error';
-    }
-
-    /**
-     * Reads bounded retry metadata for a legacy rate envelope.
-     *
-     * @param error - Unknown typed failure details.
-     * @returns Positive retry seconds.
-     */
-    private static readRetryAfterSec(error: unknown): number {
-        if (error !== null && typeof error === 'object') {
-            const retryAfterSec: unknown = Reflect.get(error, 'retryAfterSec');
-            if (
-                typeof retryAfterSec === 'number' &&
-                Number.isInteger(retryAfterSec) &&
-                retryAfterSec > 0
-            ) {
-                return retryAfterSec;
-            }
-        }
-        return 1;
+        return BackendServerAnalysisBoundary.forSource(
+            context.captionSource,
+        ).serializeResponse(body);
     }
 
     /**
@@ -1177,53 +1246,6 @@ export class BackendHttpServer {
             nested > 0
             ? nested
             : null;
-    }
-
-    /**
-     * Keeps legacy terminal codes inside the old extension's allow-list.
-     *
-     * @param code - Current stable failure code.
-     * @returns Compatible terminal error code.
-     */
-    private static legacyTerminalCode(
-        code: string,
-    ):
-        | 'fixture_error'
-        | 'invalid_model_response'
-        | 'unsafe_model_blocks'
-        | 'model_provider_error' {
-        if (
-            code === 'fixture_error' ||
-            code === 'invalid_model_response' ||
-            code === 'unsafe_model_blocks' ||
-            code === 'model_provider_error'
-        ) {
-            return code;
-        }
-        return 'model_provider_error';
-    }
-
-    /**
-     * Keeps legacy request codes inside the old extension's allow-list.
-     *
-     * @param code - Current stable failure code.
-     * @returns Compatible request error code.
-     */
-    private static legacyRequestCode(
-        code: string,
-    ):
-        | 'invalid_video_id'
-        | 'invalid_request'
-        | 'request_body_too_large'
-        | 'job_not_found' {
-        if (
-            code === 'invalid_video_id' ||
-            code === 'request_body_too_large' ||
-            code === 'job_not_found'
-        ) {
-            return code;
-        }
-        return 'invalid_request';
     }
 
     /**

@@ -9,6 +9,7 @@ import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
 import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
 import { startAnalysisJobForTest } from './analysis-jobs-test-helpers';
 import { BackendHttpServer } from '@topskip/backend/server';
+import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
 import { BackendPublicState } from '@topskip/backend/public-state';
 import { BACKEND_CAPTION_SOURCE } from '@topskip/backend/server-config';
 import {
@@ -174,6 +175,7 @@ describe('BackendHttpServer request body guard', () => {
             ),
         );
         servers.length = 0;
+        BackendServerAnalysisLog.disableForTests();
         vi.restoreAllMocks();
         if (ORIGINAL_ALLOWED_EXTENSION_ORIGINS === undefined) {
             delete process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS;
@@ -181,6 +183,87 @@ describe('BackendHttpServer request body guard', () => {
             process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS =
                 ORIGINAL_ALLOWED_EXTENSION_ORIGINS;
         }
+    });
+
+    it('keeps successful routine health probes out of request logs', async () => {
+        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        BackendServerAnalysisLog.enable();
+        const server = BackendHttpServer.create();
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+
+        const response = await fetch(`${localServerUrl(server)}/v1/health`);
+        await response.json();
+        await waitForEventLoop();
+
+        expect(response.status).toBe(200);
+        expect(info).not.toHaveBeenCalled();
+    });
+
+    it('preserves request logs for non-health routes', async () => {
+        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        BackendServerAnalysisLog.enable();
+        const server = BackendHttpServer.create();
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+
+        const response = await fetch(`${localServerUrl(server)}/v1/config`);
+        await response.json();
+        await waitForEventLoop();
+
+        expect(response.status).toBe(200);
+        expect(info).toHaveBeenCalledTimes(2);
+        expect(info).toHaveBeenNthCalledWith(
+            1,
+            '[TopSkip server-analysis]',
+            'http-received',
+            expect.objectContaining({ method: 'GET', route: '/v1/config' }),
+        );
+        expect(info).toHaveBeenNthCalledWith(
+            2,
+            '[TopSkip server-analysis]',
+            'http-completed',
+            expect.objectContaining({
+                method: 'GET',
+                route: '/v1/config',
+                statusCode: 200,
+            }),
+        );
+    });
+
+    it('logs a health request when the probe fails', async () => {
+        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        vi.spyOn(console, 'warn').mockImplementation(() => {});
+        vi.spyOn(BackendAnalysisApi, 'health').mockImplementation(() => {
+            throw new Error('health dependency unavailable');
+        });
+        BackendServerAnalysisLog.enable();
+        const server = BackendHttpServer.create();
+        servers.push(server);
+        await listenOnEphemeralPort(server);
+
+        const response = await fetch(`${localServerUrl(server)}/v1/health`);
+        await response.json();
+        await waitForEventLoop();
+
+        expect(response.status).toBe(500);
+        expect(info).toHaveBeenCalledTimes(2);
+        expect(info).toHaveBeenNthCalledWith(
+            1,
+            '[TopSkip server-analysis]',
+            'http-received',
+            expect.objectContaining({ method: 'GET', route: '/v1/health' }),
+        );
+        expect(info).toHaveBeenNthCalledWith(
+            2,
+            '[TopSkip server-analysis]',
+            'http-completed',
+            expect.objectContaining({
+                method: 'GET',
+                route: '/v1/health',
+                statusCode: 500,
+            }),
+        );
     });
 
     it('returns a typed 400 response for malformed JSON', async () => {

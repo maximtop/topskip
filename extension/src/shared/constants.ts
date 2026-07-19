@@ -112,10 +112,12 @@ export type UserPreferences = v.InferOutput<typeof userPreferencesSchema>;
 export const CAPTION_TRANSCRIPT_DEV_ENABLED = true;
 
 /**
- * Emits safe stage-by-stage caption capture diagnostics for headed manual
- * YouTube smoke tests.
+ * Emits safe stage-by-stage caption capture diagnostics only in development
+ * builds without gating the production caption acquisition path.
  */
-export const CAPTION_CAPTURE_VERBOSE_LOGS = true;
+export const CAPTION_CAPTURE_VERBOSE_LOGS =
+    typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined' &&
+    __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
 
 /**
  * Well-known port name for long-lived preference-sync connections

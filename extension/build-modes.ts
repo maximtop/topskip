@@ -45,3 +45,16 @@ export function getServerAnalysisManifestMatch(
 ): string {
     return `${getServerAnalysisBaseUrl(build)}/*`;
 }
+
+/**
+ * Keeps detailed caption diagnostics out of user-facing builds while leaving
+ * the caption acquisition path enabled.
+ *
+ * @param build - Extension build profile.
+ * @returns Whether stage-by-stage capture logging is compiled in.
+ */
+export function shouldEnableCaptionCaptureVerboseLogs(
+    build: TopSkipBuildMode,
+): boolean {
+    return build === TopSkipBuild.Dev;
+}

@@ -13,7 +13,9 @@ const CAPTION_HIDE_CSS =
 const CAPTION_MODULE = 'captions';
 const CAPTION_RELOAD_OPTION = 'reload';
 const CAPTION_TRACK_OPTION = 'track';
-const VERBOSE_CAPTURE_LOGS = true;
+const VERBOSE_CAPTURE_LOGS =
+    typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined' &&
+    __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
 const AD_STATE_SELECTORS = [
     '.ytp-ad-player-overlay',
     '.ytp-ad-preview-container',
@@ -74,6 +76,13 @@ type PageBridgeDiagnosticMessage = {
  */
 type PageBridgeMessage = PageBridgeCaptureMessage | PageBridgeDiagnosticMessage;
 
+/**
+ * Logical message shared by both page-to-content transports.
+ */
+type IdentifiedPageBridgeMessage = PageBridgeMessage & {
+    messageId: string;
+};
+
 const installCaptionPageBridge = (): void => {
     const existing: unknown = Reflect.get(globalThis, INSTALL_FLAG);
     if (existing === true) {
@@ -81,6 +90,11 @@ const installCaptionPageBridge = (): void => {
     }
     Reflect.set(globalThis, INSTALL_FLAG, true);
 
+    const bridgeInstanceId =
+        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    let nextBridgeMessageSequence = 0;
     let wasOn: boolean | null = null;
     let userIntervened = false;
     let trackedButton: Element | null = null;
@@ -108,19 +122,24 @@ const installCaptionPageBridge = (): void => {
     });
 
     const postPageBridgeMessage = (message: PageBridgeMessage): void => {
+        nextBridgeMessageSequence += 1;
+        const identifiedMessage: IdentifiedPageBridgeMessage = {
+            ...message,
+            messageId: `${bridgeInstanceId}:${nextBridgeMessageSequence}`,
+        };
         try {
-            window.postMessage(message, window.location.origin);
+            window.postMessage(identifiedMessage, window.location.origin);
         } catch {
-            return;
+            // The DOM event below remains available when cross-world messaging fails.
         }
         try {
             document.dispatchEvent(
                 new CustomEvent(PAGE_EVENT, {
-                    detail: JSON.stringify(message),
+                    detail: JSON.stringify(identifiedMessage),
                 }),
             );
         } catch {
-            return;
+            // Capture must not interfere with YouTube when neither transport works.
         }
     };
 

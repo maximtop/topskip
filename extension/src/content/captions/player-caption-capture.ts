@@ -25,6 +25,8 @@ const ACTIVATION_RETRY_DELAY_MS = 250;
 const MAX_ACTIVATION_ATTEMPTS = 6;
 const PAGE_SOURCE = 'TOPSKIP_CAPTION_CAPTURE_PAGE';
 const PAGE_EVENT = 'topskip:caption-capture-page';
+const MAX_RECENT_PAGE_BRIDGE_MESSAGES = 256;
+const MAX_PAGE_BRIDGE_MESSAGE_ID_LENGTH = 96;
 const EMPTY_TRANSCRIPT_PARSE_ERROR = 'No caption cues found in JSON transcript';
 
 /**
@@ -128,6 +130,16 @@ export class PlayerCaptionCapture {
     private static bridgeInstallPromise: Promise<unknown> | null = null;
 
     /**
+     * Bounds document-scoped message identities while both transports race.
+     */
+    private static readonly recentPageBridgeMessageIds = new Set<string>();
+
+    /**
+     * Preserves insertion order so old identities can be evicted deterministically.
+     */
+    private static readonly recentPageBridgeMessageOrder: string[] = [];
+
+    /**
      * Schedules capture for a stable watch video id and clears state off-watch.
      *
      * @param videoId Current watch video id, or `null` when leaving watch.
@@ -184,6 +196,8 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.listenerInstalled = false;
         PlayerCaptionCapture.cleanupStarted = false;
         PlayerCaptionCapture.bridgeInstallPromise = null;
+        PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
+        PlayerCaptionCapture.recentPageBridgeMessageOrder.length = 0;
     }
 
     /**
@@ -410,6 +424,9 @@ export class PlayerCaptionCapture {
         if (Reflect.get(data, 'source') !== PAGE_SOURCE) {
             return;
         }
+        if (!PlayerCaptionCapture.shouldAcceptPageBridgeMessage(data)) {
+            return;
+        }
         const kind: unknown = Reflect.get(data, 'kind');
         if (kind !== 'timedtext-capture') {
             if (kind === 'diagnostic') {
@@ -418,6 +435,49 @@ export class PlayerCaptionCapture {
             return;
         }
         PlayerCaptionCapture.handleTimedtextCapture(data);
+    }
+
+    /**
+     * Accepts each logical bridge message once while retaining both transports.
+     *
+     * Legacy messages without an identity remain accepted during extension update
+     * transitions. The bounded document cache keeps completed ids long enough to
+     * suppress an asynchronous window copy after the capture waiter has settled.
+     *
+     * @param data Untrusted page bridge message.
+     * @returns Whether the message should be handled by the content script.
+     */
+    private static shouldAcceptPageBridgeMessage(data: object): boolean {
+        const messageId: unknown = Reflect.get(data, 'messageId');
+        if (messageId === undefined) {
+            return true;
+        }
+        if (
+            typeof messageId !== 'string' ||
+            messageId.length === 0 ||
+            messageId.length > MAX_PAGE_BRIDGE_MESSAGE_ID_LENGTH
+        ) {
+            return false;
+        }
+        if (PlayerCaptionCapture.recentPageBridgeMessageIds.has(messageId)) {
+            return false;
+        }
+        PlayerCaptionCapture.recentPageBridgeMessageIds.add(messageId);
+        PlayerCaptionCapture.recentPageBridgeMessageOrder.push(messageId);
+        if (
+            PlayerCaptionCapture.recentPageBridgeMessageOrder.length <=
+            MAX_RECENT_PAGE_BRIDGE_MESSAGES
+        ) {
+            return true;
+        }
+        const expiredMessageId =
+            PlayerCaptionCapture.recentPageBridgeMessageOrder.shift();
+        if (expiredMessageId !== undefined) {
+            PlayerCaptionCapture.recentPageBridgeMessageIds.delete(
+                expiredMessageId,
+            );
+        }
+        return true;
     }
 
     /**

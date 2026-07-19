@@ -14,6 +14,7 @@ import {
     TopSkipBuild,
     getServerAnalysisBaseUrl,
     getServerAnalysisManifestMatch,
+    shouldEnableCaptionCaptureVerboseLogs,
     type TopSkipBuildMode,
 } from './build-modes.ts';
 
@@ -171,6 +172,9 @@ export default defineConfig({
             filename: '[name].css',
         }),
         new rspack.DefinePlugin({
+            __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__: JSON.stringify(
+                shouldEnableCaptionCaptureVerboseLogs(topSkipBuildMode),
+            ),
             __TOPSKIP_INCLUDE_DEV_LOCAL__: JSON.stringify(
                 topSkipBuildMode === TopSkipBuild.Dev,
             ),

@@ -161,12 +161,26 @@ export class BackendHttpServer {
             };
             BackendHttpServer.applyCorsHeaders(req, res, production);
             const route = BackendHttpServer.routeTemplate(url);
-            BackendServerAnalysisLog.info('http-received', {
-                requestId: requestContext.requestId,
-                method: req.method,
-                route,
-            });
+            const routineHealthCheck =
+                req.method === 'GET' && route === '/v1/health';
+            if (!routineHealthCheck) {
+                BackendHttpServer.logHttpReceived(
+                    requestContext.requestId,
+                    req.method,
+                    route,
+                );
+            }
             res.once('finish', () => {
+                if (routineHealthCheck && res.statusCode === HTTP_STATUS_OK) {
+                    return;
+                }
+                if (routineHealthCheck) {
+                    BackendHttpServer.logHttpReceived(
+                        requestContext.requestId,
+                        req.method,
+                        route,
+                    );
+                }
                 BackendServerAnalysisLog.info('http-completed', {
                     requestId: requestContext.requestId,
                     method: req.method,
@@ -178,6 +192,25 @@ export class BackendHttpServer {
             void BackendHttpServer.route(req, res, requestContext).catch(() => {
                 BackendHttpServer.handleRouteFailure(res, requestContext);
             });
+        });
+    }
+
+    /**
+     * Preserves paired request diagnostics when routine probes are deferred until completion.
+     *
+     * @param requestId - Opaque request correlation identifier.
+     * @param method - Incoming HTTP method when present.
+     * @param route - Bounded route template.
+     */
+    private static logHttpReceived(
+        requestId: string,
+        method: string | undefined,
+        route: BackendRouteTemplate,
+    ): void {
+        BackendServerAnalysisLog.info('http-received', {
+            requestId,
+            method,
+            route,
         });
     }
 

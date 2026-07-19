@@ -12,11 +12,23 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
+vi.mock('@/shared/constants', async (importOriginal) => {
+    const constants =
+        await importOriginal<typeof import('@/shared/constants')>();
+    return {
+        ...constants,
+        CAPTION_CAPTURE_VERBOSE_LOGS: true,
+    };
+});
+
 import { PlayerCaptionCapture } from '@/content/captions/player-caption-capture';
 import { WatchCaptions } from '@/content/watch-captions';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
+const PAGE_EVENT = 'topskip:caption-capture-page';
+
 type WindowListener = (event: MessageEvent<unknown>) => void;
+type BridgeTransport = 'window' | 'document';
 
 class TestMessageEvent<T = unknown> {
     readonly type: string;
@@ -29,6 +41,15 @@ class TestMessageEvent<T = unknown> {
         this.type = type;
         this.data = init.data;
         this.source = init.source;
+    }
+}
+
+class TestCustomEvent<T = unknown> extends Event {
+    readonly detail: T | undefined;
+
+    constructor(type: string, init: { detail?: T } = {}) {
+        super(type);
+        this.detail = init.detail;
     }
 }
 
@@ -64,6 +85,14 @@ function installWindowStub(): void {
         configurable: true,
         value: TestMessageEvent,
     });
+    Object.defineProperty(globalThis, 'CustomEvent', {
+        configurable: true,
+        value: TestCustomEvent,
+    });
+    Object.defineProperty(globalThis, 'document', {
+        configurable: true,
+        value: new EventTarget(),
+    });
 }
 
 async function flushMicrotasks(): Promise<void> {
@@ -83,51 +112,108 @@ async function finishCleanup(): Promise<void> {
     await flushMicrotasks();
 }
 
-function dispatchTimedtextCapture(videoId: string, body: string): void {
+function dispatchTimedtextCapture(
+    videoId: string,
+    body: string,
+    messageId?: string,
+    transport: BridgeTransport = 'window',
+): void {
+    const data = {
+        source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
+        kind: 'timedtext-capture',
+        messageId,
+        videoId,
+        languageCode: 'en',
+        contentType: 'application/json; charset=UTF-8',
+        bodyLength: body.length,
+        urlShape: {
+            pathname: '/api/timedtext',
+            paramNames: ['fmt', 'lang', 'v'],
+            fmt: 'json3',
+            hasPot: false,
+        },
+        body,
+    };
+    if (transport === 'document') {
+        document.dispatchEvent(
+            new CustomEvent(PAGE_EVENT, { detail: JSON.stringify(data) }),
+        );
+        return;
+    }
     window.dispatchEvent(
         new MessageEvent('message', {
             source: window,
-            data: {
-                source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
-                kind: 'timedtext-capture',
-                videoId,
-                languageCode: 'en',
-                contentType: 'application/json; charset=UTF-8',
-                bodyLength: body.length,
-                urlShape: {
-                    pathname: '/api/timedtext',
-                    paramNames: ['fmt', 'lang', 'v'],
-                    fmt: 'json3',
-                    hasPot: false,
-                },
-                body,
-            },
+            data,
         }),
     );
 }
 
-function dispatchPageDiagnostic(): void {
+function dispatchPageDiagnostic(
+    messageId?: string,
+    transport: BridgeTransport = 'window',
+): void {
+    const data = {
+        source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
+        kind: 'diagnostic',
+        messageId,
+        stage: 'timedtext-empty-body',
+        videoId: 'abc',
+        languageCode: 'en',
+        transport: 'xhr',
+        status: 200,
+        bodyLength: 0,
+        urlShape: {
+            pathname: '/api/timedtext',
+            paramNames: ['fmt', 'lang', 'pot', 'v'],
+            fmt: 'json3',
+            hasPot: true,
+        },
+    };
+    if (transport === 'document') {
+        document.dispatchEvent(
+            new CustomEvent(PAGE_EVENT, { detail: JSON.stringify(data) }),
+        );
+        return;
+    }
     window.dispatchEvent(
         new MessageEvent('message', {
             source: window,
-            data: {
-                source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
-                kind: 'diagnostic',
-                stage: 'timedtext-empty-body',
-                videoId: 'abc',
-                languageCode: 'en',
-                transport: 'xhr',
-                status: 200,
-                bodyLength: 0,
-                urlShape: {
-                    pathname: '/api/timedtext',
-                    paramNames: ['fmt', 'lang', 'pot', 'v'],
-                    fmt: 'json3',
-                    hasPot: true,
-                },
-            },
+            data,
         }),
     );
+}
+
+function countRuntimeMessages(type: string): number {
+    return mockSendMessage.mock.calls.filter((call) => {
+        const message: unknown = Reflect.get(call, '0');
+        return (
+            message !== null &&
+            typeof message === 'object' &&
+            Reflect.get(message, 'type') === type
+        );
+    }).length;
+}
+
+function countContentLogStage(stage: string): number {
+    return mockSendMessage.mock.calls.filter((call) => {
+        const message: unknown = Reflect.get(call, '0');
+        if (message === null || typeof message !== 'object') {
+            return false;
+        }
+        if (Reflect.get(message, 'type') !== TOPSKIP_MESSAGE.CONTENT_LOG) {
+            return false;
+        }
+        const args: unknown = Reflect.get(message, 'args');
+        if (!Array.isArray(args)) {
+            return false;
+        }
+        const fields: unknown = Reflect.get(args, '1');
+        return (
+            fields !== null &&
+            typeof fields === 'object' &&
+            Reflect.get(fields, 'stage') === stage
+        );
+    }).length;
 }
 
 describe('PlayerCaptionCapture', () => {
@@ -192,7 +278,7 @@ describe('PlayerCaptionCapture', () => {
 
     it('relays safe page diagnostics to the content log channel', async () => {
         PlayerCaptionCapture.installBridgeForPage();
-        dispatchPageDiagnostic();
+        dispatchPageDiagnostic('bridge:1');
         await flushMicrotasks();
         expect(mockSendMessage).toHaveBeenCalledWith({
             type: TOPSKIP_MESSAGE.CONTENT_LOG,
@@ -217,6 +303,15 @@ describe('PlayerCaptionCapture', () => {
         });
     });
 
+    it('logs one diagnostic received over both page transports', async () => {
+        PlayerCaptionCapture.installBridgeForPage();
+        dispatchPageDiagnostic('bridge:7');
+        dispatchPageDiagnostic('bridge:7', 'document');
+        await flushMicrotasks();
+
+        expect(countContentLogStage('page:timedtext-empty-body')).toBe(1);
+    });
+
     it('parses captured json3 and sends one successful payload', async () => {
         const raw = JSON.stringify({
             events: [
@@ -233,7 +328,8 @@ describe('PlayerCaptionCapture', () => {
         });
 
         await acceptActivation();
-        dispatchTimedtextCapture('abc', raw);
+        dispatchTimedtextCapture('abc', raw, 'bridge:11');
+        dispatchTimedtextCapture('abc', raw, 'bridge:11', 'document');
         await finishCleanup();
 
         await run;
@@ -261,6 +357,10 @@ describe('PlayerCaptionCapture', () => {
                 },
             },
         });
+        expect(
+            countRuntimeMessages(TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT),
+        ).toBe(1);
+        expect(countContentLogStage('capture-event-ignored')).toBe(0);
     });
 
     it('calls deactivate after capture timeout', async () => {

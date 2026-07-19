@@ -4,6 +4,7 @@ import {
     TopSkipBuild,
     getServerAnalysisBaseUrl,
     getServerAnalysisManifestMatch,
+    shouldEnableCaptionCaptureVerboseLogs,
 } from '../build-modes';
 
 describe('TopSkip server build routing', () => {
@@ -27,4 +28,16 @@ describe('TopSkip server build routing', () => {
             );
         },
     );
+
+    it('enables verbose caption diagnostics only for development', () => {
+        expect(shouldEnableCaptionCaptureVerboseLogs(TopSkipBuild.Dev)).toBe(
+            true,
+        );
+        expect(shouldEnableCaptionCaptureVerboseLogs(TopSkipBuild.Beta)).toBe(
+            false,
+        );
+        expect(
+            shouldEnableCaptionCaptureVerboseLogs(TopSkipBuild.Release),
+        ).toBe(false);
+    });
 });

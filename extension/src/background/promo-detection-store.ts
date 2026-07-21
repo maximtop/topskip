@@ -1,4 +1,5 @@
 import { PromoDetectionBroadcast } from '@/background/messaging/broadcast-promo-detection-updated';
+import browser from '@/shared/browser';
 import {
     serverAnalysisSessionIdSchema,
     type PromoDetectionStatePayload,
@@ -16,6 +17,24 @@ const SERVER_ANALYSIS_PHASE_RANK = {
     terminal: 2,
 } as const;
 const MAX_RETIRED_SERVER_SESSIONS_PER_TAB = 32;
+
+/**
+ * `storage.session` key mirroring the in-memory maps across MV3 service-worker
+ * restarts. Session storage is trusted-context-only and dies with the browser.
+ */
+const SESSION_STORAGE_KEY = 'topskipPromoDetectionStore';
+
+/**
+ * Structural check for the persisted mirror; payloads are trusted because only
+ * this store (a trusted context) writes the key.
+ */
+const persistedStoreSchema = v.strictObject({
+    tabState: v.array(
+        v.tuple([v.number(), v.looseObject({ status: v.string() })]),
+    ),
+    activeServerSession: v.array(v.tuple([v.number(), v.string()])),
+    retiredServerSessions: v.array(v.tuple([v.number(), v.array(v.string())])),
+});
 
 /**
  * Pending phases exclude the terminal rank used only inside the store.
@@ -52,6 +71,23 @@ export class PromoDetectionStore {
     >();
 
     /**
+     * Single-flight hydration from `storage.session`; `null` until first use.
+     */
+    private static hydration: Promise<void> | null = null;
+
+    /**
+     * Restores the maps persisted before the last service-worker restart.
+     * In-memory entries win over persisted ones: a write that landed before
+     * hydration finished is fresher than anything the dead worker saved.
+     *
+     * @returns Promise that settles once the maps are hydrated
+     */
+    static ready(): Promise<void> {
+        PromoDetectionStore.hydration ??= PromoDetectionStore.hydrate();
+        return PromoDetectionStore.hydration;
+    }
+
+    /**
      * Returns the last promo detection payload published for a tab.
      *
      * @param tabId - Browser tab id
@@ -79,6 +115,7 @@ export class PromoDetectionStore {
             PromoDetectionStore.retireActiveSession(tabId);
         }
         PromoDetectionStore.tabState.set(tabId, state);
+        PromoDetectionStore.persist();
         PromoDetectionBroadcast.notify(state);
     }
 
@@ -100,6 +137,74 @@ export class PromoDetectionStore {
         PromoDetectionBroadcast.notify(null);
         if (sessionId === undefined) {
             PromoDetectionStore.retiredServerSessions.delete(tabId);
+        }
+        PromoDetectionStore.persist();
+    }
+
+    /**
+     * Mirrors the maps to `storage.session` after hydration settles, so a
+     * pre-hydration write cannot clobber entries the dead worker persisted.
+     */
+    private static persist(): void {
+        void PromoDetectionStore.ready()
+            .then(() =>
+                browser.storage.session.set({
+                    [SESSION_STORAGE_KEY]: {
+                        tabState: [...PromoDetectionStore.tabState],
+                        activeServerSession: [
+                            ...PromoDetectionStore.activeServerSession,
+                        ],
+                        retiredServerSessions: [
+                            ...PromoDetectionStore.retiredServerSessions,
+                        ].map(([tabId, sessions]): [number, string[]] => [
+                            tabId,
+                            [...sessions],
+                        ]),
+                    },
+                }),
+            )
+            .catch(() => {
+                // Session storage unavailable: state stays memory-only.
+            });
+    }
+
+    /**
+     * Loads and validates the persisted mirror; malformed data is dropped.
+     *
+     * @returns Promise that settles once in-memory maps are merged
+     */
+    private static async hydrate(): Promise<void> {
+        let stored: unknown;
+        try {
+            const raw = await browser.storage.session.get(SESSION_STORAGE_KEY);
+            stored = Reflect.get(raw, SESSION_STORAGE_KEY);
+        } catch {
+            return;
+        }
+        const parsed = v.safeParse(persistedStoreSchema, stored);
+        if (!parsed.success) {
+            return;
+        }
+        for (const [tabId, state] of parsed.output.tabState) {
+            if (!PromoDetectionStore.tabState.has(tabId)) {
+                PromoDetectionStore.tabState.set(
+                    tabId,
+                    state as PromoDetectionStatePayload,
+                );
+            }
+        }
+        for (const [tabId, sessionId] of parsed.output.activeServerSession) {
+            if (!PromoDetectionStore.activeServerSession.has(tabId)) {
+                PromoDetectionStore.activeServerSession.set(tabId, sessionId);
+            }
+        }
+        for (const [tabId, sessions] of parsed.output.retiredServerSessions) {
+            if (!PromoDetectionStore.retiredServerSessions.has(tabId)) {
+                PromoDetectionStore.retiredServerSessions.set(
+                    tabId,
+                    new Set(sessions),
+                );
+            }
         }
     }
 

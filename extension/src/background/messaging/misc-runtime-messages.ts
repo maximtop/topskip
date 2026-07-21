@@ -47,6 +47,7 @@ export class PromoDetectionRuntimeMessages {
      */
     static async handleGet(): Promise<GetDetectionStatusResponse> {
         try {
+            await PromoDetectionStore.ready();
             const tabs = await browser.tabs.query({
                 active: true,
                 currentWindow: true,

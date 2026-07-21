@@ -175,9 +175,11 @@ describe(
             });
 
             // 2. Content script received the same blocks via
-            //    browser.tabs.sendMessage
+            //    browser.tabs.sendMessage; `source` must be present or the
+            //    content guard drops the delivery
             expect(tabsSendMessage).toHaveBeenCalledWith(TAB_ID, {
                 type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'local_provider',
                 videoId: VIDEO_ID,
                 promoBlocks: storedBlocks,
                 partialCoverage: false,

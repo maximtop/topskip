@@ -20,6 +20,7 @@ import {
     TOPSKIP_MESSAGE,
     type CaptionsFromContentPayload,
     type LocalDetectionState,
+    type TopSkipRuntimeMessage,
 } from '@/shared/messages';
 import { PROVIDER_ID } from '@/shared/providers';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
@@ -417,10 +418,11 @@ export class PromoAnalysis {
                 try {
                     await browser.tabs.sendMessage(tabId, {
                         type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                        source: 'local_provider',
                         videoId,
                         promoBlocks: mergedBlocks,
                         partialCoverage: anyPartial,
-                    });
+                    } satisfies TopSkipRuntimeMessage);
                 } catch {
                     // tab closed
                 }
@@ -550,10 +552,11 @@ export class PromoAnalysis {
                 try {
                     await browser.tabs.sendMessage(tabId, {
                         type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                        source: 'local_provider',
                         videoId,
                         promoBlocks: mergedBlocks,
                         partialCoverage: anyPartial,
-                    });
+                    } satisfies TopSkipRuntimeMessage);
                 } catch {
                     // tab closed
                 }

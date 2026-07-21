@@ -1,5 +1,6 @@
 import { ContentScriptsRegistration } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { defaultRegistry } from '@/background/providers/default-registry';
@@ -26,6 +27,9 @@ export class Background {
         void i18n.init();
         void PromoDetectionStore.ready();
         browser.tabs.onRemoved.addListener((tabId) => {
+            // Abort before clearing: a still-running BYOK analysis would keep
+            // issuing paid provider calls and re-insert the cleared entry.
+            PromoAnalysis.abortForTab(tabId);
             PromoDetectionStore.clear(tabId);
         });
         void storageAccess

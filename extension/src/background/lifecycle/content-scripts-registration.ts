@@ -66,6 +66,47 @@ export class ContentScriptsRegistration {
         BackgroundServerAnalysisLog.info('content-scripts-registered', {
             matchCount: matches.length,
         });
+        await ContentScriptsRegistration.injectIntoExistingTabs(matches);
+    }
+
+    /**
+     * Injects the bundles into tabs opened before registration —
+     * `registerContentScripts` only covers pages loaded afterwards. Both
+     * bundles carry install-flag guards, so re-injection into a tab that
+     * already runs them is a no-op.
+     *
+     * @param matches Match patterns the watch script was registered for.
+     * @returns Promise that settles when injection attempts finish
+     * (best-effort per tab).
+     */
+    private static async injectIntoExistingTabs(
+        matches: string[],
+    ): Promise<void> {
+        const tabs = await browser.tabs.query({ url: matches });
+        await Promise.all(
+            tabs.map(async (tab) => {
+                if (tab.id === undefined) {
+                    return;
+                }
+                try {
+                    await browser.scripting.executeScript({
+                        target: { tabId: tab.id, frameIds: [0] },
+                        world: 'MAIN',
+                        files: ['caption-page-bridge.js'],
+                    });
+                    await browser.scripting.executeScript({
+                        target: { tabId: tab.id, frameIds: [0] },
+                        files: ['content.js'],
+                    });
+                } catch {
+                    // Discarded tabs, closed tabs, etc.
+                }
+            }),
+        );
+        BackgroundServerAnalysisLog.info(
+            'content-scripts-injected-existing-tabs',
+            { tabCount: tabs.length },
+        );
     }
 
     /**

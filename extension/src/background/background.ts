@@ -1,9 +1,11 @@
 import { ContentScriptsRegistration } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
+import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { defaultRegistry } from '@/background/providers/default-registry';
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import browser from '@/shared/browser';
 import { i18n } from '@/shared/i18n/i18n';
 
 /**
@@ -22,6 +24,10 @@ export class Background {
         PrefsPortHub.register();
         console.info('[TopSkip] Service worker started');
         void i18n.init();
+        void PromoDetectionStore.ready();
+        browser.tabs.onRemoved.addListener((tabId) => {
+            PromoDetectionStore.clear(tabId);
+        });
         void storageAccess
             .then(() => PrefsSyncStorage.ready())
             .then(() => ContentScriptsRegistration.syncFromPrefs())

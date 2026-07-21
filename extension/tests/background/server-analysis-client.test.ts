@@ -20,6 +20,16 @@ import { MIME_APPLICATION_JSON } from '@/shared/constants';
 const fetchMock =
     vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 
+/**
+ * Extracts the request URL from any `fetch` input form.
+ */
+function requestUrl(input: RequestInfo | URL): string {
+    if (typeof input === 'string') {
+        return input;
+    }
+    return input instanceof URL ? input.href : input.url;
+}
+
 const TOKEN = 'a'.repeat(43);
 const REPLACEMENT_TOKEN = 'b'.repeat(43);
 const TOKEN_EXPIRY_MS = 4_102_444_800_000;
@@ -534,6 +544,123 @@ describe('ServerAnalysisClient', () => {
             });
         },
     );
+
+    it('mints one replacement token when several tabs hit the same expired token', async () => {
+        // Stateful storage emulation: both tabs start on the same stored
+        // token; whichever replacement lands first must be reused by the rest.
+        let storedToken: string | null = TOKEN;
+        installationMocks.loadFresh.mockImplementation(() =>
+            Promise.resolve(
+                storedToken === null
+                    ? null
+                    : { token: storedToken, expiresAtMs: TOKEN_EXPIRY_MS },
+            ),
+        );
+        installationMocks.save.mockImplementation(
+            (record: { token: string }) => {
+                storedToken = record.token;
+                return Promise.resolve();
+            },
+        );
+        installationMocks.clear.mockImplementation(() => {
+            storedToken = null;
+            return Promise.resolve();
+        });
+        fetchMock.mockImplementation((input, init) => {
+            if (requestUrl(input).includes('/v1/installations/register')) {
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            status: 'registered',
+                            token: REPLACEMENT_TOKEN,
+                            expiresAtMs: TOKEN_EXPIRY_MS,
+                        }),
+                        { status: 201 },
+                    ),
+                );
+            }
+            const headers = init?.headers as Record<string, string> | undefined;
+            if (headers?.authorization === `Bearer ${TOKEN}`) {
+                return Promise.resolve(
+                    new Response(
+                        JSON.stringify({
+                            status: 'error',
+                            algorithmVersion: 'server-v5',
+                            error: { code: 'token_expired' },
+                        }),
+                        { status: 401 },
+                    ),
+                );
+            }
+            return Promise.resolve(
+                new Response(JSON.stringify(PROCESSING_RESPONSE), {
+                    status: 202,
+                }),
+            );
+        });
+
+        const [first, second] = await Promise.all([
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
+            ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
+        ]);
+
+        expect(first.status).toBe('processing');
+        expect(second.status).toBe('processing');
+        const registerCalls = fetchMock.mock.calls.filter(([input]) =>
+            requestUrl(input).includes('/v1/installations/register'),
+        );
+        expect(registerCalls).toHaveLength(1);
+        expect(installationMocks.clear).toHaveBeenCalledOnce();
+        expect(installationMocks.save).toHaveBeenCalledOnce();
+        expect(installationMocks.save).toHaveBeenCalledWith({
+            token: REPLACEMENT_TOKEN,
+            expiresAtMs: TOKEN_EXPIRY_MS,
+        });
+    });
+
+    it('reuses a replacement another tab already minted instead of clearing it', async () => {
+        // Tab B is still holding the old token when it hits token_expired,
+        // but storage already contains tab A's replacement: B must not clear
+        // it or register again.
+        installationMocks.loadFresh
+            .mockResolvedValueOnce({
+                token: TOKEN,
+                expiresAtMs: TOKEN_EXPIRY_MS,
+            })
+            .mockResolvedValue({
+                token: REPLACEMENT_TOKEN,
+                expiresAtMs: TOKEN_EXPIRY_MS,
+            });
+        fetchMock
+            .mockResolvedValueOnce(
+                new Response(
+                    JSON.stringify({
+                        status: 'error',
+                        algorithmVersion: 'server-v5',
+                        error: { code: 'token_expired' },
+                    }),
+                    { status: 401 },
+                ),
+            )
+            .mockResolvedValueOnce(
+                new Response(JSON.stringify(PROCESSING_RESPONSE), {
+                    status: 202,
+                }),
+            );
+
+        const response =
+            await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
+
+        expect(response.status).toBe('processing');
+        expect(installationMocks.clear).not.toHaveBeenCalled();
+        expect(fetchMock).toHaveBeenCalledTimes(2);
+        expect(fetchMock.mock.calls[1]?.[1]?.headers).toEqual({
+            accept: MIME_APPLICATION_JSON,
+            authorization: `Bearer ${REPLACEMENT_TOKEN}`,
+            'X-TopSkip-Capabilities': CAPABILITIES_HEADER_VALUE,
+            'content-type': MIME_APPLICATION_JSON,
+        });
+    });
 
     it('returns message-free typed throttling failures', async () => {
         fetchMock.mockResolvedValue(

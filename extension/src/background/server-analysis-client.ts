@@ -91,6 +91,11 @@ export class ServerAnalysisClient {
     private static registrationInFlight: Promise<string> | null = null;
 
     /**
+     * Coalesces concurrent rejected-token replacements (multi-tab expiry).
+     */
+    private static tokenReplacementInFlight: Promise<string> | null = null;
+
+    /**
      * Creates the stable fallback used for network and malformed responses.
      *
      * @returns Sanitized client error.
@@ -414,6 +419,37 @@ export class ServerAnalysisClient {
     }
 
     /**
+     * Replaces a server-rejected token at most once across concurrent callers.
+     * Registration is non-idempotent, so the clear→register sequence is
+     * single-flight, and storage is re-read first: when another tab already
+     * minted a replacement, that token is reused instead of being cleared and
+     * a second one minted.
+     *
+     * @param rejectedToken - Bearer credential the server just rejected.
+     * @returns Replacement bearer token.
+     */
+    private static async replaceRejectedToken(
+        rejectedToken: string,
+    ): Promise<string> {
+        if (ServerAnalysisClient.tokenReplacementInFlight !== null) {
+            return ServerAnalysisClient.tokenReplacementInFlight;
+        }
+        ServerAnalysisClient.tokenReplacementInFlight = (async () => {
+            const stored = await ServerInstallationStorage.loadFresh();
+            if (stored !== null && stored.token !== rejectedToken) {
+                return stored.token;
+            }
+            await ServerInstallationStorage.clear();
+            return ServerAnalysisClient.getInstallationToken(true);
+        })();
+        try {
+            return await ServerAnalysisClient.tokenReplacementInFlight;
+        } finally {
+            ServerAnalysisClient.tokenReplacementInFlight = null;
+        }
+    }
+
+    /**
      * Executes one authenticated API request and retries once only when the
      * server reports an expired installation credential.
      *
@@ -462,9 +498,8 @@ export class ServerAnalysisClient {
                 response.error.code ===
                     SERVER_ANALYSIS_FAILURE_CODE.TokenInvalid)
         ) {
-            await ServerInstallationStorage.clear();
             const replacementToken =
-                await ServerAnalysisClient.getInstallationToken(true);
+                await ServerAnalysisClient.replaceRejectedToken(token);
             const retryResult = await ServerAnalysisClient.fetchBackendJson({
                 operation: input.operation,
                 videoId: input.videoId,

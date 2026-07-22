@@ -24,7 +24,7 @@ const { ServerConfigStorage } =
 const NOW_MS = 1_900_000_000_000;
 const CONFIG = {
     apiVersion: 1 as const,
-    algorithmVersion: 'server-v5',
+    algorithmVersion: 'server-v6',
     supportedCapabilities: ['processing-status', 'typed-server-errors-v1'],
     supportIssueBaseUrl: 'https://github.com/maximtop/topskip/issues/new',
 };
@@ -53,7 +53,7 @@ describe('ServerConfigStorage', () => {
     it('removes malformed snapshots', async () => {
         storageGet.mockResolvedValue({
             [STORAGE_KEY_SERVER_CONFIG]: {
-                config: { algorithmVersion: 'server-v5' },
+                config: { algorithmVersion: 'server-v6' },
                 fetchedAtMs: NOW_MS,
             },
         });

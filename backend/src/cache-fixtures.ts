@@ -12,7 +12,7 @@ import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analys
 export const SEEDED_SERVER_CACHE_VIDEO_ID = 'e2eFixture1';
 
 const SEEDED_READY_RESPONSE_EXPIRES_AT_MS = 4_102_444_800_000;
-const SEEDED_READY_SOURCE_RESULT_ID = 'result-e2eFixture1-server-v5';
+const SEEDED_READY_SOURCE_RESULT_ID = 'result-e2eFixture1-server-v6';
 
 const SEEDED_READY_RESPONSE = v.parse(legacyReadyResponseSchema, {
     status: 'ready',

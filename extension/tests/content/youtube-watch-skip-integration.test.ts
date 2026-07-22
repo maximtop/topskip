@@ -607,7 +607,7 @@ describe('per-video analysis route lifecycle', () => {
                             languageCode: 'en',
                             transcriptHash:
                                 '321d90058849d7ab00a6ed95cf4fb209803d8b8362dc061a9e10fdf324b5e468',
-                            algorithmVersion: 'server-v5',
+                            algorithmVersion: 'server-v6',
                         },
                     });
                 }

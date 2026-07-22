@@ -48,7 +48,7 @@ describe('ServerAnalysisSession', () => {
             videoId: 'dQw4w9WgXcQ',
             languageCode: 'en',
             transcriptHash: TRANSCRIPT_HASH,
-            algorithmVersion: 'server-v5',
+            algorithmVersion: 'server-v6',
         };
 
         expect(session.pinProcessing('job-v5', identity)).toEqual({
@@ -98,7 +98,7 @@ describe('ServerAnalysisSession', () => {
                 videoId: 'dQw4w9WgXcQ',
                 languageCode: 'en',
                 transcriptHash: TRANSCRIPT_HASH,
-                algorithmVersion: 'server-v5',
+                algorithmVersion: 'server-v6',
             }),
         ).not.toBeNull();
     });
@@ -118,7 +118,7 @@ describe('ServerAnalysisSession', () => {
                 videoId: 'dQw4w9WgXcQ',
                 languageCode: 'ru',
                 transcriptHash: TRANSCRIPT_HASH,
-                algorithmVersion: 'server-v5',
+                algorithmVersion: 'server-v6',
             }),
         ).toBeNull();
 

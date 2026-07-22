@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { LocalPromoAnalysisFixtureAdapter } from '@topskip/backend/analysis/local-analysis-fixtures';
 import { OpenRouterGeminiAnalysisAdapter } from '@topskip/backend/analysis/openrouter-gemini-analysis-adapter';
 import { normalizeBackendPromoBlocks } from '@topskip/backend/analysis/promo-block-normalization';
+import { buildServerTranscriptChunks } from '@topskip/backend/analysis/promo-analysis-chunking';
 import {
     BACKEND_ANALYSIS_FAILURE_REASON,
     backendAnalysisProviderIdSchema,
@@ -33,6 +34,12 @@ import {
     type TerminalErrorResponse,
 } from '@topskip/common/server-analysis-contract';
 import type { PromoBlock } from '@topskip/common/promo-types';
+import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
+import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
+import {
+    BLOCK_MERGE_GAP_SEC,
+    CHUNK_BLOCK_TOLERANCE_SEC,
+} from '@topskip/common/promo-chunking-config';
 import { MS_PER_SECOND, SECONDS_PER_HOUR } from '@topskip/common/constants';
 
 /**
@@ -106,13 +113,10 @@ export class BackendPromoAnalysisWorker {
             return BackendPromoAnalysisWorker.providerError(input);
         }
 
-        let adapterResult: BackendLlmAnalysisAdapterResult;
-        try {
-            adapterResult = await adapter.analyze({
-                transcriptArtifact: input.transcriptArtifact,
-            });
-        } catch {
-            const completedAtMs = BackendPromoAnalysisWorker.readClock(input);
+        const chunkPlan = buildServerTranscriptChunks(
+            input.transcriptArtifact.segments,
+        );
+        if (!chunkPlan.ok) {
             return BackendPromoAnalysisWorker.failure(input, {
                 provider: adapterMetadata.provider,
                 rawModelResponse: null,
@@ -122,40 +126,91 @@ export class BackendPromoAnalysisWorker {
                     BACKEND_ANALYSIS_FAILURE_REASON.ModelProviderError,
                 model: adapterMetadata.model,
                 promptVersion: adapterMetadata.promptVersion,
-                completedAtMs,
+                completedAtMs: BackendPromoAnalysisWorker.readClock(input),
             });
+        }
+
+        let mergedBlocks: PromoBlock[] = [];
+        const rawResponses: string[] = [];
+        let usage: BackendLlmAnalysisUsage | undefined;
+        let model = adapterMetadata.model;
+
+        for (const chunk of chunkPlan.chunks) {
+            const chunkArtifact: TranscriptArtifact = {
+                ...input.transcriptArtifact,
+                segments: chunk.segments,
+            };
+            const attempt =
+                await BackendPromoAnalysisWorker.analyzeChunkWithRetry(
+                    adapter,
+                    chunkArtifact,
+                );
+            if (!attempt.ok) {
+                return BackendPromoAnalysisWorker.failure(input, {
+                    provider: adapterMetadata.provider,
+                    rawModelResponse: attempt.rawModelResponse,
+                    parsedResult: null,
+                    normalizedPromoBlocks: [],
+                    failureReason: attempt.failureReason,
+                    model,
+                    promptVersion: adapterMetadata.promptVersion,
+                    usage,
+                    completedAtMs: BackendPromoAnalysisWorker.readClock(input),
+                });
+            }
+
+            model = attempt.model;
+            rawResponses.push(
+                `[chunk ${String(chunk.index)} ${String(chunk.startSec)}-${String(chunk.endSec)}s]\n${attempt.rawModelResponse}`,
+            );
+            usage = BackendPromoAnalysisWorker.sumUsage(usage, attempt.usage);
+
+            if (!attempt.parsedResult.hasPromo) {
+                continue;
+            }
+            // Only trim interior chunk boundaries: a block outside a middle
+            // chunk's caption span belongs to an adjacent overlapping chunk,
+            // but the first chunk has no earlier neighbor and the last none
+            // later, so their outer edges stay open. A single chunk is both,
+            // so nothing is filtered — identical to whole-transcript analysis.
+            const isFirstChunk = chunk.index === 0;
+            const isLastChunk = chunk.index === chunkPlan.chunks.length - 1;
+            const loSec = isFirstChunk
+                ? Number.NEGATIVE_INFINITY
+                : chunk.startSec;
+            const hiSec = isLastChunk ? Number.POSITIVE_INFINITY : chunk.endSec;
+            const filtered = ChunkMerge.filterPromoBlocksForChunkTimeRange(
+                attempt.parsedResult.promoBlocks,
+                loSec,
+                hiSec,
+                CHUNK_BLOCK_TOLERANCE_SEC,
+            );
+            mergedBlocks = mergePromoBlocksWithGap(
+                [...mergedBlocks, ...filtered],
+                BLOCK_MERGE_GAP_SEC,
+            );
         }
 
         const completedAtMs = BackendPromoAnalysisWorker.readClock(input);
-        const rawModelResponse = adapterResult.rawModelResponse;
+        const rawModelResponse =
+            rawResponses.length > 0 ? rawResponses.join('\n\n') : null;
+        const combinedParsedResult: ParsedModelPromoResult =
+            mergedBlocks.length > 0
+                ? { hasPromo: true, promoBlocks: mergedBlocks }
+                : { hasPromo: false };
 
-        const parsed = parseBackendPromoResponse(rawModelResponse);
-        if (!parsed.ok) {
-            return BackendPromoAnalysisWorker.failure(input, {
-                provider: adapterMetadata.provider,
-                rawModelResponse,
-                parsedResult: null,
-                normalizedPromoBlocks: [],
-                failureReason: parsed.failureReason,
-                model: adapterResult.model,
-                promptVersion: adapterMetadata.promptVersion,
-                usage: adapterResult.usage,
-                completedAtMs,
-            });
-        }
-
-        if (!parsed.parsedResult.hasPromo) {
+        if (!combinedParsedResult.hasPromo) {
             const analysisRun = BackendPromoAnalysisWorker.buildAnalysisRun(
                 input,
                 {
                     provider: adapterMetadata.provider,
                     rawModelResponse,
-                    parsedResult: parsed.parsedResult,
+                    parsedResult: combinedParsedResult,
                     normalizedPromoBlocks: [],
                     failureReason: null,
-                    model: adapterResult.model,
+                    model,
                     promptVersion: adapterMetadata.promptVersion,
-                    usage: adapterResult.usage,
+                    usage,
                     completedAtMs,
                 },
             );
@@ -170,19 +225,19 @@ export class BackendPromoAnalysisWorker {
         }
 
         const normalized = normalizeBackendPromoBlocks({
-            promoBlocks: parsed.parsedResult.promoBlocks,
+            promoBlocks: combinedParsedResult.promoBlocks,
             durationSec: input.durationSec,
         });
         if (!normalized.ok) {
             return BackendPromoAnalysisWorker.failure(input, {
                 provider: adapterMetadata.provider,
                 rawModelResponse,
-                parsedResult: parsed.parsedResult,
+                parsedResult: combinedParsedResult,
                 normalizedPromoBlocks: [],
                 failureReason: normalized.failureReason,
-                model: adapterResult.model,
+                model,
                 promptVersion: adapterMetadata.promptVersion,
-                usage: adapterResult.usage,
+                usage,
                 completedAtMs,
             });
         }
@@ -190,12 +245,12 @@ export class BackendPromoAnalysisWorker {
         const analysisRun = BackendPromoAnalysisWorker.buildAnalysisRun(input, {
             provider: adapterMetadata.provider,
             rawModelResponse,
-            parsedResult: parsed.parsedResult,
+            parsedResult: combinedParsedResult,
             normalizedPromoBlocks: normalized.promoBlocks,
             failureReason: null,
-            model: adapterResult.model,
+            model,
             promptVersion: adapterMetadata.promptVersion,
-            usage: adapterResult.usage,
+            usage,
             completedAtMs,
         });
         return {
@@ -206,6 +261,106 @@ export class BackendPromoAnalysisWorker {
                 completedAtMs,
             ),
         };
+    }
+
+    /**
+     * One chunk analysis with a single retry; parse failures and provider
+     * throws share the retry so a transient bad response cannot fail a
+     * multi-minute job outright.
+     *
+     * @param adapter - Backend LLM adapter.
+     * @param chunkArtifact - Transcript slice for this chunk.
+     * @returns Parsed chunk outcome, or a stable failure after the retry.
+     */
+    private static async analyzeChunkWithRetry(
+        adapter: BackendLlmAnalysisAdapter,
+        chunkArtifact: TranscriptArtifact,
+    ): Promise<
+        | {
+              ok: true;
+              parsedResult: ParsedModelPromoResult;
+              rawModelResponse: string;
+              model: string;
+              usage?: BackendLlmAnalysisUsage;
+          }
+        | {
+              ok: false;
+              failureReason: BackendAnalysisFailureReason;
+              rawModelResponse: string | null;
+          }
+    > {
+        let lastFailure:
+            | {
+                  failureReason: BackendAnalysisFailureReason;
+                  rawModelResponse: string | null;
+              }
+            | undefined;
+        for (let attempt = 0; attempt < 2; attempt++) {
+            let adapterResult: BackendLlmAnalysisAdapterResult;
+            try {
+                adapterResult = await adapter.analyze({
+                    transcriptArtifact: chunkArtifact,
+                });
+            } catch {
+                lastFailure = {
+                    failureReason:
+                        BACKEND_ANALYSIS_FAILURE_REASON.ModelProviderError,
+                    rawModelResponse: null,
+                };
+                continue;
+            }
+            const parsed = parseBackendPromoResponse(
+                adapterResult.rawModelResponse,
+            );
+            if (!parsed.ok) {
+                lastFailure = {
+                    failureReason: parsed.failureReason,
+                    rawModelResponse: adapterResult.rawModelResponse,
+                };
+                continue;
+            }
+            return {
+                ok: true,
+                parsedResult: parsed.parsedResult,
+                rawModelResponse: adapterResult.rawModelResponse,
+                model: adapterResult.model,
+                usage: adapterResult.usage,
+            };
+        }
+        return lastFailure !== undefined
+            ? { ok: false, ...lastFailure }
+            : {
+                  ok: false,
+                  failureReason:
+                      BACKEND_ANALYSIS_FAILURE_REASON.ModelProviderError,
+                  rawModelResponse: null,
+              };
+    }
+
+    /**
+     * Sums per-chunk provider usage; `costUsd` stays present when any chunk
+     * reported one.
+     *
+     * @param prev - Running usage total, or `undefined` before the first chunk.
+     * @param next - This chunk's usage, or `undefined` when the adapter omits it.
+     * @returns Combined usage, or `undefined` when neither side has usage.
+     */
+    private static sumUsage(
+        prev: BackendLlmAnalysisUsage | undefined,
+        next: BackendLlmAnalysisUsage | undefined,
+    ): BackendLlmAnalysisUsage | undefined {
+        if (next === undefined) {
+            return prev;
+        }
+        const base = prev ?? { inputTokens: 0, outputTokens: 0 };
+        const combined: BackendLlmAnalysisUsage = {
+            inputTokens: base.inputTokens + next.inputTokens,
+            outputTokens: base.outputTokens + next.outputTokens,
+        };
+        if (base.costUsd !== undefined || next.costUsd !== undefined) {
+            combined.costUsd = (base.costUsd ?? 0) + (next.costUsd ?? 0);
+        }
+        return combined;
     }
 
     /**

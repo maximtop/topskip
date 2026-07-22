@@ -35,7 +35,7 @@ const CONFIG_V4 = {
 };
 const CONFIG_V5 = {
     ...CONFIG_V4,
-    algorithmVersion: 'server-v5',
+    algorithmVersion: 'server-v6',
     supportedCapabilities: ['processing-status', 'typed-server-errors-v1'],
 };
 
@@ -78,7 +78,7 @@ describe('ServerAnalysisConfiguration', () => {
         );
         expect(
             resultCacheMocks.removeOtherAlgorithmVersions,
-        ).toHaveBeenCalledWith('server-v5');
+        ).toHaveBeenCalledWith('server-v6');
     });
 
     it('uses a stale config only when refresh is unavailable', async () => {
@@ -130,15 +130,15 @@ describe('ServerAnalysisConfiguration', () => {
             fetchedAtMs: NOW_MS - 10_000,
         });
 
-        await ServerAnalysisConfiguration.noteAlgorithmVersion('server-v5');
+        await ServerAnalysisConfiguration.noteAlgorithmVersion('server-v6');
 
         expect(configStorageMocks.save).toHaveBeenCalledWith(
-            { ...CONFIG_V4, algorithmVersion: 'server-v5' },
+            { ...CONFIG_V4, algorithmVersion: 'server-v6' },
             NOW_MS - 10_000,
         );
         expect(
             resultCacheMocks.removeOtherAlgorithmVersions,
-        ).toHaveBeenCalledWith('server-v5');
+        ).toHaveBeenCalledWith('server-v6');
     });
 
     it('uses observed config without equality gating', async () => {

@@ -21,7 +21,7 @@ const IDENTITY = {
     languageCode: 'en',
     transcriptHash:
         '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef',
-    algorithmVersion: 'server-v5',
+    algorithmVersion: 'server-v6',
 };
 
 describe('captionSegmentSchema', () => {

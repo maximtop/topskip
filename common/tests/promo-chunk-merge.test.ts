@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { ChunkMerge } from '@/background/messaging/chunk-merge';
-import { BLOCK_MERGE_GAP_SEC } from '@/background/messaging/chunk-plan-config';
+import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
+import { BLOCK_MERGE_GAP_SEC } from '@topskip/common/promo-chunking-config';
 import type { PromoBlock } from '@topskip/common/promo-types';
 import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
 

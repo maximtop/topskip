@@ -3,6 +3,11 @@
  * Change only with evaluation data.
  */
 
+export {
+    BLOCK_MERGE_GAP_SEC,
+    CHUNK_BLOCK_TOLERANCE_SEC,
+} from '@topskip/common/promo-chunking-config';
+
 /**
  * Upper bound on adapter calls per video analysis.
  */
@@ -23,17 +28,6 @@ export const OVERLAP_FLOOR_SEC = 30;
  * Maximum overlap window in seconds of video time.
  */
 export const OVERLAP_CEILING_SEC = 90;
-
-/**
- * Merge adjacent LLM-reported blocks when gap ≤ this (seconds).
- */
-export const BLOCK_MERGE_GAP_SEC = 3;
-
-/**
- * Drop blocks whose `startSec` is farther than this outside the chunk
- * time range.
- */
-export const CHUNK_BLOCK_TOLERANCE_SEC = 5;
 
 /**
  * Safety cap for chunk text in service worker logs.

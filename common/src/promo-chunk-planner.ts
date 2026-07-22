@@ -1,11 +1,3 @@
-import {
-    MAX_CHUNKS_PER_VIDEO,
-    OVERLAP_CEILING_SEC,
-    OVERLAP_FLOOR_SEC,
-    OVERLAP_FRACTION,
-} from '@/background/messaging/chunk-plan-config';
-import { listTimedLinesFromMergedTranscript } from '@/background/openrouter/log-promo-analysis';
-
 /**
  * One line-aligned slice of the merged transcript for one adapter call.
  */
@@ -38,9 +30,37 @@ export type ChunkPlan = {
 };
 
 /**
- * Timestamped transcript rows used by the chunk planner.
+ * Timestamped transcript row: `line` is the exact prompt line, `sec` its
+ * caption start time.
  */
-type TimedLine = ReadonlyArray<{ sec: number; line: string }>;
+export type TimedLine = { sec: number; line: string };
+
+/**
+ * Overlap policy: fixed seconds (server route) or dynamic from the chunk
+ * budget (BYOK route, historical behavior).
+ */
+export type ChunkOverlapPolicy =
+    | { kind: 'fixed'; sec: number }
+    | {
+          kind: 'dynamic';
+          floorSec: number;
+          ceilingSec: number;
+          fraction: number;
+      };
+
+/**
+ * Planner inputs; `maxChunks` bounds adapter calls per video.
+ */
+export type ChunkPlanOptions = {
+    budgetChars: number;
+    maxChunks: number;
+    overlap: ChunkOverlapPolicy;
+};
+
+/**
+ * Overlap can shrink to this floor before the planner truncates coverage.
+ */
+const OVERLAP_SHRINK_FLOOR_SEC = 30;
 
 /**
  * Line-aligned overlapping chunk planning for promo transcript analysis;
@@ -50,13 +70,13 @@ export class ChunkPlanner {
     /**
      * Joins timed lines into the exact user-message body for the LLM.
      *
-     * @param lines - Rows from {@link listTimedLinesFromMergedTranscript}
+     * @param lines - Rows of `[sec] text` transcript lines
      * @param startIdx - First inclusive line index
      * @param endIdx - Last inclusive line index
      * @returns Newline-joined transcript slice
      */
     private static sliceLines(
-        lines: TimedLine,
+        lines: readonly TimedLine[],
         startIdx: number,
         endIdx: number,
     ): string {
@@ -79,7 +99,7 @@ export class ChunkPlanner {
      * @returns UTF-16 length of joined text
      */
     private static sliceCharLen(
-        lines: TimedLine,
+        lines: readonly TimedLine[],
         startIdx: number,
         endIdx: number,
     ): number {
@@ -109,7 +129,7 @@ export class ChunkPlanner {
      * @returns Last inclusive line index
      */
     private static findEndIdxForBudget(
-        lines: TimedLine,
+        lines: readonly TimedLine[],
         startIdx: number,
         budgetChars: number,
     ): number {
@@ -147,7 +167,7 @@ export class ChunkPlanner {
      * @returns First line index of the next chunk
      */
     private static nextChunkStartIdx(
-        lines: TimedLine,
+        lines: readonly TimedLine[],
         startIdx: number,
         endIdx: number,
         overlapSec: number,
@@ -173,7 +193,7 @@ export class ChunkPlanner {
      * @returns Planned chunk rows before global index renumbering
      */
     private static tryPlan(
-        lines: TimedLine,
+        lines: readonly TimedLine[],
         budgetChars: number,
         overlapSec: number,
     ): ChunkPlanItem[] {
@@ -244,65 +264,86 @@ export class ChunkPlanner {
     }
 
     /**
-     * Builds a deterministic overlapping chunk plan from merged transcript lines
-     * and adapter character budget (overlap shrinks when the plan would exceed
-     * the chunk cap).
+     * Builds a deterministic overlapping chunk plan (overlap shrinks when the
+     * plan would exceed `maxChunks`).
      *
-     * @param mergedText - Merged caption transcript (`[sec] text` per line)
-     * @param budgetChars - Max UTF-16 chars per chunk from adapter budget
+     * @param lines - Timed transcript lines (`[sec] text` per row)
+     * @param options - Budget, chunk cap, and overlap policy
      * @returns Chunk plan and coverage metadata
      */
-    static buildChunkPlan(mergedText: string, budgetChars: number): ChunkPlan {
-        const lines = listTimedLinesFromMergedTranscript(mergedText);
+    static buildChunkPlan(
+        lines: readonly TimedLine[],
+        options: ChunkPlanOptions,
+    ): ChunkPlan {
+        const { budgetChars, maxChunks, overlap } = options;
         if (lines.length === 0 || budgetChars <= 0) {
             return {
                 chunks: [],
-                overlapSec: OVERLAP_FLOOR_SEC,
+                overlapSec: OVERLAP_SHRINK_FLOOR_SEC,
                 partialCoverage: false,
                 plannedChunkCount: 0,
                 coverageFraction: 0,
             };
         }
 
+        const totalChars = ChunkPlanner.sliceCharLen(
+            lines,
+            0,
+            lines.length - 1,
+        );
         const firstSec = lines[0].sec;
         const lastSec = lines[lines.length - 1].sec;
         const durationSec = Math.max(lastSec - firstSec, 1e-6);
-        const charsPerSec = mergedText.length / durationSec;
-
-        let overlapSec = Math.min(
-            OVERLAP_CEILING_SEC,
-            Math.max(
-                OVERLAP_FLOOR_SEC,
-                (budgetChars * OVERLAP_FRACTION) / Math.max(charsPerSec, 1e-6),
-            ),
-        );
+        const charsPerSec = totalChars / durationSec;
 
         const maxOverlapChars = Math.floor(budgetChars * 0.5);
-        const overlapChars = Math.min(
-            maxOverlapChars,
-            overlapSec * charsPerSec,
-        );
-        overlapSec = Math.min(
-            OVERLAP_CEILING_SEC,
-            Math.max(
-                OVERLAP_FLOOR_SEC,
-                overlapChars / Math.max(charsPerSec, 1e-6),
-            ),
-        );
+        let overlapSec: number;
+        if (overlap.kind === 'fixed') {
+            // Keep the exact requested window (so a promo block up to that
+            // length lands whole in one chunk); only shrink it if it would
+            // consume more than half the budget and stall forward progress.
+            overlapSec = overlap.sec;
+            if (overlapSec * charsPerSec > maxOverlapChars) {
+                overlapSec = Math.max(
+                    OVERLAP_SHRINK_FLOOR_SEC,
+                    maxOverlapChars / Math.max(charsPerSec, 1e-6),
+                );
+            }
+        } else {
+            overlapSec = Math.min(
+                overlap.ceilingSec,
+                Math.max(
+                    overlap.floorSec,
+                    (budgetChars * overlap.fraction) /
+                        Math.max(charsPerSec, 1e-6),
+                ),
+            );
+            const overlapChars = Math.min(
+                maxOverlapChars,
+                overlapSec * charsPerSec,
+            );
+            overlapSec = Math.min(
+                overlap.ceilingSec,
+                Math.max(
+                    overlap.floorSec,
+                    overlapChars / Math.max(charsPerSec, 1e-6),
+                ),
+            );
+        }
 
         let chunks = ChunkPlanner.tryPlan(lines, budgetChars, overlapSec);
         let partialCoverage = false;
 
         while (
-            chunks.length > MAX_CHUNKS_PER_VIDEO &&
-            overlapSec > OVERLAP_FLOOR_SEC
+            chunks.length > maxChunks &&
+            overlapSec > OVERLAP_SHRINK_FLOOR_SEC
         ) {
-            overlapSec = Math.max(OVERLAP_FLOOR_SEC, overlapSec * 0.75);
+            overlapSec = Math.max(OVERLAP_SHRINK_FLOOR_SEC, overlapSec * 0.75);
             chunks = ChunkPlanner.tryPlan(lines, budgetChars, overlapSec);
         }
 
-        if (chunks.length > MAX_CHUNKS_PER_VIDEO) {
-            chunks = chunks.slice(0, MAX_CHUNKS_PER_VIDEO);
+        if (chunks.length > maxChunks) {
+            chunks = chunks.slice(0, maxChunks);
             partialCoverage = true;
         }
 
@@ -316,7 +357,7 @@ export class ChunkPlanner {
             const coveredLen = ChunkPlanner.sliceCharLen(lines, 0, lastLine);
             coverageFraction = Math.min(
                 1,
-                coveredLen / Math.max(mergedText.length, 1),
+                coveredLen / Math.max(totalChars, 1),
             );
         }
 

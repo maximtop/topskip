@@ -33,9 +33,13 @@ import {
     LOG_CHUNK_TEXT_MAX_CHARS,
     LOG_MERGED_TEXT_MAX_CHARS,
     LOG_RAW_ASSISTANT_MAX_CHARS,
+    MAX_CHUNKS_PER_VIDEO,
+    OVERLAP_CEILING_SEC,
+    OVERLAP_FLOOR_SEC,
+    OVERLAP_FRACTION,
 } from '@/background/messaging/chunk-plan-config';
-import { ChunkPlanner } from '@/background/messaging/chunk-planner';
-import { ChunkMerge } from '@/background/messaging/chunk-merge';
+import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
+import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
 import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
 import {
     PROMO_DETECTION_PROMPT_VERSION,
@@ -291,7 +295,19 @@ export class PromoAnalysis {
                 return;
             }
 
-            const plan = ChunkPlanner.buildChunkPlan(merged.text, budget);
+            const plan = ChunkPlanner.buildChunkPlan(
+                listTimedLinesFromMergedTranscript(merged.text),
+                {
+                    budgetChars: budget,
+                    maxChunks: MAX_CHUNKS_PER_VIDEO,
+                    overlap: {
+                        kind: 'dynamic',
+                        floorSec: OVERLAP_FLOOR_SEC,
+                        ceilingSec: OVERLAP_CEILING_SEC,
+                        fraction: OVERLAP_FRACTION,
+                    },
+                },
+            );
             const uncoveredRanges: PromoUncoveredRange[] = [];
             if (plan.partialCoverage && plan.chunks.length > 0) {
                 const last = plan.chunks[plan.chunks.length - 1];

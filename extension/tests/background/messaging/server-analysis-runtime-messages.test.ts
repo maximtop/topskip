@@ -79,7 +79,7 @@ const IDENTITY = {
     videoId: VIDEO_ID,
     languageCode: LANGUAGE_CODE,
     transcriptHash: TRANSCRIPT_HASH,
-    algorithmVersion: 'server-v5',
+    algorithmVersion: 'server-v6',
 };
 const REQUEST = {
     sessionId: SESSION_ID,
@@ -91,7 +91,7 @@ const REQUEST = {
 const SENDER = { tab: { id: 42 } } as never;
 const CONFIG = {
     apiVersion: 1 as const,
-    algorithmVersion: 'server-v5',
+    algorithmVersion: 'server-v6',
     supportedCapabilities: ['processing-status', 'typed-server-errors-v1'],
     supportIssueBaseUrl: 'https://github.com/maximtop/topskip/issues/new',
 };
@@ -275,7 +275,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
     it('requests one exact content resubmission when a deployed job disappears', async () => {
         clientMocks.requestJobStatus.mockResolvedValueOnce({
             status: 'error',
-            algorithmVersion: 'server-v5',
+            algorithmVersion: 'server-v6',
             error: { code: 'job_not_found' },
         });
 

@@ -18,7 +18,7 @@ const IDENTITY = {
     videoId: 'dQw4w9WgXcQ',
     languageCode: 'en',
     transcriptHash: TRANSCRIPT_HASH,
-    algorithmVersion: 'server-v5',
+    algorithmVersion: 'server-v6',
 };
 
 describe('server analysis content request helper', () => {
@@ -91,7 +91,7 @@ describe('server analysis content request helper', () => {
             buildRefreshServerAnalysisStatusMessage({
                 sessionId: SESSION_ID,
                 videoId: 'dQw4w9WgXcQ',
-                jobId: 'job-server-v5',
+                jobId: 'job-server-v6',
                 identity: IDENTITY,
             }),
         ).toEqual({
@@ -99,7 +99,7 @@ describe('server analysis content request helper', () => {
             payload: {
                 sessionId: SESSION_ID,
                 videoId: 'dQw4w9WgXcQ',
-                jobId: 'job-server-v5',
+                jobId: 'job-server-v6',
                 identity: IDENTITY,
             },
         });

@@ -31,7 +31,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const extensionPath = path.resolve(__dirname, '../dist');
 const E2E_SERVER_API_VERSION = 1;
-const E2E_SERVER_ALGORITHM_VERSION = 'server-v5';
+const E2E_SERVER_ALGORITHM_VERSION = 'server-v6';
 const E2E_VIDEO_ID = 'e2eFixture1';
 const E2E_CAPTION_LANGUAGE = 'en';
 const E2E_CAPTION_SEGMENTS = [
@@ -506,7 +506,7 @@ async function seedFreshLocalServerCache(
                             languageCode: fixture.languageCode,
                             transcriptHash: fixture.transcriptHash,
                             algorithmVersion: fixture.algorithmVersion,
-                            sourceResultId: 'result-e2eFixture1-server-v5',
+                            sourceResultId: 'result-e2eFixture1-server-v6',
                             freshness: { expiresAtMs: 4_102_444_800_000 },
                             promoBlocks: [
                                 { startSec: 4, endSec: 24, confidence: 'high' },
@@ -724,7 +724,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('server transcript contract fixture reaches analysis phase', async () => {
-        const jobId = 'local-e2eFixture1-server-v5';
+        const jobId = 'local-e2eFixture1-server-v6';
         const processingResponse = {
             status: 'processing',
             ...E2E_TRANSCRIPT_IDENTITY,
@@ -878,7 +878,7 @@ test.describe('TopSkip extension', () => {
                         status: 'ready',
                         ...E2E_TRANSCRIPT_IDENTITY,
                         source: 'server_cache',
-                        sourceResultId: 'result-e2eFixture1-server-v5',
+                        sourceResultId: 'result-e2eFixture1-server-v6',
                         freshness: { expiresAtMs: 4_102_444_800_000 },
                         promoBlocks: [
                             { startSec: 4, endSec: 24, confidence: 'high' },
@@ -984,7 +984,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('caption phase reaches ready and skips only future blocks', async () => {
-        const jobId = 'local-e2eFixture1-server-v5';
+        const jobId = 'local-e2eFixture1-server-v6';
         let terminalReady = false;
         const heldAnalysis: { response: ServerResponse | null } = {
             response: null,
@@ -1005,7 +1005,7 @@ test.describe('TopSkip extension', () => {
             status: 'ready',
             ...E2E_TRANSCRIPT_IDENTITY,
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v5',
+            sourceResultId: 'result-e2eFixture1-server-v6',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: [
                 { startSec: 4, endSec: 24, confidence: 'high' },
@@ -1229,7 +1229,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('prefs update cancellation stops scheduled server status polling', async () => {
-        const jobId = 'local-e2eFixture1-server-v5';
+        const jobId = 'local-e2eFixture1-server-v6';
         let statusRequestCount = 0;
         let resolveRequestSeen: () => void = () => {};
         const requestSeen = new Promise<void>((resolve) => {
@@ -1323,7 +1323,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('job loss resubmits one exact captured transcript', async () => {
-        const jobId = 'lost-e2eFixture1-server-v5';
+        const jobId = 'lost-e2eFixture1-server-v6';
         const requestBodies: string[] = [];
         let pollRequestCount = 0;
         const backend = createServer((req, res) => {
@@ -1359,7 +1359,7 @@ test.describe('TopSkip extension', () => {
                             ...E2E_TRANSCRIPT_IDENTITY,
                             source: 'server_cache',
                             sourceResultId:
-                                'result-e2eFixture1-resubmitted-server-v5',
+                                'result-e2eFixture1-resubmitted-server-v6',
                             freshness: {
                                 expiresAtMs: 4_102_444_800_000,
                             },
@@ -1703,7 +1703,7 @@ test.describe('TopSkip extension', () => {
                             status: 'no_promo',
                             ...E2E_TRANSCRIPT_IDENTITY,
                             sourceResultId:
-                                'result-e2eFixture1-exact-miss-server-v5',
+                                'result-e2eFixture1-exact-miss-server-v6',
                             freshness: {
                                 expiresAtMs: 4_102_444_800_000,
                             },

@@ -427,7 +427,7 @@ describe('buildPopupViewModel', () => {
                     code: 'invalid_server_response',
                     supportId: 'support-123',
                     apiVersion: 1,
-                    algorithmVersion: 'server-v5',
+                    algorithmVersion: 'server-v6',
                     extensionVersion: '0.1.0',
                 },
             },

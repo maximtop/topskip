@@ -52,7 +52,7 @@ describe('ServerAnalysisIssueReport', () => {
                 code: 'internal_error',
                 supportId: 'support-safe-123',
                 apiVersion: 1,
-                algorithmVersion: 'server-v5',
+                algorithmVersion: 'server-v6',
                 extensionVersion: '0.1.0',
                 supportIssueBaseUrl:
                     'https://github.com/maximtop/topskip/issues/new?template=server.yml',
@@ -68,7 +68,7 @@ describe('ServerAnalysisIssueReport', () => {
                 code: 'internal_error',
                 supportId: 'support-safe-123',
                 apiVersion: 1,
-                algorithmVersion: 'server-v5',
+                algorithmVersion: 'server-v6',
                 extensionVersion: '0.1.0',
             },
             now: new Date('2026-07-15T12:34:56.000Z'),
@@ -81,7 +81,7 @@ describe('ServerAnalysisIssueReport', () => {
         expect(parsed.searchParams.get('title')).toContain('internal_error');
         const body = parsed.searchParams.get('body') ?? '';
         expect(body).toContain('support-safe-123');
-        expect(body).toContain('server-v5');
+        expect(body).toContain('server-v6');
         expect(body).toContain('2026-07-15T12:34:56.000Z');
         expect(body).not.toContain('dQw4w9WgXcQ');
         expect(body).not.toMatch(/transcript|token|cookie|stderr/iu);

@@ -47,7 +47,7 @@ const IDENTITY = {
     videoId: 'dQw4w9WgXcQ',
     languageCode: 'en-us',
     transcriptHash: TRANSCRIPT_HASH,
-    algorithmVersion: 'server-v5',
+    algorithmVersion: 'server-v6',
 };
 const ANALYSIS_INPUT = {
     videoId: IDENTITY.videoId,
@@ -58,7 +58,7 @@ const ANALYSIS_INPUT = {
 const PROCESSING_RESPONSE = {
     status: 'processing' as const,
     ...IDENTITY,
-    jobId: 'job-server-v5',
+    jobId: 'job-server-v6',
     pollAfterSec: 3,
 };
 
@@ -89,7 +89,7 @@ describe('ServerAnalysisClient', () => {
                 new Response(
                     JSON.stringify({
                         status: 'error',
-                        algorithmVersion: 'server-v5',
+                        algorithmVersion: 'server-v6',
                         error: { code: 'token_expired' },
                     }),
                     { status: 401 },
@@ -112,8 +112,8 @@ describe('ServerAnalysisClient', () => {
                         videoId: 'dQw4w9WgXcQ',
                         languageCode: 'en-us',
                         transcriptHash: TRANSCRIPT_HASH,
-                        algorithmVersion: 'server-v5',
-                        jobId: 'job-server-v5',
+                        algorithmVersion: 'server-v6',
+                        jobId: 'job-server-v6',
                         pollAfterSec: 3,
                     }),
                     { status: 202 },
@@ -163,7 +163,7 @@ describe('ServerAnalysisClient', () => {
             new Response(
                 JSON.stringify({
                     apiVersion: 1,
-                    algorithmVersion: 'server-v5',
+                    algorithmVersion: 'server-v6',
                     supportedCapabilities: [
                         'processing-status',
                         'typed-server-errors-v1',
@@ -177,7 +177,7 @@ describe('ServerAnalysisClient', () => {
 
         await expect(ServerAnalysisClient.requestConfig()).resolves.toEqual({
             apiVersion: 1,
-            algorithmVersion: 'server-v5',
+            algorithmVersion: 'server-v6',
             supportedCapabilities: [
                 'processing-status',
                 'typed-server-errors-v1',
@@ -301,7 +301,7 @@ describe('ServerAnalysisClient', () => {
                 JSON.stringify({
                     status: 'no_promo',
                     ...IDENTITY,
-                    sourceResultId: 'result-server-v5',
+                    sourceResultId: 'result-server-v6',
                     freshness: { expiresAtMs: TOKEN_EXPIRY_MS },
                 }),
                 { status: 200 },
@@ -309,12 +309,12 @@ describe('ServerAnalysisClient', () => {
         );
 
         await ServerAnalysisClient.requestJobStatus({
-            jobId: 'job-server-v5',
+            jobId: 'job-server-v6',
             identity: IDENTITY,
         });
 
         expect(fetchMock).toHaveBeenCalledWith(
-            'http://127.0.0.1:8787/v1/analysis/jobs/job-server-v5',
+            'http://127.0.0.1:8787/v1/analysis/jobs/job-server-v6',
             expect.objectContaining({
                 method: 'GET',
                 headers: {
@@ -506,7 +506,7 @@ describe('ServerAnalysisClient', () => {
                     new Response(
                         JSON.stringify({
                             status: 'error',
-                            algorithmVersion: 'server-v5',
+                            algorithmVersion: 'server-v6',
                             error: { code: tokenFailureCode },
                         }),
                         { status: 401 },
@@ -585,7 +585,7 @@ describe('ServerAnalysisClient', () => {
                     new Response(
                         JSON.stringify({
                             status: 'error',
-                            algorithmVersion: 'server-v5',
+                            algorithmVersion: 'server-v6',
                             error: { code: 'token_expired' },
                         }),
                         { status: 401 },
@@ -636,7 +636,7 @@ describe('ServerAnalysisClient', () => {
                 new Response(
                     JSON.stringify({
                         status: 'error',
-                        algorithmVersion: 'server-v5',
+                        algorithmVersion: 'server-v6',
                         error: { code: 'token_expired' },
                     }),
                     { status: 401 },
@@ -667,7 +667,7 @@ describe('ServerAnalysisClient', () => {
             new Response(
                 JSON.stringify({
                     status: 'rate_limited',
-                    algorithmVersion: 'server-v5',
+                    algorithmVersion: 'server-v6',
                     error: { code: 'rate_limited', retryAfterSec: 60 },
                 }),
                 { status: 429 },
@@ -678,7 +678,7 @@ describe('ServerAnalysisClient', () => {
             ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT),
         ).resolves.toEqual({
             status: 'rate_limited',
-            algorithmVersion: 'server-v5',
+            algorithmVersion: 'server-v6',
             error: { code: 'rate_limited', retryAfterSec: 60 },
         });
     });
@@ -707,7 +707,7 @@ describe('ServerAnalysisClient', () => {
                     status: 'ready',
                     ...IDENTITY,
                     source: 'server_cache',
-                    sourceResultId: 'result-server-v5',
+                    sourceResultId: 'result-server-v6',
                     promoBlocks: [{ startSec: 10, endSec: 20 }],
                     freshness: { expiresAtMs: TOKEN_EXPIRY_MS },
                 }),

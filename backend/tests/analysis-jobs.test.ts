@@ -1136,7 +1136,7 @@ describe('BackendAnalysisJobs', () => {
             .spyOn(BackendPublicState, 'reserveModelBudget')
             .mockReturnValue({
                 reservationId: 'reservation-1',
-                reservedUsd: 0.35,
+                reservedUsd: 1,
             });
         const settle = vi
             .spyOn(BackendPublicState, 'settleModelBudget')

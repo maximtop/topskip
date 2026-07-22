@@ -622,7 +622,7 @@ export class BackendAnalysisJobs {
         });
         const reservation =
             process.env.NODE_ENV === 'test'
-                ? { reservationId: 'test-budget', reservedUsd: 0.35 }
+                ? { reservationId: 'test-budget', reservedUsd: 1 }
                 : BackendPublicState.reserveModelBudget({ nowMs });
         if (reservation === null) {
             record.completedAtMs = nowMs;

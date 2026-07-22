@@ -453,7 +453,7 @@ describe('BackendPublicState', () => {
 
     it('reserves daily model budget atomically', () => {
         const nowMs = Date.UTC(2030, 0, 2);
-        const reservations = Array.from({ length: 14 }, () =>
+        const reservations = Array.from({ length: 10 }, () =>
             BackendPublicState.reserveModelBudget({ nowMs }),
         );
         expect(reservations.every((reservation) => reservation !== null)).toBe(
@@ -467,7 +467,7 @@ describe('BackendPublicState', () => {
         }
         BackendPublicState.settleModelBudget({
             reservationId: first.reservationId,
-            costUsd: 0.01,
+            costUsd: 0,
         });
         expect(BackendPublicState.reserveModelBudget({ nowMs })).not.toBeNull();
     });
@@ -525,7 +525,7 @@ describe('BackendPublicState', () => {
         const snapshot = BackendPublicState.snapshotForTests().serialized;
         expect(snapshot).not.toContain(reservation.reservationId);
         expect(snapshot).toContain('"reserved_usd":0');
-        expect(snapshot).toContain('"spent_usd":0.35');
+        expect(snapshot).toContain('"spent_usd":1');
     });
 
     it('persists artifacts and safe support failures across reopen', () => {

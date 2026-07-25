@@ -14,8 +14,8 @@ const program = new Command();
 program
     .name('build-extension')
     .description(
-        'Run Rspack with TOPSKIP_BUILD (dev adds localhost for E2E; beta/release ' +
-            'do not).',
+        'Run Rspack with TOPSKIP_BUILD (all profiles use the public backend; ' +
+            'dev adds the localhost E2E fixture).',
     )
     .addArgument(
         new Argument('<mode>', 'TOPSKIP_BUILD profile').choices([

@@ -4,10 +4,19 @@ import { logTranscriptForDeveloper } from '@/background/captions/log-transcript-
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import {
+    CAPTION_CAPTURE_FAILURE_REASON,
+    type CaptionCaptureFailureReason,
     type CaptionsFromContentAck,
     type CaptionsFromContentPayload,
 } from '@/shared/messages';
 import { ANALYSIS_MODE, LOG_PREFIX_CAPTIONS } from '@/shared/constants';
+
+const EXPECTED_CAPTION_FAILURE_REASONS: ReadonlySet<CaptionCaptureFailureReason> =
+    new Set([
+        CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady,
+        CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
+        CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable,
+    ]);
 
 /**
  * Caption payloads from the watch content script → promo pipeline; static API
@@ -27,7 +36,11 @@ export class CaptionRuntimeMessages {
         sender: Runtime.MessageSender,
     ): Promise<CaptionsFromContentAck> {
         if (!payload.ok) {
-            console.error(LOG_PREFIX_CAPTIONS, payload.error);
+            const expectedFailure =
+                payload.reason !== undefined &&
+                EXPECTED_CAPTION_FAILURE_REASONS.has(payload.reason);
+            const log = expectedFailure ? console.warn : console.error;
+            log(LOG_PREFIX_CAPTIONS, payload.error);
             return { ok: true };
         }
 

@@ -2,22 +2,22 @@ import { describe, expect, it } from 'vitest';
 
 import {
     TopSkipBuild,
+    getExtensionManifestName,
     getServerAnalysisBaseUrl,
     getServerAnalysisManifestMatch,
     shouldEnableCaptionCaptureVerboseLogs,
 } from '../build-modes';
 
 describe('TopSkip server build routing', () => {
-    it('uses loopback only for the development build', () => {
-        expect(getServerAnalysisBaseUrl(TopSkipBuild.Dev)).toBe(
-            'http://127.0.0.1:8787',
-        );
-        expect(getServerAnalysisManifestMatch(TopSkipBuild.Dev)).toBe(
-            'http://127.0.0.1:8787/*',
-        );
+    it.each([
+        [TopSkipBuild.Dev, 'TopSkip (Dev)'],
+        [TopSkipBuild.Beta, 'TopSkip (Beta)'],
+        [TopSkipBuild.Release, '__MSG_name__'],
+    ])('uses the expected manifest name for %s', (build, name) => {
+        expect(getExtensionManifestName(build)).toBe(name);
     });
 
-    it.each([TopSkipBuild.Beta, TopSkipBuild.Release])(
+    it.each([TopSkipBuild.Dev, TopSkipBuild.Beta, TopSkipBuild.Release])(
         'uses the public backend for the %s build',
         (build) => {
             expect(getServerAnalysisBaseUrl(build)).toBe(

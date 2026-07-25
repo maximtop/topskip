@@ -1582,3 +1582,19 @@ Expected: PASS.
 No API contracts are needed. The plan intentionally avoids adding
 `webRequest`, local servers, remote proxies, or broad network observation to
 the main extension.
+
+## Post-validation lifecycle hardening (2026-07-24)
+
+- [x] Probe open matching tabs before existing-tab injection so a live content
+  script is not duplicated and an invalidated pre-update receiver is replaced.
+- [x] Replace boolean bundle guards with disposable content/page-bridge
+  lifecycles that release listeners, timers, temporary styles, and fetch/XHR
+  wrappers before reinjection.
+- [x] Catch both synchronous `runtime.sendMessage` throws and rejected promises
+  in best-effort content logging, then disable the unavailable log channel.
+- [x] Extend player-not-ready activation retries across the bounded capture
+  timeout and allow the same video to be scheduled again after transient
+  failure while retaining successful/non-retryable dedupe.
+- [x] Keep expected player readiness, timeout, and no-caption outcomes at
+  warning level so Chrome does not report controlled video limitations as
+  extension errors.

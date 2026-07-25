@@ -12,6 +12,7 @@ import {
 
 import {
     TopSkipBuild,
+    getExtensionManifestName,
     getServerAnalysisBaseUrl,
     getServerAnalysisManifestMatch,
     shouldEnableCaptionCaptureVerboseLogs,
@@ -24,8 +25,8 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEV_E2E_MATCH = 'http://127.0.0.1:4173/*';
 
 /**
- * Reads `TOPSKIP_BUILD`: `dev` (default) includes localhost for E2E fixtures;
- * `beta` / `release` are YouTube-only.
+ * Reads `TOPSKIP_BUILD`: `dev` (default) includes the localhost E2E fixture;
+ * every profile sends Server-mode analysis to the public backend.
  *
  * @returns Normalized build mode
  */
@@ -38,18 +39,20 @@ function getTopSkipBuild(): TopSkipBuildMode {
 }
 
 /**
- * Adds the selected backend permission and dev-only fixture access.
+ * Applies the profile name, backend permission, and dev-only fixture access.
  *
  * @param manifest - Parsed MV3 manifest mutated for the selected profile.
  * @param build - Active TopSkip build mode
  */
-function applyBuildHostsToManifest(
+function applyBuildProfileToManifest(
     manifest: {
+        name: string;
         host_permissions?: string[];
         content_scripts?: Array<{ matches: string[] }>;
     },
     build: TopSkipBuildMode,
 ): void {
+    manifest.name = getExtensionManifestName(build);
     const hostPermissions = manifest.host_permissions;
     if (!hostPermissions) {
         return;
@@ -100,10 +103,11 @@ function topSkipManifestPlugin(build: TopSkipBuildMode): RspackPluginInstance {
                             compilation.fileDependencies.add(manifestPath);
                             const raw = fs.readFileSync(manifestPath, 'utf8');
                             const manifest = JSON.parse(raw) as {
+                                name: string;
                                 host_permissions?: string[];
                                 content_scripts?: Array<{ matches: string[] }>;
                             };
-                            applyBuildHostsToManifest(manifest, build);
+                            applyBuildProfileToManifest(manifest, build);
                             const json = `${JSON.stringify(manifest, null, 2)}\n`;
                             compilation.emitAsset(
                                 'manifest.json',

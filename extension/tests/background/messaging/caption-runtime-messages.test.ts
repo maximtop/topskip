@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const prefsMocks = vi.hoisted(() => ({
     ready: vi.fn().mockResolvedValue(undefined),
@@ -36,6 +36,12 @@ const payload: CaptionsFromContentPayload = {
 describe('CaptionRuntimeMessages analysis mode guard', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+        vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
     });
 
     it('does not invoke provider analysis in server mode', async () => {
@@ -83,8 +89,31 @@ describe('CaptionRuntimeMessages analysis mode guard', () => {
 
             expect(prefsMocks.load).not.toHaveBeenCalled();
             expect(promoMocks.onCaptionsReady).not.toHaveBeenCalled();
+            expect(console.warn).toHaveBeenCalledWith(
+                '[TopSkip captions]',
+                reason,
+            );
+            expect(console.error).not.toHaveBeenCalled();
         },
     );
+
+    it('keeps integration malfunctions at error level', async () => {
+        await CaptionRuntimeMessages.handle(
+            {
+                ok: false,
+                videoId: 'dQw4w9WgXcQ',
+                error: 'bridge-install-failed',
+                reason: 'bridge-install-failed',
+            },
+            { tab: { id: 42 } } as never,
+        );
+
+        expect(console.error).toHaveBeenCalledWith(
+            '[TopSkip captions]',
+            'bridge-install-failed',
+        );
+        expect(console.warn).not.toHaveBeenCalled();
+    });
 
     it('keeps BYOK mode on the existing provider path', async () => {
         prefsMocks.load.mockResolvedValue({

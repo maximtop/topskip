@@ -1,6 +1,8 @@
 import browser from '@/shared/browser';
 import { TOPSKIP_MESSAGE, type ContentLogLevel } from '@/shared/messages';
 
+let logChannelAvailable = true;
+
 /**
  * Forwards `[TopSkip]` log lines from the content script to
  * the background service worker console via
@@ -50,13 +52,19 @@ export const contentLog = {
  * @param args - Serialisable values.
  */
 function send(level: ContentLogLevel, args: unknown[]): void {
-    void browser.runtime
-        .sendMessage({
+    if (!logChannelAvailable) {
+        return;
+    }
+    try {
+        const pending = browser.runtime.sendMessage({
             type: TOPSKIP_MESSAGE.CONTENT_LOG,
             level,
             args,
-        })
-        .catch(() => {
-            // swallow — logging must never throw
         });
+        void pending.catch(() => {
+            logChannelAvailable = false;
+        });
+    } catch {
+        logChannelAvailable = false;
+    }
 }

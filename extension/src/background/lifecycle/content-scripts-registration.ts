@@ -1,5 +1,6 @@
 import browser from '@/shared/browser';
 import { getWatchContentScriptMatches } from '@/shared/content-script-matches';
+import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
@@ -71,9 +72,9 @@ export class ContentScriptsRegistration {
 
     /**
      * Injects the bundles into tabs opened before registration —
-     * `registerContentScripts` only covers pages loaded afterwards. Both
-     * bundles carry install-flag guards, so re-injection into a tab that
-     * already runs them is a no-op.
+     * `registerContentScripts` only covers pages loaded afterwards. A live
+     * content bundle acknowledges the probe; an invalidated or older bundle
+     * is replaced through its disposable lifecycle.
      *
      * @param matches Match patterns the watch script was registered for.
      * @returns Promise that settles when injection attempts finish
@@ -83,10 +84,15 @@ export class ContentScriptsRegistration {
         matches: string[],
     ): Promise<void> {
         const tabs = await browser.tabs.query({ url: matches });
-        await Promise.all(
+        const results = await Promise.all(
             tabs.map(async (tab) => {
                 if (tab.id === undefined) {
-                    return;
+                    return false;
+                }
+                if (
+                    await ContentScriptsRegistration.isWatchScriptReady(tab.id)
+                ) {
+                    return false;
                 }
                 try {
                     await browser.scripting.executeScript({
@@ -98,15 +104,41 @@ export class ContentScriptsRegistration {
                         target: { tabId: tab.id, frameIds: [0] },
                         files: ['content.js'],
                     });
+                    return true;
                 } catch {
                     // Discarded tabs, closed tabs, etc.
+                    return false;
                 }
             }),
         );
         BackgroundServerAnalysisLog.info(
             'content-scripts-injected-existing-tabs',
-            { tabCount: tabs.length },
+            {
+                matchedTabCount: tabs.length,
+                injectedTabCount: results.filter(Boolean).length,
+            },
         );
+    }
+
+    /**
+     * Distinguishes a current watch script from an invalidated pre-update one.
+     *
+     * @param tabId Matching top-level tab to probe.
+     * @returns Whether the current content bundle acknowledged the probe.
+     */
+    private static async isWatchScriptReady(tabId: number): Promise<boolean> {
+        try {
+            const response: unknown = await browser.tabs.sendMessage(tabId, {
+                type: TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY,
+            });
+            return (
+                response !== null &&
+                typeof response === 'object' &&
+                Reflect.get(response, 'ok') === true
+            );
+        } catch {
+            return false;
+        }
     }
 
     /**

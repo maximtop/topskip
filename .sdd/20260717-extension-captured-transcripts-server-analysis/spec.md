@@ -46,6 +46,11 @@ analysis, exact caching, polling, public-backend protections, and Private BYOK.
 - The public hostname, Cloudflare Tunnel, one-replica VPS topology, installation
   tokens, typed errors, quotas, queue, SQLite state, and deployment rollback
   mechanism remain in place.
+- Every extension build profile, including development, targets the public
+  hostname. Development keeps its local Playwright fixture origin and verbose
+  diagnostics, but does not route Server mode to a loopback backend. Dev and
+  beta manifest names carry `(Dev)` and `(Beta)` suffixes respectively, while
+  the release name remains unchanged.
 - Private BYOK remains a separate privacy-oriented mode. It may use the same
   browser-captured captions but does not register with or contact the TopSkip
   backend.

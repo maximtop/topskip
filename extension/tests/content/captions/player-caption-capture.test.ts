@@ -276,6 +276,40 @@ describe('PlayerCaptionCapture', () => {
         expect(PlayerCaptionCapture.getScheduledVideoIdForTest()).toBe('abc');
     });
 
+    it('allows the same video to retry after a transient player-not-ready result', async () => {
+        let activationCalls = 0;
+        mockSendMessage.mockImplementation((message: unknown) => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
+            ) {
+                activationCalls += 1;
+                if (activationCalls === 1) {
+                    return Promise.resolve({
+                        ok: false,
+                        reason: 'player-not-ready',
+                        error: 'Watch player is not ready for caption capture',
+                    });
+                }
+            }
+            return Promise.resolve({ ok: true });
+        });
+
+        PlayerCaptionCapture.scheduleForVideoId('abc', 'initial', {
+            captureTimeoutMs: 10,
+        });
+        await flushMicrotasks();
+        await finishCleanup();
+        PlayerCaptionCapture.scheduleForVideoId('abc', 'player-ready', {
+            captureTimeoutMs: 10,
+        });
+        await flushMicrotasks();
+
+        expect(activationCalls).toBe(2);
+    });
+
     it('relays safe page diagnostics to the content log channel', async () => {
         PlayerCaptionCapture.installBridgeForPage();
         dispatchPageDiagnostic('bridge:1');
@@ -426,11 +460,11 @@ describe('PlayerCaptionCapture', () => {
             return Promise.resolve({ ok: true });
         });
         const run = PlayerCaptionCapture.captureForVideoId('abc', {
-            captureTimeoutMs: 10,
+            captureTimeoutMs: 300,
         });
         await flushMicrotasks();
         await vi.advanceTimersByTimeAsync(250);
-        await vi.advanceTimersByTimeAsync(20);
+        await vi.advanceTimersByTimeAsync(100);
         await finishCleanup();
         await run;
         const activationMessages = mockSendMessage.mock.calls.filter((item) => {

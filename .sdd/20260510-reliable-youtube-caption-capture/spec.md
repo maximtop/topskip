@@ -88,6 +88,7 @@ A user may watch videos with no captions, age/sign-in restrictions, changed YouT
 4. **Given** capture times out after temporary activation, **When** cleanup runs, **Then** TopSkip restores the pre-capture caption state and removes hide styling.
 5. **Given** the extension context is invalidated during capture, **When** messages or cleanup fail, **Then** YouTube playback is not interrupted and no permanent page styling remains after reload/navigation.
 6. **Given** the captured body is empty, non-JSON, malformed, or contains no cues, **When** parsing runs, **Then** TopSkip reports a parse/acquisition failure and does not send empty segments to promo detection.
+7. **Given** an extension update invalidates a content script in an already-open supported tab, **When** the replacement background starts, **Then** it detects the missing live receiver and injects the current content and page-bridge bundles without requiring the viewer to reload the tab manually.
 
 ---
 
@@ -158,6 +159,8 @@ A user expects TopSkip to inspect captions only to detect promo blocks and not t
 - **FR-025**: The feature MUST NOT add a dependency on a local server, remote caption proxy, or additional non-YouTube host permission.
 - **FR-026**: The system SHOULD maintain or improve the time from watch-page readiness to caption payload compared with manual caption enabling, with a target of capture completion within 3 seconds after player readiness on a healthy supported video.
 - **FR-027**: Existing tests and documentation MUST be updated so obsolete caption-fetch expectations are removed and the player-mediated capture contract is covered.
+- **FR-028**: Best-effort content-to-background messages MUST handle both synchronous throws and rejected promises after extension-context invalidation without producing uncaught errors or repeated send attempts.
+- **FR-029**: Extension installation/update MUST restore the current content and page-bridge bundles in already-open matching tabs, while repeated background starts MUST avoid duplicating a live content-script instance and replacement bundles MUST release their prior listeners, timers, and page wrappers.
 
 ### Key Entities
 
@@ -184,3 +187,4 @@ A user expects TopSkip to inspect captions only to detect promo blocks and not t
 - **SC-008**: Production builds do not execute development-only caption probes, local NDJSON logging, or raw network-debug dumping.
 - **SC-009**: Automated tests cover caption state snapshot/restoration, duplicate capture suppression, stale video navigation, capture timeout cleanup, parser success/failure, and sanitized diagnostics.
 - **SC-010**: Existing lint, build, unit tests, coverage tests for touched modules, and e2e tests pass after obsolete caption fetch paths are removed.
+- **SC-011**: Reloading the unpacked extension with an existing YouTube watch tab produces no uncaught invalidated-context errors, and the current content bundle acknowledges the background readiness probe without a manual tab reload.

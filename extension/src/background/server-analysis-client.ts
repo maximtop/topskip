@@ -4,6 +4,7 @@ import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
 import { ServerInstallationStorage } from '@/background/storage/server-installation-storage';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
+import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from '@/shared/server-analysis-origin';
 import {
     SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
     SERVER_ANALYSIS_FAILURE_CODE,
@@ -25,10 +26,9 @@ import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonic
 const SERVER_ANALYSIS_REQUEST_TIMEOUT_MS = 15_000;
 const SERVER_ANALYSIS_CAPABILITIES_HEADER_VALUE =
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
-const DEV_SERVER_ANALYSIS_BASE_URL = 'http://127.0.0.1:8787';
 const SERVER_ANALYSIS_BASE_URL =
     typeof __TOPSKIP_SERVER_BASE_URL__ === 'undefined'
-        ? DEV_SERVER_ANALYSIS_BASE_URL
+        ? TOPSKIP_PUBLIC_SERVER_BASE_URL
         : __TOPSKIP_SERVER_BASE_URL__;
 
 /**

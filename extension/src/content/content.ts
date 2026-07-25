@@ -13,8 +13,10 @@ export class Content {
      * re-gates on every navigation/poll tick, so a script that lands on a
      * non-watch page (home, SPA entry) still activates once the user reaches
      * a watch URL. A top-level URL gate here would leave such tabs dead.
+     *
+     * @returns Cleanup callback used when a newer content bundle replaces this one.
      */
-    static init(): void {
-        YoutubeWatch.init();
+    static init(): () => void {
+        return YoutubeWatch.init();
     }
 }

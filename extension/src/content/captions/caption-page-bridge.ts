@@ -1,4 +1,5 @@
 const INSTALL_FLAG = '__topskipCaptionCaptureInstalled';
+const TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
 const PAGE_API = '__topskipCaptionCaptureApi';
 const TIMEDTEXT_PATH = '/api/timedtext';
 const PAGE_SOURCE = 'TOPSKIP_CAPTION_CAPTURE_PAGE';
@@ -84,9 +85,13 @@ type IdentifiedPageBridgeMessage = PageBridgeMessage & {
 };
 
 const installCaptionPageBridge = (): void => {
-    const existing: unknown = Reflect.get(globalThis, INSTALL_FLAG);
-    if (existing === true) {
-        return;
+    const previousTeardown: unknown = Reflect.get(globalThis, TEARDOWN_FLAG);
+    if (typeof previousTeardown === 'function') {
+        try {
+            Reflect.apply(previousTeardown, undefined, []);
+        } catch {
+            // Page navigation may invalidate nodes while the old bridge retires.
+        }
     }
     Reflect.set(globalThis, INSTALL_FLAG, true);
 
@@ -502,8 +507,11 @@ const installCaptionPageBridge = (): void => {
     });
     postPageDiagnostic({ stage: 'bridge-installed', ok: true });
 
-    const originalFetch = window.fetch.bind(window);
-    window.fetch = (
+    // Captured unbound on purpose: every call site below re-supplies the
+    // receiver via `originalFetch.call(window, …)`, so `this` is never lost.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalFetch = window.fetch;
+    const wrappedFetch: typeof window.fetch = (
         input: RequestInfo | URL,
         init?: RequestInit,
     ): Promise<Response> => {
@@ -511,9 +519,9 @@ const installCaptionPageBridge = (): void => {
         try {
             requestUrl = input instanceof Request ? input.url : String(input);
         } catch {
-            return originalFetch(input, init);
+            return originalFetch.call(window, input, init);
         }
-        return originalFetch(input, init).then((response) => {
+        return originalFetch.call(window, input, init).then((response) => {
             if (!response.ok || isJson3Timedtext(requestUrl) === null) {
                 return response;
             }
@@ -533,16 +541,41 @@ const installCaptionPageBridge = (): void => {
             return response;
         });
     };
+    window.fetch = wrappedFetch;
 
     const originalOpen: unknown = Reflect.get(XMLHttpRequest.prototype, 'open');
     const originalSend: unknown = Reflect.get(XMLHttpRequest.prototype, 'send');
+    let wrappedOpen: unknown = null;
+    let wrappedSend: unknown = null;
+    Reflect.set(globalThis, TEARDOWN_FLAG, (): void => {
+        if (window.fetch === wrappedFetch) {
+            window.fetch = originalFetch;
+        }
+        if (
+            typeof wrappedOpen === 'function' &&
+            Reflect.get(XMLHttpRequest.prototype, 'open') === wrappedOpen
+        ) {
+            Reflect.set(XMLHttpRequest.prototype, 'open', originalOpen);
+        }
+        if (
+            typeof wrappedSend === 'function' &&
+            Reflect.get(XMLHttpRequest.prototype, 'send') === wrappedSend
+        ) {
+            Reflect.set(XMLHttpRequest.prototype, 'send', originalSend);
+        }
+        untrackUserIntervention();
+        removeHideStyle();
+        Reflect.deleteProperty(globalThis, PAGE_API);
+        Reflect.set(globalThis, INSTALL_FLAG, false);
+    });
     if (
         typeof originalOpen !== 'function' ||
         typeof originalSend !== 'function'
     ) {
         return;
     }
-    XMLHttpRequest.prototype.open = function (
+    wrappedOpen = function (
+        this: XMLHttpRequest,
         method: string,
         url: string | URL,
         async = true,
@@ -567,7 +600,9 @@ const installCaptionPageBridge = (): void => {
         }
         Reflect.apply(originalOpen, this, [method, String(url), async]);
     };
-    XMLHttpRequest.prototype.send = function (
+    Reflect.set(XMLHttpRequest.prototype, 'open', wrappedOpen);
+    wrappedSend = function (
+        this: XMLHttpRequest,
         body?: Document | XMLHttpRequestBodyInit | null,
     ): void {
         let requestUrl = '';
@@ -622,6 +657,7 @@ const installCaptionPageBridge = (): void => {
         }
         Reflect.apply(originalSend, this, [body ?? null]);
     };
+    Reflect.set(XMLHttpRequest.prototype, 'send', wrappedSend);
 };
 
 installCaptionPageBridge();

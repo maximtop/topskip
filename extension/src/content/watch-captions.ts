@@ -21,6 +21,13 @@ export type WatchCaptionCaptureInput = CaptionCaptureInput & {
  */
 export class WatchCaptions {
     /**
+     * Releases document listeners and pending capture state before reinjection.
+     */
+    static dispose(): void {
+        PlayerCaptionCapture.dispose();
+    }
+
+    /**
      * Installs passive page hooks before player caption requests begin.
      */
     static installPageBridge(): void {

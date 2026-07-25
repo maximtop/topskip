@@ -56,7 +56,7 @@ whole server process and is never an automatic fallback.
 | --- | --- |
 | Language/runtime | Strict TypeScript 6, ESM, Node.js 24 in production (`>=22` locally), pnpm 10.33 |
 | Shared validation | Valibot; pure deterministic code only in `common/src/` |
-| Extension | Chrome MV3, React 19/Mantine/MobX popup, Rspack, `browser.*` through the shared polyfill |
+| Extension | Chrome MV3, React 19/Mantine/MobX popup, Rspack, `browser.*` through the shared polyfill; every build profile targets the public backend |
 | Backend | Node `http`, `node:crypto`, `node:sqlite`, one in-memory job replica, OpenRouter/Gemini single attempt |
 | Persistence | SQLite artifact/failure state; additive nullable columns and indexes only |
 | Public route | `https://topskip.maximtop.dev` through Cloudflare Tunnel to loopback Docker port `18787` |

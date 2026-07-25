@@ -715,14 +715,17 @@ export class YoutubeWatch {
             return;
         }
         YoutubeWatch.byokPreflightVideoId = videoId;
-        void browser.runtime
-            .sendMessage({
+        try {
+            const pending = browser.runtime.sendMessage({
                 type: TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP,
                 payload: { videoId },
-            })
-            .catch(() => {
+            });
+            void pending.catch(() => {
                 // The background owns setup status; caption capture remains independent.
             });
+        } catch {
+            // Reloaded content contexts cannot reach the replacement background.
+        }
     }
 
     /**
@@ -986,28 +989,34 @@ export class YoutubeWatch {
      * Initial preferences from the background (GET_PREFS).
      */
     private static loadPrefsFromBackground(): void {
-        void browser.runtime
-            .sendMessage({ type: TOPSKIP_MESSAGE.GET_PREFS })
-            .then((res: unknown) => {
-                if (
-                    res &&
-                    typeof res === 'object' &&
-                    'ok' in res &&
-                    (res as { ok: boolean }).ok &&
-                    'prefs' in res
-                ) {
-                    const prefs = (res as { prefs: UserPreferences }).prefs;
-                    YoutubeWatch.prefs = prefs;
-                    ContentServerAnalysisLog.info('prefs-loaded', {
-                        enabled: prefs.enabled,
-                        analysisMode: prefs.analysisMode,
-                    });
-                    YoutubeWatch.syncVideoBinding();
-                }
-            })
-            .catch(() => {
-                // keep routing idle until preferences are available
+        try {
+            const pending = browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.GET_PREFS,
             });
+            void pending
+                .then((res: unknown) => {
+                    if (
+                        res &&
+                        typeof res === 'object' &&
+                        'ok' in res &&
+                        (res as { ok: boolean }).ok &&
+                        'prefs' in res
+                    ) {
+                        const prefs = (res as { prefs: UserPreferences }).prefs;
+                        YoutubeWatch.prefs = prefs;
+                        ContentServerAnalysisLog.info('prefs-loaded', {
+                            enabled: prefs.enabled,
+                            analysisMode: prefs.analysisMode,
+                        });
+                        YoutubeWatch.syncVideoBinding();
+                    }
+                })
+                .catch(() => {
+                    // Keep routing idle until preferences are available.
+                });
+        } catch {
+            // A replacement bundle will load preferences from the current context.
+        }
     }
 
     /**
@@ -1081,16 +1090,28 @@ export class YoutubeWatch {
 
     /**
      * Wires SPA hooks, video binding, and runtime messaging for prefs.
+     *
+     * @returns Cleanup callback for replacement content bundles.
      */
-    static init(): void {
+    static init(): () => void {
         ContentServerAnalysisLog.info('content-initialized', {
             videoId: YoutubeWatch.getWatchVideoId(),
         });
         YoutubeWatch.loadPrefsFromBackground();
-        browser.runtime.onMessage.addListener((message: unknown) => {
+        const onRuntimeMessage = (message: unknown): unknown => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY
+            ) {
+                return { ok: true };
+            }
             YoutubeWatch.onPrefsUpdatedMessage(message);
             YoutubeWatch.onPromoBlocksMessage(message);
-        });
+            return undefined;
+        };
+        browser.runtime.onMessage.addListener(onRuntimeMessage);
 
         YoutubeWatch.syncVideoBinding();
 
@@ -1101,8 +1122,22 @@ export class YoutubeWatch {
         window.addEventListener('popstate', onNav);
         window.addEventListener('yt-navigate-finish', onNav);
 
-        setInterval(() => {
+        const pollIntervalId = globalThis.setInterval(() => {
             YoutubeWatch.syncVideoBinding();
         }, VIDEO_BINDING_POLL_INTERVAL_MS);
+
+        return (): void => {
+            globalThis.clearInterval(pollIntervalId);
+            window.removeEventListener('popstate', onNav);
+            window.removeEventListener('yt-navigate-finish', onNav);
+            try {
+                browser.runtime.onMessage.removeListener(onRuntimeMessage);
+            } catch {
+                // Reloaded extension contexts can no longer access runtime APIs.
+            }
+            YoutubeWatch.cancelServerAnalysisSession('content-replaced');
+            YoutubeWatch.unbindVideo();
+            WatchCaptions.dispose();
+        };
     }
 }

@@ -63,6 +63,10 @@ export const TOPSKIP_MESSAGE = {
     GET_CHROME_PROMPT_API_STATUS: 'TOPSKIP_GET_CHROME_PROMPT_API_STATUS',
     TRIGGER_CHROME_MODEL_DOWNLOAD: 'TOPSKIP_TRIGGER_CHROME_MODEL_DOWNLOAD',
     /**
+     * Background probe used to avoid reinjecting an already-live watch script.
+     */
+    CONTENT_SCRIPT_READY: 'TOPSKIP_CONTENT_SCRIPT_READY',
+    /**
      * Content script forwards a log line to the background
      * service worker console for easier debugging.
      */
@@ -658,6 +662,7 @@ export const contentLogMessageSchema = v.object({
  * Union of all runtime messages routed through the background service worker.
  */
 export type TopSkipRuntimeMessage =
+    | { type: typeof TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY }
     | { type: typeof TOPSKIP_MESSAGE.GET_PREFS }
     | { type: typeof TOPSKIP_MESSAGE.SET_PREFS; enabled: boolean }
     | {

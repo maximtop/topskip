@@ -2,8 +2,9 @@
 
 This document describes **shipping TopSkip to the Chrome Web Store**. Packaging
 the extension remains separate from operating the public backend. Development
-builds use `127.0.0.1:8787`; beta and release builds use
-`https://topskip.maximtop.dev`. Local development is covered in
+builds, beta builds, and release builds all use
+`https://topskip.maximtop.dev`; only the local Playwright page remains
+development-only. Local development is covered in
 [`DEVELOPMENT.md`](../DEVELOPMENT.md), while backend provisioning and rollback
 are covered in [`DEPLOYMENT.md`](../DEPLOYMENT.md).
 
@@ -56,7 +57,8 @@ Run release commands from the repository root. Rspack writes
    or distributing the matching extension build. The public Valibot contract is
    `common/src/server-analysis-contract.ts`.
 3. Inspect `extension/dist/manifest.json`: it must contain
-   `https://topskip.maximtop.dev/*` and neither development origin.
+   the localized release name `__MSG_name__`,
+   `https://topskip.maximtop.dev/*`, and not the development fixture origin.
 4. Zip **only** the contents of `extension/dist/`. On macOS:
 
     ```bash
@@ -68,7 +70,7 @@ Run release commands from the repository root. Rspack writes
 ## Pre-submit checklist
 
 - [ ] **Manifest V3** — `manifest_version` is `3`
-- [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), TopSkip (`https://topskip.maximtop.dev/*`), and optional **OpenRouter** (`https://openrouter.ai/*`); verify both dev-only origins (`http://127.0.0.1:4173/*` and `http://127.0.0.1:8787/*`) are absent
+- [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), TopSkip (`https://topskip.maximtop.dev/*`), and optional **OpenRouter** (`https://openrouter.ai/*`); verify the dev-only fixture origin (`http://127.0.0.1:4173/*`) is absent
 - [ ] **Privacy** — Describe `browser.storage` (prefs, optional OpenRouter settings, installation token, config, and ready cache), **`tabs`** (messages and detection status), TopSkip Server mode, optional **OpenRouter**, and YouTube pages
 - [ ] **Icons** — Verify `extension/src/public/icons/topskip.svg` and generated PNG sizes are copied into `extension/dist/` and referenced by `manifest.json`
 - [ ] **Version** — Bump `"version"` in `extension/src/manifest.json` for each submission (it is emitted into `extension/dist/`)

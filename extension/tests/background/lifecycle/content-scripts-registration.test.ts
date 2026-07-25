@@ -2,12 +2,14 @@ import { describe, expect, it, vi, beforeEach } from 'vitest';
 
 const {
     tabsQuery,
+    tabsSendMessage,
     executeScript,
     registerContentScripts,
     unregisterContentScripts,
     prefsLoad,
 } = vi.hoisted(() => ({
     tabsQuery: vi.fn().mockResolvedValue([]),
+    tabsSendMessage: vi.fn().mockRejectedValue(new Error('no receiver')),
     executeScript: vi.fn().mockResolvedValue(undefined),
     registerContentScripts: vi.fn().mockResolvedValue(undefined),
     unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
@@ -16,7 +18,7 @@ const {
 
 vi.mock('@/shared/browser', () => ({
     default: {
-        tabs: { query: tabsQuery },
+        tabs: { query: tabsQuery, sendMessage: tabsSendMessage },
         scripting: {
             registerContentScripts,
             unregisterContentScripts,
@@ -45,7 +47,21 @@ describe('ContentScriptsRegistration.syncFromPrefs', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         tabsQuery.mockResolvedValue([]);
+        tabsSendMessage.mockRejectedValue(new Error('no receiver'));
         executeScript.mockResolvedValue(undefined);
+    });
+
+    it('does not reinject a watch script that acknowledges the readiness probe', async () => {
+        prefsLoad.mockResolvedValue({ enabled: true });
+        tabsQuery.mockResolvedValue([{ id: 11 }]);
+        tabsSendMessage.mockResolvedValue({ ok: true });
+
+        await ContentScriptsRegistration.syncFromPrefs();
+
+        expect(tabsSendMessage).toHaveBeenCalledWith(11, {
+            type: 'TOPSKIP_CONTENT_SCRIPT_READY',
+        });
+        expect(executeScript).not.toHaveBeenCalled();
     });
 
     it('injects both bundles into already-open matching tabs when enabled', async () => {

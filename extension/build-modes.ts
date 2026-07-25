@@ -1,3 +1,5 @@
+import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from './src/shared/server-analysis-origin.ts';
+
 /**
  * Shared `TOPSKIP_BUILD` profile names (Rspack manifest + build script).
  */
@@ -16,11 +18,27 @@ export const TOPSKIP_BUILD_MODES: readonly TopSkipBuildMode[] = [
     TopSkipBuild.Release,
 ];
 
-/** Loopback backend used by local development and browser fixtures. */
-const TOPSKIP_DEV_SERVER_BASE_URL = 'http://127.0.0.1:8787';
+const SERVER_ANALYSIS_BASE_URL_BY_BUILD = {
+    [TopSkipBuild.Dev]: TOPSKIP_PUBLIC_SERVER_BASE_URL,
+    [TopSkipBuild.Beta]: TOPSKIP_PUBLIC_SERVER_BASE_URL,
+    [TopSkipBuild.Release]: TOPSKIP_PUBLIC_SERVER_BASE_URL,
+} satisfies Record<TopSkipBuildMode, string>;
 
-/** Public backend shared by beta and release extension builds. */
-const TOPSKIP_PUBLIC_SERVER_BASE_URL = 'https://topskip.maximtop.dev';
+const EXTENSION_NAME_BY_BUILD = {
+    [TopSkipBuild.Dev]: 'TopSkip (Dev)',
+    [TopSkipBuild.Beta]: 'TopSkip (Beta)',
+    [TopSkipBuild.Release]: '__MSG_name__',
+} satisfies Record<TopSkipBuildMode, string>;
+
+/**
+ * Makes unpacked and beta installations distinguishable from release.
+ *
+ * @param build - Extension build profile.
+ * @returns Manifest name for the selected profile.
+ */
+export function getExtensionManifestName(build: TopSkipBuildMode): string {
+    return EXTENSION_NAME_BY_BUILD[build];
+}
 
 /**
  * Resolves the backend origin compiled into a build profile.
@@ -29,9 +47,7 @@ const TOPSKIP_PUBLIC_SERVER_BASE_URL = 'https://topskip.maximtop.dev';
  * @returns Backend origin without a trailing slash.
  */
 export function getServerAnalysisBaseUrl(build: TopSkipBuildMode): string {
-    return build === TopSkipBuild.Dev
-        ? TOPSKIP_DEV_SERVER_BASE_URL
-        : TOPSKIP_PUBLIC_SERVER_BASE_URL;
+    return SERVER_ANALYSIS_BASE_URL_BY_BUILD[build];
 }
 
 /**

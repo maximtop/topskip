@@ -3,14 +3,18 @@ import * as v from 'valibot';
 
 const {
     addRuntimeMessageListener,
+    removeRuntimeMessageListener,
     capture,
+    disposeCaptions,
     installPageBridge,
     scheduleForVideoId,
     sendMessage,
 } = vi.hoisted(() => ({
     addRuntimeMessageListener:
-        vi.fn<(listener: (message: unknown) => void) => void>(),
+        vi.fn<(listener: (message: unknown) => unknown) => void>(),
+    removeRuntimeMessageListener: vi.fn(),
     capture: vi.fn(),
+    disposeCaptions: vi.fn(),
     installPageBridge: vi.fn(),
     scheduleForVideoId: vi.fn(),
     sendMessage: vi.fn<(message: unknown) => Promise<unknown>>(),
@@ -20,7 +24,10 @@ vi.mock('@/shared/browser', () => ({
     default: {
         runtime: {
             sendMessage,
-            onMessage: { addListener: addRuntimeMessageListener },
+            onMessage: {
+                addListener: addRuntimeMessageListener,
+                removeListener: removeRuntimeMessageListener,
+            },
         },
     },
 }));
@@ -28,6 +35,7 @@ vi.mock('@/shared/browser', () => ({
 vi.mock('@/content/watch-captions', () => ({
     WatchCaptions: {
         capture,
+        dispose: disposeCaptions,
         installPageBridge,
         scheduleForVideoId,
     },
@@ -496,7 +504,7 @@ describe('per-video analysis route lifecycle', () => {
         analysisMode: ANALYSIS_MODE.Server,
     };
 
-    type RuntimeMessageListener = (message: unknown) => void;
+    type RuntimeMessageListener = (message: unknown) => unknown;
 
     class FakeVideoElement extends EventTarget {
         currentTime = 0;
@@ -516,6 +524,7 @@ describe('per-video analysis route lifecycle', () => {
     ): Promise<{
         advanceBindingTime(elapsedMs: number): Promise<void>;
         emitPrefs(prefs: UserPreferences): Promise<void>;
+        probeContent(): unknown;
         messagesOfType(type: string): unknown[];
         navigateToVideo(videoId: string): Promise<void>;
         pollBindings(): Promise<void>;
@@ -528,7 +537,9 @@ describe('per-video analysis route lifecycle', () => {
         vi.resetModules();
         sendMessage.mockReset();
         addRuntimeMessageListener.mockReset();
+        removeRuntimeMessageListener.mockReset();
         capture.mockReset();
+        disposeCaptions.mockReset();
         installPageBridge.mockReset();
         scheduleForVideoId.mockReset();
 
@@ -626,6 +637,8 @@ describe('per-video analysis route lifecycle', () => {
         });
         vi.stubGlobal('window', {
             addEventListener: windowEvents.addEventListener.bind(windowEvents),
+            removeEventListener:
+                windowEvents.removeEventListener.bind(windowEvents),
             clearTimeout: globalThis.clearTimeout,
             dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
             setTimeout: globalThis.setTimeout,
@@ -633,7 +646,7 @@ describe('per-video analysis route lifecycle', () => {
         vi.stubGlobal('fetch', fetchMock);
 
         const { YoutubeWatch } = await import('@/content/youtube-watch');
-        YoutubeWatch.init();
+        const disposeWatch = YoutubeWatch.init();
         await flushAsyncWork();
 
         const getRuntimeMessageListener = (): RuntimeMessageListener => {
@@ -658,6 +671,11 @@ describe('per-video analysis route lifecycle', () => {
                     prefs,
                 });
                 await flushAsyncWork();
+            },
+            probeContent(): unknown {
+                return getRuntimeMessageListener()({
+                    type: TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY,
+                });
             },
             messagesOfType(type: string): unknown[] {
                 return sendMessage.mock.calls
@@ -693,12 +711,25 @@ describe('per-video analysis route lifecycle', () => {
                 return fetchMock.mock.calls.length;
             },
             dispose(): void {
+                disposeWatch();
                 vi.clearAllTimers();
                 vi.useRealTimers();
                 vi.unstubAllGlobals();
             },
         };
     }
+
+    it('acknowledges the background readiness probe and disposes replacement state', async () => {
+        const harness = await createRouteHarness(serverPrefs);
+        try {
+            expect(harness.probeContent()).toEqual({ ok: true });
+        } finally {
+            harness.dispose();
+        }
+
+        expect(removeRuntimeMessageListener).toHaveBeenCalledOnce();
+        expect(disposeCaptions).toHaveBeenCalledOnce();
+    });
 
     it('does not request the backend route while disabled or before video binding', async () => {
         const disabledHarness = await createRouteHarness({

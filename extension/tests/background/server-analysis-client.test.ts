@@ -186,7 +186,7 @@ describe('ServerAnalysisClient', () => {
                 'https://github.com/maximtop/topskip/issues/new',
         });
         expect(fetchMock).toHaveBeenCalledWith(
-            'http://127.0.0.1:8787/v1/config',
+            'https://topskip.maximtop.dev/v1/config',
             expect.objectContaining({ method: 'GET' }),
         );
         expect(installationMocks.loadFresh).not.toHaveBeenCalled();
@@ -203,7 +203,7 @@ describe('ServerAnalysisClient', () => {
 
         expect(response.status).toBe('processing');
         expect(fetchMock).toHaveBeenCalledWith(
-            'http://127.0.0.1:8787/v1/analysis',
+            'https://topskip.maximtop.dev/v1/analysis',
             expect.objectContaining({
                 method: 'POST',
                 headers: {
@@ -259,7 +259,7 @@ describe('ServerAnalysisClient', () => {
         await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
         expect(fetchMock.mock.calls[0]?.[0]).toBe(
-            'http://127.0.0.1:8787/v1/installations/register',
+            'https://topskip.maximtop.dev/v1/installations/register',
         );
         expect(fetchMock.mock.calls[0]?.[1]).toEqual(
             expect.objectContaining({
@@ -314,7 +314,7 @@ describe('ServerAnalysisClient', () => {
         });
 
         expect(fetchMock).toHaveBeenCalledWith(
-            'http://127.0.0.1:8787/v1/analysis/jobs/job-server-v6',
+            'https://topskip.maximtop.dev/v1/analysis/jobs/job-server-v6',
             expect.objectContaining({
                 method: 'GET',
                 headers: {

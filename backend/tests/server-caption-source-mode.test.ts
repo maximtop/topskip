@@ -50,9 +50,9 @@ function processingResponse(includeIdentity: boolean): unknown {
         algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
         ...(includeIdentity
             ? {
-                  languageCode: 'en',
-                  transcriptHash: 'a'.repeat(64),
-              }
+                    languageCode: 'en',
+                    transcriptHash: 'a'.repeat(64),
+                }
             : {}),
         jobId: 'job-id',
         pollAfterSec: 3,

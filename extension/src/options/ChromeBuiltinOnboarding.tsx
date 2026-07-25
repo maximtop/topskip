@@ -84,7 +84,10 @@ export function ChromeBuiltinOnboarding(
                     {hasProgress ? (
                         <>
                             <Title order={3} size="h3">
-                                Downloading Gemini Nano… {downloadProgress}%
+                                Downloading Gemini Nano…
+                                {' '}
+                                {downloadProgress}
+                                %
                             </Title>
                             <Progress
                                 value={downloadProgress ?? 0}

@@ -134,7 +134,7 @@ const makeAnalyzeTranscript = (): MockAnalyzeFn => {
         },
         rawAssistant: '{"hasPromo":false,"confidence":"high"}',
     });
-    return fn as unknown as MockAnalyzeFn;
+    return fn;
 };
 
 function makeAdapter(

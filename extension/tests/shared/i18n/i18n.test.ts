@@ -22,7 +22,7 @@ global.fetch = vi.fn(() =>
     Promise.resolve({
         json: () => Promise.resolve(FAKE_EN),
     } as Response),
-) as typeof fetch;
+);
 
 import { I18n } from '@/shared/i18n/i18n';
 

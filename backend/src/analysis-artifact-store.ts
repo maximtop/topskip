@@ -503,20 +503,20 @@ export class AnalysisArtifactStore {
     ): AnalysisArtifactRecord | null {
         const records = AnalysisArtifactStore.usesSqlitePersistence()
             ? BackendPublicState.findArtifactsExact(identity).flatMap(
-                  (record) => {
-                      const parsed = v.safeParse(
-                          analysisArtifactRecordSchema,
-                          record,
-                      );
-                      return parsed.success ? [parsed.output] : [];
-                  },
-              )
+                    (record) => {
+                        const parsed = v.safeParse(
+                            analysisArtifactRecordSchema,
+                            record,
+                        );
+                        return parsed.success ? [parsed.output] : [];
+                    },
+                )
             : AnalysisArtifactStore.findHistory({
-                  videoId: identity.videoId,
-                  algorithmVersion: identity.algorithmVersion,
-              }).filter((record) =>
-                  AnalysisArtifactStore.matchesExactIdentity(record, identity),
-              );
+                    videoId: identity.videoId,
+                    algorithmVersion: identity.algorithmVersion,
+                }).filter((record) =>
+                    AnalysisArtifactStore.matchesExactIdentity(record, identity),
+                );
         return AnalysisArtifactStore.latestCacheable(records);
     }
 
@@ -693,11 +693,11 @@ export class AnalysisArtifactStore {
             input.selectedTranscriptArtifact !== undefined
                 ? input.selectedTranscriptArtifact
                 : isAnalyzedResult
-                  ? AnalysisArtifactStore.buildTranscriptArtifactForTests(
-                        input,
-                        TEST_CREATED_AT_MS,
-                    )
-                  : null;
+                    ? AnalysisArtifactStore.buildTranscriptArtifactForTests(
+                            input,
+                            TEST_CREATED_AT_MS,
+                        )
+                    : null;
         const terminalResponse =
             AnalysisArtifactStore.buildTerminalResponseForTests(
                 input,
@@ -707,12 +707,12 @@ export class AnalysisArtifactStore {
             'analysisRun' in input && input.analysisRun !== undefined
                 ? input.analysisRun
                 : isAnalyzedResult && selectedTranscriptArtifact !== null
-                  ? AnalysisArtifactStore.buildAnalysisRunForTests(
-                        input,
-                        selectedTranscriptArtifact,
-                        completedAtMs,
-                    )
-                  : null;
+                    ? AnalysisArtifactStore.buildAnalysisRunForTests(
+                            input,
+                            selectedTranscriptArtifact,
+                            completedAtMs,
+                        )
+                    : null;
         const metadata = AnalysisArtifactStore.mergeOperationalMetadata(
             input,
             completedAtMs,
@@ -735,11 +735,11 @@ export class AnalysisArtifactStore {
                 ...(selectedTranscriptArtifact?.sourceType ===
                 'extension_caption_upload'
                     ? {
-                          languageCode: selectedTranscriptArtifact.languageCode,
-                          transcriptHash:
+                            languageCode: selectedTranscriptArtifact.languageCode,
+                            transcriptHash:
                               selectedTranscriptArtifact.transcriptHash,
-                          sourceType: selectedTranscriptArtifact.sourceType,
-                      }
+                            sourceType: selectedTranscriptArtifact.sourceType,
+                        }
                     : {}),
             },
             job: {
@@ -1131,9 +1131,9 @@ export class AnalysisArtifactStore {
         const uploadIdentity =
             transcriptArtifact?.sourceType === 'extension_caption_upload'
                 ? {
-                      languageCode: transcriptArtifact.languageCode,
-                      transcriptHash: transcriptArtifact.transcriptHash,
-                  }
+                        languageCode: transcriptArtifact.languageCode,
+                        transcriptHash: transcriptArtifact.transcriptHash,
+                    }
                 : null;
         switch (input.terminalStatus) {
             case 'ready':
@@ -1244,15 +1244,15 @@ export class AnalysisArtifactStore {
                 : TEST_RAW_NO_PROMO_MODEL_RESPONSE,
             parsedResult: hasPromo
                 ? {
-                      hasPromo: true,
-                      promoBlocks: [
-                          {
-                              startSec: 4,
-                              endSec: 24,
-                              confidence: 'high',
-                          },
-                      ],
-                  }
+                        hasPromo: true,
+                        promoBlocks: [
+                            {
+                                startSec: 4,
+                                endSec: 24,
+                                confidence: 'high',
+                            },
+                        ],
+                    }
                 : { hasPromo: false },
             normalizedPromoBlocks: hasPromo
                 ? [{ startSec: 4, endSec: 24, confidence: 'high' }]

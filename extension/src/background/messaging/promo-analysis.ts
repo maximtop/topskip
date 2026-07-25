@@ -596,11 +596,11 @@ export class PromoAnalysis {
                     ? { type: 'promo_blocks' as const, blocks: mergedBlocks }
                     : chunkFailures >= plan.chunks.length &&
                         plan.chunks.length > 0
-                      ? {
-                            type: 'adapter_error' as const,
-                            error: 'All transcript chunks failed',
-                        }
-                      : { type: 'no_promo' as const };
+                        ? {
+                                type: 'adapter_error' as const,
+                                error: 'All transcript chunks failed',
+                            }
+                        : { type: 'no_promo' as const };
 
             if (chunkFailures >= plan.chunks.length && plan.chunks.length > 0) {
                 setStatus({

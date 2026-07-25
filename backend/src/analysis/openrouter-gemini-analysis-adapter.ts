@@ -166,7 +166,9 @@ export class OpenRouterGeminiAnalysisAdapter implements BackendLlmAnalysisAdapte
             return OpenRouterGeminiAnalysisAdapter.parseResponse(responseText);
         } catch (error) {
             if (controller.signal.aborted) {
-                throw new Error('OpenRouter request timed out.');
+                throw new Error('OpenRouter request timed out.', {
+                    cause: error,
+                });
             }
             if (
                 error instanceof Error &&
@@ -174,7 +176,7 @@ export class OpenRouterGeminiAnalysisAdapter implements BackendLlmAnalysisAdapte
             ) {
                 throw error;
             }
-            throw new Error('OpenRouter analysis failed.');
+            throw new Error('OpenRouter analysis failed.', { cause: error });
         } finally {
             clearTimeout(timeoutId);
         }

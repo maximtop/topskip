@@ -424,9 +424,9 @@ export class BackendHttpServer {
                 nowMs: context.now(),
                 context: context.requireAuth
                     ? {
-                          ...authenticated,
-                          requestId: context.requestId,
-                      }
+                            ...authenticated,
+                            requestId: context.requestId,
+                        }
                     : undefined,
                 captionSource: context.captionSource,
             },

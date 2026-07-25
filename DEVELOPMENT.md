@@ -15,7 +15,7 @@ and architecture**, see [AGENTS.md](./AGENTS.md). For a short **overview**, see
     - [2. Build the extension](#2-build-the-extension)
     - [3. Load the extension in Chrome](#3-load-the-extension-in-chrome)
     - [4. Watch mode (optional)](#4-watch-mode-optional)
-    - [5. Local server-mode backend (optional)](#5-local-server-mode-backend-optional)
+    - [5. Local backend process (optional)](#5-local-backend-process-optional)
     - [Server-owned Gemini analysis](#server-owned-gemini-analysis)
     - [Build profiles and public API](#build-profiles-and-public-api)
     - [Server-analysis dev logs](#server-analysis-dev-logs)
@@ -120,9 +120,9 @@ make extension
 
 Equivalent: `pnpm run build:watch`.
 
-### 5. Local server-mode backend (optional)
+### 5. Local backend process (optional)
 
-Run the loopback backend when exercising server-mode development:
+Run the loopback backend for direct backend development and API testing:
 
 ```bash
 cp .env.example .env
@@ -136,10 +136,10 @@ the HTTP listener and exits with a safe configuration error when the key is
 missing or blank. The default extension upload source (`extension_upload`)
 neither installs nor requires `yt-dlp`.
 
-It listens on `http://127.0.0.1:8787`. The matching host permission is injected
-only into development builds, so extension-only work and Private BYOK testing
-do not require this process. Beta and release builds instead contain only the
-public `https://topskip.maximtop.dev/*` server permission. See
+It listens on `http://127.0.0.1:8787`, but extension builds do not target that
+loopback process. Dev, beta, and release extensions all contain the public
+`https://topskip.maximtop.dev/*` server permission so ordinary development
+cannot accidentally test against a missing local backend. See
 [DEPLOYMENT.md](./DEPLOYMENT.md) for the production route and operations.
 
 On a YouTube `/watch?v=…` page, Server mode starts with **caption acquisition**
@@ -205,11 +205,11 @@ provider errors.
 The extension origin is compiled per profile; it is not selected from runtime
 storage:
 
-| Profile | Command            | Server origin                  |
-| ------- | ------------------ | ------------------------------ |
-| Dev     | `make build`       | `http://127.0.0.1:8787`        |
-| Beta    | `pnpm run beta`    | `https://topskip.maximtop.dev` |
-| Release | `pnpm run release` | `https://topskip.maximtop.dev` |
+| Profile | Command            | Extension name   | Server origin                  |
+| ------- | ------------------ | ---------------- | ------------------------------ |
+| Dev     | `make build`       | `TopSkip (Dev)`  | `https://topskip.maximtop.dev` |
+| Beta    | `pnpm run beta`    | `TopSkip (Beta)` | `https://topskip.maximtop.dev` |
+| Release | `pnpm run release` | `TopSkip`        | `https://topskip.maximtop.dev` |
 
 The public compatibility boundary consists of `/v1/installations/register`,
 `/v1/config`, `/v1/analysis`, `/v1/analysis/jobs/{jobId}`, and `/v1/health`.
@@ -234,9 +234,10 @@ identifiers, stable codes, counts, latency, tokens, and cost, but never
 transcript text, assistant content, caption bodies, signed URLs, stderr,
 cookies, installation tokens, raw IP, or API keys.
 
-After `make extension` rebuilds, click **Reload** on the extension card and
-reload the YouTube tab. Programmatically registered content scripts are not
-retroactively injected into an already loaded document.
+After `make extension` rebuilds, click **Reload** on the extension card. The
+background probes matching open tabs and injects the current content and
+MAIN-world caption bundles when their previous extension context no longer
+responds; a normal YouTube tab reload is not required.
 
 ---
 
@@ -301,12 +302,11 @@ The **popup** and **content** scripts must not call **`storage.local`** for pref
 | `pnpm run yt-dlp:install`                    | Install pinned `yt-dlp` for explicit legacy mode only                                |
 | `pnpm run build`                             | Development build to `extension/dist/`                                               |
 | `pnpm run build:watch`                       | Rspack watch mode                                                                    |
-| `pnpm run format`                            | Apply **oxfmt** formatting (`.oxfmtrc.json`)                                         |
-| `pnpm run format:check`                      | Check **oxfmt** formatting without writing                                           |
-| `pnpm run lint`                              | **oxfmt** check + **oxlint** + ESLint parity + **markdownlint** + **`tsc --noEmit`** |
-| `pnpm run lint:eslint`                       | ESLint parity checks that oxlint does not fully replace yet (`eslint.config.ts`)     |
+| `pnpm run format`                            | Apply formatting and safe autofixes (`eslint --fix .`)                               |
+| `pnpm run format:check`                      | Report formatting without writing (alias of `lint:eslint`)                           |
+| `pnpm run lint`                              | **ESLint** + **markdownlint** + **`tsc --noEmit`**                                    |
+| `pnpm run lint:eslint`                       | **ESLint** — the project's only linter, type-aware (`eslint.config.ts`)              |
 | `pnpm run lint:md`                           | **markdownlint-cli2** on `**/*.md` (excludes `node_modules`, `dist`, `coverage`)     |
-| `pnpm run lint:ox`                           | **oxlint** checks (`.oxlintrc.json`)                                                 |
 | `pnpm run lint:types`                        | **TypeScript** — full project typecheck (`tsc --noEmit`, same as editor diagnostics) |
 | `pnpm run test`                              | Vitest once (`vitest run`)                                                           |
 | `pnpm run test:watch`                        | Vitest watch mode                                                                    |
@@ -318,7 +318,9 @@ The **popup** and **content** scripts must not call **`storage.local`** for pref
 | `pnpm run openrouter:compare-presets`        | Maintainer-only: same transcript → every built-in OpenRouter preset (see below)      |
 | `pnpm run openrouter:extract-log-transcript` | Rebuild `[sec] text` user message from an exported caption `.log` (see below)        |
 
-`pnpm run format` is the repo-wide formatter. `pnpm run lint` includes `format:check`, so CI enforces the same formatting as local development.
+Formatting is owned by [ESLint Stylistic](https://eslint.style) rules inside `eslint.config.ts`, so `pnpm run lint` enforces the same style CI does; `pnpm run format` applies it.
+
+Stylistic is a set of lint rules, not a formatter: it fixes indentation, quotes, semicolons, spacing, and trailing commas, but it never re-wraps a long line. Write to **80 columns** by hand; `max-len` only errors past **100**, because unbreakable spans (long member chains, deeply nested JSX) legitimately exceed 80. Markdown, JSON, and YAML are no longer auto-formatted — `pnpm run lint:md` still checks Markdown.
 
 ### Maintainer: compare preset models on one transcript
 
@@ -556,29 +558,29 @@ stream.
 
 ## Common tasks
 
-| Task                          | Steps                                                                                        |
-| ----------------------------- | -------------------------------------------------------------------------------------------- |
-| **Iterate on UI (popup)**     | Edit `extension/src/popup/*`, `make build`, reload extension on `chrome://extensions`        |
-| **Iterate on content script** | Edit `extension/src/content/*`, `make build`, reload extension **and** the YouTube tab       |
-| **Add a unit test**           | Add `extension/tests/.../*.test.ts` mirroring the `extension/src/` path; run `pnpm run test` |
-| **Debug failing CI locally**  | Run `pnpm install --frozen-lockfile`, then the same commands as `.github/workflows/ci.yml`   |
-| **Clean install**             | Remove `node_modules`, run `pnpm install --frozen-lockfile`                                  |
+| Task                          | Steps                                                                                            |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| **Iterate on UI (popup)**     | Edit `extension/src/popup/*`, `make build`, reload extension on `chrome://extensions`            |
+| **Iterate on content script** | Edit `extension/src/content/*`, `make build`, then reload the extension on `chrome://extensions` |
+| **Add a unit test**           | Add `extension/tests/.../*.test.ts` mirroring the `extension/src/` path; run `pnpm run test`     |
+| **Debug failing CI locally**  | Run `pnpm install --frozen-lockfile`, then the same commands as `.github/workflows/ci.yml`       |
+| **Clean install**             | Remove `node_modules`, run `pnpm install --frozen-lockfile`                                      |
 
 ---
 
 ## Troubleshooting
 
-| Issue                                                 | What to try                                                                                                                                                                |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`make build` fails**                                | Ensure Node **≥ 22**; run `pnpm install`; check Rspack/TypeScript errors in the terminal                                                                                   |
-| **`make server` reports a missing OpenRouter key**    | Copy `.env.example` to the root `.env`, set `OPENROUTER_API_KEY`, or export it in the shell before starting the server                                                     |
-| **Explicit legacy mode reports missing `yt-dlp`**     | Run `make yt-dlp-install`, or set `TOPSKIP_YT_DLP_PATH` to a working executable; default `extension_upload` mode never requires it                                         |
-| **Extension doesn’t update after edits**              | Run `make build` again; on `chrome://extensions`, click **Reload** on the extension; for content scripts, **reload the tab** (or close/reopen YouTube)                     |
-| **Lint errors in IDE but not terminal**               | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service. |
-| **`pnpm run test:e2e` fails (browser)**               | Run `pnpm exec playwright install chromium`                                                                                                                                |
-| **`pnpm run test:e2e` times out / video never plays** | Confirm `extension/e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed                                                       |
-| **Port 4173 already in use**                          | Stop the other process using the port, or adjust `extension/playwright.config.ts` `webServer` + manifest host if you must (keep them in sync)                              |
-| **Coverage fails after changes**                      | Run `pnpm run test:coverage` and add tests or adjust coverage scope in `vitest.config.ts` deliberately                                                                     |
+| Issue                                                 | What to try                                                                                                                                                                                                                         |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`make build` fails**                                | Ensure Node **≥ 22**; run `pnpm install`; check Rspack/TypeScript errors in the terminal                                                                                                                                            |
+| **`make server` reports a missing OpenRouter key**    | Copy `.env.example` to the root `.env`, set `OPENROUTER_API_KEY`, or export it in the shell before starting the server                                                                                                              |
+| **Explicit legacy mode reports missing `yt-dlp`**     | Run `make yt-dlp-install`, or set `TOPSKIP_YT_DLP_PATH` to a working executable; default `extension_upload` mode never requires it                                                                                                  |
+| **Extension doesn’t update after edits**              | Run `make build` again and click **Reload** on `chrome://extensions`; inspect the service-worker `content-scripts-injected-existing-tabs` diagnostic if an open matching tab does not acknowledge or receive the replacement bundle |
+| **Lint errors in IDE but not terminal**               | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service.                                                          |
+| **`pnpm run test:e2e` fails (browser)**               | Run `pnpm exec playwright install chromium`                                                                                                                                                                                         |
+| **`pnpm run test:e2e` times out / video never plays** | Confirm `extension/e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed                                                                                                                |
+| **Port 4173 already in use**                          | Stop the other process using the port, or adjust `extension/playwright.config.ts` `webServer` + manifest host if you must (keep them in sync)                                                                                       |
+| **Coverage fails after changes**                      | Run `pnpm run test:coverage` and add tests or adjust coverage scope in `vitest.config.ts` deliberately                                                                                                                              |
 
 ---
 

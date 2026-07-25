@@ -330,11 +330,11 @@ export class BackendPromoAnalysisWorker {
         return lastFailure !== undefined
             ? { ok: false, ...lastFailure }
             : {
-                  ok: false,
-                  failureReason:
+                    ok: false,
+                    failureReason:
                       BACKEND_ANALYSIS_FAILURE_REASON.ModelProviderError,
-                  rawModelResponse: null,
-              };
+                    rawModelResponse: null,
+                };
     }
 
     /**

@@ -331,9 +331,9 @@ export class BackendAnalysisApi {
             nowMs: options.nowMs,
             ...(options.publicContext
                 ? {
-                      installationHash: options.context.installationHash,
-                      ipHash: options.context.ipHash,
-                  }
+                        installationHash: options.context.installationHash,
+                        ipHash: options.context.ipHash,
+                    }
                 : {}),
         });
         if (!protection.allowed) {

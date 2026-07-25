@@ -98,11 +98,11 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                                         {connection.status ===
                                         CONNECTION_STATUS.Saved
                                             ? translator.getMessage(
-                                                  'options_connection_key_saved',
-                                              )
+                                                    'options_connection_key_saved',
+                                                )
                                             : translator.getMessage(
-                                                  'options_connection_key_missing',
-                                              )}
+                                                    'options_connection_key_missing',
+                                                )}
                                     </Badge>
                                 </Group>
                                 <Group align="flex-end" wrap="nowrap" gap="sm">
@@ -156,10 +156,10 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                                 ) : null}
                                 {testState?.kind === 'invalid' ||
                                 testState?.kind === 'error' ? (
-                                    <Text size="xs" c="red">
-                                        {testState.error}
-                                    </Text>
-                                ) : null}
+                                            <Text size="xs" c="red">
+                                                {testState.error}
+                                            </Text>
+                                        ) : null}
                             </Stack>
                         </Paper>
                     );

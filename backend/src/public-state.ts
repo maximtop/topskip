@@ -538,23 +538,23 @@ export class BackendPublicState {
         const rows =
             input.algorithmVersion === undefined
                 ? database
-                      .prepare(
-                          `SELECT payload_json
+                        .prepare(
+                            `SELECT payload_json
                            FROM analysis_artifacts
                            WHERE video_id = ? AND expires_at_ms > ?
                            ORDER BY completed_at_ms ASC`,
-                      )
-                      .all(input.videoId, nowMs)
+                        )
+                        .all(input.videoId, nowMs)
                 : database
-                      .prepare(
-                          `SELECT payload_json
+                        .prepare(
+                            `SELECT payload_json
                            FROM analysis_artifacts
                            WHERE video_id = ?
                              AND algorithm_version = ?
                              AND expires_at_ms > ?
                            ORDER BY completed_at_ms ASC`,
-                      )
-                      .all(input.videoId, input.algorithmVersion, nowMs);
+                        )
+                        .all(input.videoId, input.algorithmVersion, nowMs);
         return rows.flatMap((row) => {
             const payload = BackendPublicState.readString(row, 'payload_json');
             if (payload === null) {

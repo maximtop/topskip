@@ -55,8 +55,8 @@ export function parsePricingNumber(value: unknown): number | undefined {
         typeof value === 'number'
             ? value
             : typeof value === 'string'
-              ? Number(value)
-              : Number.NaN;
+                ? Number(value)
+                : Number.NaN;
     if (!Number.isFinite(numeric) || numeric < 0) {
         return undefined;
     }

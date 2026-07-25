@@ -137,7 +137,7 @@ export class ChunkPlanner {
             return startIdx - 1;
         }
         let endIdx = startIdx;
-        let len = ChunkPlanner.sliceCharLen(lines, startIdx, endIdx);
+        const len = ChunkPlanner.sliceCharLen(lines, startIdx, endIdx);
         if (len > budgetChars) {
             return startIdx;
         }
@@ -151,7 +151,6 @@ export class ChunkPlanner {
                 break;
             }
             endIdx = endIdx + 1;
-            len = nextLen;
         }
         return endIdx;
     }

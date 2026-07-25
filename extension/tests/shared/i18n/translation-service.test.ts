@@ -47,7 +47,7 @@ global.fetch = vi.fn((url: string | URL | Request) => {
         } as Response);
     }
     return Promise.reject(new Error(`unexpected fetch: ${urlStr}`));
-}) as typeof fetch;
+});
 
 import { TranslationService } from '@/shared/i18n/translation-service';
 

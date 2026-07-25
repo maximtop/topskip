@@ -180,12 +180,12 @@ export function OptionsSidebar(props: {
                             radius="sm"
                             aria-current={active ? 'page' : undefined}
                             onClick={() => props.onSectionChange(section.id)}
-                            leftSection={
+                            leftSection={(
                                 <OptionsSectionIcon
                                     sectionId={section.id}
                                     active={active}
                                 />
-                            }
+                            )}
                             styles={{
                                 root: {
                                     height: '2.25rem',
@@ -377,7 +377,7 @@ export async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
                 !isTransientSendMessageFailure(e) ||
                 attempt === maxAttempts - 1
             ) {
-                throw new Error(getErrorMessage(e));
+                throw new Error(getErrorMessage(e), { cause: e });
             }
         }
         await new Promise((r) => {
@@ -732,8 +732,8 @@ function OptionsApp(): ReactElement {
                     typeof rawError === 'string'
                         ? rawError
                         : translator.getMessage(
-                              'options_analysis_mode_save_error',
-                          ),
+                                'options_analysis_mode_save_error',
+                            ),
                 );
                 return;
             }
@@ -842,13 +842,13 @@ function OptionsApp(): ReactElement {
                 current.map((entry) =>
                     entry.providerId === providerId
                         ? {
-                              ...entry,
-                              apiKeyMasked: saved.apiKeyMasked,
-                              status:
+                                ...entry,
+                                apiKeyMasked: saved.apiKeyMasked,
+                                status:
                                   saved.apiKeyMasked === null
                                       ? 'missing'
                                       : 'saved',
-                          }
+                            }
                         : entry,
                 ),
             );

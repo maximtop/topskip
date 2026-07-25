@@ -67,7 +67,10 @@ export function ChromeBuiltinInlineStatus(): ReactElement {
             <Alert color="blue" variant="light">
                 <Stack gap="xs">
                     <Text size="sm" fw={600}>
-                        Downloading Gemini Nano… {displayPct}%
+                        Downloading Gemini Nano…
+                        {' '}
+                        {displayPct}
+                        %
                     </Text>
                     <Progress
                         value={pct}

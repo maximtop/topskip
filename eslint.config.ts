@@ -1,4 +1,5 @@
 import eslint from '@eslint/js';
+import stylistic from '@stylistic/eslint-plugin';
 import globals from 'globals';
 import jsdoc from 'eslint-plugin-jsdoc';
 import reactHooks from 'eslint-plugin-react-hooks';
@@ -54,6 +55,98 @@ const localPlugin = {
 export default tseslint.config(
     eslint.configs.recommended,
     ...tseslint.configs.recommendedTypeChecked,
+    // ESLint Stylistic owns formatting. Unlike a real formatter it never
+    // reflows code, so `max-len` only reports over-long lines — wrap by hand.
+    stylistic.configs.customize({
+        indent: 4,
+        quotes: 'single',
+        semi: true,
+        jsx: true,
+        commaDangle: 'always-multiline',
+        braceStyle: '1tbs',
+        arrowParens: true,
+    }),
+    {
+        rules: {
+            // Continuation operators stay at end of line (`a &&` / `const x =`),
+            // while ternary branches and type-union members lead their line.
+            '@stylistic/operator-linebreak': [
+                'error',
+                'after',
+                {
+                    overrides: {
+                        '?': 'before',
+                        ':': 'before',
+                        '|': 'before',
+                        '&': 'before',
+                    },
+                },
+            ],
+            // Quote only the keys that require quoting (e.g. `pt_BR`).
+            '@stylistic/quote-props': ['error', 'as-needed'],
+            // Double quotes are allowed when they avoid escaping (`"don't"`).
+            '@stylistic/quotes': [
+                'error',
+                'single',
+                { avoidEscape: true, allowTemplateLiterals: 'never' },
+            ],
+            '@stylistic/jsx-quotes': ['error', 'prefer-double'],
+            '@stylistic/linebreak-style': ['error', 'unix'],
+            // Multi-line union/intersection members carry a hanging indent that
+            // `indent` cannot model; `operator-linebreak` still anchors them.
+            '@stylistic/indent': [
+                'error',
+                4,
+                {
+                    ArrayExpression: 1,
+                    CallExpression: { arguments: 1 },
+                    flatTernaryExpressions: false,
+                    FunctionDeclaration: { body: 1, parameters: 1, returnType: 1 },
+                    FunctionExpression: { body: 1, parameters: 1, returnType: 1 },
+                    ignoreComments: false,
+                    ignoredNodes: [
+                        'TSUnionType',
+                        'TSIntersectionType',
+                        'TSUnionType *',
+                        'TSIntersectionType *',
+                    ],
+                    ImportDeclaration: 1,
+                    MemberExpression: 1,
+                    ObjectExpression: 1,
+                    offsetTernaryExpressions: true,
+                    outerIIFEBody: 1,
+                    SwitchCase: 1,
+                    tabLength: 4,
+                    VariableDeclarator: 1,
+                },
+            ],
+            // Continuation indent of long binary expressions: the previous
+            // formatter aligned these its own way and this rule disagrees
+            // without adding safety. `indent` still governs the enclosing block.
+            '@stylistic/indent-binary-ops': 'off',
+            // JSX conditionals are written as `cond ? (\n…\n) : (\n…\n)`, which
+            // this rule rejects on principle rather than for readability.
+            '@stylistic/multiline-ternary': 'off',
+            // 80 columns stays the target to write to, but it can only be a
+            // target now: nothing reflows code, and the previous formatter
+            // treated 80 as a soft width it exceeded for unbreakable spans
+            // (long member chains, deep JSX). 100 is the hard ceiling that
+            // still catches runaway lines. Comments are exempt because prose
+            // was never wrapped and 300 JSDoc lines already pass 80.
+            '@stylistic/max-len': [
+                'error',
+                {
+                    code: 100,
+                    tabWidth: 4,
+                    ignoreComments: true,
+                    ignoreUrls: true,
+                    ignoreStrings: true,
+                    ignoreTemplateLiterals: true,
+                    ignoreRegExpLiterals: true,
+                },
+            ],
+        },
+    },
     {
         plugins: { local: localPlugin },
     },
@@ -88,7 +181,7 @@ export default tseslint.config(
             // When a branch returns, drop redundant `else` so the main path stays flat.
             'no-else-return': 'error',
             // No blank line immediately inside `class { ... }` (after `{` / before `}`).
-            'padded-blocks': [
+            '@stylistic/padded-blocks': [
                 'error',
                 { classes: 'never' },
                 { allowSingleLineBlocks: true },

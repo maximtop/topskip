@@ -141,7 +141,7 @@ export function OpenRouterConfigPanel(
                                         event.currentTarget.value,
                                     );
                                 }}
-                                rightSection={
+                                rightSection={(
                                     <ActionIcon
                                         variant="subtle"
                                         aria-label={
@@ -201,7 +201,7 @@ export function OpenRouterConfigPanel(
                                             </svg>
                                         )}
                                     </ActionIcon>
-                                }
+                                )}
                             />
                             <Button
                                 color="blue"
@@ -336,18 +336,18 @@ export function OpenRouterConfigPanel(
                                                 {props.unverifiedModels.has(
                                                     slug,
                                                 ) ? (
-                                                    <Badge
-                                                        size="xs"
-                                                        color="yellow"
-                                                        variant="light"
-                                                        style={{
-                                                            textTransform:
+                                                            <Badge
+                                                                size="xs"
+                                                                color="yellow"
+                                                                variant="light"
+                                                                style={{
+                                                                    textTransform:
                                                                 'none',
-                                                        }}
-                                                    >
-                                                        Unverified
-                                                    </Badge>
-                                                ) : null}
+                                                                }}
+                                                            >
+                                                                Unverified
+                                                            </Badge>
+                                                        ) : null}
                                             </Group>
                                         )}
                                         {editing ? (
@@ -360,12 +360,12 @@ export function OpenRouterConfigPanel(
                                                         props.updateBusySlug ===
                                                         slug
                                                     }
-                                                    leftSection={
+                                                    leftSection={(
                                                         <CheckIcon
                                                             size={14}
                                                             color="currentColor"
                                                         />
-                                                    }
+                                                    )}
                                                     onClick={() => {
                                                         props.onSaveCustomModelEdit(
                                                             slug,
@@ -379,12 +379,12 @@ export function OpenRouterConfigPanel(
                                                     variant="light"
                                                     color="gray"
                                                     disabled={busy}
-                                                    leftSection={
+                                                    leftSection={(
                                                         <XIcon
                                                             size={14}
                                                             color="currentColor"
                                                         />
-                                                    }
+                                                    )}
                                                     onClick={() => {
                                                         props.onCancelCustomModelEdit();
                                                     }}
@@ -399,12 +399,12 @@ export function OpenRouterConfigPanel(
                                                     variant="light"
                                                     color="blue"
                                                     disabled={busy}
-                                                    leftSection={
+                                                    leftSection={(
                                                         <PencilIcon
                                                             size={14}
                                                             color="currentColor"
                                                         />
-                                                    }
+                                                    )}
                                                     onClick={() => {
                                                         props.onEditCustomModel(
                                                             slug,
@@ -429,12 +429,12 @@ export function OpenRouterConfigPanel(
                                                             props.removeBusySlug !==
                                                                 slug)
                                                     }
-                                                    leftSection={
+                                                    leftSection={(
                                                         <TrashIcon
                                                             size={14}
                                                             color="currentColor"
                                                         />
-                                                    }
+                                                    )}
                                                     onClick={() => {
                                                         props.onRemoveCustomModel(
                                                             slug,

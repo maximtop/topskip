@@ -307,9 +307,9 @@ async function runPresetComparison(): Promise<void> {
         opts.models === undefined
             ? OPENROUTER_BUILTIN_MODEL_SLUGS
             : opts.models
-                  .split(',')
-                  .map((model) => model.trim())
-                  .filter((model) => model.length > 0);
+                    .split(',')
+                    .map((model) => model.trim())
+                    .filter((model) => model.length > 0);
     if (models.length === 0) {
         throw new Error('--models must contain at least one model slug');
     }
@@ -408,18 +408,18 @@ async function runPresetComparison(): Promise<void> {
                     chat.usage?.cost !== undefined ||
                     costBreakdown !== undefined
                         ? {
-                              reportedCost: chat.usage?.cost,
-                              estimatedCostUsd: costBreakdown?.totalUsd,
-                              promptCostUsd: costBreakdown?.promptCostUsd,
-                              completionCostUsd:
+                                reportedCost: chat.usage?.cost,
+                                estimatedCostUsd: costBreakdown?.totalUsd,
+                                promptCostUsd: costBreakdown?.promptCostUsd,
+                                completionCostUsd:
                                   costBreakdown?.completionCostUsd,
-                              cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                              cacheWriteCostUsd:
+                                cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                                cacheWriteCostUsd:
                                   costBreakdown?.cacheWriteCostUsd,
-                              internalReasoningCostUsd:
+                                internalReasoningCostUsd:
                                   costBreakdown?.internalReasoningCostUsd,
-                              requestCostUsd: costBreakdown?.requestCostUsd,
-                          }
+                                requestCostUsd: costBreakdown?.requestCostUsd,
+                            }
                         : undefined,
             } satisfies Row;
             rows.push(row);
@@ -442,18 +442,18 @@ async function runPresetComparison(): Promise<void> {
                     chat.usage?.cost !== undefined ||
                     costBreakdown !== undefined
                         ? {
-                              reportedCost: chat.usage?.cost,
-                              estimatedCostUsd: costBreakdown?.totalUsd,
-                              promptCostUsd: costBreakdown?.promptCostUsd,
-                              completionCostUsd:
+                                reportedCost: chat.usage?.cost,
+                                estimatedCostUsd: costBreakdown?.totalUsd,
+                                promptCostUsd: costBreakdown?.promptCostUsd,
+                                completionCostUsd:
                                   costBreakdown?.completionCostUsd,
-                              cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                              cacheWriteCostUsd:
+                                cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                                cacheWriteCostUsd:
                                   costBreakdown?.cacheWriteCostUsd,
-                              internalReasoningCostUsd:
+                                internalReasoningCostUsd:
                                   costBreakdown?.internalReasoningCostUsd,
-                              requestCostUsd: costBreakdown?.requestCostUsd,
-                          }
+                                requestCostUsd: costBreakdown?.requestCostUsd,
+                            }
                         : undefined,
                 blocks: [],
                 vsHuman: humanBlocks !== undefined ? [] : undefined,
@@ -492,16 +492,16 @@ async function runPresetComparison(): Promise<void> {
             costAnalysis:
                 chat.usage?.cost !== undefined || costBreakdown !== undefined
                     ? {
-                          reportedCost: chat.usage?.cost,
-                          estimatedCostUsd: costBreakdown?.totalUsd,
-                          promptCostUsd: costBreakdown?.promptCostUsd,
-                          completionCostUsd: costBreakdown?.completionCostUsd,
-                          cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                          cacheWriteCostUsd: costBreakdown?.cacheWriteCostUsd,
-                          internalReasoningCostUsd:
+                            reportedCost: chat.usage?.cost,
+                            estimatedCostUsd: costBreakdown?.totalUsd,
+                            promptCostUsd: costBreakdown?.promptCostUsd,
+                            completionCostUsd: costBreakdown?.completionCostUsd,
+                            cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                            cacheWriteCostUsd: costBreakdown?.cacheWriteCostUsd,
+                            internalReasoningCostUsd:
                               costBreakdown?.internalReasoningCostUsd,
-                          requestCostUsd: costBreakdown?.requestCostUsd,
-                      }
+                            requestCostUsd: costBreakdown?.requestCostUsd,
+                        }
                     : undefined,
             blocks,
             vsHuman,
@@ -573,8 +573,8 @@ async function runPresetComparison(): Promise<void> {
         fastestSuccessful:
             successfulRows.length > 0
                 ? [...successfulRows].sort(
-                      (left, right) => left.ms - right.ms,
-                  )[0]
+                        (left, right) => left.ms - right.ms,
+                    )[0]
                 : undefined,
         cheapestSuccessful: rankedByReportedCost[0],
         rankedByReportedCost,

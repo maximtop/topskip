@@ -295,13 +295,13 @@ function buildServerFailureViewModel(input: {
         reportAction === SERVER_FAILURE_REPORT_ACTION.None
             ? {}
             : {
-                  reportAction,
-                  reportLabel: translator.getMessage(
-                      reportAction === SERVER_FAILURE_REPORT_ACTION.Primary
-                          ? 'popup_server_report_primary'
-                          : 'popup_server_report_secondary',
-                  ),
-              };
+                    reportAction,
+                    reportLabel: translator.getMessage(
+                        reportAction === SERVER_FAILURE_REPORT_ACTION.Primary
+                            ? 'popup_server_report_primary'
+                            : 'popup_server_report_secondary',
+                    ),
+                };
 
     if (category === SERVER_FAILURE_CATEGORY.VideoLimitation) {
         return {
@@ -343,8 +343,8 @@ function buildServerFailureViewModel(input: {
                 failure.retryAfterSec === undefined
                     ? translator.getMessage('popup_server_temporary_body')
                     : translator.getMessage('popup_server_temporary_retry', {
-                          seconds: String(failure.retryAfterSec),
-                      }),
+                            seconds: String(failure.retryAfterSec),
+                        }),
             settingsLabel,
             providerLabel: input.providerLabel,
         };
@@ -1253,8 +1253,8 @@ export const PopupApp = observer(function PopupApp() {
                                     <Text fw={700} size="sm">
                                         {hasDetectedBlocks
                                             ? translator.getMessage(
-                                                  'popup_detection_detected',
-                                              )
+                                                    'popup_detection_detected',
+                                                )
                                             : blocksStatusHeading}
                                     </Text>
                                 </Group>
@@ -1272,10 +1272,10 @@ export const PopupApp = observer(function PopupApp() {
                             >
                                 {hasDetectedBlocks
                                     ? `${detectedBlocks.length} ${
-                                          detectedBlocks.length === 1
-                                              ? 'block'
-                                              : 'blocks'
-                                      }`
+                                        detectedBlocks.length === 1
+                                            ? 'block'
+                                            : 'blocks'
+                                    }`
                                     : view.badgeLabel}
                             </Badge>
                         </Group>
@@ -1291,25 +1291,25 @@ export const PopupApp = observer(function PopupApp() {
                         ) : null}
                         {view.reportAction !== undefined &&
                         view.reportLabel !== undefined ? (
-                            <Button
-                                data-testid="popup-report-server-issue"
-                                mt="sm"
-                                size="xs"
-                                variant={
-                                    view.reportAction ===
+                                    <Button
+                                        data-testid="popup-report-server-issue"
+                                        mt="sm"
+                                        size="xs"
+                                        variant={
+                                            view.reportAction ===
                                     SERVER_FAILURE_REPORT_ACTION.Primary
-                                        ? 'filled'
-                                        : 'subtle'
-                                }
-                                onClick={() => {
-                                    void browser.runtime.sendMessage({
-                                        type: TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE,
-                                    });
-                                }}
-                            >
-                                {view.reportLabel}
-                            </Button>
-                        ) : null}
+                                                ? 'filled'
+                                                : 'subtle'
+                                        }
+                                        onClick={() => {
+                                            void browser.runtime.sendMessage({
+                                                type: TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE,
+                                            });
+                                        }}
+                                    >
+                                        {view.reportLabel}
+                                    </Button>
+                                ) : null}
                     </div>
                 )}
                 <PromoTimeline

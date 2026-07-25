@@ -77,7 +77,7 @@ describe('CaptionTranscriptCanonicalizer', () => {
     });
 
     it('preserves internal whitespace, controls, formats, and combining marks once text is meaningful', () => {
-        const text = `a\u0000\u200d\u0301  b`;
+        const text = 'a\u0000\u200d\u0301  b';
         const result = CaptionTranscriptCanonicalizer.canonicalize({
             languageCode: 'en',
             segments: [{ startSec: 0, durationSec: 1, text: ` ${text} ` }],

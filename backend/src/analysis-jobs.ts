@@ -270,9 +270,9 @@ export class BackendAnalysisJobs {
         const ownerInstallationHash = input.installationHash;
         const selectedTranscriptArtifact = isUpload
             ? BackendAnalysisJobs.validateUploadArtifact(
-                  input.identity,
-                  input.transcriptArtifact,
-              )
+                    input.identity,
+                    input.transcriptArtifact,
+                )
             : null;
         const jobKey = BackendAnalysisJobs.buildJobKey(input);
         const existingJobId = BackendAnalysisJobs.jobIdsByKey.get(jobKey);
@@ -753,10 +753,10 @@ export class BackendAnalysisJobs {
                 ...(record.identity === null
                     ? {}
                     : {
-                          languageCode: record.identity.languageCode,
-                          transcriptHash: record.identity.transcriptHash,
-                          sourceType: 'extension_caption_upload' as const,
-                      }),
+                            languageCode: record.identity.languageCode,
+                            transcriptHash: record.identity.transcriptHash,
+                            sourceType: 'extension_caption_upload' as const,
+                        }),
             },
             job: {
                 jobId: record.jobId,
@@ -1235,16 +1235,16 @@ export class BackendAnalysisJobs {
         record.terminalResponse =
             record.source === 'legacy_yt_dlp'
                 ? v.parse(legacyUnavailableResponseSchema, {
-                      status: 'unavailable',
-                      videoId: record.videoId,
-                      algorithmVersion: record.algorithmVersion,
-                      error: { code },
-                  })
+                        status: 'unavailable',
+                        videoId: record.videoId,
+                        algorithmVersion: record.algorithmVersion,
+                        error: { code },
+                    })
                 : v.parse(unavailableResponseSchema, {
-                      status: 'unavailable',
-                      ...BackendAnalysisJobs.requireUploadIdentity(record),
-                      error: { code },
-                  });
+                        status: 'unavailable',
+                        ...BackendAnalysisJobs.requireUploadIdentity(record),
+                        error: { code },
+                    });
         if (
             code === SERVER_ANALYSIS_UNAVAILABLE_REASON.CaptionExtractionFailed
         ) {

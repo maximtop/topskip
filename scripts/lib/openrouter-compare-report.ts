@@ -518,19 +518,19 @@ function parseCompareRow(value: unknown, index: number): CompareRow {
         ),
         blocks: Array.isArray(value.blocks)
             ? value.blocks.map((item, blockIndex) =>
-                  parseCompareBlock(
-                      item,
-                      `rows[${String(index)}].blocks[${String(blockIndex)}]`,
-                  ),
-              )
+                    parseCompareBlock(
+                        item,
+                        `rows[${String(index)}].blocks[${String(blockIndex)}]`,
+                    ),
+                )
             : undefined,
         vsHuman: Array.isArray(value.vsHuman)
             ? value.vsHuman.map((item, metricIndex) =>
-                  parseAlignedMetric(
-                      item,
-                      `rows[${String(index)}].vsHuman[${String(metricIndex)}]`,
-                  ),
-              )
+                    parseAlignedMetric(
+                        item,
+                        `rows[${String(index)}].vsHuman[${String(metricIndex)}]`,
+                    ),
+                )
             : undefined,
         vsHumanNote,
     };
@@ -633,8 +633,8 @@ export function parseOpenRouterComparePresetsLog(
                 : parseReferenceBundleJson(JSON.stringify(parsed.reference)),
         firstRunVsHuman: Array.isArray(parsed.firstRunVsHuman)
             ? parsed.firstRunVsHuman.map((item, index) =>
-                  parseAlignedMetric(item, `firstRunVsHuman[${String(index)}]`),
-              )
+                    parseAlignedMetric(item, `firstRunVsHuman[${String(index)}]`),
+                )
             : undefined,
         firstRunVsHumanNote,
     };
@@ -1054,82 +1054,82 @@ function renderHighlights(
     return [
         bestOverlap === undefined
             ? renderStatCard(
-                  'Best overlap',
-                  'n/a',
-                  'No human reference metrics',
-              )
+                    'Best overlap',
+                    'n/a',
+                    'No human reference metrics',
+                )
             : renderStatCard(
-                  'Best overlap',
-                  bestOverlap.row.model,
-                  joinDefined([
-                      `avg IoU ${formatPercent(bestOverlap.summary.avgIou ?? 0)}`,
-                      bestOverlap.cost.effectiveCost !== undefined
-                          ? buildCostDisplay(bestOverlap)
-                          : undefined,
-                      `latency ${formatMs(bestOverlap.row.ms)}`,
-                  ]),
-              ),
+                    'Best overlap',
+                    bestOverlap.row.model,
+                    joinDefined([
+                        `avg IoU ${formatPercent(bestOverlap.summary.avgIou ?? 0)}`,
+                        bestOverlap.cost.effectiveCost !== undefined
+                            ? buildCostDisplay(bestOverlap)
+                            : undefined,
+                        `latency ${formatMs(bestOverlap.row.ms)}`,
+                    ]),
+                ),
         fastest === undefined
             ? renderStatCard(
-                  'Fastest response',
-                  'n/a',
-                  'No successful model call',
-              )
+                    'Fastest response',
+                    'n/a',
+                    'No successful model call',
+                )
             : renderStatCard(
-                  'Fastest response',
-                  fastest.row.model,
-                  joinDefined([
-                      `completed in ${formatMs(fastest.row.ms)}`,
-                      fastest.cost.effectiveCost !== undefined
-                          ? buildCostDisplay(fastest)
-                          : 'cost n/a',
-                  ]),
-              ),
+                    'Fastest response',
+                    fastest.row.model,
+                    joinDefined([
+                        `completed in ${formatMs(fastest.row.ms)}`,
+                        fastest.cost.effectiveCost !== undefined
+                            ? buildCostDisplay(fastest)
+                            : 'cost n/a',
+                    ]),
+                ),
         cheapest === undefined
             ? renderStatCard(
-                  'Cheapest response',
-                  'n/a',
-                  'No cost data in this log',
-              )
+                    'Cheapest response',
+                    'n/a',
+                    'No cost data in this log',
+                )
             : renderStatCard(
-                  'Cheapest response',
-                  cheapest.row.model,
-                  joinDefined([
-                      buildCostDisplay(cheapest),
-                      cheapest.cost.kind,
-                      `latency ${formatMs(cheapest.row.ms)}`,
-                  ]),
-              ),
+                    'Cheapest response',
+                    cheapest.row.model,
+                    joinDefined([
+                        buildCostDisplay(cheapest),
+                        cheapest.cost.kind,
+                        `latency ${formatMs(cheapest.row.ms)}`,
+                    ]),
+                ),
         tightestStart === undefined
             ? renderStatCard(
-                  'Smallest start drift',
-                  'n/a',
-                  'No human reference',
-              )
+                    'Smallest start drift',
+                    'n/a',
+                    'No human reference',
+                )
             : renderStatCard(
-                  'Smallest start drift',
-                  tightestStart.row.model,
-                  `avg |start delta| ${formatSeconds(
-                      tightestStart.summary.avgAbsStartDelta ?? 0,
-                  )}`,
-              ),
+                    'Smallest start drift',
+                    tightestStart.row.model,
+                    `avg |start delta| ${formatSeconds(
+                        tightestStart.summary.avgAbsStartDelta ?? 0,
+                    )}`,
+                ),
         baselineSummary.avgIou === undefined ||
         report.reference?.firstRunModel === undefined
             ? renderStatCard(
-                  'Original first run',
-                  'not included',
-                  'Reference bundle has no baseline comparison',
-              )
+                    'Original first run',
+                    'not included',
+                    'Reference bundle has no baseline comparison',
+                )
             : renderStatCard(
-                  'Original first run',
-                  report.reference.firstRunModel.model,
-                  joinDefined([
-                      `avg IoU ${formatPercent(baselineSummary.avgIou)}`,
-                      `avg |start delta| ${formatSeconds(
-                          baselineSummary.avgAbsStartDelta ?? 0,
-                      )}`,
-                  ]),
-              ),
+                    'Original first run',
+                    report.reference.firstRunModel.model,
+                    joinDefined([
+                        `avg IoU ${formatPercent(baselineSummary.avgIou)}`,
+                        `avg |start delta| ${formatSeconds(
+                            baselineSummary.avgAbsStartDelta ?? 0,
+                        )}`,
+                    ]),
+                ),
     ].join('\n');
 }
 
@@ -1375,9 +1375,9 @@ function renderTimeline(
                         report.firstRunVsHuman === undefined
                             ? 'Baseline only'
                             : `avg IoU ${formatPercent(
-                                  summarizeMetrics(report.firstRunVsHuman)
-                                      .avgIou ?? 0,
-                              )}`,
+                                summarizeMetrics(report.firstRunVsHuman)
+                                    .avgIou ?? 0,
+                            )}`,
                     segments: baselineBlocks.map((block) => ({
                         startSec: block.startSec,
                         endSec: rangeEnd(block.startSec, block.endSec),
@@ -1467,10 +1467,10 @@ function renderFocusCard(
                 baselineMetric === undefined
                     ? 'No aligned metric'
                     : joinDefined([
-                          `IoU ${formatPercent(baselineMetric.iouWithHuman)}`,
-                          `start ${formatDelta(baselineMetric.startDeltaSec)}`,
-                          `end ${formatDelta(baselineMetric.endDeltaSec)}`,
-                      ]),
+                            `IoU ${formatPercent(baselineMetric.iouWithHuman)}`,
+                            `start ${formatDelta(baselineMetric.startDeltaSec)}`,
+                            `end ${formatDelta(baselineMetric.endDeltaSec)}`,
+                        ]),
             segments: [
                 {
                     startSec:
@@ -2078,13 +2078,13 @@ export function renderOpenRouterCompareHtml(
         report.generatedAt === undefined
             ? ''
             : `<div><strong>Generated:</strong> ${escapeHtml(
-                  formatGeneratedAt(report.generatedAt),
-              )}</div>`,
+                formatGeneratedAt(report.generatedAt),
+            )}</div>`,
         report.source?.fixture === undefined
             ? ''
             : `<div><strong>Fixture:</strong> ${escapeHtml(
-                  report.source.fixture,
-              )}</div>`,
+                report.source.fixture,
+            )}</div>`,
     ]
         .filter((item) => item.length > 0)
         .join('');

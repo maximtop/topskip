@@ -35,7 +35,7 @@ function makeArtifact(): TranscriptArtifact {
         sourceType: 'extension_caption_upload',
         languageCode: 'en',
         transcriptHash: 'a'.repeat(64),
-    } as TranscriptArtifact;
+    };
 }
 
 /**

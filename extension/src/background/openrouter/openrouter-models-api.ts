@@ -30,7 +30,7 @@ export async function fetchOpenRouterModelList(
             typeof data === 'object' &&
             data !== null &&
             'data' in data &&
-            Array.isArray((data as { data: unknown }).data)
+            Array.isArray((data).data)
         ) {
             const models = (data as { data: unknown[] }).data
                 .map((item) => {
@@ -39,7 +39,7 @@ export async function fetchOpenRouterModelList(
                         item !== null &&
                         'id' in item
                     ) {
-                        return String((item as { id: unknown }).id);
+                        return String((item).id);
                     }
                     return null;
                 })

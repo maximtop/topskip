@@ -472,11 +472,11 @@ export class ServerAnalysisRuntimeMessages {
                 config === null
                     ? null
                     : await ServerResultCacheStorage.loadExact({
-                          videoId: payload.videoId,
-                          languageCode: localIdentity.languageCode,
-                          transcriptHash: localIdentity.transcriptHash,
-                          algorithmVersion: config.algorithmVersion,
-                      });
+                            videoId: payload.videoId,
+                            languageCode: localIdentity.languageCode,
+                            transcriptHash: localIdentity.transcriptHash,
+                            algorithmVersion: config.algorithmVersion,
+                        });
             if (cached?.status === 'ready') {
                 await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
                     tabId,

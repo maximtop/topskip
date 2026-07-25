@@ -145,9 +145,9 @@ export class BackendLegacyServerAnalysis {
             nowMs: options.nowMs,
             ...(options.publicContext
                 ? {
-                      installationHash: options.installationHash,
-                      ipHash: options.ipHash,
-                  }
+                        installationHash: options.installationHash,
+                        ipHash: options.ipHash,
+                    }
                 : {}),
         });
         if (!protection.allowed) {

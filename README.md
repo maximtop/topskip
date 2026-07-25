@@ -43,7 +43,7 @@ Load the extension in Chrome:
 | `make build`           | Development extension build into `extension/dist/`        |
 | `make server`          | Run the local backend; requires `OPENROUTER_API_KEY`      |
 | `make extension`       | Watch and rebuild the extension continuously              |
-| `make lint`            | Oxfmt + oxlint + ESLint + markdownlint + TypeScript       |
+| `make lint`            | ESLint (lint + format) + markdownlint + TypeScript         |
 | `make test`            | Coverage, deployment assets, then Playwright E2E          |
 | `make test-unit`       | Vitest unit tests only (no coverage)                      |
 | `make test-coverage`   | Vitest with coverage thresholds                           |
@@ -56,9 +56,9 @@ Load the extension in Chrome:
 On an enabled YouTube watch page, the content script captures the player's
 timed captions, then asks the background service worker to submit them to the
 configured TopSkip backend. Development builds use
-`http://127.0.0.1:8787`; beta/release builds use
-`https://topskip.maximtop.dev`. This **extension upload** is the default local
-and production source; the new image does not contain or invoke `yt-dlp`. The
+`https://topskip.maximtop.dev`, as do beta and release builds. This
+**extension upload** is the default local and production source; the new image
+does not contain or invoke `yt-dlp`. The
 backend sends the validated timed transcript to the fixed
 `google/gemini-3.5-flash` model through OpenRouter with high reasoning effort,
 and returns validated promo intervals. The content script skips future blocks

@@ -20,16 +20,6 @@ is local-only.
 - [ ] Remove locale keys no source file references. `pnpm locales info -N`
       currently lists about ten, mostly leftovers from the options redesign.
 
-## Detection quality
-
-- [ ] Re-measure Chrome built-in AI once the input language stops being a
-      confound. It is compiled out behind `INCLUDE_CHROME_BUILTIN_PROVIDER`
-      after scoring 0.054 mean IoU against the annotated fixture versus 0.747
-      for the cloud model; the flag's comment carries the full measurement.
-      Russian is not an accepted Prompt API language, so the untested variable
-      is translating the transcript through the Translator API first, or
-      annotating an English fixture. Harness: `extension/tmp/nano-bench/`.
-
 ## Server: correction workflow
 
 Deferred by design — the extension has no correction-submission endpoint and

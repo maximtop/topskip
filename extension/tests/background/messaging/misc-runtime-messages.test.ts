@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// Prevent webextension-polyfill from throwing in Node; browser APIs are unused
-// by ContentLogMessages but imported transitively via misc-runtime-messages.
+// Prevent webextension-polyfill from throwing in Node; ContentLogMessages does
+// not touch browser APIs, but this module pulls them in for its other exports.
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: {},

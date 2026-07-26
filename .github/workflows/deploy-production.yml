@@ -135,7 +135,10 @@ jobs:
         permissions: {}
         environment:
             name: production
-            url: https://topskip.maximtop.dev/v1/health
+            # Fork-friendly: set the PUBLIC_BASE_URL repository variable to
+            # deploy this to your own hostname. The fallback keeps the
+            # canonical deployment working when the variable is unset.
+            url: ${{ vars.PUBLIC_BASE_URL || 'https://topskip.maximtop.dev' }}/v1/health
         steps:
             - name: Configure restricted SSH access
               env:
@@ -173,13 +176,14 @@ jobs:
                   DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
                   DEPLOY_PORT: ${{ vars.DEPLOY_PORT }}
                   IMAGE_REFERENCE: ${{ needs.validate.outputs.image_repository }}@${{ needs.build.outputs.digest }}
-                  PUBLIC_HEALTH_URL: https://topskip.maximtop.dev/v1/health
-                  PUBLIC_CONFIG_URL: https://topskip.maximtop.dev/v1/config
+                  PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL || 'https://topskip.maximtop.dev' }}
                   EXPECTED_ALGORITHM_VERSION: ${{ needs.validate.outputs.algorithm_version }}
               run: |
                   if [[ -z "${DEPLOY_PORT}" ]]; then
                       DEPLOY_PORT=22
                   fi
+                  PUBLIC_HEALTH_URL="${PUBLIC_BASE_URL}/v1/health"
+                  PUBLIC_CONFIG_URL="${PUBLIC_BASE_URL}/v1/config"
                   if ! [[ "${IMAGE_REFERENCE}" =~ ^ghcr\.io/maximtop/topskip-backend@sha256:[a-f0-9]{64}$ ]]; then
                       echo 'The build did not produce an allow-listed immutable image digest.' >&2
                       exit 1

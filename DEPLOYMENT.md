@@ -1,13 +1,24 @@
 # TopSkip production deployment
 
 TopSkip is deployed as one container on the existing KojaKurtki VPS. A
-Cloudflare Tunnel publishes `https://topskip.maximtop.dev` while Docker exposes
-the backend only on `127.0.0.1:18787`. Existing Caddy and KojaKurtki containers
+Cloudflare Tunnel publishes the public hostname while Docker exposes the
+backend only on `127.0.0.1:18787`. Existing Caddy and KojaKurtki containers
 remain unchanged.
+
+This runbook is written for **your own** hostname. Commands below use
+`$TOPSKIP_HOST`; export it once per shell:
+
+```bash
+export TOPSKIP_HOST=topskip.example.com
+```
+
+The extension compiles its own copy of this origin from
+`extension/src/shared/server-analysis-origin.ts` — a deployment to a different
+host has to update that constant and ship a rebuilt extension.
 
 ```text
 Chrome background service worker
-  -> https://topskip.maximtop.dev
+  -> https://$TOPSKIP_HOST
   -> Cloudflare Tunnel
   -> http://127.0.0.1:18787
   -> topskip-backend:8787
@@ -172,7 +183,7 @@ Package upgrades are explicit operator maintenance; the service itself uses
 `--no-autoupdate`.
 
 Create the named tunnel `topskip-production` in Cloudflare and route
-`topskip.maximtop.dev` to it. Prepare the service account and protected config
+`$TOPSKIP_HOST` to it. Prepare the service account and protected config
 directory before installing its credential JSON. Keep the source credential in
 Cloudflare's user-level directory, never in the repository or Docker build
 context:
@@ -218,7 +229,7 @@ background request cannot complete it.
 Verify the origin boundary from a different machine:
 
 ```bash
-curl --fail https://topskip.maximtop.dev/v1/health
+curl --fail "https://${TOPSKIP_HOST}/v1/health"
 nc -vz VPS_IP 18787  # must fail
 ```
 

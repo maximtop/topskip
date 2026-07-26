@@ -8,7 +8,7 @@ future correction workflow.
 ## MVP boundary and exclusions
 
 Server mode supports both a loopback development backend and the public
-`topskip.maximtop.dev` backend. The public path uses anonymous installation
+backend the extension is built against. The public path uses anonymous installation
 tokens, durable quotas and budgets, SQLite artifacts, a constrained container,
 and a Cloudflare Tunnel. The Chrome extension still has no
 correction-submission endpoint or in-product correction UI.

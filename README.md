@@ -1,8 +1,8 @@
 # TopSkip
 
 Chrome extension that **skips detected sponsor/promo blocks** on YouTube watch
-pages. **Server** mode is the default: beta and release builds use the public
-TopSkip backend, while development builds use the loopback backend. The server
+pages. **Server** mode is the default: every build profile talks to the same
+public TopSkip backend, including development builds. The server
 receives timed captions captured through the YouTube player, analyzes them with
 Gemini through OpenRouter, and reuses cached results. **Private BYOK** is an
 explicit opt-in for users who prefer their own provider and want zero TopSkip
@@ -56,10 +56,10 @@ Load the extension in Chrome:
 On an enabled YouTube watch page, the content script captures the player's
 timed captions, then asks the background service worker to submit them to the
 public TopSkip backend — every build profile targets the same origin, defined
-once in `extension/src/shared/server-analysis-origin.ts`. This **extension
-upload** is the default local and production source; the new image does not
-contain or invoke `yt-dlp`. The
-backend sends the validated timed transcript to the fixed
+once in `extension/src/shared/server-analysis-origin.ts`.
+This **extension upload** is the default local and production source; the new
+image does not contain or invoke `yt-dlp`. The backend sends the validated
+timed transcript to the fixed
 `google/gemini-3.5-flash` model through OpenRouter with high reasoning effort,
 and returns validated promo intervals. The content script skips future blocks
 at their returned end times, while the popup displays the same intervals.

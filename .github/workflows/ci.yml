@@ -54,9 +54,13 @@ jobs:
             - name: Validate release packaging boundary
               run: |
                   pnpm run release
-                  jq --exit-status '
+                  server_origin=$(pnpm exec tsx --eval "
+                      import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from './extension/src/shared/server-analysis-origin.ts';
+                      process.stdout.write(TOPSKIP_PUBLIC_SERVER_BASE_URL);
+                  ")
+                  jq --exit-status --arg origin "${server_origin}/*" '
                     .host_permissions as $hosts |
-                    ($hosts | index("https://topskip.maximtop.dev/*")) != null and
+                    ($hosts | index($origin)) != null and
                     ($hosts | all(.[]; startswith("http://") | not))
                   ' extension/dist/manifest.json >/dev/null
                   if find extension/dist -type f -name '*.map' -print -quit | grep --quiet .; then

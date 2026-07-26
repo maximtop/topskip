@@ -2,7 +2,13 @@
 
 set -euo pipefail
 
-readonly URL=${1:-https://topskip.maximtop.dev/v1/health}
+URL=${1:-${TOPSKIP_PUBLIC_HEALTH_URL:-}}
+if [[ -z ${URL} ]]; then
+    echo 'Usage: topskip-healthcheck.sh <health-url> [timeout-seconds]' >&2
+    echo 'Or set TOPSKIP_PUBLIC_HEALTH_URL.' >&2
+    exit 64
+fi
+readonly URL
 readonly TIMEOUT_SECONDS=${2:-90}
 readonly INTERVAL_SECONDS=3
 

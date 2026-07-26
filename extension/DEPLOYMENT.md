@@ -2,9 +2,9 @@
 
 This document describes **shipping TopSkip to the Chrome Web Store**. Packaging
 the extension remains separate from operating the public backend. Development
-builds, beta builds, and release builds all use
-`https://topskip.maximtop.dev`; only the local Playwright page remains
-development-only. Local development is covered in
+builds, beta builds, and release builds all target the same public origin,
+declared once in `extension/src/shared/server-analysis-origin.ts`; only the
+local Playwright page remains development-only. Local development is covered in
 [`DEVELOPMENT.md`](../DEVELOPMENT.md), while backend provisioning and rollback
 are covered in [`DEPLOYMENT.md`](../DEPLOYMENT.md).
 
@@ -13,7 +13,7 @@ are covered in [`DEPLOYMENT.md`](../DEPLOYMENT.md).
 | Area                        | Production behavior                                                                                                                                  |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Environment variables**   | None. The extension bundle does not read `process.env` or similar at runtime.                                                                        |
-| **Infrastructure**          | Server mode targets `https://topskip.maximtop.dev`; the origin is reached through Cloudflare Tunnel and is not encoded in the extension.             |
+| **Infrastructure**          | Server mode targets the origin in `extension/src/shared/server-analysis-origin.ts`; it is reached through Cloudflare Tunnel.                          |
 | **External APIs / network** | Server mode uploads timed captions to TopSkip through the background; Private BYOK makes zero TopSkip analysis or registration requests.             |
 | **Error reporting**         | No Sentry SDK. For eligible failures, the user may explicitly open a sanitized prefilled issue on GitHub; the extension never includes the video ID. |
 | **Logging**                 | Dev-only browser logs are compiled out of beta/release builds; production backend operations are separate from the extension package.                |
@@ -56,9 +56,10 @@ Run release commands from the repository root. Rspack writes
 2. Verify the deployed backend's `/v1/health` and `/v1/config` before reloading
    or distributing the matching extension build. The public Valibot contract is
    `common/src/server-analysis-contract.ts`.
-3. Inspect `extension/dist/manifest.json`: it must contain
-   the localized release name `__MSG_name__`,
-   `https://topskip.maximtop.dev/*`, and not the development fixture origin.
+3. Inspect `extension/dist/manifest.json`: it must contain the localized
+   release name `__MSG_name__` and the server host permission matching
+   `TOPSKIP_PUBLIC_SERVER_BASE_URL`, and must not contain the development
+   fixture origin. CI enforces the same check in `.github/workflows/ci.yml`.
 4. Zip **only** the contents of `extension/dist/`. On macOS:
 
     ```bash
@@ -70,7 +71,7 @@ Run release commands from the repository root. Rspack writes
 ## Pre-submit checklist
 
 - [ ] **Manifest V3** — `manifest_version` is `3`
-- [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), TopSkip (`https://topskip.maximtop.dev/*`), and optional **OpenRouter** (`https://openrouter.ai/*`); verify the dev-only fixture origin (`http://127.0.0.1:4173/*`) is absent
+- [ ] **Permissions** — `storage`, `tabs`, `scripting`; host access for YouTube (`https://www.youtube.com/*`), the TopSkip backend origin (see `server-analysis-origin.ts`), and optional **OpenRouter** (`https://openrouter.ai/*`); verify the dev-only fixture origin (`http://127.0.0.1:4173/*`) is absent
 - [ ] **Privacy** — Describe `browser.storage` (prefs, optional OpenRouter settings, installation token, config, and ready cache), **`tabs`** (messages and detection status), TopSkip Server mode, optional **OpenRouter**, and YouTube pages
 - [ ] **Icons** — Verify `extension/src/public/icons/topskip.svg` and generated PNG sizes are copied into `extension/dist/` and referenced by `manifest.json`
 - [ ] **Version** — Bump `"version"` in `extension/src/manifest.json` for each submission (it is emitted into `extension/dist/`)

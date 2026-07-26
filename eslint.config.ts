@@ -199,6 +199,7 @@ export default tseslint.config(
             'common/tests/**/*.ts',
             'extension/tests/**/*.ts',
             'scripts/**/*.ts',
+            'tasks/**/*.ts',
         ],
         languageOptions: {
             globals: { ...globals.node },
@@ -218,6 +219,7 @@ export default tseslint.config(
             'extension/tests/**/*.ts',
             'extension/e2e/**/*.ts',
             'scripts/**/*.ts',
+            'tasks/**/*.ts',
         ],
         plugins: { jsdoc },
         settings: {
@@ -313,7 +315,6 @@ export default tseslint.config(
             'node_modules/**',
             '**/coverage/**',
             'eslint.config.ts',
-            'tasks/**',
             '**/tmp/**',
         ],
     },

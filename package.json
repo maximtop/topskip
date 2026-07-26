@@ -19,7 +19,7 @@
         "format:check": "pnpm run lint:eslint",
         "lint": "pnpm run lint:eslint && pnpm run lint:md && pnpm run lint:types",
         "lint:eslint": "eslint .",
-        "lint:md": "markdownlint-cli2 \"**/*.md\" \"#**/node_modules/**\" \"#extension/dist/**\" \"#**/coverage/**\" \"#.sdd/**\" \"#design/**\" \"#**/test-results/**\" \"#**/tmp/**\"",
+        "lint:md": "markdownlint-cli2 \"**/*.md\" \"#**/node_modules/**\" \"#extension/dist/**\" \"#**/coverage/**\" \"#.sdd/**\" \"#**/test-results/**\" \"#**/tmp/**\"",
         "lint:types": "tsc --noEmit",
         "test": "vitest run",
         "test:watch": "vitest",

@@ -649,16 +649,6 @@ export type TestConnectionKeyResponse =
 export type ContentLogLevel = 'info' | 'warn' | 'error';
 
 /**
- * Valibot schema for a {@link TOPSKIP_MESSAGE.CONTENT_LOG} message sent from
- * the content script to the background service worker.
- */
-export const contentLogMessageSchema = v.object({
-    type: v.literal(TOPSKIP_MESSAGE.CONTENT_LOG),
-    level: v.picklist(['info', 'warn', 'error'] as const),
-    args: v.array(v.unknown()),
-});
-
-/**
  * Union of all runtime messages routed through the background service worker.
  */
 export type TopSkipRuntimeMessage =

@@ -314,7 +314,6 @@ export default tseslint.config(
             '**/coverage/**',
             'eslint.config.ts',
             'tasks/**',
-            'design/**',
             '**/tmp/**',
         ],
     },

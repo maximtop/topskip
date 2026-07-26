@@ -9,6 +9,7 @@ export default defineConfig({
     define: {
         __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__: false,
         __TOPSKIP_INCLUDE_DEV_LOCAL__: false,
+        __TOPSKIP_INCLUDE_CHROME_BUILTIN__: false,
     },
     test: {
         environment: 'node',

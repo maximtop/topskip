@@ -102,3 +102,57 @@ The full PRD scope is implemented and validated with all nine issues in Validate
 - Keep current implementation as release-ready.
 - Optionally align popup “Not configured” wording with issue 5 narrative for documentation/UI consistency.
 - Continue future provider additions through the established adapter + registry pattern without expanding cross-bundle contracts unnecessarily.
+
+## Follow-up: Chrome built-in AI disabled on 2026-07-26
+
+The Chrome Prompt API provider this spec delivered is now **compiled out** of
+all builds via `INCLUDE_CHROME_BUILTIN_PROVIDER` in `extension/build-modes.ts`.
+The adapter, runtime messages, and shared contracts stay in the tree so a future
+Gemini Nano can be re-measured by flipping one constant.
+
+### Why
+
+Measured on Chrome 150 / Gemini Nano, in the extension service worker, against
+the human-annotated fixture (`scripts/fixtures/promo-v3eXTAqGkzg-*`, a
+30.7-minute Russian video, 40,116 chars) using the shipped system prompt, chunk
+planner, parser, and merge:
+
+| | mean IoU | promo predicted | windows hit |
+| --- | --- | --- | --- |
+| Gemini Nano (on-device) | **0.054** | 730s (3.1x actual) | 0 of 3 |
+| gemini-3-flash (cloud, from the fixture) | **0.747** | 199s (0.9x) | 3 of 3 |
+
+The failure mode is visible in the raw responses: the model tiles a chunk into
+consecutive spans and labels them all promo instead of discriminating. One
+merged block spanned 12 contiguous minutes of the 30-minute video. One chunk
+generated so many blocks that Chrome truncated the response after 48s of
+inference. End to end 72-85s per video, byte-identical across repeats.
+
+### Caveat that could reverse this
+
+Russian is not among the languages the Prompt API accepts (`de, en, es, fr,
+ja`); declaring it raises `NotSupportedError`, and the transcript was therefore
+sent undeclared. An English-language fixture, or translating first through the
+Translator API (stable since Chrome 138), is the untested variable.
+
+### Defects found in the shipped adapter, unfixed while it is disabled
+
+1. `maxTranscriptChars()` calibrates chars-per-token on `'a'.repeat(500)`.
+   Measured 7.35 chars/token for that probe versus 2.36 for the real Cyrillic
+   transcript — a **3.11x** budget overestimate that makes every chunk exceed
+   the context window and fail.
+2. `RESPONSE_TOKEN_RESERVE = 512` is too small for the number of blocks the
+   model emits; responses hit Chrome's output limit and are truncated.
+3. Session creation costs ~560ms with the real 835-token system prompt and is
+   paid once per chunk plus once for the budget probe; `session.clone()` exists
+   and preserves the initial prompt.
+
+### Also confirmed
+
+- The Prompt API **is** available in an MV3 extension service worker, despite
+  Chrome's docs stating it "isn't available in Web Workers".
+- Chrome 150 exposes both the `context*` and `input*` spellings of the session
+  quota API, so the adapter's `contextWindow`/`measureContextUsage` usage is
+  correct.
+
+Measurement harness: `extension/tmp/nano-bench/` (gitignored, throwaway).

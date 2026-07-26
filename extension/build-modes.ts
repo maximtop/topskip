@@ -74,3 +74,36 @@ export function shouldEnableCaptionCaptureVerboseLogs(
 ): boolean {
     return build === TopSkipBuild.Dev;
 }
+
+/**
+ * Compile-time gate for the Chrome built-in AI provider (Gemini Nano).
+ *
+ * Disabled after measuring it against the human-annotated fixture on
+ * Chrome 150 / Gemini Nano `v3Nano` (30.7-minute Russian video, 40,116 chars):
+ *
+ * - Mean IoU **0.054** against the three annotated promo windows, versus
+ *   **0.747** for the cloud model on the same transcript. Two of the three
+ *   windows were missed entirely.
+ * - It predicted 730s of promo where 232s exist (**3.1x** over-prediction),
+ *   including one contiguous 12-minute block covering a third of the video.
+ * - The raw responses show the failure mode: it tiles the transcript into
+ *   consecutive spans and labels them all promo, rather than discriminating.
+ *   One chunk generated so many blocks that Chrome truncated the response
+ *   after 48s of inference.
+ * - 72–85s per video end to end, byte-identical across repeats — systematic,
+ *   not an unlucky sample.
+ *
+ * Russian is not among the languages the Prompt API accepts (`de, en, es,
+ * fr, ja`), so an English-language retest — or translating first through the
+ * Translator API — could change this. Re-enable by flipping the constant and
+ * re-running the throwaway bench in `extension/tmp/nano-bench/`.
+ *
+ * Turning this on also requires restoring the orphaned options UI
+ * (`ChromeBuiltinPanel`, `ChromeBuiltinInlineStatus`, `ChromeBuiltinOnboarding`,
+ * `chrome-download-machine`), which is the only way to trigger the model
+ * download, and fixing two adapter defects the bench surfaced: the budget
+ * probe calibrates on `'a'.repeat(500)` and overestimates a Cyrillic budget
+ * by 3.11x, and `RESPONSE_TOKEN_RESERVE = 512` is too small for the number
+ * of blocks the model emits.
+ */
+export const INCLUDE_CHROME_BUILTIN_PROVIDER = false;

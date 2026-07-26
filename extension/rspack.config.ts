@@ -11,6 +11,7 @@ import {
 } from '@rspack/core';
 
 import {
+    INCLUDE_CHROME_BUILTIN_PROVIDER,
     TopSkipBuild,
     getExtensionManifestName,
     getServerAnalysisBaseUrl,
@@ -184,6 +185,9 @@ export default defineConfig({
             ),
             __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(
                 getServerAnalysisBaseUrl(topSkipBuildMode),
+            ),
+            __TOPSKIP_INCLUDE_CHROME_BUILTIN__: JSON.stringify(
+                INCLUDE_CHROME_BUILTIN_PROVIDER,
             ),
         }),
         topSkipManifestPlugin(topSkipBuildMode),

@@ -55,10 +55,10 @@ Load the extension in Chrome:
 
 On an enabled YouTube watch page, the content script captures the player's
 timed captions, then asks the background service worker to submit them to the
-configured TopSkip backend. Development builds use
-`https://topskip.maximtop.dev`, as do beta and release builds. This
-**extension upload** is the default local and production source; the new image
-does not contain or invoke `yt-dlp`. The
+public TopSkip backend — every build profile targets the same origin, defined
+once in `extension/src/shared/server-analysis-origin.ts`. This **extension
+upload** is the default local and production source; the new image does not
+contain or invoke `yt-dlp`. The
 backend sends the validated timed transcript to the fixed
 `google/gemini-3.5-flash` model through OpenRouter with high reasoning effort,
 and returns validated promo intervals. The content script skips future blocks

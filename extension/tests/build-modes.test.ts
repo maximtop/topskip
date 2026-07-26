@@ -7,6 +7,7 @@ import {
     getServerAnalysisManifestMatch,
     shouldEnableCaptionCaptureVerboseLogs,
 } from '../build-modes';
+import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from '../src/shared/server-analysis-origin';
 
 describe('TopSkip server build routing', () => {
     it.each([
@@ -17,14 +18,17 @@ describe('TopSkip server build routing', () => {
         expect(getExtensionManifestName(build)).toBe(name);
     });
 
+    // Asserted against the shared constant rather than a copied literal: the
+    // point is that no profile diverges onto its own origin, not what the
+    // origin happens to be.
     it.each([TopSkipBuild.Dev, TopSkipBuild.Beta, TopSkipBuild.Release])(
         'uses the public backend for the %s build',
         (build) => {
             expect(getServerAnalysisBaseUrl(build)).toBe(
-                'https://topskip.maximtop.dev',
+                TOPSKIP_PUBLIC_SERVER_BASE_URL,
             );
             expect(getServerAnalysisManifestMatch(build)).toBe(
-                'https://topskip.maximtop.dev/*',
+                `${TOPSKIP_PUBLIC_SERVER_BASE_URL}/*`,
             );
         },
     );

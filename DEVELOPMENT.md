@@ -137,9 +137,9 @@ missing or blank. The default extension upload source (`extension_upload`)
 neither installs nor requires `yt-dlp`.
 
 It listens on `http://127.0.0.1:8787`, but extension builds do not target that
-loopback process. Dev, beta, and release extensions all contain the public
-`https://topskip.maximtop.dev/*` server permission so ordinary development
-cannot accidentally test against a missing local backend. See
+loopback process. Dev, beta, and release extensions all carry the same public
+server host permission so ordinary development cannot accidentally test
+against a missing local backend. See
 [DEPLOYMENT.md](./DEPLOYMENT.md) for the production route and operations.
 
 On a YouTube `/watch?v=…` page, Server mode starts with **caption acquisition**
@@ -202,14 +202,16 @@ provider errors.
 
 ### Build profiles and public API
 
-The extension origin is compiled per profile; it is not selected from runtime
-storage:
+The extension origin is compiled in, not selected from runtime storage. All
+three profiles compile in the same public origin, declared once in
+`extension/src/shared/server-analysis-origin.ts`; only the extension name
+differs:
 
-| Profile | Command            | Extension name   | Server origin                  |
-| ------- | ------------------ | ---------------- | ------------------------------ |
-| Dev     | `make build`       | `TopSkip (Dev)`  | `https://topskip.maximtop.dev` |
-| Beta    | `pnpm run beta`    | `TopSkip (Beta)` | `https://topskip.maximtop.dev` |
-| Release | `pnpm run release` | `TopSkip`        | `https://topskip.maximtop.dev` |
+| Profile | Command            | Extension name   |
+| ------- | ------------------ | ---------------- |
+| Dev     | `make build`       | `TopSkip (Dev)`  |
+| Beta    | `pnpm run beta`    | `TopSkip (Beta)` |
+| Release | `pnpm run release` | `TopSkip`        |
 
 The public compatibility boundary consists of `/v1/installations/register`,
 `/v1/config`, `/v1/analysis`, `/v1/analysis/jobs/{jobId}`, and `/v1/health`.

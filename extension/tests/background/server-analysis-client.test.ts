@@ -16,6 +16,20 @@ import {
 } from '@/background/server-analysis-client';
 import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
+import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from '@/shared/server-analysis-origin';
+
+/**
+ * Endpoint under the configured backend origin.
+ *
+ * Built from the shared constant so these assertions cover the request path
+ * and not the deployment host — changing the origin should not touch tests.
+ *
+ * @param path - Absolute path beginning with `/`.
+ * @returns Fully qualified endpoint URL.
+ */
+function endpoint(path: string): string {
+    return `${TOPSKIP_PUBLIC_SERVER_BASE_URL}${path}`;
+}
 
 const fetchMock =
     vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
@@ -186,7 +200,7 @@ describe('ServerAnalysisClient', () => {
                 'https://github.com/maximtop/topskip/issues/new',
         });
         expect(fetchMock).toHaveBeenCalledWith(
-            'https://topskip.maximtop.dev/v1/config',
+            endpoint('/v1/config'),
             expect.objectContaining({ method: 'GET' }),
         );
         expect(installationMocks.loadFresh).not.toHaveBeenCalled();
@@ -203,7 +217,7 @@ describe('ServerAnalysisClient', () => {
 
         expect(response.status).toBe('processing');
         expect(fetchMock).toHaveBeenCalledWith(
-            'https://topskip.maximtop.dev/v1/analysis',
+            endpoint('/v1/analysis'),
             expect.objectContaining({
                 method: 'POST',
                 headers: {
@@ -259,7 +273,7 @@ describe('ServerAnalysisClient', () => {
         await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
         expect(fetchMock.mock.calls[0]?.[0]).toBe(
-            'https://topskip.maximtop.dev/v1/installations/register',
+            endpoint('/v1/installations/register'),
         );
         expect(fetchMock.mock.calls[0]?.[1]).toEqual(
             expect.objectContaining({
@@ -314,7 +328,7 @@ describe('ServerAnalysisClient', () => {
         });
 
         expect(fetchMock).toHaveBeenCalledWith(
-            'https://topskip.maximtop.dev/v1/analysis/jobs/job-server-v6',
+            endpoint('/v1/analysis/jobs/job-server-v6'),
             expect.objectContaining({
                 method: 'GET',
                 headers: {

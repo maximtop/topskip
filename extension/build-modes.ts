@@ -1,4 +1,14 @@
-import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from './src/shared/server-analysis-origin.ts';
+import process from 'node:process';
+
+/**
+ * Environment variable holding the public backend origin.
+ *
+ * The deployment host is configuration, not source: it is read at build time
+ * so the repository carries no particular hostname. Local builds pick it up
+ * from the root `.env` (see `.env.example`); CI and release pipelines set it
+ * as an environment variable.
+ */
+export const SERVER_ORIGIN_ENV_VAR = 'TOPSKIP_SERVER_ORIGIN';
 
 /**
  * Shared `TOPSKIP_BUILD` profile names (Rspack manifest + build script).
@@ -18,11 +28,61 @@ export const TOPSKIP_BUILD_MODES: readonly TopSkipBuildMode[] = [
     TopSkipBuild.Release,
 ];
 
-const SERVER_ANALYSIS_BASE_URL_BY_BUILD = {
-    [TopSkipBuild.Dev]: TOPSKIP_PUBLIC_SERVER_BASE_URL,
-    [TopSkipBuild.Beta]: TOPSKIP_PUBLIC_SERVER_BASE_URL,
-    [TopSkipBuild.Release]: TOPSKIP_PUBLIC_SERVER_BASE_URL,
-} satisfies Record<TopSkipBuildMode, string>;
+/**
+ * Reads and validates the configured backend origin.
+ *
+ * Throws rather than defaulting: a silently wrong origin would ship an
+ * extension that talks to the wrong backend, which is worse than a failed
+ * build. The value must be a bare origin because callers append paths to it.
+ *
+ * @returns Scheme and host with no trailing slash, e.g. `https://api.example`.
+ */
+function readServerOrigin(): string {
+    const raw = process.env[SERVER_ORIGIN_ENV_VAR]?.trim() ?? '';
+    if (raw === '') {
+        throw new Error(
+            `${SERVER_ORIGIN_ENV_VAR} is not set. Copy .env.example to .env and ` +
+                'set it to your backend origin, or export it in the build ' +
+                'environment.',
+        );
+    }
+
+    let parsed: URL;
+    try {
+        parsed = new URL(raw);
+    } catch {
+        throw new Error(
+            `${SERVER_ORIGIN_ENV_VAR} must be an absolute URL, got '${raw}'.`,
+        );
+    }
+    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+        throw new Error(
+            `${SERVER_ORIGIN_ENV_VAR} must use http or https, got '${raw}'.`,
+        );
+    }
+    if (raw !== parsed.origin) {
+        throw new Error(
+            `${SERVER_ORIGIN_ENV_VAR} must be a bare origin with no path or ` +
+                `trailing slash, got '${raw}' (expected '${parsed.origin}').`,
+        );
+    }
+    return parsed.origin;
+}
+
+/**
+ * Every profile currently targets the same backend; the shape is kept so a
+ * profile can diverge without reworking callers.
+ *
+ * @returns Backend origin per build profile.
+ */
+function serverAnalysisBaseUrlByBuild(): Record<TopSkipBuildMode, string> {
+    const origin = readServerOrigin();
+    return {
+        [TopSkipBuild.Dev]: origin,
+        [TopSkipBuild.Beta]: origin,
+        [TopSkipBuild.Release]: origin,
+    };
+}
 
 const EXTENSION_NAME_BY_BUILD = {
     [TopSkipBuild.Dev]: 'TopSkip (Dev)',
@@ -47,7 +107,7 @@ export function getExtensionManifestName(build: TopSkipBuildMode): string {
  * @returns Backend origin without a trailing slash.
  */
 export function getServerAnalysisBaseUrl(build: TopSkipBuildMode): string {
-    return SERVER_ANALYSIS_BASE_URL_BY_BUILD[build];
+    return serverAnalysisBaseUrlByBuild()[build];
 }
 
 /**

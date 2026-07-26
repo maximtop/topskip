@@ -55,8 +55,8 @@ Load the extension in Chrome:
 
 On an enabled YouTube watch page, the content script captures the player's
 timed captions, then asks the background service worker to submit them to the
-public TopSkip backend — every build profile targets the same origin, defined
-once in `extension/src/shared/server-analysis-origin.ts`.
+public TopSkip backend — every build profile targets the same origin, taken
+from the `TOPSKIP_SERVER_ORIGIN` environment variable at build time.
 This **extension upload** is the default local and production source; the new
 image does not contain or invoke `yt-dlp`. The backend sends the validated
 timed transcript to the fixed

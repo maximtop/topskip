@@ -5,16 +5,22 @@ import { defineConfig } from 'vitest/config';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_TEST_YT_DLP_PATH = '/__topskip_test_missing__/yt-dlp';
 
+// Hermetic origin for tests: never the real deployment host, so assertions
+// cannot silently depend on where this happens to be deployed.
+const TEST_SERVER_ORIGIN = 'https://topskip.test';
+
 export default defineConfig({
     define: {
         __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__: false,
         __TOPSKIP_INCLUDE_DEV_LOCAL__: false,
         __TOPSKIP_INCLUDE_CHROME_BUILTIN__: false,
+        __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(TEST_SERVER_ORIGIN),
     },
     test: {
         environment: 'node',
         env: {
             TOPSKIP_YT_DLP_PATH: MISSING_TEST_YT_DLP_PATH,
+            TOPSKIP_SERVER_ORIGIN: TEST_SERVER_ORIGIN,
         },
         include: [
             'backend/tests/**/*.test.ts',

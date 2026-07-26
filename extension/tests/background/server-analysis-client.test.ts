@@ -16,7 +16,6 @@ import {
 } from '@/background/server-analysis-client';
 import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
-import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from '@/shared/server-analysis-origin';
 
 /**
  * Endpoint under the configured backend origin.
@@ -28,7 +27,7 @@ import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from '@/shared/server-analysis-origin'
  * @returns Fully qualified endpoint URL.
  */
 function endpoint(path: string): string {
-    return `${TOPSKIP_PUBLIC_SERVER_BASE_URL}${path}`;
+    return `${__TOPSKIP_SERVER_BASE_URL__}${path}`;
 }
 
 const fetchMock =

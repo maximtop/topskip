@@ -203,9 +203,9 @@ provider errors.
 ### Build profiles and public API
 
 The extension origin is compiled in, not selected from runtime storage. All
-three profiles compile in the same public origin, declared once in
-`extension/src/shared/server-analysis-origin.ts`; only the extension name
-differs:
+three profiles compile in the same public origin, taken from the
+`TOPSKIP_SERVER_ORIGIN` environment variable at build time (root `.env`
+locally, see `.env.example`); only the extension name differs:
 
 | Profile | Command            | Extension name   |
 | ------- | ------------------ | ---------------- |

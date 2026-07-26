@@ -1,20 +1,22 @@
 # TopSkip production deployment
 
-TopSkip is deployed as one container on the existing KojaKurtki VPS. A
-Cloudflare Tunnel publishes the public hostname while Docker exposes the
-backend only on `127.0.0.1:18787`. Existing Caddy and KojaKurtki containers
-remain unchanged.
+TopSkip is deployed as one container on a shared VPS. A Cloudflare Tunnel
+publishes the public hostname while Docker exposes the backend only on
+`127.0.0.1:18787`. Any reverse proxy and unrelated containers already running
+on that host remain unchanged.
 
-This runbook is written for **your own** hostname. Commands below use
-`$TOPSKIP_HOST`; export it once per shell:
+This runbook is written for **your own** host and hostname. Commands below use
+`$TOPSKIP_HOST` for the public hostname and `$TOPSKIP_SSH` for the SSH target
+of the VPS; export both once per shell:
 
 ```bash
 export TOPSKIP_HOST=topskip.example.com
+export TOPSKIP_SSH=my-vps          # an ~/.ssh/config alias, or user@ip
 ```
 
-The extension compiles its own copy of this origin from
-`extension/src/shared/server-analysis-origin.ts` — a deployment to a different
-host has to update that constant and ship a rebuilt extension.
+The extension compiles this origin in from the `TOPSKIP_SERVER_ORIGIN`
+build-time environment variable, so a deployment to a different host has to
+set that variable and ship a rebuilt extension.
 
 ```text
 Chrome background service worker
@@ -29,9 +31,8 @@ does not make the shared VPS IP undiscoverable through unrelated services.
 
 ## Safety boundaries
 
-- Use `ssh kojakurtki-vps` as the existing `deploy` user for provisioning. Do
-  not enable root SSH and do not use the obsolete root alias
-  `kojakurtki-vps-codex`.
+- Use `ssh "$TOPSKIP_SSH"` as the existing `deploy` user for provisioning. Do
+  not enable root SSH and do not use any legacy root alias.
 - Do not publish container port `8787` on a non-loopback address.
 - GitHub Actions receives no application or Cloudflare secrets. It gets a
   dedicated SSH key whose forced command accepts only `deploy`, `status`, and
@@ -53,7 +54,7 @@ current `cloudflared` package. Confirm that the existing SSH path works before
 changing infrastructure:
 
 ```bash
-ssh kojakurtki-vps 'id && docker version && docker compose version'
+ssh "$TOPSKIP_SSH" 'id && docker version && docker compose version'
 ```
 
 Copy this repository's `deploy/` directory to a temporary location on the VPS,
@@ -81,7 +82,7 @@ SQLite database at `/var/lib/topskip/topskip.sqlite`.
 Keep `TOPSKIP_CAPTION_SOURCE=extension_upload` in the protected production
 environment. The request cannot select a source mode.
 
-Create a separate Actions key locally. Do not reuse the KojaKurtki key:
+Create a separate Actions key locally. Do not reuse the host's existing key:
 
 ```bash
 ssh-keygen -t ed25519 -f "$HOME/.ssh/topskip-actions" -C topskip-actions
@@ -94,7 +95,7 @@ tracked example, then send it over the already verified maintenance SSH path:
 {
   printf '%s' 'command="/usr/local/libexec/topskip-deploy-gateway",no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-pty,no-user-rc '
   cat "$HOME/.ssh/topskip-actions.pub"
-} | ssh kojakurtki-vps \
+} | ssh "$TOPSKIP_SSH" \
   'sudo tee /home/topskip-deploy/.ssh/authorized_keys >/dev/null && \
    sudo chown root:root /home/topskip-deploy/.ssh/authorized_keys && \
    sudo chmod 0644 /home/topskip-deploy/.ssh/authorized_keys && \
@@ -139,8 +140,8 @@ the allow-list contains both users. Before closing the original maintenance
 session, verify both login paths from a second local terminal:
 
 ```bash
-ssh kojakurtki-vps 'test "$(id -un)" = deploy'
-ssh -i "$HOME/.ssh/topskip-actions" -l topskip-deploy kojakurtki-vps status
+ssh "$TOPSKIP_SSH" 'test "$(id -un)" = deploy'
+ssh -i "$HOME/.ssh/topskip-actions" -l topskip-deploy "$TOPSKIP_SSH" status
 ```
 
 Only close the original session after both commands succeed. If either fails,
@@ -268,9 +269,9 @@ Operator commands use the existing maintenance account rather than the Actions
 key:
 
 ```bash
-ssh kojakurtki-vps 'sudo /usr/local/sbin/topskip-deploy status'
-ssh kojakurtki-vps 'sudo /usr/local/sbin/topskip-deploy rollback'
-ssh kojakurtki-vps 'docker logs --tail 200 topskip-backend'
+ssh "$TOPSKIP_SSH" 'sudo /usr/local/sbin/topskip-deploy status'
+ssh "$TOPSKIP_SSH" 'sudo /usr/local/sbin/topskip-deploy rollback'
+ssh "$TOPSKIP_SSH" 'docker logs --tail 200 topskip-backend'
 ```
 
 If deployment assets themselves change, install the reviewed new assets with
@@ -288,8 +289,8 @@ or chat.
 Inspect storage and health:
 
 ```bash
-ssh kojakurtki-vps 'docker volume inspect topskip-data'
-ssh kojakurtki-vps 'docker exec topskip-backend node -e \
+ssh "$TOPSKIP_SSH" 'docker volume inspect topskip-data'
+ssh "$TOPSKIP_SSH" 'docker exec topskip-backend node -e \
   "fetch(\"http://127.0.0.1:8787/v1/health\").then(r => r.text()).then(console.log)"'
 ```
 
@@ -302,7 +303,7 @@ WAL, and runs incremental vacuum. Inspect counts only; do not print
 `payload_json`, because it contains retained transcripts and model output:
 
 ```bash
-ssh kojakurtki-vps 'docker exec topskip-backend node -e '\''
+ssh "$TOPSKIP_SSH" 'docker exec topskip-backend node -e '\''
   const { DatabaseSync } = require("node:sqlite");
   const db = new DatabaseSync("/var/lib/topskip/topskip.sqlite", { readOnly: true });
   for (const table of ["analysis_artifacts", "analysis_failures", "installations"]) {
@@ -311,7 +312,7 @@ ssh kojakurtki-vps 'docker exec topskip-backend node -e '\''
   }
   db.close();
 '\'''
-ssh kojakurtki-vps 'docker exec topskip-backend df -h /var/lib/topskip'
+ssh "$TOPSKIP_SSH" 'docker exec topskip-backend df -h /var/lib/topskip'
 ```
 
 If disk pressure remains after automatic pruning, delete only the disposable
@@ -320,7 +321,7 @@ events. The transaction and WAL checkpoint are safe with the single backend
 replica:
 
 ```bash
-ssh kojakurtki-vps 'docker exec topskip-backend node -e '\''
+ssh "$TOPSKIP_SSH" 'docker exec topskip-backend node -e '\''
   const { DatabaseSync } = require("node:sqlite");
   const db = new DatabaseSync("/var/lib/topskip/topskip.sqlite");
   db.exec("PRAGMA busy_timeout=5000; BEGIN IMMEDIATE; DELETE FROM analysis_artifacts; COMMIT; PRAGMA wal_checkpoint(TRUNCATE); PRAGMA incremental_vacuum;");

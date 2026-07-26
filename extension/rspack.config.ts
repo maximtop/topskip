@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { config as loadDotEnv } from 'dotenv';
 import { defineConfig } from '@rspack/cli';
 import {
     Compilation,
@@ -21,6 +22,10 @@ import {
 } from './build-modes.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// The backend origin is configuration, not source. Local builds read it from
+// the gitignored root `.env`; CI exports it instead.
+loadDotEnv({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
 
 /** Local Playwright fixture origin (injected for `TOPSKIP_BUILD=dev` only). */
 const DEV_E2E_MATCH = 'http://127.0.0.1:4173/*';

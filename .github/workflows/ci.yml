@@ -24,6 +24,16 @@ jobs:
                   node-version: '24'
                   cache: pnpm
 
+            - name: Resolve backend origin
+              env:
+                  PUBLIC_BASE_URL: ${{ vars.PUBLIC_BASE_URL }}
+              run: |
+                  if [[ -z "${PUBLIC_BASE_URL}" ]]; then
+                      echo 'Set the PUBLIC_BASE_URL repository variable to the backend origin.' >&2
+                      exit 1
+                  fi
+                  echo "TOPSKIP_SERVER_ORIGIN=${PUBLIC_BASE_URL}" >> "${GITHUB_ENV}"
+
             - name: Install dependencies
               run: pnpm install --frozen-lockfile
 
@@ -54,11 +64,7 @@ jobs:
             - name: Validate release packaging boundary
               run: |
                   pnpm run release
-                  server_origin=$(pnpm exec tsx --eval "
-                      import { TOPSKIP_PUBLIC_SERVER_BASE_URL } from './extension/src/shared/server-analysis-origin.ts';
-                      process.stdout.write(TOPSKIP_PUBLIC_SERVER_BASE_URL);
-                  ")
-                  jq --exit-status --arg origin "${server_origin}/*" '
+                  jq --exit-status --arg origin "${TOPSKIP_SERVER_ORIGIN}/*" '
                     .host_permissions as $hosts |
                     ($hosts | index($origin)) != null and
                     ($hosts | all(.[]; startswith("http://") | not))

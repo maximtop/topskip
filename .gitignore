@@ -1,0 +1,20 @@
+node_modules/
+dist/
+deployment-dist/
+.DS_Store
+*.log
+coverage/
+playwright-report/
+test-results/
+tmp/
+.topskip-data/
+.tools/
+.env
+.env.local
+/deploy/production.env
+/deploy/cloudflared/*.json
+/deploy/cloudflared/cert.pem
+/.cloudflared/
+
+# Feature specs are kept locally, not published
+.sdd/

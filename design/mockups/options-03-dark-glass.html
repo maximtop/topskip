@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Options — Variant 3: Dark Glass</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0d1117; color: #c9d1d9; }
+  .page { max-width: 540px; margin: 0 auto; padding: 40px 24px; }
+  h1 { font-size: 22px; font-weight: 700; color: #63e6be; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #484f58; margin-bottom: 32px; line-height: 1.5; }
+  h2 { font-size: 14px; font-weight: 600; color: #8b949e; margin-bottom: 14px; margin-top: 28px; }
+  .section {
+    background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 18px; margin-bottom: 16px;
+    backdrop-filter: blur(8px);
+  }
+  label { display: block; font-size: 13px; color: #c9d1d9; margin-bottom: 4px; font-weight: 500; }
+  .desc { font-size: 11px; color: #484f58; margin-bottom: 6px; }
+  input[type="text"], input[type="password"], select {
+    width: 100%; padding: 10px 14px; border: 1px solid rgba(255,255,255,0.08); border-radius: 8px;
+    font-size: 13px; font-family: inherit; outline: none;
+    background: rgba(255,255,255,0.04); color: #c9d1d9;
+    transition: border 0.2s;
+  }
+  input:focus, select:focus { border-color: #20c997; }
+  select option { background: #1a1b1e; color: #c9d1d9; }
+  .checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #20c997; }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  .row .field { flex: 1; }
+  .btn { padding: 10px 20px; border-radius: 8px; font-size: 13px; cursor: pointer; font-weight: 500; border: none; }
+  .btn-primary { background: rgba(32,201,151,0.15); color: #63e6be; border: 1px solid rgba(32,201,151,0.3); }
+  .btn-primary:hover { background: rgba(32,201,151,0.25); }
+  .btn-secondary { background: rgba(255,255,255,0.04); color: #8b949e; border: 1px solid rgba(255,255,255,0.08); }
+  .btn-sm { padding: 7px 14px; font-size: 12px; }
+  .btn-danger { background: rgba(250,82,82,0.1); color: #ff8787; border: 1px solid rgba(250,82,82,0.2); }
+  .actions { display: flex; gap: 10px; margin-top: 24px; }
+  .alert { padding: 12px 16px; border-radius: 8px; font-size: 12px; margin-bottom: 16px; }
+  .alert-success { background: rgba(64,192,87,0.08); color: #69db7c; border: 1px solid rgba(64,192,87,0.15); }
+  .hint { font-size: 11px; color: #484f58; margin-top: 16px; line-height: 1.5; }
+  .model-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: rgba(255,255,255,0.02); border-radius: 6px; margin-top: 10px; border: 1px solid rgba(255,255,255,0.04); }
+  .model-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #8b949e; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>TopSkip — LLM promo detection</h1>
+  <p class="subtitle">Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).</p>
+
+  <div class="alert alert-success">✓ Settings saved successfully.</div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;">LLM Configuration</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="enable" checked>
+      <label for="enable" style="margin:0;">Enable LLM promo detection</label>
+    </div>
+    <label>OpenRouter API key</label>
+    <div class="desc">Saved key: sk-or-…abc — leave blank to keep it.</div>
+    <input type="password" placeholder="sk-or-…">
+  </div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;">Model Selection</h2>
+    <label>Model</label>
+    <div class="desc">Built-in presets and models you added below.</div>
+    <select>
+      <option>google/gemini-3.1-pro-preview</option>
+      <option>anthropic/claude-sonnet-4</option>
+      <option>openai/gpt-4.1</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;">Custom Models</h2>
+    <p class="desc" style="margin-bottom: 12px;">Type an OpenRouter model id, then Add to keep it for later sessions.</p>
+    <label>Custom model id</label>
+    <div class="row">
+      <div class="field"><input type="text" placeholder="vendor/model"></div>
+      <button class="btn btn-secondary btn-sm">Add</button>
+    </div>
+    <div class="model-item">
+      <span class="model-slug">meta/llama-4-scout</span>
+      <button class="btn btn-danger btn-sm">Remove</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary">Save</button>
+    <button class="btn btn-secondary">Reload</button>
+  </div>
+  <p class="hint">Save applies the detection toggle, API key (if changed), and the selected model. Use Add to store extra model ids in your list.</p>
+</div>
+</body>
+</html>

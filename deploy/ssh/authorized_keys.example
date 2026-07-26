@@ -1,0 +1,1 @@
+command="/usr/local/libexec/topskip-deploy-gateway",no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-pty,no-user-rc ssh-ed25519 REPLACE_WITH_TOPSKIP_ACTIONS_PUBLIC_KEY topskip-actions

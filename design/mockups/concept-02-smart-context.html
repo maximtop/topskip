@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Concept 02 — Smart Context</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --ink: #1d2433;
+    --muted: #69758a;
+    --line: #dde4f0;
+    --card: #ffffff;
+    --brand: #0ca678;
+    --brand-soft: #e8fbf5;
+    --warn: #fff4db;
+    --danger: #fff0f1;
+    --bg: #f4f7fb;
+  }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: linear-gradient(180deg, #f7fbff 0%, var(--bg) 100%); color: var(--ink); padding: 32px; }
+  h1 { font-size: 34px; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); max-width: 900px; line-height: 1.6; margin-bottom: 28px; }
+  .layout { display: grid; grid-template-columns: 1.4fr 1fr; gap: 24px; max-width: 1240px; }
+  .states { display: grid; grid-template-columns: repeat(2, 320px); gap: 18px; }
+  .frame { background: var(--card); border-radius: 20px; overflow: hidden; border: 1px solid var(--line); box-shadow: 0 16px 30px rgba(16,24,40,0.08); }
+  .bar { padding: 10px 14px; background: #f8fafd; border-bottom: 1px solid var(--line); color: #8190a7; font-size: 11px; }
+  .popup { padding: 16px; }
+  .tag { display: inline-flex; padding: 5px 10px; border-radius: 999px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 12px; }
+  .tag-green { background: var(--brand-soft); color: #087f5b; }
+  .tag-amber { background: var(--warn); color: #9c6b00; }
+  .tag-red { background: var(--danger); color: #c03a4c; }
+  h2 { font-size: 22px; margin-bottom: 6px; }
+  .popup p { color: var(--muted); font-size: 13px; line-height: 1.55; }
+  .stack { display: grid; gap: 10px; margin-top: 14px; }
+  .cta, .secondary { text-decoration: none; padding: 11px 14px; border-radius: 14px; font-size: 13px; display: block; text-align: center; }
+  .cta { background: var(--brand); color: white; }
+  .secondary { border: 1px solid var(--line); background: white; color: var(--ink); }
+  .context-chip { background: #f5f8fc; border: 1px solid var(--line); border-radius: 14px; padding: 12px; font-size: 12px; color: var(--ink); }
+  .timeline { display: flex; gap: 6px; margin-top: 14px; }
+  .seg { height: 10px; border-radius: 999px; background: #d7e2f0; flex: 1; }
+  .seg.hit { background: linear-gradient(90deg, #20c997, #0ca678); }
+  .panel { background: rgba(255,255,255,0.72); border: 1px solid rgba(29,36,51,0.08); border-radius: 24px; padding: 24px; }
+  .panel h3 { font-size: 24px; margin-bottom: 8px; }
+  .notes { display: grid; gap: 12px; margin-top: 18px; }
+  .note { background: white; border: 1px solid var(--line); border-radius: 16px; padding: 15px; }
+  .flow { margin-top: 18px; display: grid; gap: 12px; }
+  .flow-step { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  .flow-step strong { display: block; margin-bottom: 6px; }
+  @media (max-width: 1120px) {
+    .layout { grid-template-columns: 1fr; }
+    .states { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Concept 02 — Smart Context</h1>
+<p class="subtitle">This concept stops pretending the popup should always be the same. The extension reacts to where the user is and what is missing: wrong site, setup incomplete, watching a supported video, or actively reviewing detections.</p>
+<div class="layout">
+  <div class="states">
+    <div class="frame">
+      <div class="bar">Popup state · unsupported page</div>
+      <div class="popup">
+        <div class="tag tag-amber">Context: inactive</div>
+        <h2>Not on YouTube</h2>
+        <p>TopSkip is enabled globally, but there is nothing to inspect on this tab yet.</p>
+        <div class="stack">
+          <div class="context-chip">Open YouTube to see detection status and skip activity.</div>
+          <a class="cta" href="#">Open settings</a>
+          <a class="secondary" href="#">Read how it works</a>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="bar">Popup state · setup required</div>
+      <div class="popup">
+        <div class="tag tag-red">Context: blocked</div>
+        <h2>Finish setup</h2>
+        <p>Transcript analysis is off because the OpenRouter key is missing.</p>
+        <div class="stack">
+          <div class="context-chip">Next best action: connect your API key, then pick a default model.</div>
+          <a class="cta" href="#">Continue setup</a>
+          <a class="secondary" href="#">Use manual mode only</a>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="bar">Popup state · ready, no detections</div>
+      <div class="popup">
+        <div class="tag tag-green">Context: ready</div>
+        <h2>Watching clean</h2>
+        <p>No sponsor segments detected in the current window. TopSkip is still monitoring captions.</p>
+        <div class="stack">
+          <div class="context-chip">Model: google/gemini-3.1-pro-preview</div>
+          <a class="secondary" href="#">See debug reason</a>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="bar">Popup state · detections found</div>
+      <div class="popup">
+        <div class="tag tag-green">Context: active</div>
+        <h2>2 promo blocks found</h2>
+        <p>Detection is complete for the current transcript slice.</p>
+        <div class="timeline">
+          <div class="seg"></div>
+          <div class="seg hit"></div>
+          <div class="seg"></div>
+          <div class="seg hit"></div>
+          <div class="seg"></div>
+        </div>
+        <div class="stack">
+          <div class="context-chip">0:32–1:05 and 4:12–4:44</div>
+          <a class="cta" href="#">View skip details</a>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h3>State-driven options</h3>
+    <p>Instead of a neutral settings form, the options page becomes a recovery and readiness surface. It explains what is broken, what is optional, and what the user should do next.</p>
+    <div class="notes">
+      <div class="note"><strong>Why this differs</strong><br/><span style="color: var(--muted);">The popup is not one layout anymore. It is four tailored layouts with different CTAs.</span></div>
+      <div class="note"><strong>Best fit</strong><br/><span style="color: var(--muted);">Users who often open the extension in different places and need immediate next-step clarity.</span></div>
+    </div>
+    <div class="flow">
+      <div class="flow-step"><strong>Setup section</strong> API key card with inline completion state, health check result, and “test connection” action.</div>
+      <div class="flow-step"><strong>Ready section</strong> Default model, fallback plan, and note about where popup surfaces detections.</div>
+      <div class="flow-step"><strong>Recovery section</strong> Last error, permission notes, and quick path to clear bad configuration.</div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

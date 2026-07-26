@@ -1,0 +1,189 @@
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+import * as v from 'valibot';
+
+import browser from '@/shared/browser';
+
+import {
+    ContentLogMessages,
+    PromoDetectionRuntimeMessages,
+} from '@/background/messaging/misc-runtime-messages';
+import { CaptionPageCaptureMessages } from '@/background/messaging/caption-page-capture-messages';
+import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
+import { ChromePromptApiRuntimeMessages } from '@/background/messaging/chrome-prompt-api-runtime-messages';
+import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
+import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
+import type { ProviderRegistry } from '@/background/providers/provider-registry';
+import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
+import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
+import { ServerAnalysisIssueReport } from '@/background/server-analysis-issue-report';
+import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
+import {
+    refreshServerAnalysisStatusRuntimeMessageSchema,
+    requestServerAnalysisRuntimeMessageSchema,
+    serverAnalysisSessionEventRuntimeMessageSchema,
+    TOPSKIP_MESSAGE,
+    type TopSkipRuntimeMessage,
+} from '@/shared/messages';
+
+/**
+ * Coerces an unknown runtime message to a `TopSkipRuntimeMessage` when the
+ * `type` field is a non-empty string. The caller is responsible for narrowing
+ * further (via `switch`) before accessing any other fields.
+ *
+ * @param message - Opaque value received by `runtime.onMessage`
+ * @returns Narrowed message union member, or `undefined` when the value is not
+ * a valid message object
+ */
+function toRuntimeMessage(message: unknown): TopSkipRuntimeMessage | undefined {
+    if (message === null || typeof message !== 'object') return undefined;
+    const t: unknown = Reflect.get(message, 'type');
+    if (typeof t !== 'string') return undefined;
+    return message as TopSkipRuntimeMessage;
+}
+
+/**
+ * Holds every runtime route behind the trusted-context storage barrier so no
+ * handler can race startup and expose background-owned credentials.
+ *
+ * @param msg - Narrowed runtime message.
+ * @param sender - Browser-provided sender metadata.
+ * @returns Handler response after the storage boundary is active.
+ */
+async function dispatchRuntimeMessage(
+    msg: TopSkipRuntimeMessage,
+    sender: Runtime.MessageSender,
+): Promise<unknown> {
+    await BackgroundStorageAccess.ready();
+
+    switch (msg.type) {
+        case TOPSKIP_MESSAGE.CONTENT_LOG:
+            ContentLogMessages.log(msg.level, msg.args, sender.tab?.id);
+            return;
+        case TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE:
+            return CaptionPageCaptureMessages.install(sender.tab?.id);
+        case TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE:
+            return CaptionPageCaptureMessages.activate(sender.tab?.id);
+        case TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE:
+            return CaptionPageCaptureMessages.deactivate(sender.tab?.id);
+        case TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT:
+            return CaptionRuntimeMessages.handle(msg.payload, sender);
+        case TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP:
+            return ByokSetupRuntimeMessages.handle(msg.payload, sender);
+        case TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT: {
+            const parsed = v.safeParse(
+                serverAnalysisSessionEventRuntimeMessageSchema,
+                msg,
+            );
+            if (!parsed.success) {
+                return { ok: false, error: 'Invalid session event.' };
+            }
+            return ServerAnalysisRuntimeMessages.handleSessionEvent(
+                parsed.output.payload,
+                sender,
+            );
+        }
+        case TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS: {
+            const parsed = v.safeParse(
+                requestServerAnalysisRuntimeMessageSchema,
+                msg,
+            );
+            if (!parsed.success) {
+                return { ok: false, error: 'Invalid transcript request.' };
+            }
+            return ServerAnalysisRuntimeMessages.handleRequest(
+                parsed.output.payload,
+                sender,
+            );
+        }
+        case TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS: {
+            const parsed = v.safeParse(
+                refreshServerAnalysisStatusRuntimeMessageSchema,
+                msg,
+            );
+            if (!parsed.success) {
+                return { ok: false, error: 'Invalid analysis poll.' };
+            }
+            return ServerAnalysisRuntimeMessages.handleRefreshStatus(
+                parsed.output.payload,
+                sender,
+            );
+        }
+        case TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE:
+            return ServerAnalysisIssueReport.handleOpen();
+        case TOPSKIP_MESSAGE.GET_PREFS:
+            return PrefsRuntimeMessages.handleGet();
+        case TOPSKIP_MESSAGE.SET_PREFS:
+            return PrefsRuntimeMessages.handleSet(msg.enabled);
+        case TOPSKIP_MESSAGE.SET_ANALYSIS_MODE:
+            return PrefsRuntimeMessages.handleSetAnalysisMode(msg.analysisMode);
+        case TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER:
+            return ProviderRuntimeMessages.handleGetActive();
+        case TOPSKIP_MESSAGE.GET_PROVIDER_LIST:
+            return ProviderRuntimeMessages.handleGetList();
+        case TOPSKIP_MESSAGE.GET_MODEL_SETTINGS:
+            return ModelRuntimeMessages.handleGetSettings();
+        case TOPSKIP_MESSAGE.SET_ACTIVE_MODEL:
+            return ModelRuntimeMessages.handleSetActiveModel(msg.modelId);
+        case TOPSKIP_MESSAGE.SAVE_CONNECTION_KEY:
+            return ModelRuntimeMessages.handleSaveConnectionKey(
+                msg.providerId,
+                msg.apiKey,
+            );
+        case TOPSKIP_MESSAGE.TEST_CONNECTION_KEY:
+            return ModelRuntimeMessages.handleTestConnectionKey(
+                msg.providerId,
+                msg.apiKey,
+            );
+        case TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER:
+            return ProviderRuntimeMessages.handleSetActive(msg.providerId);
+        case TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS:
+            return ChromePromptApiRuntimeMessages.handleGetStatus();
+        case TOPSKIP_MESSAGE.TRIGGER_CHROME_MODEL_DOWNLOAD:
+            return ChromePromptApiRuntimeMessages.handleTriggerDownload();
+        case TOPSKIP_MESSAGE.GET_OPENROUTER_CONFIG:
+            return OpenRouterRuntimeMessages.handleGet();
+        case TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG:
+            return OpenRouterRuntimeMessages.handleSet(msg.apiKey, msg.model);
+        case TOPSKIP_MESSAGE.ADD_OPENROUTER_CUSTOM_MODEL:
+            return OpenRouterRuntimeMessages.handleAddCustomModel(msg.slug);
+        case TOPSKIP_MESSAGE.REMOVE_OPENROUTER_CUSTOM_MODEL:
+            return OpenRouterRuntimeMessages.handleRemoveCustomModel(msg.slug);
+        case TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL:
+            return OpenRouterRuntimeMessages.handleValidateModelSlug(
+                msg.slug,
+                msg.apiKey,
+            );
+        case TOPSKIP_MESSAGE.GET_DETECTION_STATUS:
+            return PromoDetectionRuntimeMessages.handleGet();
+        case TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS:
+            return PromoDetectionRuntimeMessages.handleDevSet(
+                msg.state,
+                sender.tab?.id,
+            );
+        default:
+            return undefined;
+    }
+}
+
+/**
+ * Registers a single `runtime.onMessage` listener that dispatches each
+ * incoming message to the handler responsible for its `type`.
+ *
+ * @param registry - Provider registry shared by provider-aware handlers
+ */
+export function registerRuntimeMessages(registry: ProviderRegistry): void {
+    PromoAnalysis.setRegistry(registry);
+    ProviderRuntimeMessages.setRegistry(registry);
+    ByokSetupRuntimeMessages.setRegistry(registry);
+
+    browser.runtime.onMessage.addListener(
+        (message: unknown, sender: Runtime.MessageSender) => {
+            const msg = toRuntimeMessage(message);
+            if (!msg) return undefined;
+            return dispatchRuntimeMessage(msg, sender);
+        },
+    );
+}

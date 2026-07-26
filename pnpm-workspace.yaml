@@ -1,0 +1,7 @@
+packages:
+    - backend
+    - common
+    - extension
+
+allowBuilds:
+    esbuild: true

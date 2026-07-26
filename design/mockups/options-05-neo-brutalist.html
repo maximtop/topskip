@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Options — Variant 5: Neo Brutalist</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fffef5; color: #000; }
+  .page { max-width: 560px; margin: 0 auto; padding: 40px 24px; }
+  h1 { font-size: 28px; font-weight: 900; text-transform: uppercase; letter-spacing: -1px; margin-bottom: 6px; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 32px; line-height: 1.5; border-bottom: 3px solid #000; padding-bottom: 16px; }
+  h2 { font-size: 14px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 14px; margin-top: 28px; }
+  .section {
+    border: 3px solid #000; padding: 18px; margin-bottom: 16px;
+    box-shadow: 5px 5px 0 #000;
+  }
+  label { display: block; font-size: 13px; color: #000; margin-bottom: 4px; font-weight: 700; }
+  .desc { font-size: 11px; color: #666; margin-bottom: 6px; }
+  input[type="text"], input[type="password"], select {
+    width: 100%; padding: 10px 12px; border: 3px solid #000; border-radius: 0;
+    font-size: 13px; font-family: inherit; outline: none; background: #fff;
+  }
+  input:focus, select:focus { border-color: #12b886; background: #e6fcf5; }
+  .checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .checkbox-row input[type="checkbox"] { width: 20px; height: 20px; accent-color: #12b886; }
+  .row { display: flex; gap: 10px; align-items: flex-end; }
+  .row .field { flex: 1; }
+  .btn {
+    padding: 10px 22px; font-size: 13px; cursor: pointer; font-weight: 800;
+    border: 3px solid #000; text-transform: uppercase; letter-spacing: 0.5px;
+  }
+  .btn-primary { background: #12b886; color: #fff; box-shadow: 4px 4px 0 #000; }
+  .btn-primary:hover { box-shadow: 2px 2px 0 #000; transform: translate(2px, 2px); }
+  .btn-secondary { background: #fff; color: #000; box-shadow: 4px 4px 0 #000; }
+  .btn-sm { padding: 6px 12px; font-size: 11px; box-shadow: 3px 3px 0 #000; }
+  .btn-danger { background: #fa5252; color: #fff; box-shadow: 3px 3px 0 #000; }
+  .actions { display: flex; gap: 14px; margin-top: 28px; }
+  .alert { padding: 12px 16px; font-size: 13px; margin-bottom: 16px; border: 3px solid #000; font-weight: 700; }
+  .alert-success { background: #e6fcf5; }
+  .hint { font-size: 12px; color: #666; margin-top: 16px; line-height: 1.5; border-top: 3px solid #000; padding-top: 12px; }
+  .model-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-top: 2px dashed #000; margin-top: 10px; }
+  .model-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>TopSkip</h1>
+  <p class="subtitle">Configure OpenRouter for transcript analysis. API key stored in this browser profile only.</p>
+
+  <div class="alert alert-success">✓ SAVED</div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;">LLM Config</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="enable" checked>
+      <label for="enable" style="margin:0;">Enable LLM promo detection</label>
+    </div>
+    <label>OpenRouter API key</label>
+    <div class="desc">Saved key: sk-or-…abc — leave blank to keep it.</div>
+    <input type="password" placeholder="sk-or-…">
+  </div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;">Model</h2>
+    <label>Model</label>
+    <div class="desc">Built-in presets and your custom models.</div>
+    <select>
+      <option>google/gemini-3.1-pro-preview</option>
+      <option>anthropic/claude-sonnet-4</option>
+      <option>openai/gpt-4.1</option>
+    </select>
+  </div>
+
+  <div class="section">
+    <h2 style="margin-top: 0;">Custom Models</h2>
+    <p class="desc" style="margin-bottom: 12px;">Type vendor/model, then Add.</p>
+    <label>Custom model id</label>
+    <div class="row">
+      <div class="field"><input type="text" placeholder="vendor/model"></div>
+      <button class="btn btn-secondary btn-sm">ADD</button>
+    </div>
+    <div class="model-item">
+      <span class="model-slug">meta/llama-4-scout</span>
+      <button class="btn btn-danger btn-sm">DEL</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary">SAVE</button>
+    <button class="btn btn-secondary">RELOAD</button>
+  </div>
+  <p class="hint">Save applies toggle, API key, and model. Add stores extra model ids.</p>
+</div>
+</body>
+</html>

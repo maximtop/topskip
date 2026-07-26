@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Options — Variant 10: Stripe-inspired</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f6f9fc; color: #1a1f36; }
+  .topbar { background: #1a1f36; padding: 20px 32px; }
+  .topbar h1 { font-size: 15px; font-weight: 600; color: #fff; letter-spacing: 0.3px; }
+  .page { max-width: 580px; margin: 0 auto; padding: 28px 24px 48px; }
+  .page-title { font-size: 20px; font-weight: 600; color: #1a1f36; margin-bottom: 4px; }
+  .page-desc { font-size: 13px; color: #697386; margin-bottom: 24px; line-height: 1.6; }
+  h2 { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #697386; margin-bottom: 12px; margin-top: 28px; }
+  .card {
+    background: #fff; border: 1px solid #e3e8ee; border-radius: 8px;
+    padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+  }
+  label { display: block; font-size: 13px; color: #1a1f36; margin-bottom: 4px; font-weight: 500; }
+  .desc { font-size: 12px; color: #697386; margin-bottom: 8px; }
+  input[type="text"], input[type="password"], select {
+    width: 100%; padding: 9px 12px; border: 1px solid #e3e8ee; border-radius: 6px;
+    font-size: 13px; font-family: inherit; outline: none;
+    background: #fff; color: #1a1f36; transition: border 0.15s, box-shadow 0.15s;
+  }
+  input:focus, select:focus { border-color: #635bff; box-shadow: 0 0 0 3px rgba(99,91,255,0.12); }
+  .checkbox-row { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #635bff; }
+  .input-group { margin-bottom: 14px; }
+  .row { display: flex; gap: 8px; align-items: flex-end; }
+  .row .field { flex: 1; }
+  .btn {
+    padding: 8px 18px; border-radius: 6px; font-size: 13px; cursor: pointer;
+    font-weight: 500; border: 1px solid #e3e8ee; background: #fff; color: #1a1f36;
+    transition: background 0.1s, box-shadow 0.1s;
+  }
+  .btn:hover { background: #f6f9fc; }
+  .btn-primary { background: #635bff; color: #fff; border-color: #635bff; box-shadow: 0 2px 5px rgba(99,91,255,0.2); }
+  .btn-primary:hover { background: #5a52e0; }
+  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-danger { color: #cd3d64; border-color: #f8d7da; }
+  .btn-danger:hover { background: #fff5f5; }
+  .actions { display: flex; gap: 10px; margin-top: 24px; }
+  .banner { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 8px; font-size: 13px; margin-bottom: 20px; background: #e6ffed; color: #1a7f37; border: 1px solid #c6efce; }
+  .hint { font-size: 12px; color: #8792a2; margin-top: 14px; line-height: 1.6; }
+  .model-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; border: 1px solid #e3e8ee; border-radius: 6px; margin-top: 10px; background: #f6f9fc; }
+  .model-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: #1a1f36; }
+</style>
+</head>
+<body>
+<div class="topbar"><h1>TopSkip</h1></div>
+<div class="page">
+  <h1 class="page-title">Settings</h1>
+  <p class="page-desc">Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile.</p>
+
+  <div class="banner">
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><circle cx="8" cy="8" r="8" fill="#1a7f37"/><path d="M5 8.5l2 2 4-4" stroke="#fff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    Settings saved
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top: 0;">LLM Configuration</h2>
+    <div class="checkbox-row">
+      <input type="checkbox" id="enable" checked>
+      <label for="enable" style="margin: 0;">Enable LLM promo detection</label>
+    </div>
+    <div class="input-group">
+      <label>OpenRouter API key</label>
+      <div class="desc">Saved key: sk-or-…abc — leave blank to keep it.</div>
+      <input type="password" placeholder="sk-or-…">
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top: 0;">Model Selection</h2>
+    <div class="input-group">
+      <label>Model</label>
+      <div class="desc">Built-in presets and your custom models.</div>
+      <select>
+        <option>google/gemini-3.1-pro-preview</option>
+        <option>anthropic/claude-sonnet-4</option>
+        <option>openai/gpt-4.1</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="margin-top: 0;">Custom Models</h2>
+    <p class="desc" style="margin-bottom: 12px;">Type an OpenRouter model id, then Add.</p>
+    <div class="input-group" style="margin-bottom: 0;">
+      <label>Custom model id</label>
+      <div class="row">
+        <div class="field"><input type="text" placeholder="vendor/model"></div>
+        <button class="btn btn-sm">Add</button>
+      </div>
+    </div>
+    <div class="model-item">
+      <span class="model-slug">meta/llama-4-scout</span>
+      <button class="btn btn-danger btn-sm">Remove</button>
+    </div>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary">Save</button>
+    <button class="btn">Reload</button>
+  </div>
+  <p class="hint">Save applies toggle, API key, and model. Add stores extra model ids.</p>
+</div>
+</body>
+</html>

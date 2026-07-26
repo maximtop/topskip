@@ -1,0 +1,2 @@
+Defaults:topskip-deploy !requiretty
+topskip-deploy ALL=(root) NOPASSWD: /usr/local/sbin/topskip-deploy

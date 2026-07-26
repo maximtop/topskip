@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Concept 01 — Quick Status Tap</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #eef6f2;
+    --ink: #173029;
+    --muted: #5b756d;
+    --brand: #159a73;
+    --brand-dark: #0f7f5d;
+    --panel: #ffffff;
+    --line: #d7e8e1;
+    --soft: #f7fbf9;
+  }
+  body {
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    background: radial-gradient(circle at top left, #ffffff 0%, var(--bg) 55%, #dcebe5 100%);
+    color: var(--ink);
+    padding: 32px;
+  }
+  h1 { font-size: 34px; margin-bottom: 8px; }
+  .subtitle { max-width: 760px; color: var(--muted); line-height: 1.6; margin-bottom: 28px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 28px; align-items: start; max-width: 1180px; }
+  .frame { width: 320px; background: var(--panel); border-radius: 22px; overflow: hidden; border: 1px solid rgba(21,154,115,0.14); box-shadow: 0 20px 45px rgba(21,154,115,0.12); }
+  .bar { padding: 10px 14px; background: #f3f8f6; font-size: 11px; color: #7a8f87; border-bottom: 1px solid var(--line); }
+  .popup { padding: 18px; }
+  .eyebrow { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 12px; }
+  .hero {
+    background: linear-gradient(155deg, #1ab286 0%, #128565 100%);
+    border-radius: 20px; padding: 18px; color: white; margin-bottom: 14px;
+  }
+  .hero .micro { font-size: 11px; opacity: 0.82; text-transform: uppercase; letter-spacing: 0.12em; }
+  .hero h2 { font-size: 26px; margin: 10px 0 6px; }
+  .hero p { font-size: 13px; line-height: 1.5; opacity: 0.9; }
+  .tap-surface {
+    display: grid; gap: 12px; padding: 14px; border-radius: 18px; border: 1px solid var(--line);
+    background: var(--soft); margin-bottom: 14px;
+  }
+  .tap-top { display: flex; justify-content: space-between; align-items: center; }
+  .pill { background: white; border: 1px solid var(--line); border-radius: 999px; padding: 6px 10px; font-size: 12px; color: var(--muted); }
+  .big-toggle {
+    width: 72px; height: 40px; background: #b6d8cd; border-radius: 999px; padding: 4px; margin-left: auto;
+  }
+  .big-toggle::after { content: ""; display: block; width: 32px; height: 32px; border-radius: 50%; background: white; transform: translateX(32px); box-shadow: 0 2px 8px rgba(0,0,0,0.12); }
+  .line { display: flex; justify-content: space-between; align-items: center; font-size: 13px; }
+  .line strong { font-size: 14px; }
+  .drawer { border-top: 1px dashed var(--line); padding-top: 12px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+  .drawer .ranges { margin-top: 8px; padding: 10px 12px; background: white; border-radius: 12px; color: var(--ink); }
+  .link-row { display: flex; justify-content: space-between; gap: 10px; }
+  .ghost, .solid { border-radius: 14px; padding: 11px 14px; font-size: 13px; text-decoration: none; display: inline-flex; justify-content: center; align-items: center; }
+  .solid { background: var(--brand); color: white; flex: 1; }
+  .ghost { background: white; color: var(--ink); border: 1px solid var(--line); }
+  .panel {
+    background: rgba(255,255,255,0.72); border: 1px solid rgba(23,48,41,0.08); border-radius: 24px;
+    padding: 24px; backdrop-filter: blur(8px);
+  }
+  .panel h2 { font-size: 24px; margin-bottom: 8px; }
+  .panel p { color: var(--muted); line-height: 1.6; }
+  .notes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; margin-top: 18px; }
+  .note { background: white; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  .note h3 { font-size: 14px; margin-bottom: 8px; }
+  .note p { font-size: 13px; }
+  .options {
+    margin-top: 22px; background: white; border-radius: 22px; border: 1px solid var(--line); overflow: hidden;
+  }
+  .options-head { padding: 20px 22px; background: linear-gradient(180deg, #fcfffe, #f3f8f6); border-bottom: 1px solid var(--line); }
+  .options-grid { display: grid; grid-template-columns: 1.1fr 0.9fr; }
+  .options-main, .options-side { padding: 22px; }
+  .field { margin-bottom: 18px; }
+  .field label { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+  .input { background: #fbfefd; border: 1px solid var(--line); border-radius: 14px; padding: 13px 14px; font-size: 14px; }
+  .mini-card { background: #f7fbf9; border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+  ul { padding-left: 18px; color: var(--muted); line-height: 1.7; }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    .options-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Concept 01 — Quick Status Tap</h1>
+<p class="subtitle">This concept treats the popup as a near-single-action instrument. The main question is not “configure the system” but “is TopSkip active here, right now?”. Details exist, but they stay tucked behind a lightweight drawer.</p>
+<div class="layout">
+  <div class="frame">
+    <div class="bar">TopSkip popup · 320px</div>
+    <div class="popup">
+      <div class="eyebrow">Fast control</div>
+      <div class="hero">
+        <div class="micro">Current tab</div>
+        <h2>Ready</h2>
+        <p>TopSkip is active on this YouTube video. Tap the main surface to disable instantly.</p>
+      </div>
+      <div class="tap-surface">
+        <div class="tap-top">
+          <div>
+            <div style="font-size: 12px; color: var(--muted);">Main action</div>
+            <strong>Promo skip is on</strong>
+          </div>
+          <div class="big-toggle"></div>
+        </div>
+        <div class="line"><span>Detected</span><span class="pill">2 promo blocks</span></div>
+        <div class="drawer">
+          Hold or expand for detail.
+          <div class="ranges">0:32–1:05 and 4:12–4:44<br/>Reliability notice stays collapsed by default.</div>
+        </div>
+      </div>
+      <div class="link-row">
+        <a class="solid" href="#">Open full settings</a>
+        <a class="ghost" href="#">Why?</a>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Options become the full control room</h2>
+    <p>The popup intentionally stops trying to be both a status dashboard and a configuration form. The options page carries setup, model policy, and advanced details. That split makes the popup calmer and faster.</p>
+    <div class="notes">
+      <div class="note">
+        <h3>What changes</h3>
+        <p>One dominant control, one short state sentence, deferred detail drawer. Settings remain available, but not as the center of gravity.</p>
+      </div>
+      <div class="note">
+        <h3>Why it helps</h3>
+        <p>Most users only need confidence that the extension is on. This removes form-thinking from the popup and lowers scan time.</p>
+      </div>
+    </div>
+    <div class="options">
+      <div class="options-head">
+        <div class="eyebrow">Options page</div>
+        <h2 style="font-size: 28px; margin: 0 0 6px;">Full Settings</h2>
+        <p>Advanced controls stay here: API key, default model behavior, custom model inventory, and fallback rules.</p>
+      </div>
+      <div class="options-grid">
+        <div class="options-main">
+          <div class="field">
+            <label>OpenRouter API key</label>
+            <div class="input">sk-or-••••••••••••••</div>
+          </div>
+          <div class="field">
+            <label>Default model</label>
+            <div class="input">google/gemini-3.1-pro-preview</div>
+          </div>
+          <div class="field">
+            <label>Fallback behavior</label>
+            <div class="input">If model fails, keep autoplay normal and show message</div>
+          </div>
+        </div>
+        <div class="options-side">
+          <div class="mini-card">
+            <strong>Popup philosophy</strong>
+            <p style="margin-top: 8px; color: var(--muted);">Keep the browser action fast and almost muscle-memory friendly.</p>
+          </div>
+          <div class="mini-card">
+            <strong>Advanced inventory</strong>
+            <ul>
+              <li>Custom models</li>
+              <li>Detection debug log</li>
+              <li>Reliability and privacy notes</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

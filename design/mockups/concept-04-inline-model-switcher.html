@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Concept 04 — Inline Model Switcher</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f3f6fd;
+    --ink: #172033;
+    --muted: #647089;
+    --line: #dbe3f4;
+    --card: #ffffff;
+    --brand: #3256ff;
+    --brand-soft: #edf1ff;
+    --good: #e9fbf1;
+  }
+  body { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; background: linear-gradient(180deg, #f8faff 0%, var(--bg) 100%); color: var(--ink); padding: 32px; }
+  h1 { font-size: 34px; margin-bottom: 8px; }
+  .subtitle { color: var(--muted); max-width: 900px; line-height: 1.6; margin-bottom: 28px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 28px; max-width: 1180px; }
+  .frame { width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 22px; overflow: hidden; box-shadow: 0 18px 34px rgba(23,32,51,0.08); }
+  .bar { padding: 10px 14px; border-bottom: 1px solid var(--line); background: #f8faff; color: #7e8ba6; font-size: 11px; }
+  .popup { padding: 18px; }
+  .hero { background: linear-gradient(145deg, #1a3ff0, #5272ff); color: white; border-radius: 18px; padding: 16px; margin-bottom: 14px; }
+  .hero h2 { font-size: 24px; margin-bottom: 4px; }
+  .hero p { font-size: 13px; opacity: 0.9; line-height: 1.5; }
+  .toggle { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: #f8faff; border: 1px solid var(--line); border-radius: 16px; margin-bottom: 12px; }
+  .switch { width: 48px; height: 28px; background: #c7d1eb; border-radius: 999px; padding: 3px; }
+  .switch::after { content: ""; display: block; width: 22px; height: 22px; border-radius: 50%; background: white; transform: translateX(20px); }
+  .select-card { border: 1px solid var(--line); border-radius: 16px; padding: 14px; margin-bottom: 12px; }
+  .label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 8px; }
+  .select { display: flex; justify-content: space-between; align-items: center; background: var(--brand-soft); color: var(--ink); border-radius: 14px; padding: 12px 14px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .chip { padding: 7px 10px; border-radius: 999px; background: white; border: 1px solid var(--line); font-size: 12px; }
+  .chip.active { background: var(--brand); color: white; border-color: var(--brand); }
+  .notice { background: var(--good); border-radius: 14px; padding: 12px; font-size: 12px; line-height: 1.5; }
+  .panel { background: rgba(255,255,255,0.75); border: 1px solid rgba(23,32,51,0.08); border-radius: 24px; padding: 24px; }
+  .panel h2 { font-size: 28px; margin-bottom: 8px; }
+  .panel p { color: var(--muted); line-height: 1.7; }
+  .compare { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; margin-top: 18px; }
+  .card { background: white; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  .card h3 { font-size: 16px; margin-bottom: 8px; }
+  .options { margin-top: 20px; display: grid; grid-template-columns: 0.85fr 1.15fr; gap: 14px; }
+  .stack { display: grid; gap: 14px; }
+  .mini { background: white; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  @media (max-width: 980px) {
+    .layout, .options, .compare { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Concept 04 — Inline Model Switcher</h1>
+<p class="subtitle">This concept assumes model choice is not an advanced setting. It is part of daily operation. The popup becomes a fast control surface for switching models, seeing recent picks, and understanding the immediate effect of that choice.</p>
+<div class="layout">
+  <div class="frame">
+    <div class="bar">TopSkip popup · control center</div>
+    <div class="popup">
+      <div class="hero">
+        <h2>Active and adjustable</h2>
+        <p>TopSkip is on. Change the current model without leaving the popup.</p>
+      </div>
+      <div class="toggle">
+        <div>
+          <div style="font-size: 12px; color: var(--muted);">Auto skip</div>
+          <strong>Enabled</strong>
+        </div>
+        <div class="switch"></div>
+      </div>
+      <div class="select-card">
+        <div class="label">Current model</div>
+        <div class="select">
+          <span>google/gemini-3.1-pro-preview</span>
+          <span>▾</span>
+        </div>
+        <div class="chips">
+          <div class="chip active">Gemini</div>
+          <div class="chip">Claude</div>
+          <div class="chip">GPT-4.1</div>
+          <div class="chip">More…</div>
+        </div>
+      </div>
+      <div class="notice">Last run used Gemini and found 2 promo blocks. Switching model changes future transcript analysis only.</div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Options shrink to advanced setup</h2>
+    <p>Once model selection moves into the popup, the options page no longer needs to carry the main day-to-day workflow. It becomes a quieter place for secrets, custom inventory, and defaults.</p>
+    <div class="compare">
+      <div class="card">
+        <h3>Popup now owns</h3>
+        <p>Model switching, recent model memory, quick testing, and current run context.</p>
+      </div>
+      <div class="card">
+        <h3>Options keeps</h3>
+        <p>API key entry, model inventory management, fallback defaults, and advanced explanations.</p>
+      </div>
+    </div>
+    <div class="options">
+      <div class="stack">
+        <div class="mini"><strong>Advanced defaults</strong><br/><span style="color: var(--muted);">Set preferred startup model and failure strategy.</span></div>
+        <div class="mini"><strong>Custom model inventory</strong><br/><span style="color: var(--muted);">Add and remove vendor/model ids without crowding the popup.</span></div>
+      </div>
+      <div class="mini">
+        <h3 style="font-size: 18px; margin-bottom: 8px;">Options structure</h3>
+        <p style="color: var(--muted); line-height: 1.7;">Top section: secure configuration. Middle section: advanced model catalog. Bottom section: fallback behavior and debugging. The main model selector is intentionally absent because the popup already owns that job.</p>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

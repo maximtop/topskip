@@ -1,0 +1,1219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>OpenRouter preset comparison: v3eXTAqGkzg</title>
+<style>:root {
+  color-scheme: light;
+  --bg: #f4efe2;
+  --bg-strong: #ebe3d0;
+  --panel: rgba(255, 250, 240, 0.88);
+  --panel-border: rgba(53, 45, 37, 0.12);
+  --ink: #1f1b18;
+  --muted: #6f665f;
+  --accent: #0b6e6e;
+  --accent-soft: #2a9d8f;
+  --amber: #b7791f;
+  --rose: #b94c5b;
+  --shadow: 0 24px 60px rgba(31, 27, 24, 0.09);
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top left, #fff6d9 0, transparent 34%),
+    radial-gradient(circle at top right, #d9f1ef 0, transparent 28%),
+    linear-gradient(135deg, var(--bg), var(--bg-strong));
+  color: var(--ink);
+  font-family: "Avenir Next", "Helvetica Neue", sans-serif;
+}
+main {
+  width: min(1440px, calc(100vw - 32px));
+  margin: 0 auto;
+  padding: 28px 0 56px;
+}
+h1, h2, h3 {
+  margin: 0;
+  font-family: "Iowan Old Style", "Palatino Linotype", serif;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+p { margin: 0; }
+.hero {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+  border: 1px solid var(--panel-border);
+  border-radius: 28px;
+  background: rgba(255, 252, 246, 0.9);
+  box-shadow: var(--shadow);
+}
+.hero-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+.hero-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  color: var(--muted);
+}
+.hero-meta strong { color: var(--ink); }
+.stat-card, .panel, .focus-card {
+  border: 1px solid var(--panel-border);
+  border-radius: 24px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+}
+.stat-card { padding: 18px; }
+.panel { margin-top: 20px; padding: 20px; }
+.focus-card { padding: 18px; }
+.eyebrow {
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.stat-value {
+  margin-top: 10px;
+  font-size: clamp(1.2rem, 2vw, 2rem);
+  line-height: 1.1;
+}
+.stat-note { margin-top: 8px; color: var(--muted); }
+.panel-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 16px;
+  margin-bottom: 16px;
+}
+.panel-head p { color: var(--muted); }
+.controls-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  align-items: end;
+}
+.control-field, .control-toggle {
+  display: grid;
+  gap: 8px;
+}
+.control-field span {
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.control-field input, .control-field select {
+  width: 100%;
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid rgba(53, 45, 37, 0.16);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--ink);
+}
+.control-toggle {
+  grid-auto-flow: column;
+  justify-content: start;
+  align-items: center;
+  align-self: center;
+  gap: 10px;
+  padding-top: 22px;
+}
+.ghost-button {
+  min-height: 44px;
+  padding: 0 18px;
+  border: 1px solid rgba(53, 45, 37, 0.16);
+  border-radius: 14px;
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+}
+.controls-meta {
+  align-self: center;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td {
+  padding: 12px 10px;
+  border-bottom: 1px solid rgba(53, 45, 37, 0.08);
+  text-align: left;
+  vertical-align: top;
+}
+thead th {
+  color: var(--muted);
+  font-size: 0.82rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.leaderboard-row:hover { background: rgba(255, 255, 255, 0.55); }
+.model-name { font-weight: 700; }
+.cell-main { font-weight: 700; }
+.subtle {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+.score {
+  display: inline-flex;
+  align-items: center;
+  min-width: 76px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+}
+.metric-neutral { background: rgba(111, 102, 95, 0.14); }
+.metric-excellent { background: rgba(11, 110, 110, 0.16); }
+.metric-good { background: rgba(42, 157, 143, 0.16); }
+.metric-fair { background: rgba(183, 121, 31, 0.16); }
+.metric-weak { background: rgba(185, 76, 91, 0.16); }
+.timeline-axis {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+.timeline-meta { display: grid; gap: 2px; }
+.timeline-lane, .focus-lane {
+  display: grid;
+  grid-template-columns: minmax(210px, 320px) 1fr auto;
+  gap: 12px;
+  align-items: center;
+  margin-top: 12px;
+}
+.timeline-track {
+  position: relative;
+  height: 32px;
+  overflow: hidden;
+  border-radius: 999px;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(31, 27, 24, 0.06),
+      rgba(31, 27, 24, 0.02)
+    );
+}
+.timeline-track-focus { height: 34px; }
+.segment, .segment-human, .segment-baseline, .human-shadow {
+  position: absolute;
+  top: 6px;
+  height: 20px;
+  border-radius: 999px;
+}
+.segment-human { background: rgba(31, 27, 24, 0.75); }
+.segment-baseline { background: rgba(183, 121, 31, 0.7); }
+.segment.metric-excellent { background: rgba(11, 110, 110, 0.82); }
+.segment.metric-good { background: rgba(42, 157, 143, 0.78); }
+.segment.metric-fair { background: rgba(183, 121, 31, 0.78); }
+.segment.metric-weak { background: rgba(185, 76, 91, 0.76); }
+.segment.metric-neutral { background: rgba(111, 102, 95, 0.72); }
+.human-shadow {
+  background: rgba(31, 27, 24, 0.08);
+  border: 1px dashed rgba(31, 27, 24, 0.35);
+}
+.focus-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 16px;
+}
+.confidence-pill {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(11, 110, 110, 0.1);
+  color: var(--accent);
+  font-size: 0.84rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.notes {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--muted);
+}
+.notes li + li { margin-top: 8px; }
+.empty-state {
+  margin-top: 12px;
+  color: var(--muted);
+}
+@media (max-width: 900px) {
+  main { width: min(100vw - 20px, 1440px); padding-top: 18px; }
+  .timeline-lane, .focus-lane {
+    grid-template-columns: 1fr;
+  }
+  .control-toggle { padding-top: 0; }
+  .confidence-pill { justify-self: start; }
+}</style>
+</head>
+<body>
+<main>
+<section class="hero">
+<div class="eyebrow">OpenRouter preset comparison: v3eXTAqGkzg</div>
+<h1>Promo block comparison</h1>
+<div class="hero-meta"><div><strong>Source:</strong> tmp/logs/openrouter-compare-presets-v3eXTAqGkzg-20260415-130615.json</div><div><strong>Presets:</strong> 8</div><div><strong>Successful:</strong> 8</div><div><strong>Cost Coverage:</strong> 0/8 with cost</div><div><strong>Reference:</strong> v3eXTAqGkzg</div></div>
+<div class="hero-grid">
+<article class="stat-card">
+<div class="eyebrow">Best overlap</div>
+<div class="stat-value">google/gemini-3.1-pro-preview</div>
+<div class="stat-note">avg IoU 83.1% | latency 21.52 s</div>
+</article>
+<article class="stat-card">
+<div class="eyebrow">Fastest response</div>
+<div class="stat-value">openai/gpt-5.4-mini</div>
+<div class="stat-note">completed in 1.17 s | cost n/a</div>
+</article>
+<article class="stat-card">
+<div class="eyebrow">Cheapest response</div>
+<div class="stat-value">n/a</div>
+<div class="stat-note">No cost data in this log</div>
+</article>
+<article class="stat-card">
+<div class="eyebrow">Smallest start drift</div>
+<div class="stat-value">openai/gpt-5.4</div>
+<div class="stat-note">avg |start delta| 0s</div>
+</article>
+<article class="stat-card">
+<div class="eyebrow">Original first run</div>
+<div class="stat-value">google/gemini-3-flash-preview</div>
+<div class="stat-note">avg IoU 74.7% | avg |start delta| 9.04s</div>
+</article>
+</div>
+</section>
+<section class="panel controls-panel">
+<div class="panel-head">
+<h2>Controls</h2>
+<p>Sort, search, and filter the table and timelines.</p>
+</div>
+<div class="controls-grid">
+<label class="control-field">
+<span>Search models</span>
+<input id="report-search" type="search" 
+placeholder="gpt-5, gemini, claude">
+</label>
+<label class="control-field">
+<span>Sort by</span>
+<select id="report-sort">
+<option value="alignment">Alignment rank</option>
+<option value="cost">Lowest cost</option>
+<option value="latency">Fastest response</option>
+<option value="iou">Highest IoU</option>
+<option value="start-delta">Smallest start drift</option>
+<option value="end-delta">Smallest end drift</option>
+<option value="model">Model name</option>
+</select>
+</label>
+<label class="control-toggle">
+<input id="report-successful-only" type="checkbox">
+<span>Successful only</span>
+</label>
+<label class="control-toggle">
+<input id="report-cost-only" type="checkbox">
+<span>Cost data only</span>
+</label>
+<button id="report-reset" class="ghost-button" type="button">
+Reset
+</button>
+<div id="report-results" class="controls-meta">
+8 models | 8 successful | 0/8 with cost
+</div>
+</div>
+</section>
+<section class="panel">
+<div class="panel-head">
+<h2>Leaderboard</h2>
+<p>Interactive sort/filter controls update this table and the lanes.</p>
+</div>
+<div class="table-wrap">
+<table>
+<thead>
+<tr>
+<th>#</th>
+<th>Model</th>
+<th>Latency</th>
+<th>Cost</th>
+<th>Avg IoU</th>
+<th>Avg |start delta|</th>
+<th>Avg |end delta|</th>
+<th>Tokens</th>
+<th>Blocks</th>
+</tr>
+</thead>
+<tbody id="leaderboard-body"><tr class="leaderboard-row"
+ data-model="google/gemini-3.1-pro-preview"
+ data-search-text="google/gemini-3.1-pro-preview"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="1"
+ data-latency-ms="21516"
+ data-avg-iou="0.8309792110741291"
+ data-avg-start-delta="0.6263333333333776"
+ data-avg-end-delta="6.3870000000000005"
+ data-effective-cost="">
+<td data-rank>1</td>
+<td><div class="model-name">google/gemini-3.1-pro-preview</div><div class="subtle">high, high, high</div></td>
+<td>21.52 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-fair">83.1%</span></td>
+<td>0.63s</td>
+<td>6.39s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr>
+<tr class="leaderboard-row"
+ data-model="openai/gpt-5.4"
+ data-search-text="openai/gpt-5.4"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="2"
+ data-latency-ms="1692"
+ data-avg-iou="0.8250794760816085"
+ data-avg-start-delta="0"
+ data-avg-end-delta="5.960333333333343"
+ data-effective-cost="">
+<td data-rank>2</td>
+<td><div class="model-name">openai/gpt-5.4</div><div class="subtle">high, high, medium</div></td>
+<td>1.69 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-fair">82.5%</span></td>
+<td>0s</td>
+<td>5.96s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr>
+<tr class="leaderboard-row"
+ data-model="anthropic/claude-sonnet-4.6"
+ data-search-text="anthropic/claude-sonnet-4.6"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="3"
+ data-latency-ms="3741"
+ data-avg-iou="0.8208714654275835"
+ data-avg-start-delta="0.45300000000001245"
+ data-avg-end-delta="5.587000000000008"
+ data-effective-cost="">
+<td data-rank>3</td>
+<td><div class="model-name">anthropic/claude-sonnet-4.6</div><div class="subtle">high, high, medium</div></td>
+<td>3.74 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-fair">82.1%</span></td>
+<td>0.45s</td>
+<td>5.59s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr>
+<tr class="leaderboard-row"
+ data-model="minimax/minimax-m2.7"
+ data-search-text="minimax/minimax-m2.7"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="4"
+ data-latency-ms="10186"
+ data-avg-iou="0.7638148531986154"
+ data-avg-start-delta="5.373000000000009"
+ data-avg-end-delta="5.253666666666675"
+ data-effective-cost="">
+<td data-rank>4</td>
+<td><div class="model-name">minimax/minimax-m2.7</div><div class="subtle">high, high, high</div></td>
+<td>10.19 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-fair">76.4%</span></td>
+<td>5.37s</td>
+<td>5.25s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr>
+<tr class="leaderboard-row"
+ data-model="openai/gpt-5.4-mini"
+ data-search-text="openai/gpt-5.4-mini"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="5"
+ data-latency-ms="1167"
+ data-avg-iou="0.7413338355451607"
+ data-avg-start-delta="7.933000000000031"
+ data-avg-end-delta="5.6270000000000095"
+ data-effective-cost="">
+<td data-rank>5</td>
+<td><div class="model-name">openai/gpt-5.4-mini</div><div class="subtle">high, high, high</div></td>
+<td>1.17 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-fair">74.1%</span></td>
+<td>7.93s</td>
+<td>5.63s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr>
+<tr class="leaderboard-row"
+ data-model="xiaomi/mimo-v2-pro"
+ data-search-text="xiaomi/mimo-v2-pro"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="6"
+ data-latency-ms="24286"
+ data-avg-iou="0.7024906597364867"
+ data-avg-start-delta="11.733000000000024"
+ data-avg-end-delta="5.960333333333343"
+ data-effective-cost="">
+<td data-rank>6</td>
+<td><div class="model-name">xiaomi/mimo-v2-pro</div><div class="subtle">high, high, high</div></td>
+<td>24.29 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-fair">70.2%</span></td>
+<td>11.73s</td>
+<td>5.96s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr>
+<tr class="leaderboard-row"
+ data-model="z-ai/glm-5.1"
+ data-search-text="z-ai/glm-5.1"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="7"
+ data-latency-ms="57743"
+ data-avg-iou="0.7000385763433719"
+ data-avg-start-delta="15.706666666666669"
+ data-avg-end-delta="5.094000000000032"
+ data-effective-cost="">
+<td data-rank>7</td>
+<td><div class="model-name">z-ai/glm-5.1</div><div class="subtle">high, high, high</div></td>
+<td>57.74 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-fair">70%</span></td>
+<td>15.71s</td>
+<td>5.09s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr>
+<tr class="leaderboard-row"
+ data-model="google/gemini-3-flash-preview"
+ data-search-text="google/gemini-3-flash-preview"
+ data-ok="true"
+ data-has-cost="false"
+ data-default-rank="8"
+ data-latency-ms="1961"
+ data-avg-iou="0.6704975883094303"
+ data-avg-start-delta="16.999666666666712"
+ data-avg-end-delta="5.253666666666675"
+ data-effective-cost="">
+<td data-rank>8</td>
+<td><div class="model-name">google/gemini-3-flash-preview</div><div class="subtle">high, high, high</div></td>
+<td>1.96 s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">Unavailable in this log</div></td>
+<td><span class="score metric-weak">67%</span></td>
+<td>17s</td>
+<td>5.25s</td>
+<td><div class="cell-main">n/a</div><div class="subtle">No token usage in this log</div></td>
+<td>3</td>
+</tr></tbody>
+</table>
+</div>
+<p id="leaderboard-empty" class="empty-state" hidden>
+No models match the current filters.
+</p>
+</section>
+<section class="panel">
+<div class="panel-head">
+<h2>Full timeline</h2>
+<p>All predicted promo windows on one shared scale.</p>
+</div>
+<div class="timeline-axis">
+<span>00:00.0</span><span>26:51.7</span>
+</div>
+<div class="timeline-lane" data-role="human">
+<div class="timeline-meta">
+<div class="model-name">Human reference</div>
+<div class="subtle">3 labeled promo blocks</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment-human" style="left:15.022%;width:5.418%;"></div><div class="segment-human" style="left:51.284%;width:7.257%;"></div><div class="segment-human" style="left:98.26%;width:1.74%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="baseline">
+<div class="timeline-meta">
+<div class="model-name">First run: google/gemini-3-flash-preview</div>
+<div class="subtle">avg IoU 74.7%</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment-baseline" style="left:16.628%;width:3.909%;"></div><div class="segment-baseline" style="left:51.25%;width:7.383%;"></div><div class="segment-baseline" style="left:98.218%;width:1.055%;"></div>
+</div>
+
+</div>
+<div id="timeline-model-lanes">
+<div class="timeline-lane" data-role="model" data-model="google/gemini-3.1-pro-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3.1-pro-preview</div>
+<div class="subtle">avg IoU 83.1% | 21.52 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-fair" style="left:15.022%;width:5.678%;"></div><div class="segment metric-fair" style="left:51.284%;width:7.508%;"></div><div class="segment metric-fair" style="left:98.144%;width:1.179%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="model" data-model="openai/gpt-5.4">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4</div>
+<div class="subtle">avg IoU 82.5% | 1.69 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-fair" style="left:15.022%;width:5.552%;"></div><div class="segment metric-fair" style="left:51.284%;width:7.393%;"></div><div class="segment metric-fair" style="left:98.26%;width:0.901%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="model" data-model="anthropic/claude-sonnet-4.6">
+<div class="timeline-meta">
+<div class="model-name">anthropic/claude-sonnet-4.6</div>
+<div class="subtle">avg IoU 82.1% | 3.74 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-fair" style="left:15.015%;width:5.522%;"></div><div class="segment metric-fair" style="left:51.25%;width:7.383%;"></div><div class="segment metric-fair" style="left:98.218%;width:0.931%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="model" data-model="minimax/minimax-m2.7">
+<div class="timeline-meta">
+<div class="model-name">minimax/minimax-m2.7</div>
+<div class="subtle">avg IoU 76.4% | 10.19 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-fair" style="left:15.76%;width:4.778%;"></div><div class="segment metric-fair" style="left:51.25%;width:7.321%;"></div><div class="segment metric-fair" style="left:98.032%;width:1.117%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="model" data-model="openai/gpt-5.4-mini">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4-mini</div>
+<div class="subtle">avg IoU 74.1% | 1.17 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-fair" style="left:16.301%;width:4.274%;"></div><div class="segment metric-fair" style="left:51.284%;width:7.393%;"></div><div class="segment metric-fair" style="left:98.062%;width:1.161%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="model" data-model="xiaomi/mimo-v2-pro">
+<div class="timeline-meta">
+<div class="model-name">xiaomi/mimo-v2-pro</div>
+<div class="subtle">avg IoU 70.2% | 24.29 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-fair" style="left:16.636%;width:3.939%;"></div><div class="segment metric-fair" style="left:51.855%;width:6.823%;"></div><div class="segment metric-fair" style="left:98.26%;width:0.901%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="model" data-model="z-ai/glm-5.1">
+<div class="timeline-meta">
+<div class="model-name">z-ai/glm-5.1</div>
+<div class="subtle">avg IoU 70% | 57.74 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-fair" style="left:16.636%;width:3.939%;"></div><div class="segment metric-fair" style="left:52.595%;width:6.083%;"></div><div class="segment metric-fair" style="left:98.26%;width:1.062%;"></div>
+</div>
+
+</div>
+<div class="timeline-lane" data-role="model" data-model="google/gemini-3-flash-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3-flash-preview</div>
+<div class="subtle">avg IoU 67% | 1.96 s</div>
+</div>
+<div class="timeline-track">
+
+<div class="segment metric-weak" style="left:16.504%;width:4.033%;"></div><div class="segment metric-weak" style="left:52.925%;width:5.708%;"></div><div class="segment metric-weak" style="left:98.218%;width:0.993%;"></div>
+</div>
+
+</div>
+</div>
+</section>
+<section class="panel">
+<div class="panel-head">
+<h2>Zoomed block views</h2>
+<p>Each row is scaled around one human-labeled promo block.</p>
+</div>
+<div class="focus-grid">
+<article class="focus-card">
+<div class="panel-head">
+<h3>Block 1: first</h3>
+<p>03:0051 to 05:44.6</p>
+</div>
+<div class="timeline-axis">
+<span>03:0051</span>
+<span>05:44.6</span>
+</div>
+<div class="focus-lane" data-role="human">
+<div class="timeline-meta">
+<div class="model-name">Human reference</div>
+<div class="subtle">04:02.1 to 05:29.4 | &gt;&gt; Когда я рассказываю про свои запуски, | оставил в описании, так что переходите и</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+
+<div class="segment-human" style="left:9.783%;width:76.843%;"></div>
+</div>
+
+</div>
+<div class="focus-lane" data-role="baseline">
+<div class="timeline-meta">
+<div class="model-name">First run: google/gemini-3-flash-preview</div>
+<div class="subtle">IoU 69.1% | start +25.88s | end +1.56s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-weak" style="left:32.558%;width:55.441%;"></div>
+</div>
+
+</div>
+<div class="focus-model-lanes">
+<div class="focus-lane" data-role="model" data-model="google/gemini-3.1-pro-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3.1-pro-preview</div>
+<div class="subtle">IoU 95.4% | start 0s | end +4.2s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-excellent" style="left:9.783%;width:80.54%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="openai/gpt-5.4">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4</div>
+<div class="subtle">IoU 97.6% | start 0s | end +2.16s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-excellent" style="left:9.783%;width:78.744%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="anthropic/claude-sonnet-4.6">
+<div class="timeline-meta">
+<div class="model-name">anthropic/claude-sonnet-4.6</div>
+<div class="subtle">IoU 98.1% | start -0.12s | end +1.56s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-excellent" style="left:9.677%;width:78.322%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="minimax/minimax-m2.7">
+<div class="timeline-meta">
+<div class="model-name">minimax/minimax-m2.7</div>
+<div class="subtle">IoU 84.9% | start +11.88s | end +1.56s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-fair" style="left:20.238%;width:67.762%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="openai/gpt-5.4-mini">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4-mini</div>
+<div class="subtle">IoU 74.6% | start +20.6s | end +2.16s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-fair" style="left:27.911%;width:60.616%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="xiaomi/mimo-v2-pro">
+<div class="timeline-meta">
+<div class="model-name">xiaomi/mimo-v2-pro</div>
+<div class="subtle">IoU 68.5% | start +26s | end +2.16s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-weak" style="left:32.664%;width:55.864%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="z-ai/glm-5.1">
+<div class="timeline-meta">
+<div class="model-name">z-ai/glm-5.1</div>
+<div class="subtle">IoU 68.5% | start +26s | end +2.16s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-weak" style="left:32.664%;width:55.864%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="google/gemini-3-flash-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3-flash-preview</div>
+<div class="subtle">IoU 71.4% | start +23.88s | end +1.56s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:9.783%;width:76.843%;"></div>
+<div class="segment metric-fair" style="left:30.798%;width:57.201%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+</div>
+</article>
+<article class="focus-card">
+<div class="panel-head">
+<h3>Block 2: second</h3>
+<p>13:31.4 to 16:02.1</p>
+</div>
+<div class="timeline-axis">
+<span>13:31.4</span>
+<span>16:02.1</span>
+</div>
+<div class="focus-lane" data-role="human">
+<div class="timeline-meta">
+<div class="model-name">Human reference</div>
+<div class="subtle">13:46.6 to 15:43.5 | Галя, у нас отмена. Очередной способ | снова с нами. Ссылка на плати по миру в</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+
+<div class="segment-human" style="left:10.049%;width:77.593%;"></div>
+</div>
+
+</div>
+<div class="focus-lane" data-role="baseline">
+<div class="timeline-meta">
+<div class="model-name">First run: google/gemini-3-flash-preview</div>
+<div class="subtle">IoU 98.3% | start -0.56s | end +1.48s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-excellent" style="left:9.677%;width:78.947%;"></div>
+</div>
+
+</div>
+<div class="focus-model-lanes">
+<div class="focus-lane" data-role="model" data-model="google/gemini-3.1-pro-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3.1-pro-preview</div>
+<div class="subtle">IoU 96.7% | start 0s | end +4.04s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-excellent" style="left:10.049%;width:80.274%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="openai/gpt-5.4">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4</div>
+<div class="subtle">IoU 98.2% | start 0s | end +2.2s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-excellent" style="left:10.049%;width:79.053%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="anthropic/claude-sonnet-4.6">
+<div class="timeline-meta">
+<div class="model-name">anthropic/claude-sonnet-4.6</div>
+<div class="subtle">IoU 98.3% | start -0.56s | end +1.48s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-excellent" style="left:9.677%;width:78.947%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="minimax/minimax-m2.7">
+<div class="timeline-meta">
+<div class="model-name">minimax/minimax-m2.7</div>
+<div class="subtle">IoU 99.1% | start -0.56s | end +0.48s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-excellent" style="left:9.677%;width:78.283%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="openai/gpt-5.4-mini">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4-mini</div>
+<div class="subtle">IoU 98.2% | start 0s | end +2.2s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-excellent" style="left:10.049%;width:79.053%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="xiaomi/mimo-v2-pro">
+<div class="timeline-meta">
+<div class="model-name">xiaomi/mimo-v2-pro</div>
+<div class="subtle">IoU 90.4% | start +9.2s | end +2.2s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-good" style="left:16.152%;width:72.95%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="z-ai/glm-5.1">
+<div class="timeline-meta">
+<div class="model-name">z-ai/glm-5.1</div>
+<div class="subtle">IoU 80.4% | start +21.12s | end +2.2s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-fair" style="left:24.06%;width:65.042%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="google/gemini-3-flash-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3-flash-preview</div>
+<div class="subtle">IoU 76.4% | start +26.44s | end +1.48s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:10.049%;width:77.593%;"></div>
+<div class="segment metric-fair" style="left:27.59%;width:61.035%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+</div>
+</article>
+<article class="focus-card">
+<div class="panel-head">
+<h3>Block 3: third</h3>
+<p>26:0016 to 26:55.7</p>
+</div>
+<div class="timeline-axis">
+<span>26:0016</span>
+<span>26:55.7</span>
+</div>
+<div class="focus-lane" data-role="human">
+<div class="timeline-meta">
+<div class="model-name">Human reference</div>
+<div class="subtle">26:23.7 to 26:51.7 | база. И вот как раз у партнёра нашего | ну что, ребят, это просто гениально и</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+
+<div class="segment-human" style="left:19.333%;width:70.597%;"></div>
+</div>
+
+</div>
+<div class="focus-lane" data-role="baseline">
+<div class="timeline-meta">
+<div class="model-name">First run: google/gemini-3-flash-preview</div>
+<div class="subtle">IoU 56.8% | start -0.68s | end -11.72s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:17.623%;width:42.8%;"></div>
+</div>
+
+</div>
+<div class="focus-model-lanes">
+<div class="focus-lane" data-role="model" data-model="google/gemini-3.1-pro-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3.1-pro-preview</div>
+<div class="subtle">IoU 57.2% | start -1.88s | end -10.92s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:14.602%;width:47.835%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="openai/gpt-5.4">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4</div>
+<div class="subtle">IoU 51.8% | start 0s | end -13.52s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:19.333%;width:36.558%;"></div>
+</div>
+<div class="confidence-pill">medium</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="anthropic/claude-sonnet-4.6">
+<div class="timeline-meta">
+<div class="model-name">anthropic/claude-sonnet-4.6</div>
+<div class="subtle">IoU 49.9% | start -0.68s | end -13.72s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:17.623%;width:37.764%;"></div>
+</div>
+<div class="confidence-pill">medium</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="minimax/minimax-m2.7">
+<div class="timeline-meta">
+<div class="model-name">minimax/minimax-m2.7</div>
+<div class="subtle">IoU 45.1% | start -3.68s | end -13.72s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:10.07%;width:45.317%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="openai/gpt-5.4-mini">
+<div class="timeline-meta">
+<div class="model-name">openai/gpt-5.4-mini</div>
+<div class="subtle">IoU 49.7% | start -3.2s | end -12.52s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:11.279%;width:47.13%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="xiaomi/mimo-v2-pro">
+<div class="timeline-meta">
+<div class="model-name">xiaomi/mimo-v2-pro</div>
+<div class="subtle">IoU 51.8% | start 0s | end -13.52s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:19.333%;width:36.558%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="z-ai/glm-5.1">
+<div class="timeline-meta">
+<div class="model-name">z-ai/glm-5.1</div>
+<div class="subtle">IoU 61.1% | start 0s | end -10.92s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:19.333%;width:43.102%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+<div class="focus-lane" data-role="model" data-model="google/gemini-3-flash-preview">
+<div class="timeline-meta">
+<div class="model-name">google/gemini-3-flash-preview</div>
+<div class="subtle">IoU 53.3% | start -0.68s | end -12.72s</div>
+</div>
+<div class="timeline-track timeline-track-focus">
+<div class="human-shadow" style="left:19.333%;width:70.597%;"></div>
+<div class="segment metric-weak" style="left:17.623%;width:40.282%;"></div>
+</div>
+<div class="confidence-pill">high</div>
+</div>
+</div>
+</article>
+</div>
+</section>
+<section class="panel">
+<div class="panel-head">
+<h2>Notes</h2>
+<p>Shape mismatches and comparison caveats.</p>
+</div>
+<ul class="notes">
+<li>This log has no cost data. Render a newer compare JSON to use the cost column and cost sorting.</li>
+</ul>
+</section>
+<script>
+(function () {
+  const search = document.getElementById('report-search');
+  const sort = document.getElementById('report-sort');
+  const successfulOnly = document.getElementById(
+    'report-successful-only',
+  );
+  const costOnly = document.getElementById('report-cost-only');
+  const reset = document.getElementById('report-reset');
+  const results = document.getElementById('report-results');
+  const empty = document.getElementById('leaderboard-empty');
+  const body = document.getElementById('leaderboard-body');
+  const timelineModels = document.getElementById('timeline-model-lanes');
+  if (
+    search === null ||
+    sort === null ||
+    successfulOnly === null ||
+    costOnly === null ||
+    reset === null ||
+    results === null ||
+    empty === null ||
+    body === null
+  ) {
+    return;
+  }
+  const rows = Array.from(body.querySelectorAll("tr[data-model]"));
+  const focusContainers = Array.from(
+    document.querySelectorAll(".focus-model-lanes"),
+  );
+  function toNumber(raw) {
+    if (raw === undefined || raw === "") {
+      return undefined;
+    }
+    const value = Number(raw);
+    return Number.isFinite(value) ? value : undefined;
+  }
+  function compareOptionalAsc(left, right) {
+    if (left === undefined && right === undefined) {
+      return 0;
+    }
+    if (left === undefined) {
+      return 1;
+    }
+    if (right === undefined) {
+      return -1;
+    }
+    return left - right;
+  }
+  function compareOptionalDesc(left, right) {
+    if (left === undefined && right === undefined) {
+      return 0;
+    }
+    if (left === undefined) {
+      return 1;
+    }
+    if (right === undefined) {
+      return -1;
+    }
+    return right - left;
+  }
+  function searchMatches(row) {
+    const query = search.value.trim().toLowerCase();
+    if (query.length === 0) {
+      return true;
+    }
+    return (row.dataset.searchText || "").includes(query);
+  }
+  function rowVisible(row) {
+    if (!searchMatches(row)) {
+      return false;
+    }
+    if (successfulOnly.checked && row.dataset.ok !== "true") {
+      return false;
+    }
+    if (costOnly.checked && row.dataset.hasCost !== "true") {
+      return false;
+    }
+    return true;
+  }
+  function sortRows(left, right) {
+    const mode = sort.value;
+    const leftLatency = toNumber(left.dataset.latencyMs);
+    const rightLatency = toNumber(right.dataset.latencyMs);
+    const leftCost = toNumber(left.dataset.effectiveCost);
+    const rightCost = toNumber(right.dataset.effectiveCost);
+    const leftIou = toNumber(left.dataset.avgIou);
+    const rightIou = toNumber(right.dataset.avgIou);
+    const leftStart = toNumber(left.dataset.avgStartDelta);
+    const rightStart = toNumber(right.dataset.avgStartDelta);
+    const leftEnd = toNumber(left.dataset.avgEndDelta);
+    const rightEnd = toNumber(right.dataset.avgEndDelta);
+    if (mode === "cost") {
+      return compareOptionalAsc(leftCost, rightCost) ||
+        compareOptionalDesc(leftIou, rightIou) ||
+        compareOptionalAsc(leftLatency, rightLatency) ||
+        (left.dataset.model || "").localeCompare(
+          right.dataset.model || "",
+        );
+    }
+    if (mode === "latency") {
+      return compareOptionalAsc(leftLatency, rightLatency) ||
+        compareOptionalDesc(leftIou, rightIou) ||
+        compareOptionalAsc(leftCost, rightCost);
+    }
+    if (mode === "iou") {
+      return compareOptionalDesc(leftIou, rightIou) ||
+        compareOptionalAsc(leftStart, rightStart) ||
+        compareOptionalAsc(leftCost, rightCost);
+    }
+    if (mode === "start-delta") {
+      return compareOptionalAsc(leftStart, rightStart) ||
+        compareOptionalDesc(leftIou, rightIou) ||
+        compareOptionalAsc(leftCost, rightCost);
+    }
+    if (mode === "end-delta") {
+      return compareOptionalAsc(leftEnd, rightEnd) ||
+        compareOptionalDesc(leftIou, rightIou) ||
+        compareOptionalAsc(leftCost, rightCost);
+    }
+    if (mode === "model") {
+      return (left.dataset.model || "").localeCompare(
+        right.dataset.model || "",
+      );
+    }
+    return compareOptionalDesc(leftIou, rightIou) ||
+      compareOptionalAsc(leftStart, rightStart) ||
+      compareOptionalAsc(leftCost, rightCost) ||
+      compareOptionalAsc(leftLatency, rightLatency) ||
+      compareOptionalAsc(
+        toNumber(left.dataset.defaultRank),
+        toNumber(right.dataset.defaultRank),
+      );
+  }
+  function reorderModelLanes(container, orderedModels) {
+    if (container === null) {
+      return;
+    }
+    const lanes = Array.from(container.querySelectorAll("[data-model]"));
+    const laneMap = new Map(
+      lanes.map((lane) => [lane.dataset.model, lane]),
+    );
+    lanes.forEach((lane) => {
+      lane.hidden = !orderedModels.includes(lane.dataset.model || "");
+    });
+    orderedModels.forEach((model) => {
+      const lane = laneMap.get(model);
+      if (lane !== undefined) {
+        lane.hidden = false;
+        container.appendChild(lane);
+      }
+    });
+  }
+  function apply() {
+    const visible = rows.filter(rowVisible).sort(sortRows);
+    rows.forEach((row) => { row.hidden = true; });
+    visible.forEach((row, index) => {
+      row.hidden = false;
+      const rankCell = row.querySelector("[data-rank]");
+      if (rankCell !== null) {
+        rankCell.textContent = String(index + 1);
+      }
+      body.appendChild(row);
+    });
+    const orderedModels = visible
+      .map((row) => row.dataset.model || "")
+      .filter((model) => model.length > 0);
+    reorderModelLanes(timelineModels, orderedModels);
+    focusContainers.forEach((container) => {
+      reorderModelLanes(container, orderedModels);
+    });
+    empty.hidden = visible.length !== 0;
+    const costCount = visible.filter(
+      (row) => row.dataset.hasCost === "true",
+    ).length;
+    results.textContent = `${visible.length} visible | ` +
+      `${costCount} with cost | sort ${sort.value}`;
+  }
+  search.addEventListener("input", apply);
+  sort.addEventListener("change", apply);
+  successfulOnly.addEventListener("change", apply);
+  costOnly.addEventListener("change", apply);
+  reset.addEventListener("click", function () {
+    search.value = "";
+    sort.value = "alignment";
+    successfulOnly.checked = false;
+    costOnly.checked = false;
+    apply();
+  });
+  apply();
+})();
+</script>
+</main>
+</body>
+</html>

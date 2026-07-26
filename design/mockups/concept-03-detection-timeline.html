@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Concept 03 — Detection Timeline</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg: #f5f4ee;
+    --ink: #24211d;
+    --muted: #6f675f;
+    --line: #ded6cc;
+    --card: #fffdfa;
+    --brand: #11795c;
+    --accent: #f59f00;
+    --accent-soft: #fff2d8;
+  }
+  body { font-family: Georgia, "Times New Roman", serif; background: linear-gradient(180deg, #f7f6f1, var(--bg)); color: var(--ink); padding: 32px; }
+  h1 { font-size: 34px; margin-bottom: 8px; }
+  .subtitle { max-width: 860px; color: var(--muted); line-height: 1.7; margin-bottom: 28px; font-size: 17px; }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 28px; max-width: 1180px; }
+  .frame { width: 320px; background: var(--card); border: 1px solid var(--line); border-radius: 20px; overflow: hidden; box-shadow: 0 18px 32px rgba(36,33,29,0.08); }
+  .bar { padding: 10px 14px; background: #faf8f3; border-bottom: 1px solid var(--line); font-size: 11px; color: #867d74; }
+  .popup { padding: 18px; }
+  .eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 12px; font-family: system-ui, sans-serif; }
+  .toggle { display: flex; justify-content: space-between; align-items: center; padding-bottom: 14px; border-bottom: 1px solid var(--line); margin-bottom: 16px; font-family: system-ui, sans-serif; }
+  .switch { width: 54px; height: 30px; border-radius: 999px; background: #b8d9ce; padding: 3px; }
+  .switch::after { content: ""; display: block; width: 24px; height: 24px; border-radius: 50%; background: white; transform: translateX(24px); }
+  .timeline-wrap { background: #fff; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  .timeline-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 14px; }
+  .timeline-head h2 { font-size: 26px; }
+  .legend { font-family: system-ui, sans-serif; font-size: 11px; color: var(--muted); }
+  .rail { height: 16px; border-radius: 999px; background: #ece6dc; position: relative; overflow: hidden; margin-bottom: 14px; }
+  .block { position: absolute; top: 0; bottom: 0; border-radius: 999px; }
+  .b1 { left: 12%; width: 20%; background: linear-gradient(90deg, #f59f00, #ffbf47); }
+  .b2 { left: 66%; width: 14%; background: linear-gradient(90deg, #11795c, #1aa179); }
+  .ticks { display: flex; justify-content: space-between; color: var(--muted); font-size: 11px; font-family: system-ui, sans-serif; }
+  .callout { margin-top: 14px; background: var(--accent-soft); border-radius: 14px; padding: 12px; font-size: 13px; line-height: 1.5; }
+  .panel { background: rgba(255,253,250,0.78); border: 1px solid rgba(36,33,29,0.08); border-radius: 24px; padding: 24px; }
+  .panel h2 { font-size: 28px; margin-bottom: 8px; }
+  .panel p { color: var(--muted); line-height: 1.7; font-size: 16px; }
+  .explain { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 14px; margin-top: 18px; }
+  .card { background: white; border: 1px solid var(--line); border-radius: 18px; padding: 16px; }
+  .card h3 { font-size: 16px; margin-bottom: 8px; font-family: system-ui, sans-serif; }
+  .card p { font-size: 14px; }
+  .inspector { margin-top: 22px; background: white; border: 1px solid var(--line); border-radius: 22px; overflow: hidden; }
+  .inspector-head { padding: 18px 22px; border-bottom: 1px solid var(--line); background: #faf8f3; }
+  .inspector-grid { display: grid; grid-template-columns: 0.95fr 1.05fr; }
+  .inspector-col { padding: 22px; }
+  .metric { padding: 14px 0; border-bottom: 1px solid var(--line); }
+  .metric strong { font-family: system-ui, sans-serif; display: block; margin-bottom: 6px; }
+  @media (max-width: 980px) {
+    .layout { grid-template-columns: 1fr; }
+    .inspector-grid, .explain { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<h1>Concept 03 — Detection Timeline</h1>
+<p class="subtitle">This direction makes detection legible. Instead of reading time strings, the user sees sponsor segments as places on a track. The popup becomes an inspection tool, while the options page explains how the model reasons about those segments.</p>
+<div class="layout">
+  <div class="frame">
+    <div class="bar">TopSkip popup · visual detection mode</div>
+    <div class="popup">
+      <div class="eyebrow">Current video</div>
+      <div class="toggle">
+        <div>
+          <div style="font-size: 12px; color: var(--muted);">Auto skip</div>
+          <strong style="font-size: 18px;">Enabled</strong>
+        </div>
+        <div class="switch"></div>
+      </div>
+      <div class="timeline-wrap">
+        <div class="timeline-head">
+          <div>
+            <div class="legend">Detected segments</div>
+            <h2>2 blocks</h2>
+          </div>
+          <div class="legend">9:14 runtime</div>
+        </div>
+        <div class="rail">
+          <div class="block b1"></div>
+          <div class="block b2"></div>
+        </div>
+        <div class="ticks"><span>0:00</span><span>4:37</span><span>9:14</span></div>
+        <div class="callout">Intro sponsor from 0:32–1:05. Mid-roll promo from 4:12–4:44. Tap a block in the real product to inspect transcript evidence.</div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <h2>Options become a detection inspector</h2>
+    <p>The form is no longer only about configuration. It becomes a place to understand why TopSkip decided something was promotional, which model was used, and what fallback logic applied.</p>
+    <div class="explain">
+      <div class="card">
+        <h3>Why it differs</h3>
+        <p>Detection is represented spatially, not as plain text status. This changes the dominant mental model from switch-first to inspect-first.</p>
+      </div>
+      <div class="card">
+        <h3>Who it serves</h3>
+        <p>Users who want confidence, evidence, and clarity about false positives or misses.</p>
+      </div>
+    </div>
+    <div class="inspector">
+      <div class="inspector-head">
+        <div class="eyebrow">Options page</div>
+        <h2 style="font-size: 30px; margin: 0;">Detection Inspector</h2>
+      </div>
+      <div class="inspector-grid">
+        <div class="inspector-col">
+          <div class="metric"><strong>Default model</strong><span style="color: var(--muted);">google/gemini-3.1-pro-preview</span></div>
+          <div class="metric"><strong>Sensitivity mode</strong><span style="color: var(--muted);">Balanced, avoid overly aggressive skipping</span></div>
+          <div class="metric"><strong>Fallback on ambiguity</strong><span style="color: var(--muted);">Do not skip automatically, show detection toast only</span></div>
+        </div>
+        <div class="inspector-col">
+          <div class="card" style="margin-bottom: 14px;">
+            <h3>Current block evidence</h3>
+            <p>Transcript markers: paid mention, coupon code, external landing page. Confidence shown as an explanation instead of a raw score.</p>
+          </div>
+          <div class="card">
+            <h3>Review log</h3>
+            <p>Recent videos, detected segments, and whether each skip was applied, skipped, or held back for safety.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

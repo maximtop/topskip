@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>TopSkip Options — Variant 9: Notion-like</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #fff; color: #37352f; }
+  .page { max-width: 680px; margin: 0 auto; padding: 48px 64px; }
+  h1 { font-size: 30px; font-weight: 700; margin-bottom: 4px; color: #37352f; }
+  .subtitle { font-size: 14px; color: #9b9a97; margin-bottom: 36px; line-height: 1.6; }
+  h2 { font-size: 14px; font-weight: 600; color: #37352f; margin-bottom: 8px; margin-top: 32px; }
+  .divider { height: 1px; background: #e9e9e7; margin: 8px 0 16px; }
+  label { display: block; font-size: 14px; color: #37352f; margin-bottom: 4px; }
+  .desc { font-size: 13px; color: #9b9a97; margin-bottom: 8px; }
+  input[type="text"], input[type="password"], select {
+    width: 100%; padding: 8px 10px; border: 1px solid #e9e9e7; border-radius: 4px;
+    font-size: 14px; font-family: inherit; outline: none; background: #fff;
+    transition: border 0.15s, box-shadow 0.15s;
+  }
+  input:focus, select:focus { border-color: #2eaadc; box-shadow: 0 0 0 2px rgba(46,170,220,0.15); }
+  .checkbox-row { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .checkbox-row input[type="checkbox"] { width: 16px; height: 16px; accent-color: #2eaadc; }
+  .input-group { margin-bottom: 16px; }
+  .row { display: flex; gap: 8px; align-items: flex-end; }
+  .row .field { flex: 1; }
+  .btn {
+    padding: 6px 14px; border-radius: 4px; font-size: 13px; cursor: pointer;
+    font-weight: 500; border: 1px solid #e9e9e7; background: #fff; color: #37352f;
+    transition: background 0.1s;
+  }
+  .btn:hover { background: #f7f6f3; }
+  .btn-primary { background: #2eaadc; color: #fff; border-color: #2eaadc; }
+  .btn-primary:hover { background: #2596c4; }
+  .btn-sm { padding: 4px 10px; font-size: 12px; }
+  .btn-danger { color: #eb5757; }
+  .btn-danger:hover { background: #fff5f5; }
+  .actions { display: flex; gap: 8px; margin-top: 28px; }
+  .callout {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 12px 14px; border-radius: 4px; font-size: 13px; margin-bottom: 20px;
+    line-height: 1.5;
+  }
+  .callout-success { background: #e6ffed; }
+  .callout-icon { font-size: 16px; flex-shrink: 0; }
+  .hint { font-size: 13px; color: #9b9a97; margin-top: 16px; line-height: 1.6; }
+  .model-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 6px 0;
+  }
+  .model-slug { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 14px; color: #eb5757; background: #fef3f2; padding: 1px 6px; border-radius: 3px; }
+  .toggle-row {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 0;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <h1>TopSkip</h1>
+  <p class="subtitle">Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).</p>
+
+  <div class="callout callout-success">
+    <span class="callout-icon">✅</span>
+    <span>Settings saved successfully.</span>
+  </div>
+
+  <h2>LLM Configuration</h2>
+  <div class="divider"></div>
+  <div class="toggle-row">
+    <label style="margin: 0;">Enable LLM promo detection</label>
+    <input type="checkbox" checked style="width: 16px; height: 16px; accent-color: #2eaadc;">
+  </div>
+  <div class="divider"></div>
+  <div class="input-group">
+    <label>OpenRouter API key</label>
+    <div class="desc">Saved key: sk-or-…abc — leave blank to keep it.</div>
+    <input type="password" placeholder="sk-or-…">
+  </div>
+
+  <h2>Model Selection</h2>
+  <div class="divider"></div>
+  <div class="input-group">
+    <label>Model</label>
+    <div class="desc">Built-in presets and models you added below.</div>
+    <select>
+      <option>google/gemini-3.1-pro-preview</option>
+      <option>anthropic/claude-sonnet-4</option>
+      <option>openai/gpt-4.1</option>
+    </select>
+  </div>
+
+  <h2>Custom Models</h2>
+  <div class="divider"></div>
+  <p class="desc">Type an OpenRouter model id (for example vendor/model), then Add to keep it for later sessions.</p>
+  <div class="input-group">
+    <label>Custom model id</label>
+    <div class="row">
+      <div class="field"><input type="text" placeholder="vendor/model"></div>
+      <button class="btn btn-sm">Add</button>
+    </div>
+  </div>
+  <div class="model-item">
+    <span class="model-slug">meta/llama-4-scout</span>
+    <button class="btn btn-danger btn-sm">Remove</button>
+  </div>
+
+  <div class="actions">
+    <button class="btn btn-primary">Save</button>
+    <button class="btn">Reload</button>
+  </div>
+  <p class="hint">Save applies the detection toggle, API key (if changed), and the selected model. Use Add to store extra model ids in your list.</p>
+</div>
+</body>
+</html>

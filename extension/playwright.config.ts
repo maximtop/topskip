@@ -2,6 +2,10 @@ import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
     testDir: './e2e',
+    // Builds the extension against the loopback backend the specs mock; the
+    // shipped profiles all point at the public origin, which no local listener
+    // can answer.
+    globalSetup: './e2e/global-setup.ts',
     fullyParallel: true,
     forbidOnly: !!process.env.CI,
     retries: process.env.CI ? 2 : 0,

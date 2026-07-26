@@ -94,7 +94,8 @@ The repository is a pnpm workspace with three explicit packages:
 - [DEVELOPMENT.md](./DEVELOPMENT.md) — architecture and local testing
 - [extension/DEPLOYMENT.md](./extension/DEPLOYMENT.md) — packaging and Chrome Web Store notes
 - [DEPLOYMENT.md](./DEPLOYMENT.md) — public backend provisioning, deploy, and rollback runbook
-- [.sdd/](./.sdd/) — dated feature specifications and implementation decisions
+- `.sdd/` — dated feature specifications and implementation decisions; kept
+  locally and **not published**, so it is absent from a fresh clone
 - [SERVER_FIRST_FUTURE_WORK.md](./SERVER_FIRST_FUTURE_WORK.md) — deferred
   correction-workflow design
 - [AGENTS.md](./AGENTS.md) — notes for AI-assisted changes

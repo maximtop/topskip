@@ -257,7 +257,7 @@ responds; a normal YouTube tab reload is not required.
 | `extension/dist/`             | **Build output** — load this folder as unpacked extension (gitignored)                                                                                                          |
 | `extension/e2e/`              | Playwright tests and `extension/e2e/fixtures` static HTML                                                                                                                       |
 | `extension/src/manifest.json` | Source manifest; **emitted into `extension/dist/`** by the build                                                                                                                |
-| `.sdd/`                       | SDD feature **spec.md** / **plan.md** (e.g. `.sdd/001-init-extension/` MVP baseline, dated folders per feature)                                                                 |
+| `.sdd/`                       | SDD feature **spec.md** / **plan.md** (e.g. `.sdd/001-init-extension/` MVP baseline, dated folders per feature). **Gitignored — local only, never pushed**                      |
 
 The repository is a pnpm workspace. `backend`, `common`, and `extension` each
 declare their runtime dependencies while root tooling owns formatting, linting,
@@ -377,7 +377,7 @@ pnpm exec playwright install chromium
     ```
 
 3. **CI** (`.github/workflows/ci.yml`) on push/PR: **`pnpm install --frozen-lockfile`** → **lint** → **build** → **deployment assets** → **test** → **test:coverage** → **Playwright Chromium** → **`pnpm run test:e2e`** (e2e is **headless**; no Xvfb).
-4. **Specs** — Larger behavior changes should align with `.sdd/001-init-extension/spec.md` / `plan.md` and relevant `.sdd/yyyymmdd-…` specs (update those docs in the same change when appropriate).
+4. **Specs** — Larger behavior changes should align with `.sdd/001-init-extension/spec.md` / `plan.md` and relevant `.sdd/yyyymmdd-…` specs (update those docs in the same change when appropriate). `.sdd/` is gitignored, so those updates stay on your machine — anything a reviewer needs belongs in the commit message or the code.
 
 Detailed contribution rules live in [AGENTS.md](./AGENTS.md).
 
@@ -591,4 +591,4 @@ stream.
 | [README.md](./README.md)                             | Quick start and command table                                                 |
 | [AGENTS.md](./AGENTS.md)                             | Architecture, conventions, what agents should not do                          |
 | [extension/DEPLOYMENT.md](./extension/DEPLOYMENT.md) | Zipping `extension/dist/` and Chrome Web Store checklist (not day-to-day dev) |
-| [.sdd/](./.sdd/)                                     | Dated feature specifications and implementation decisions                     |
+| `.sdd/` (local only)                                 | Dated feature specifications and implementation decisions; not published      |

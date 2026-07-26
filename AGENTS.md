@@ -22,7 +22,9 @@ popup, options, and content scripts use **`runtime.sendMessage`**.
 The service worker may **`fetch` OpenRouter** in BYOK mode. Extension APIs use
 the standardized **`browser.*`** surface via **`webextension-polyfill`** (import
 from **`extension/src/shared/browser.ts`**, not the global `chrome` object).
-Feature intent and dated feature specs live under **`.sdd/`**.
+Feature intent and dated feature specs live under **`.sdd/`**, which is
+**gitignored and local-only** — it is not published to GitHub, so a fresh clone
+will not have it.
 
 ## Technical context
 
@@ -63,7 +65,7 @@ Feature intent and dated feature specs live under **`.sdd/`**.
 │   ├── e2e/                  # Playwright tests and fixture
 │   ├── rspack.config.ts
 │   └── dist/                 # Load this unpacked in Chrome
-├── .sdd/                     # Cross-cutting feature specifications
+├── .sdd/                     # Feature specs — gitignored, local only
 ├── package.json              # Workspace commands and development tooling
 ├── pnpm-workspace.yaml
 ├── pnpm-lock.yaml
@@ -97,7 +99,7 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
 
 ## Contribution instructions
 
-1. **Read** `.sdd/001-init-extension/spec.md` and `.sdd/001-init-extension/plan.md` (baseline MVP) and any active `.sdd/yyyymmdd-…` spec for the feature you touch; align or update those docs in the same PR when behavior changes.
+1. **Read** `.sdd/001-init-extension/spec.md` and `.sdd/001-init-extension/plan.md` (baseline MVP) and any active `.sdd/yyyymmdd-…` spec for the feature you touch; align or update those docs alongside the change when behavior changes. `.sdd/` is local-only, so those edits never appear in a PR — put the reasoning a reviewer needs in the commit message or in code comments as well.
 2. **Branch / PR**: Conventional practice — small PRs; describe _what_ and _why_.
 3. **Before pushing**, run locally (or rely on CI):
     - `pnpm install` (or `pnpm install --frozen-lockfile` to match CI)

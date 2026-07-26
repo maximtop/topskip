@@ -15,3 +15,6 @@ tmp/
 /deploy/cloudflared/*.json
 /deploy/cloudflared/cert.pem
 /.cloudflared/
+
+# Feature specs are kept locally, not published
+.sdd/

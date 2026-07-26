@@ -96,8 +96,7 @@ The repository is a pnpm workspace with three explicit packages:
 - [DEPLOYMENT.md](./DEPLOYMENT.md) — public backend provisioning, deploy, and rollback runbook
 - `.sdd/` — dated feature specifications and implementation decisions; kept
   locally and **not published**, so it is absent from a fresh clone
-- [SERVER_FIRST_FUTURE_WORK.md](./SERVER_FIRST_FUTURE_WORK.md) — deferred
-  correction-workflow design
+- [TODO.md](./TODO.md) — backlog, including the deferred correction workflow
 - [AGENTS.md](./AGENTS.md) — notes for AI-assisted changes
 
 ## License

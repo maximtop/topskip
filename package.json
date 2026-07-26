@@ -31,12 +31,13 @@
         "generate:e2e-video": "bash scripts/generate-e2e-fixture-video.sh",
         "openrouter:compare-presets": "tsx scripts/compare-openrouter-presets.ts",
         "openrouter:extract-log-transcript": "tsx scripts/extract-transcript-from-topskip-console-log.ts",
-        "locales": "node tasks/translations/index.js"
+        "locales": "tsx tasks/translations/index.ts"
     },
     "engines": {
         "node": ">=22"
     },
     "devDependencies": {
+        "@adguard/translate": "^2.0.1",
         "@axe-core/playwright": "^4.11.1",
         "@eslint/js": "^10.0.1",
         "@playwright/test": "^1.59.1",

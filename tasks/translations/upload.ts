@@ -1,27 +1,25 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
 
+import { localeMessagesPath } from './helpers.ts';
 import {
-    BASE_LOCALE,
-    PROJECT_ID,
     API_URL,
-    LOCALES_ABSOLUTE_PATH,
+    BASE_LOCALE,
     FORMAT,
     LOCALE_DATA_FILENAME,
-} from './locales-constants.js';
+    PROJECT_ID,
+} from './locales-constants.ts';
 
 const API_UPLOAD_URL = `${API_URL}/upload`;
 
 /**
- * Entry point for uploading base locale translations
+ * Uploads the base locale to the localization service.
+ *
+ * @returns Parsed service response.
  */
-export const uploadBaseLocale = async () => {
-    const filePath = path.join(
-        LOCALES_ABSOLUTE_PATH,
-        BASE_LOCALE,
-        LOCALE_DATA_FILENAME,
+export async function uploadBaseLocale(): Promise<unknown> {
+    const fileContent = await fs.promises.readFile(
+        localeMessagesPath(BASE_LOCALE),
     );
-    const fileContent = await fs.promises.readFile(filePath);
     const blob = new Blob([fileContent], { type: 'application/json' });
 
     const formData = new FormData();
@@ -31,15 +29,17 @@ export const uploadBaseLocale = async () => {
     formData.append('filename', LOCALE_DATA_FILENAME);
     formData.append('file', blob, LOCALE_DATA_FILENAME);
 
-    let response;
+    let response: Response;
     try {
         response = await fetch(API_UPLOAD_URL, {
             method: 'POST',
             body: formData,
         });
     } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
         throw new Error(
-            `Error: ${e.message}, while uploading: ${API_UPLOAD_URL}`,
+            `Error: ${message}, while uploading: ${API_UPLOAD_URL}`,
+            { cause: e },
         );
     }
 
@@ -51,4 +51,4 @@ export const uploadBaseLocale = async () => {
     }
 
     return response.json();
-};
+}

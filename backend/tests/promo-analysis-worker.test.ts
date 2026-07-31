@@ -213,6 +213,42 @@ describe('backend promo analysis worker', () => {
         });
     });
 
+    it('bounds an open-ended tail block at the known video duration', () => {
+        const normalized = normalizeBackendPromoBlocks({
+            promoBlocks: [
+                { startSec: 79.28, endSec: 307.4, confidence: 'high' },
+                { startSec: 644.4, endSec: 672.36, confidence: 'high' },
+                { startSec: 1753.56, confidence: 'high' },
+            ],
+            durationSec: 1766.28,
+        });
+
+        expect(normalized).toEqual({
+            ok: true,
+            promoBlocks: [
+                { startSec: 79.28, endSec: 307.4, confidence: 'high' },
+                { startSec: 644.4, endSec: 672.36, confidence: 'high' },
+                {
+                    startSec: 1753.56,
+                    endSec: 1766.28,
+                    confidence: 'high',
+                },
+            ],
+        });
+    });
+
+    it('preserves an open-ended block whose implied end is in range', () => {
+        expect(
+            normalizeBackendPromoBlocks({
+                promoBlocks: [{ startSec: 60, confidence: 'medium' }],
+                durationSec: 120,
+            }),
+        ).toEqual({
+            ok: true,
+            promoBlocks: [{ startSec: 60, confidence: 'medium' }],
+        });
+    });
+
     it.each([
         {
             promoBlocks: [{ startSec: 130, endSec: 140 }],
@@ -223,8 +259,8 @@ describe('backend promo analysis worker', () => {
             label: 'out-of-bounds end',
         },
         {
-            promoBlocks: [{ startSec: 100 }],
-            label: 'open-ended implied end beyond duration',
+            promoBlocks: [{ startSec: 120 }],
+            label: 'open-ended start at duration',
         },
         {
             promoBlocks: [{ startSec: 0, endSec: 120 }],
@@ -463,6 +499,40 @@ describe('backend promo analysis worker', () => {
         expect(JSON.stringify(result)).not.toContain('secret details');
     });
 
+    it('returns a ready tail block when the model omits its end', async () => {
+        const result = await BackendPromoAnalysisWorker.analyze({
+            transcriptArtifact: makeTranscriptArtifact({
+                videoId: 'dQw4w9WgXcQ',
+            }),
+            durationSec: 120,
+            nowMs: 1_900_000_001_000,
+            adapter: {
+                providerId: 'test_adapter',
+                model: 'test-model',
+                promptVersion: 'test-prompt',
+                analyze: () =>
+                    Promise.resolve({
+                        rawModelResponse:
+                            '{"hasPromo":true,"promoBlocks":[{"startSec":100}]}',
+                        model: 'test-model',
+                    }),
+            },
+        });
+
+        expect(result.terminalResponse).toMatchObject({
+            status: 'ready',
+            promoBlocks: [{ startSec: 100, endSec: 120 }],
+        });
+        expect(result.analysisRun).toMatchObject({
+            parsedResult: {
+                hasPromo: true,
+                promoBlocks: [{ startSec: 100 }],
+            },
+            normalizedPromoBlocks: [{ startSec: 100, endSec: 120 }],
+            failureReason: null,
+        });
+    });
+
     it.each([
         {
             raw: 'not json',
@@ -473,7 +543,7 @@ describe('backend promo analysis worker', () => {
             expectedCode: SERVER_ANALYSIS_ERROR_CODE.UnsafeModelBlocks,
         },
         {
-            raw: '{"hasPromo":true,"promoBlocks":[{"startSec":100}]}',
+            raw: '{"hasPromo":true,"promoBlocks":[{"startSec":100,"endSec":130}]}',
             expectedCode: SERVER_ANALYSIS_ERROR_CODE.UnsafeModelBlocks,
         },
     ] as const)(

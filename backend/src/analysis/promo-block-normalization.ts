@@ -37,16 +37,42 @@ export type BackendPromoBlockNormalizationResult =
 export function normalizeBackendPromoBlocks(
     input: BackendPromoBlockNormalizationInput,
 ): BackendPromoBlockNormalizationResult {
-    if (!input.promoBlocks.every(isSafeBlock(input.durationSec))) {
+    const durationBoundBlocks = input.promoBlocks.map((block) =>
+        boundOpenEndedBlock(block, input.durationSec),
+    );
+    if (!durationBoundBlocks.every(isSafeBlock(input.durationSec))) {
         return unsafeBlocks();
     }
 
-    const normalized = sortAndDedupePromoBlocks(input.promoBlocks);
+    const normalized = sortAndDedupePromoBlocks(durationBoundBlocks);
     if (!normalized.every(isSafeBlock(input.durationSec))) {
         return unsafeBlocks();
     }
 
     return { ok: true, promoBlocks: normalized };
+}
+
+/**
+ * Keeps an omitted model end usable at the video tail without accepting an
+ * explicit out-of-range timestamp.
+ *
+ * @param block - Parsed model block.
+ * @param durationSec - Known video duration, if available.
+ * @returns Original block or a copy ending at the known video boundary.
+ */
+function boundOpenEndedBlock(
+    block: PromoBlock,
+    durationSec: number | undefined,
+): PromoBlock {
+    if (
+        durationSec === undefined ||
+        block.endSec !== undefined ||
+        block.startSec >= durationSec ||
+        effectiveEndSec(block) <= durationSec
+    ) {
+        return block;
+    }
+    return { ...block, endSec: durationSec };
 }
 
 /**

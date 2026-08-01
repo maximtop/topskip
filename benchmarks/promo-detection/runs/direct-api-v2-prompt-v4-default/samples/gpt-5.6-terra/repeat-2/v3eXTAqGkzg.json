@@ -1,0 +1,53 @@
+{
+  "schemaVersion": 1,
+  "runKey": "direct-api-v2-prompt-v4-default",
+  "corpusId": "promo-paid-v2",
+  "corpusManifestSha256": "b038b4ade2a65284690cc774b4d550176946643b39de7ad0595407eb632ebafa",
+  "model": "gpt-5.6-terra",
+  "reasoning": "default",
+  "repeat": 2,
+  "videoId": "v3eXTAqGkzg",
+  "languageCode": "ru",
+  "transcriptHash": "b4c55888a92a61beaddd70fbda98aaa44ca7b1a83adf0c8f961313ed0bcb936c",
+  "fixtureSha256": "b00cf251649a3de9b8453eee1e81c45c3c0f5df9bce02ca8b7e20f36b16adf10",
+  "promptVersion": "4",
+  "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+  "messageSha256": "67582466dc6517bec70045d09e9be41950b488062668be947e8b44c50bf7cf83",
+  "harness": "Direct API",
+  "streamed": true,
+  "valid": true,
+  "latencyMs": 9203.75004200032,
+  "rawAssistant": "{\"hasPromo\":true,\"promoBlocks\":[{\"startSec\":242.12,\"endSec\":331.6,\"confidence\":\"high\"},{\"startSec\":826.56,\"endSec\":947.56,\"confidence\":\"high\"},{\"startSec\":1580.48,\"endSec\":1600.799,\"confidence\":\"high\"}]}",
+  "prediction": {
+    "hasPromo": true,
+    "promoBlocks": [
+      {
+        "startSec": 242.12,
+        "endSec": 331.6,
+        "confidence": "high"
+      },
+      {
+        "startSec": 826.56,
+        "endSec": 947.56,
+        "confidence": "high"
+      },
+      {
+        "startSec": 1580.48,
+        "endSec": 1600.799,
+        "confidence": "high"
+      }
+    ]
+  },
+  "finishReason": "stop",
+  "usage": {
+    "promptTokens": 15551,
+    "completionTokens": 533,
+    "totalTokens": 16084,
+    "cachedTokens": 0,
+    "cacheWriteTokens": 15548,
+    "reasoningTokens": 460
+  },
+  "ttftMs": 8860.570333000273,
+  "outputTokensPerSecond": 1553.1221282081294,
+  "costUsd": 0.045272
+}

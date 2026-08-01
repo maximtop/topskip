@@ -26,6 +26,7 @@ export default defineConfig({
             'backend/tests/**/*.test.ts',
             'common/tests/**/*.test.ts',
             'extension/tests/**/*.test.ts',
+            'scripts/tests/**/*.test.ts',
         ],
         coverage: {
             provider: 'v8',

@@ -1,0 +1,80 @@
+[0.16] Last week, Chinese AI lab moonshot dropped Kimmy K3, a massive open- source
+[5.2] monster that instantly parameter mogged every other open model in existence. And
+[9.599] not just that, it has OpenAI and Anthropic terrified because its Trust Me
+[13.679] Bro benchmark performance is on par with and in some cases beating Claude Fable
+[17.76] and GPT 5.6 Soul. And that's crazy because just a few weeks ago, the
+[21.92] government was telling you these models were too dangerous for the common man to
+[25.039] use. It only took the Chinese a few weeks to match their performance and
+[28.24] then give away all the weights for free. But big AI is not too happy about this
+[32.16] and there are already calls to ban Chinese models completely in the United
+[35.44] States. In today's video, we'll take a look at the massive breakthrough that is
+[38.719] Kimmy K3 and find out what it means for the future of artificial intelligence.
+[42.719] It is July [music] 22nd, 2026, and you're watching the code report. Like
+[46.719] Claude Fable and GBT 5.6 six soul. The Kimmy K3 is a native multimodel mixture
+[51.68] of experts model with a 1 million token context window and a staggering 2.8
+[56.32] trillion parameters and is optimized for jobs like long horizon reasoning and of
+[60.64] course coding. One interesting characteristic of K3 as a mixture of
+[64.239] experts model is that it has 896 total experts of which exactly 16 activate per
+[70.159] token which means it works just like a big corporation where 16 good
+[73.84] programmers do all the work while 880 other managers sit there and do nothing.
+[77.92] But apparently this works out well for Kimmy because it makes scaling about 2.5
+[81.759] times more efficient than K2. Despite these gains in efficiency, Kimmy was so
+[85.92] popular upon release that their GPUs ran out of juice and they had to start
+[89.52] turning away paying customers. And as of making this video, all of the paid plans
+[93.36] are currently sold out. That's unfortunate, but in theory, you could
+[96.56] self-host the model because the weights are open. The weights are expected to be
+[99.84] released on July 27th, but there's no chance in hell you'll be able to run it
+[103.36] on your little gaming GPU. To run a monster like this, you'll need a massive
+[107.04] array of data center caliber GPUs. But in theory, if you could do that, you
+[110.96] would have unlimited access to a fable Soulcalibur model. And that would be
+[114.64] amazing. But because the benchmark situation with K3 is pretty wild, K3 is
+[118.56] ranked number one on front-end code arena at a 1,679
+[122.719] ELO, which puts it ahead of Fable 5 in GPT 5.6 Soul. In addition, it lands in
+[127.2] the top three on the artificial analysis intelligence index. And if we look at
+[130.959] every other coding benchmark, it's at least very competitive with the other
+[134.16] Frontier models. But you should never trust the Trust Me Bro benchmarks
+[137.599] because many of the K3 numbers were produced with Moonshot's own Kimmy code
+[141.36] harness while competitors ran in different harnesses. That could make
+[144.64] Kimmy look slightly better at coding. But to their credit, Moonshot admits
+[148.16] that K3 still trails Fable and GPT 5.6 Soul overall, especially on benchmarks
+[153.36] like humanity's last exam, where it's down by about 10 points. On top of that,
+[157.36] artificial analysis measured a 51% hallucination rate, which is definitely
+[161.68] not a good thing, especially when it comes to coding. In addition, it also
+[164.8] tends to spit out way more tokens than it needs to, which could ultimately end
+[168.239] up costing you more money despite the model itself being cheaper. When it
+[171.84] comes to things like UI design and data visualization, it's extremely impressive
+[175.92] for an open model, but in my opinion, it's still one step behind Fable and GPT
+[180.08] Soul. But one of the most interesting things about this release is the
+[183.2] geopolitics surrounding it. But recently at the World AI conference, China's
+[187.2] Communist Party became the loudest advocate for free and open artificial
+[191.04] intelligence. Meanwhile, in the land of the free, Silicon Valley wants to
+[194.56] regulate and gatekeep it by pushing the fear narrative that it's about to take
+[198.159] all of our jobs. In Washington, they're reportedly considering entity listing
+[202.4] Chinese AI labs and OpenAI's Dean Ball argued that open weights are inherently
+[207.2] decelerationist. >> What,
+[210.799] bro? What are you talking about, man? Coincidentally, that's very similar to
+[214.48] the argument Steve Balmer used to make in the '90s about Linux when he said
+[217.92] Linux is communism. And also coincidentally, both of these guys have
+[221.68] balls in their names. Frontier Labs don't like open models simply because
+[225.28] they divert the flow of money from them to someone else. As of today, the odds
+[229.36] the US government bans Chinese models is only sitting at 29% on Poly Market. But
+[233.92] that could change quickly if they determine one of these models is
+[236.56] responsible for some kind of cyber attack. But the best thing about K3 is
+[239.92] that it pushes the arms race forward. Alibaba also just released Quen 3.8,
+[244.239] which itself has 2.4 trillion parameters and open weights. And I think this model
+[248.319] might finally be the one that gets the UI right for Horse Tinder. But before
+[251.76] you let AI slop out your UI, you need to check out mobin.com, the sponsor of
+[256.239] today's video. I've been using Mobin for over 5 years now because it provides
+[260] highly detailed breakdowns of every screen in thousands of popular web and
+[264.16] mobile apps. and they just launched an MCP server which connects your AI agent
+[268.32] to over 600,000 screens and user flows from apps in every category. This gives
+[273.28] your agent real world references so it can design highquality UIs for your
+[277.759] specific use case instead of just spitting out generic purple gradient
+[281.28] vibes slop. It also lets you do deep UI research like you can feed it your
+[285.12] prototype and your agent will use Mobin's library to provide a ranked list
+[289.04] of other apps that do it better. You can also ask it how your competitors handle
+[293.04] things like onboarding and payw walls, and it'll show you every screen in their
+[296.639] full user flow. So, if you're tired of your UIs looking like the same as
+[300.08] everyone else, I'd highly recommend trying out Mobin at the link below. This
+[303.6] has been the code report. Thanks for watching and I will see you in the next
+[306.72] one.

@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 1,
+  "runKey": "direct-api-v2-prompt-v4-default",
+  "corpusId": "promo-paid-v2",
+  "corpusManifestSha256": "b038b4ade2a65284690cc774b4d550176946643b39de7ad0595407eb632ebafa",
+  "model": "grok-4.5",
+  "reasoning": "default",
+  "repeat": 1,
+  "videoId": "OUunDHYY-xk",
+  "languageCode": "ru",
+  "transcriptHash": "2b07323ae62651cc17ba56b22a50879c0da35862ae50be23845978febd3302a6",
+  "fixtureSha256": "c998a8f51358fffabafce82e479e64468d0806460a88c782ab3ba1ae3d8ce585",
+  "promptVersion": "4",
+  "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+  "messageSha256": "5888f4a174d819f2c209ecde2df245791202b3a2fac7346ad81e07d9537f881b",
+  "harness": "Direct API",
+  "streamed": true,
+  "valid": true,
+  "latencyMs": 19180.26445899997,
+  "rawAssistant": "{\"hasPromo\": true, \"promoBlocks\": [{\"startSec\": 122.799, \"endSec\": 224.68, \"confidence\": \"high\"}]}",
+  "prediction": {
+    "hasPromo": true,
+    "promoBlocks": [
+      {
+        "startSec": 122.799,
+        "endSec": 224.68,
+        "confidence": "high"
+      }
+    ]
+  },
+  "finishReason": "stop",
+  "usage": {
+    "promptTokens": 7971,
+    "completionTokens": 34,
+    "totalTokens": 9283,
+    "cachedTokens": 128,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 1278
+  },
+  "ttftMs": 19176.205374999903,
+  "outputTokensPerSecond": 8376.274055783968,
+  "costUsd": 0.015954
+}

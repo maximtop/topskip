@@ -16,7 +16,7 @@ and architecture**, see [AGENTS.md](./AGENTS.md). For a short **overview**, see
     - [3. Load the extension in Chrome](#3-load-the-extension-in-chrome)
     - [4. Watch mode (optional)](#4-watch-mode-optional)
     - [5. Local backend process (optional)](#5-local-backend-process-optional)
-    - [Server-owned Gemini analysis](#server-owned-gemini-analysis)
+    - [Server-owned DeepSeek analysis](#server-owned-deepseek-analysis)
     - [Build profiles and public API](#build-profiles-and-public-api)
     - [Server-analysis dev logs](#server-analysis-dev-logs)
 - [Project layout](#project-layout)
@@ -175,22 +175,22 @@ support macOS universal and Linux x64. `make yt-dlp-refresh-pin` updates the
 reviewed tag and checksums, but normal setup, CI, `make server`, and the
 production image do not install the binary.
 
-### Server-owned Gemini analysis
+### Server-owned DeepSeek analysis
 
 Production server analysis uses OpenRouter with the fixed
-`google/gemini-3.5-flash` model. It sends one non-streaming request containing
+`deepseek/deepseek-v4-flash` model. It sends one non-streaming request containing
 the validated uploaded transcript as `[startSec] text` lines plus the video ID
-and caption language. The request uses `reasoning.effort=high`, excludes
-reasoning text from the response, has a 45-second timeout, and caps both
-completion tokens and HTTP response size.
+and caption language. It leaves reasoning at the model default and does not set
+an output-token limit. The request has a five-minute timeout, while the HTTP
+response remains size-bounded.
 
 The system prompt and prompt version live in `common` so server analysis,
 Private BYOK, and the model-comparison script share the same promo definition.
 Only tests select the deterministic fixture adapter; a non-test backend always
-uses Gemini. Analysis failures map to stable terminal codes instead of exposing
+uses DeepSeek V4 Flash. Analysis failures map to stable terminal codes instead of exposing
 provider response bodies or errors.
 
-Ready and no-promo results expire 30 days after Gemini completes. Only the same
+Ready and no-promo results expire 30 days after DeepSeek completes. Only the same
 algorithm, video, normalized language, and canonical transcript hash may join
 an in-memory job or reuse an unexpired artifact. Validated transcripts and
 bounded assistant output may also be retained for up to 30 days under access

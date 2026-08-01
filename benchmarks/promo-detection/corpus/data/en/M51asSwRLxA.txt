@@ -1,0 +1,158 @@
+[0] Two years ago, Mira Murati did something
+[2.28] we've all fantasized about. She woke up,
+[4.52] decided she'd had enough of her boss,
+[6.24] and quit her job as CTO of OpenAI with
+[9.12] no backup plan and nothing but a vague
+[11.24] desire to create time and space for her
+[13.84] own exploration. If you or I did that,
+[15.96] we'd probably end up coding HTML for
+[18.12] food down on Market Street. But when
+[19.88] someone like Mira does it, A16Z shows up
+[22.48] with a $2 billion investment into any
+[24.52] company she decides to build. The
+[26.28] company was eventually Thinking
+[27.8] Machines, and until last week, it's been
+[30.52] known for being valued at $12 billion
+[32.64] before having actually shipped anything.
+[34.6] But that may have now just changed
+[36.12] because they just released Inkling, a
+[38] fully open weights model trained from
+[39.76] scratch that can see, hear, reason,
+[42.36] fine-tune, and potentially touch things
+[44.36] in the real world. In today's video,
+[46.08] we'll find out how it was built, what
+[47.68] makes it interesting, and learn why
+[49.36] Thinking Machines openly admits that
+[51.32] it's not the best model in the world,
+[53] and why that's the point. It is July
+[54.72] 20th, 2026, and you're watching The Code
+[57.24] Report. Last year, while the rest of us
+[59.24] were spending time getting to know our
+[60.72] newest Soham Parikh, Mira was quietly
+[63.48] pulling off the greatest talent heist in
+[65.199] Silicon Valley history. When she left
+[67.04] OpenAI, she walked out with co-founder
+[69.12] John Shulman, VP of research Barrett
+[71.68] Zoph, and enough senior researchers to
+[73.56] fill a Silicon Valley polycule. A year
+[75.64] later, the dream team shipped Tinker, an
+[77.84] API that lets you fine-tune open weight
+[79.88] models without managing your own
+[81.56] infrastructure or losing control over
+[83.6] the training process. When it was
+[85.12] released, ML researchers called it cool,
+[87.48] which I imagine was a bit underwhelming
+[89.16] if you'd just given them enough money to
+[90.68] buy a Costco hot dog for one out of
+[92.4] every six people on Earth. But that may
+[94.12] have changed last week with the release
+[95.72] of Inkling, a mixture of experts model
+[98.04] with 970 billion total parameters. The
+[100.8] trick is that it doesn't use all of them
+[102.48] at once. Every token gets routed to a
+[104.64] small subset of specialized experts, so
+[107.08] only 41 billion parameters actually fire
+[109.48] per token, giving you the most
+[111] intelligence of a massive model at a
+[113.04] fraction of the compute. It was
+[114.32] pre-trained on 45 trillion tokens of
+[116.48] text, images, and audio, handles a 1
+[118.88] million token context window, and unlike
+[121.16] other open models that ship with a
+[122.72] license written by feral lawyers from
+[124.64] Meta, the weights are Apache licensed
+[126.92] and sitting on Hugging Face right now.
+[128.88] On the Trust Me Bro benchmarks, it gets
+[130.759] mugged by Fable 5 and GPT 5.6 Soul, and
+[134.12] lands somewhere mid-table among the open
+[136.2] Chinese models. Now, that's not great,
+[138.52] but the timing was even worse. One day
+[140.4] after Inkling dropped, Moonshot
+[142.2] announced Kimik 3, a 2.8 trillion
+[144.84] parameter monster that, if you squint,
+[147.2] goes bar for bar with Fable 5, and got
+[149.28] so popular that it even burned through
+[150.92] their compute. And so, in a sense, the
+[152.92] team spent 2 years cooking up the most
+[154.8] average model in existence, but that was
+[157.04] kind of the point. Instead of competing
+[158.76] on raw intelligence, Inkling has a dial
+[160.92] called thinking effort that controls how
+[162.92] hard the model cooks. You crank it down
+[165.08] and you get cheap, instant answers. You
+[167.08] crank it up and you get Ashley Tisdale's
+[169.12] hit single from 16 years ago, with the
+[171.12] model matching Nemotron 3 Ultra on
+[173.56] Terminal Bench while using a third of
+[175.28] the tokens. And when you're running an
+[176.92] agent millions of times per day, that
+[178.88] adds up. And the flagship demo was
+[180.519] pretty cool. They connected Inkling to
+[182.36] Tinker and asked it to remove its own
+[184.4] ability to use the letter E. From there,
+[186.72] the model wrote its own training script,
+[188.64] generated its own data, ran the job,
+[191.16] then loaded its own new weights that
+[193] essentially lobotomized itself. They
+[195] also trained it on something they call
+[196.8] epistemics, which is a fancy Greek word
+[199.28] for knowing when you're full of crap.
+[200.84] Basically, Inkling was rewarded for
+[202.959] admitting what it doesn't know instead
+[204.72] of guessing with confidence. As a
+[206.28] result, it's now one of the best models
+[208.04] in the world at forecasting future
+[209.84] events, beating GPT 5.5 and Opus 4.8,
+[213.36] and when it's unsure, it'll admit it.
+[215.08] Inkling is also the Helen Keller of
+[216.76] models, not in the sense that it's bad
+[218.68] at laser tag, but that it can't actually
+[220.72] see or hear, at least not in the same
+[222.48] way other models do. Normally, images
+[224.84] and audio get run through separate
+[226.48] encoder models that translate them into
+[228.519] tokens first. Inkling skips all of that
+[230.72] and processes raw audio and pixels
+[232.76] directly. All that reinforcement
+[234.32] learning had a side effect though. Is
+[235.88] somewhere past 30 million training
+[237.36] rounds, the models inner monologue
+[239.44] started dropping words to save tokens.
+[241.44] It going from proper English to caveman
+[243.68] speak like we need determine eigenvalue
+[246.12] problem. Why waste time saying lot word
+[248.32] when a few word do trick. So no, Inkling
+[250.6] is not going to dethrone the Frontier
+[252.36] Labs and Thinking Machines knows that.
+[254.52] The real play is to hand you a mid model
+[256.519] for free and then charge you to fine
+[258.239] tune it on Tinker into a specialist that
+[260.44] destroys your one specific problem. But
+[262.4] if you need a specialist today to handle
+[264.16] things like auth, billing and user
+[265.919] management, you need to check out Clerk,
+[267.84] the sponsor of today's video. Your
+[269.68] agents can build an entire app over the
+[271.48] weekend, but if you somehow manage to
+[273.2] get real users who want to pay you real
+[274.96] money, you're the one stuck reading the
+[276.48] Stripe webhook docs at 2:00 a.m. That's
+[278.6] why Clerk built a CLI, agent skills, and
+[281.36] an MCP server that let your coding agent
+[284.04] drive their whole platform. You can set
+[285.84] up production-ready auth, billing, and
+[287.6] user management with just prompts. I
+[289.68] told my agent to handle sign up and sign
+[291.88] in and 13 seconds later I had auth
+[294.28] pages, middleware, and a passing build.
+[296.64] From there, it added basic and premium
+[298.72] paid plans and I never wrote a line of
+[300.52] payment logic myself. When I asked for a
+[302.56] list of my users, it pulled all eight of
+[304.64] them straight from the API. A Clerk lets
+[306.88] you go from dev to production without
+[308.96] ever visiting their dashboard and you
+[310.64] can try it out for free with the link
+[312.08] below. This has been the Code Report.
+[313.919] Thanks for watching and I will see you
+[315.56] in the next one.

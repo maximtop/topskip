@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 2,
+  "runKey": "direct-api-v3-prompt-v4-default-model-default",
+  "corpusId": "promo-paid-v2",
+  "corpusManifestSha256": "b038b4ade2a65284690cc774b4d550176946643b39de7ad0595407eb632ebafa",
+  "model": "opus-5",
+  "reasoning": "default",
+  "repeat": 3,
+  "videoId": "NOG7mWcVUeI",
+  "languageCode": "ru",
+  "transcriptHash": "92161a1a4db040bb4a200d69f967d51d2709ecf76247e575576c1ff1fda94224",
+  "fixtureSha256": "d1bfeb9c9473f04de7e89b93e49dc3eb18007fbe5b2cbd69dfa47d74a9824efa",
+  "promptVersion": "4",
+  "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+  "messageSha256": "e7f023a0575c2321051bc19dd8610c23bbb399710775f1045090556ddf21eb34",
+  "outputLimitPolicy": "model_default",
+  "requestConfigSha256": "821259cad09d266c1243f1169f0138b9016bcb6c8bad8be76aa1bf6d48bb1fca",
+  "harness": "Direct API",
+  "streamed": true,
+  "valid": true,
+  "latencyMs": 21363.467833000235,
+  "rawAssistant": "{\"hasPromo\": true, \"promoBlocks\": [{\"startSec\": 41.559, \"endSec\": 54.199, \"confidence\": \"medium\"}, {\"startSec\": 740.6, \"endSec\": 798.079, \"confidence\": \"high\"}, {\"startSec\": 2378.119, \"endSec\": 2419.359, \"confidence\": \"medium\"}, {\"startSec\": 2724.119, \"endSec\": 2750.64, \"confidence\": \"low\"}]}",
+  "prediction": {
+    "hasPromo": true,
+    "promoBlocks": [
+      {
+        "startSec": 41.559,
+        "endSec": 54.199,
+        "confidence": "medium"
+      },
+      {
+        "startSec": 740.6,
+        "endSec": 798.079,
+        "confidence": "high"
+      },
+      {
+        "startSec": 2378.119,
+        "endSec": 2419.359,
+        "confidence": "medium"
+      },
+      {
+        "startSec": 2724.119,
+        "endSec": 2750.64,
+        "confidence": "low"
+      }
+    ]
+  },
+  "finishReason": "stop",
+  "usage": {
+    "promptTokens": 23745,
+    "completionTokens": 1254,
+    "totalTokens": 24999,
+    "cachedTokens": 0,
+    "cacheWriteTokens": 23743,
+    "reasoningTokens": 347
+  },
+  "ttftMs": 21355.649375000037,
+  "outputTokensPerSecond": 160389.6829743463,
+  "costUsd": 0.17975375
+}

@@ -4,7 +4,7 @@ Chrome extension that **skips detected sponsor/promo blocks** on YouTube watch
 pages. **Server** mode is the default: every build profile talks to the same
 public TopSkip backend, including development builds. The server
 receives timed captions captured through the YouTube player, analyzes them with
-Gemini through OpenRouter, and reuses cached results. **Private BYOK** is an
+DeepSeek V4 Flash through OpenRouter, and reuses cached results. **Private BYOK** is an
 explicit opt-in for users who prefer their own provider and want zero TopSkip
 analysis or registration requests. There is no fixed 30s→60s skip window.
 
@@ -50,6 +50,7 @@ Load the extension in Chrome:
 | `make test-deployment` | Deployment security, Compose, and server bundle checks    |
 | `make test-container`  | Production image security and SQLite persistence smoke    |
 | `make test-e2e`        | Playwright only (headless; extension + local fixture MP4) |
+| `pnpm benchmark:promo` | Run or resume the tracked paid-promo model benchmark      |
 
 ## Server analysis
 
@@ -60,8 +61,8 @@ from the `TOPSKIP_SERVER_ORIGIN` environment variable at build time.
 This **extension upload** is the default local and production source; the new
 image does not contain or invoke `yt-dlp`. The backend sends the validated
 timed transcript to the fixed
-`google/gemini-3.5-flash` model through OpenRouter with high reasoning effort,
-and returns validated promo intervals. The content script skips future blocks
+`deepseek/deepseek-v4-flash` model through OpenRouter with model-default
+reasoning, and returns validated promo intervals. The content script skips future blocks
 at their returned end times, while the popup displays the same intervals.
 
 All TopSkip HTTP, authentication, exact-result caching, polling, and support
@@ -97,6 +98,8 @@ The repository is a pnpm workspace with three explicit packages:
 - `.sdd/` — dated feature specifications and implementation decisions; kept
   locally and **not published**, so it is absent from a fresh clone
 - [TODO.md](./TODO.md) — backlog, including the deferred correction workflow
+- [Promo benchmark](./benchmarks/promo-detection/README.md) — corpus, harness,
+  model matrix, and reproducible results
 - [AGENTS.md](./AGENTS.md) — notes for AI-assisted changes
 
 ## License

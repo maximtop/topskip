@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "runKey": "direct-api-v2-prompt-v4-default",
+  "corpusId": "promo-paid-v2",
+  "corpusManifestSha256": "b038b4ade2a65284690cc774b4d550176946643b39de7ad0595407eb632ebafa",
+  "model": "deepseek-v4-flash",
+  "reasoning": "default",
+  "repeat": 2,
+  "videoId": "v3eXTAqGkzg",
+  "languageCode": "ru",
+  "transcriptHash": "b4c55888a92a61beaddd70fbda98aaa44ca7b1a83adf0c8f961313ed0bcb936c",
+  "fixtureSha256": "b00cf251649a3de9b8453eee1e81c45c3c0f5df9bce02ca8b7e20f36b16adf10",
+  "promptVersion": "4",
+  "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+  "messageSha256": "67582466dc6517bec70045d09e9be41950b488062668be947e8b44c50bf7cf83",
+  "harness": "Direct API",
+  "streamed": true,
+  "valid": false,
+  "latencyMs": 58261.73429200007,
+  "rawAssistant": "",
+  "errorKind": "telemetry_missing",
+  "finishReason": "length",
+  "usage": {
+    "promptTokens": 17142,
+    "completionTokens": 8192,
+    "totalTokens": 25334,
+    "cachedTokens": 17024,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 8192
+  },
+  "costUsd": 0.0023579472
+}

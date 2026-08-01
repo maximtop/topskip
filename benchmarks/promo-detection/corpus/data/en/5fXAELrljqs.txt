@@ -1,0 +1,425 @@
+[0] When Valve announced the Steam Machine,
+[2.48] everybody, including Valve, saw it
+[5.36] primarily as a competitor to living room
+[7.52] consoles like the PlayStation 5. But, if
+[9.44] you ask me,
+[10.64] everyone, including Valve, got it wrong.
+[14.04] To be clear, it's perfectly okay for
+[16.6] couch gaming. It's just that, in my
+[19.12] opinion, as a desktop PC or as a
+[21.76] workstation, it's [music] a way better
+[24.12] product. Maybe the best desktop PC that
+[27.52] I've ever used. To be clear, it's not
+[30.64] the fastest. Oh, that's my Teams.
+[33.48] Uh yeah, you might want to close that.
+[35] I've been daily driving it.
+[37] To be clear, it's not the fastest or the
+[38.88] flashiest. It doesn't offer
+[40.6] industry-leading upgradeability or
+[42.2] repairability. And the price, the price
+[45.12] is a big challenge. [screaming]
+[46.84] But, the thoughtful hardware design and
+[49.36] the seamless integration with Valve's
+[51.24] SteamOS makes this the closest thing
+[53.56] that I have ever experienced to a a PC
+[56.8] Mac mini. And it's made me go from
+[59.96] well, I'd like to like Linux to
+[63.96] I don't know how I can go back to
+[65.44] Windows now. Guys, the year of the Linux
+[68.04] desktop is 2026 and the Steam Machine is
+[71.68] leading the charge. And if you don't
+[73.32] believe me, stick around for a few
+[75.2] minutes and I think I can probably
+[77] change your mind. I can also tell you
+[79] about our sponsor.
+[80.92] >> UGREEN, their DX 2800 GT is a great NAS
+[84.76] for backing up anything from family
+[86.56] photos, your entire movie collection, or
+[88.84] even security camera footage. Learn more
+[90.76] or grab yours by clicking the link
+[92.32] below.
+[101.6] >> If you somehow missed our previous
+[103.24] coverage of the Steam Machine,
+[104.56] everything I've already said about it
+[106.2] remains true. What Valve designed here
+[108.52] is an outstanding little desktop cube PC
+[111.08] that manages to offer up some expansion
+[113.2] in the form of an M.2 slot and two DDR5
+[115.88] SODIMM slots, along with reasonable
+[117.88] repairability through a partnership for
+[119.52] replacement parts with iFixit, and an
+[121.6] unassuming design that manages to be as
+[123.44] quiet as it is adorable.
+[125.761] >> [music]
+[125.96] >> The one area where it falls short,
+[128.08] ironically, is gaming performance.
+[131.08] But,
+[132.04] that's not really an issue when I'm
+[133.56] using it as a workstation. And for
+[135.32] day-to-day use, it doesn't [music]
+[137.44] feel slow. And a big part of that comes
+[139.959] down to the excellent Steam OS software.
+[143.16] Now, it's worth getting this out of the
+[144.64] way early. A lot of what I'm about to
+[146.56] say about Steam OS is really about Arch
+[149.92] Linux, the KDE Plasma desktop
+[152.12] environment, or Flatpak, the package
+[154.56] manager that makes browsing and
+[156.16] installing applications on Linux very
+[158.76] App Store-like. [music] But, Valve has
+[160.959] made meaningful contributions to making
+[163.24] these things as good as they are,
+[165.64] including sponsoring upstream
+[167.12] development. And, maybe more
+[168.88] importantly, Valve is doing the work of
+[171.04] curating all of the elements that make
+[173.2] up Steam OS, and validating the
+[175.64] experience of how they work together.
+[177.6] Take, for instance, the switching
+[179.44] process between the default gaming Steam
+[181.8] OS interface and the desktop when you're
+[183.84] looking at here. All it takes is a quick
+[186.519] reboot-to-desktop mode button, and
+[188.239] within seconds, Game Scope is gone, to
+[190.72] be replaced by a lightly customized KDE
+[193.12] Plasma that is made to be just so
+[195.88] friendly to Windows refugees like
+[197.48] myself. I would say that customizing it
+[199.4] to your liking should take no longer
+[200.8] than, like,
+[201.959] 10 to 30 minutes. Like, my oddball 6K by
+[205.32] 2 and 1/2K monitor resolution was
+[206.959] detected immediately. And, while I was
+[209.6] checking that, I was struck by just how
+[211.6] simple the configuration menus are.
+[214] Like, why does Microsoft feel the need
+[216.4] to hide HDR settings within a submenu?
+[219.16] And for that matter, why is refresh rate
+[221.48] an advanced option? It's 2026.
+[225.239] This is more like it. Oh, and by the
+[227.959] way, thank you for having pointer
+[229.92] acceleration off by default. Like, duh,
+[233.16] right?
+[234.52] Grabbing my frequently used programs was
+[236.28] painless. Chrome for browsing, Zap-Zap
+[238.6] for WhatsApp messages, OBS Studio for
+[240.68] screen cap, VLC, a calculator since one
+[243.96] wasn't included for some reason, and
+[245.92] Windows snapping works exactly like
+[248.16] you'd expect. Actually, better than
+[250.28] Windows in some respects. Have you guys
+[252.16] ever had a window that's like stuck
+[254.32] snapped to a virtual display somewhere
+[256.12] off screen and thought, "Ah, darn it.
+[257.239] Now, is it control arrow or is it
+[259.16] Windows arrow to move it over?"
+[261.12] Well, on Steam OS, I don't know. Just
+[262.8] close it and reopen it. A freshly
+[264.84] launched application will pop up
+[266.08] somewhere sensible, like, I don't know,
+[268.16] maybe in the middle of the screen.
+[270.68] Love it. The whole experience feels
+[273.76] familiar, but better with thoughtful
+[276.56] features like wiggling the mouse to
+[278.44] embiggen it like on a Mac, the ability
+[280.84] to ping your speakers simply by clicking
+[283.68] the volume slider rather than dragging
+[285.28] it. Why did you remove that
+[287.16] functionality, Microsoft? And, barring
+[290.44] the odd weird frame drop, well-tuned
+[293.04] animations that look and feel modern,
+[295.48] but are fast and subtle enough that they
+[297.52] don't get obnoxious.
+[299.04] A recent Samsung One UI update is
+[301.28] actually the perfect example of the kind
+[303.12] of animation bloat that Steam OS issues.
+[306.76] Why are five tiles wiggling every time I
+[309.76] swipe a notification? That's not to say
+[312.04] that everything went perfectly. This is
+[314.56] my desktop setup at work. Like that
+[316.64] blissful looking mouse pad, by the way?
+[318.28] Coming soon. lttstore.com.
+[320.36] Anyway, I ditched having a desktop the
+[322.52] better part of a year ago because I have
+[324.76] two desks at our two offices, and it's
+[326.919] way easier for me to carry all of my
+[328.24] stuff around with me on a laptop. So,
+[330.32] I'm a big fan of USBC docking in order
+[332.96] to hook up all my peripherals and charge
+[334.76] my battery.
+[336.08] Well, the Steam Machine has a USBC port,
+[339.28] and it's pretty high-speed at 10 gigabit
+[340.96] per second,
+[342.24] but unfortunately, it is not wired up as
+[345.08] a display output, nor does it have USB-4
+[347.96] capabilities to allow it to work with
+[349.56] Thunderbolt peripherals.
+[351.32] And this is a great example of the kind
+[353.68] of thing that can end up
+[355.28] overlooked in the rush to get an embargo
+[357.48] day review out, but might come up during
+[359.96] the weeks or the months that you spend
+[361.76] daily driving a device later. It's
+[363.6] unlikely to be a huge issue for you
+[365.52] since you likely won't be carrying your
+[367.36] Steam Machine back and forth to the
+[368.84] office in your backpack, but still, I
+[371.64] wouldn't have minded a better Type-C
+[373.24] port or, while we're at it, a 2.5 gig
+[375.88] network port. I suspect Valve knew what
+[377.96] they were doing [music] when they
+[379.04] focused instead on high-speed wireless
+[381.24] networking and left off 2.5 gig LAN. I
+[383.84] mean, they do after all run the Valve
+[385.76] hardware survey, but on a CPU with six
+[389.04] Zen 5 cores, I should be able to exceed
+[391.96] gigabit download speeds without buying a
+[394.24] separate 2.5 gig USB NIC. [music]
+[397.04] On the subject of networking, you might
+[398.56] recall that Elijah really struggled with
+[400.6] accessing network shares in our recent
+[402.6] Linux challenge series. Mounting network
+[404.6] locations as though they are a
+[406.56] physically attached disk is not well
+[409.28] supported, especially on immutable OSes
+[411.8] at this time. I'm happy to report though
+[414.04] that the KDE team has found funding to
+[416.2] chase down this issue, and I'm also
+[418.64] happy to report that if your needs are
+[420.4] less complicated than his, on Steam OS,
+[423.36] SMB shares are easy to find,
+[425.28] authenticate, and bookmark for future
+[427.36] use. Though, I did hit a small snag when
+[430.2] I was transferring files off my phone.
+[432.76] First of all, I want to shout out the
+[434.36] way that I get prompted when I drag and
+[435.96] drop for whether I want to copy-paste
+[437.52] cut-paste. I really like that, but what
+[440.04] I don't like is where the devil are my
+[441.68] thumbnails? It looks like Dolphin, the
+[443.84] default file explorer, needs to be
+[445.48] configured in order to show previews for
+[447.68] network files, and you can tell it um
+[450.12] anything under, you know, some given
+[451.84] size, which fixed it. But I did find it
+[454.36] to be a little slow to generate them
+[456.08] sometimes.
+[457.44] The bigger issue when I was transferring
+[459.48] files was when I plugged in my other
+[461.28] phone from Apple.
+[463.64] Turns out that um
+[465.32] out of the box, iPhones can't be
+[467.28] accessed over USB at all. And this is a
+[470.32] real problem for ingesting video.
+[473.36] KDE Connect was the most common
+[475.56] suggested fix, and [music] it's a pretty
+[477.64] neat piece of software that integrates
+[479.36] with your iPhone wirelessly to provide a
+[481.32] more seamless experience. But, when I
+[484.32] tried to copy like 100-plus files, it
+[487.04] just
+[488.48] stopped.
+[489.6] No obvious errors, no way to pick up
+[491.76] where I left off, it just stopped.
+[493.875] [music]
+[494.44] I suspect the problem is mostly Apple,
+[496.6] since I've seen the same preparing
+[498.46] [music]
+[499.32] hang issue when uploading third-party
+[501.36] cloud storage providers,
+[502.919] but it doesn't change the conclusion.
+[504.76] Copying big files from an iPhone is
+[506.72] basically unusable without jumping
+[508.6] through silly hoops, and I ended up
+[510.16] having to do the transfer on Windows.
+[512.08] Since I was playing around with file
+[513.28] transfers, I also found a comically bad
+[515.8] workflow where Arc was failing to
+[518] extract a Google Drive download to a
+[519.56] network
+[520.73] >> [music]
+[520.88] >> Like, why? Just copy it. And while I'm
+[524.64] at it, dragging and dropping files into
+[526.32] Google Drive doesn't work in Chrome for
+[528.28] some reason. On the plus side, though,
+[530.56] once I had the files on my NAS at home,
+[532.76] a quick AI guide had me using Tailscale
+[535.36] to remotely transfer those files from my
+[537.72] Steam machine to my work NAS in less
+[540.36] than 2 minutes. So, say what you want
+[542.64] about AI, sometimes it really is a total
+[545] waste of sand. It has made switching to
+[546.8] Linux easier than ever before, because
+[549.28] what used to be just endless wading
+[551.64] through outdated Reddit threads or or
+[554.2] even worse, Steam forum arguments, is
+[556.92] now usually just a quick prompt and a
+[560.031] >> [music]
+[560.12] >> probably helpful if over-the-top Glazy
+[562.48] response.
+[564.4] Coming back to that Steam forum
+[565.6] conversation for a second, though,
+[567.28] there's another Linux issue, this one
+[569.36] raised by Luke during our challenge,
+[571.6] that does not appear to be addressed by
+[573.68] SteamOS. And that's auto scrolling.
+[576.88] Windows has this great feature that
+[579.12] allows you to click with your middle
+[581.12] mouse in the blank space on a scrolling
+[583.2] webpage or application and then just
+[585.68] move the mouse to start a smooth
+[587.84] continuous scroll. The more you move,
+[590.56] the faster it scrolls. And it even works
+[593] horizontally for my spreadsheet lovers
+[594.88] out there. If you've ever experienced
+[596.96] repetitive strain symptoms in your
+[598.24] wrist, I'm not a doctor, but you need to
+[600.64] start using auto scroll right now. It
+[603.2] majorly cuts down on unnecessary mouse
+[605.64] movements or scroll wheel scrolls when
+[607.4] you're reading documents
+[609] and just plain doesn't work properly on
+[612.08] Steam OS. And you know what, Ryblade?
+[614.68] Responses like this aren't constructive.
+[617] I'm really happy for you that middle
+[618.76] clicking to paste text is more useful to
+[621.68] you.
+[622.64] It isn't to me. This is a critical issue
+[625.64] for 66%
+[627.36] of our last Linux Challenge participants
+[629.48] and in my opinion, it needs to be
+[631.44] addressed. Moving on. A couple of years
+[633.48] ago, we tried to use Steam OS to
+[635.2] troubleshoot a driver issue on an old
+[637.04] printer and what I discovered was that
+[639.16] it straight up didn't have built-in
+[640.88] printer support.
+[642.2] Well, fast forward to today and it took
+[644.64] me just about 30 seconds to go from no
+[647.6] printer to this delightful booklet of
+[650.28] wasted paper when I tried to print a
+[651.72] test page.
+[653.4] Progress.
+[655.56] In all seriousness though, with a little
+[657.08] bit more work, I could have had my
+[658.52] printer working and when I really tried
+[661.12] to throw it for a loop and I threw my
+[662.72] Fuji ScanSnap at it, I got that working
+[665.2] in less than 3 minutes. [music] Okay,
+[667.8] the free software I used got a little
+[669.68] confused trying to save my scans as an
+[672.04] image rather than a PDF, defaulting to
+[674.64] bitmaps and then spitting out errors
+[676.2] about how bitmaps are not supported, but
+[679.12] PDFs worked. So, progress.
+[681.6] >> Okay.
+[682.4] >> And as much as I'm kind of taking the
+[684.72] piss a little bit, I'm actually serious
+[686.76] about that. Every Linux issue that I can
+[689.64] think of over the last 10 years has been
+[692.16] meaningfully improved since I found out
+[694.8] about it. Like I remember flagging
+[696.8] crappy GoXLR audio interface support
+[699.04] during our first Linux challenge.
+[700.92] Nowadays, it works as well on Linux as
+[703.24] it does on Windows, maybe even better
+[705.56] due to TC Helicon abandoning their
+[707.32] software support. To be clear, SteamOS
+[709.56] is not going to be the right choice for
+[711.16] everyone.
+[712.48] Um
+[712.648] >> [music]
+[712.72] >> the lack of, you know, facial
+[714.12] recognition through Windows Hello kind
+[716.56] of sucks, and it's an immutable OS,
+[719.4] meaning that it kind of resets every
+[722.24] time you reboot. For a lot of people,
+[724.08] this won't be a problem, but to show why
+[725.76] it could be, part of getting my GoXLR
+[728.16] interface configured [music]
+[729.68] involved installing utility that was not
+[732.12] available in a flat pack. So, I did some
+[735.24] hacky stuff and got it to work, but then
+[738.4] when I rebooted my system, it caused it
+[740.56] to stop [music] working. But, while
+[743.44] that's a downer for me, for gamers and
+[746.16] application users who want to be
+[747.6] protected from system-destroying
+[749.36] modifications, I feel this was a very
+[751.64] smart choice on Valve's part. And that's
+[755] what SteamOS really boils down to. It's
+[758.2] not unique. In fact, I was sitting with
+[760.52] Jordan pointing out how OneDrive isn't
+[762.76] prompting me to buy a subscription, and
+[764.4] Edge hasn't asked me today if I'd like
+[766.28] to switch to it now or later, and it
+[769.32] occurred to me that there's an easy
+[771.2] answer to all of that. Windows can be
+[773.24] configured to not do any of those
+[774.839] things. And I I really do want to
+[777.16] explore Windows debloating, but
+[780.24] I got to confess, I get almost like a a
+[782.12] PTSD type of response to those
+[784.44] interruptions at this point.
+[786.36] Like SteamOS has some annoyances, too.
+[788.92] Tediously clicking away notifications
+[790.839] that pile up in the bottom right, that's
+[792.4] one of them. But, because everything
+[794.16] about it feels well-intentioned,
+[796.88] I have [music] so much more patience for
+[798.8] it. Like by contrast, I feel constantly
+[801.88] on edge.
+[803.28] Pun 100% intended. When I'm using
+[805.56] Windows, just from all the past
+[807.08] experiences. And And besides, why should
+[809.64] I have to debloat? Remember I told you
+[812.24] you could probably have this set up in
+[813.36] 10 minutes? I meant that. A product that
+[816.04] I pay for should [music] feel
+[818.36] comfortable out of the box. Do you
+[820.76] remember when technology was made to
+[822.76] make our lives better instead of
+[824.44] existing only to sell us
+[826.76] I remember. And the dumbest part of this
+[829.6] is SteamOS totally does exist just to
+[832.48] sell us And it still manages to be
+[835.44] that much better than Windows. Okay,
+[837] last thought here. Valve, um can you
+[839.4] please add a button to default to boot
+[841.72] up in desktop mode so that I don't need
+[843.32] to use a terminal command? Uh it was the
+[845.32] one normal thing I did on this system
+[848.04] the entire time I was using it that
+[849.76] required the console. And that is really
+[852.96] high praise indeed. Just like I will
+[856.68] praise our sponsor,
+[858.48] Ugreen. Security camera footage only
+[860.48] sticks around for so long, and this is
+[862.8] usually result of limited storage. Or
+[865.32] maybe you're looking for a way to back
+[866.76] up all those important videos you made
+[868.24] on your last family vacation. Either
+[870.04] way, Ugreen's NAS DXP2800GT
+[873.28] is a great centralized storage system
+[875.2] for all your files, images, and videos.
+[877.6] You can get up to 80 terabytes of
+[879.48] storage with support for two SATA drives
+[881.72] and two SSD slots, which is enough for
+[884.4] tens of thousands of videos. If you just
+[887.28] wanted to back up security footage, just
+[889.12] connect ONVIF IP cameras on your
+[891.36] network, and you get a live view, local
+[893.6] recording, playback, all accessible from
+[896.28] a single app. Ugreen even allows you to
+[898.4] sync other aspects of your smart home to
+[900.4] your NAS. Don't worry about setup.
+[902.52] There's a step-by-step guide that's
+[904.839] beginner-friendly. So, hurry up and grab
+[906.92] your Ugreen NAS DXP2800GT
+[909.72] using our link below.
+[911.52] If you guys enjoyed this video, why
+[913.12] don't you check out the review? It was a
+[914.48] lot less focused on the SteamOS desktop
+[917.4] experience and a lot more focused on
+[919.72] gaming, which
+[922.08] was not quite as rosy a picture.

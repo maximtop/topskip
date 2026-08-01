@@ -369,7 +369,7 @@ export class YtDlpSubtitleStrategy {
     }
 
     /**
-     * Requires duration-bearing non-live metadata before captions or Gemini can run.
+     * Requires duration-bearing non-live metadata before captions or model analysis can run.
      *
      * @param metadata - Validated yt-dlp metadata object.
      * @returns Whether metadata proves a finite ordinary VOD duration.

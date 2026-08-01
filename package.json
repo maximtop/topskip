@@ -30,6 +30,7 @@
         "test:e2e:ui": "playwright test --config extension/playwright.config.ts --ui",
         "generate:e2e-video": "bash scripts/generate-e2e-fixture-video.sh",
         "openrouter:compare-presets": "tsx scripts/compare-openrouter-presets.ts",
+        "benchmark:promo": "tsx scripts/promo-benchmark.ts",
         "openrouter:extract-log-transcript": "tsx scripts/extract-transcript-from-topskip-console-log.ts",
         "locales": "tsx tasks/translations/index.ts"
     },

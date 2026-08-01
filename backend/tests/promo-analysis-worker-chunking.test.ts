@@ -6,6 +6,7 @@ import type {
     BackendLlmAnalysisAdapterInput,
 } from '@topskip/backend/analysis/promo-analysis-types';
 import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
+import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 
 const TOTAL_SEC = 13_600;
 
@@ -26,7 +27,7 @@ function makeArtifact(): TranscriptArtifact {
     return {
         artifactId: 'transcript-test',
         videoId: 'dQw4w9WgXcQ',
-        algorithmVersion: 'server-v6',
+        algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
         strategy: 'extension_caption_upload',
         videoDurationSec: TOTAL_SEC,
         acquiredAtMs: 1,

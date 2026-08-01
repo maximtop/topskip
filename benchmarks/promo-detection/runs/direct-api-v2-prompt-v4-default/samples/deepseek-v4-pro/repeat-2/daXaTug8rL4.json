@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "runKey": "direct-api-v2-prompt-v4-default",
+  "corpusId": "promo-paid-v2",
+  "corpusManifestSha256": "b038b4ade2a65284690cc774b4d550176946643b39de7ad0595407eb632ebafa",
+  "model": "deepseek-v4-pro",
+  "reasoning": "default",
+  "repeat": 2,
+  "videoId": "daXaTug8rL4",
+  "languageCode": "en",
+  "transcriptHash": "da6b401a6830c01c8186c3187576a3d4c4780940c64d0a0a793e293c568944a8",
+  "fixtureSha256": "419fdc6cb42facdf63062218cc0264cf64cd7a3c678c81e07062d700c4c9b2f3",
+  "promptVersion": "4",
+  "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+  "messageSha256": "8796e108cb1572058520d063704ac8462d59c2699973d9bfc1b71e379b0f9cc2",
+  "harness": "Direct API",
+  "streamed": true,
+  "valid": true,
+  "latencyMs": 9254.810250000097,
+  "rawAssistant": "{\"hasPromo\": false}",
+  "prediction": {
+    "hasPromo": false
+  },
+  "finishReason": "stop",
+  "usage": {
+    "promptTokens": 1645,
+    "completionTokens": 399,
+    "totalTokens": 2044,
+    "cachedTokens": 1536,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 391
+  },
+  "ttftMs": 9254.351958000101,
+  "outputTokensPerSecond": 870623.9690060841,
+  "costUsd": 0.000400113
+}

@@ -1,0 +1,136 @@
+{
+    "schemaVersion": 1,
+    "corpusId": "promo-paid-v2",
+    "policy": "paid_sponsor_only",
+    "referenceStatus": "curated_from_timed_captions",
+    "itemCount": 10,
+    "items": [
+        {
+            "videoId": "mc9WVVAUQGE",
+            "languageCode": "en",
+            "title": "Tom Holland and Jon Bernthal Team Up While Eating Spicy Wings | Hot Ones",
+            "transcriptHash": "90954001a676fbfc7793ee3238e1fa8ff579cba5b168934597253c29b8b7b4d6",
+            "fixtureSha256": "9f9c9f5ed2ceb61f7a6cbbcd62fddbcb117e4d9307917c75ecb249623cb29781",
+            "fixturePath": "data/en/mc9WVVAUQGE.txt",
+            "segmentCount": 930,
+            "videoDurationSec": 1761.399,
+            "paidPromoBlocks": []
+        },
+        {
+            "videoId": "daXaTug8rL4",
+            "languageCode": "en",
+            "title": "SPIDER-MAN: BRAND NEW DAY – Final Trailer (Peter’s Journey) 4K",
+            "transcriptHash": "da6b401a6830c01c8186c3187576a3d4c4780940c64d0a0a793e293c568944a8",
+            "fixtureSha256": "419fdc6cb42facdf63062218cc0264cf64cd7a3c678c81e07062d700c4c9b2f3",
+            "fixturePath": "data/en/daXaTug8rL4.txt",
+            "segmentCount": 58,
+            "videoDurationSec": 151,
+            "paidPromoBlocks": []
+        },
+        {
+            "videoId": "5fXAELrljqs",
+            "languageCode": "en",
+            "title": "Valve Accidentally Made the Best Desktop PC I’ve Ever Used",
+            "transcriptHash": "4e7e35ffc910ac12f3f41016675dd038c00a0840c7f5cffacc3a794860ba58e0",
+            "fixtureSha256": "5478fe61426bd8c7429d6d04c2f7ac520021ed465e368cfdea39668c554a12ad",
+            "fixturePath": "data/en/5fXAELrljqs.txt",
+            "segmentCount": 425,
+            "videoDurationSec": 926.16,
+            "paidPromoBlocks": [
+                { "startSec": 77, "endSec": 101.6 },
+                { "startSec": 852.96, "endSec": 911.52 }
+            ]
+        },
+        {
+            "videoId": "M51asSwRLxA",
+            "languageCode": "en",
+            "title": "This $12 billion startup finally shipped something...",
+            "transcriptHash": "dba8f71630d4dad96e0932eae28e955f47c287e5b65211f3ee3021728fc892cf",
+            "fixtureSha256": "3b9e07a8b3f2ba93edc0319c6c29eeed0257209cccbc5890c8e2a4ed9f4e2d54",
+            "fixturePath": "data/en/M51asSwRLxA.txt",
+            "segmentCount": 158,
+            "videoDurationSec": 318.32,
+            "paidPromoBlocks": [
+                { "startSec": 262.4, "endSec": 312.08 }
+            ]
+        },
+        {
+            "videoId": "YP73B9D20V4",
+            "languageCode": "en",
+            "title": "Open-weight AI just hit 2.8 trillion parameters…",
+            "transcriptHash": "651541d0a57b4bb341427ee6445c71c4c83bf8eb584c218c680ac99a95ccc1ae",
+            "fixtureSha256": "3d5113944f9863891e464d6843f370d2382202a595e865e33831035b4ca0859c",
+            "fixturePath": "data/en/YP73B9D20V4.txt",
+            "segmentCount": 80,
+            "videoDurationSec": 309.6,
+            "paidPromoBlocks": [
+                { "startSec": 251.76, "endSec": 303.6 }
+            ]
+        },
+        {
+            "videoId": "v3eXTAqGkzg",
+            "languageCode": "ru",
+            "title": "Открываю ПК клуб - симрейсинг",
+            "transcriptHash": "b4c55888a92a61beaddd70fbda98aaa44ca7b1a83adf0c8f961313ed0bcb936c",
+            "fixtureSha256": "b00cf251649a3de9b8453eee1e81c45c3c0f5df9bce02ca8b7e20f36b16adf10",
+            "fixturePath": "data/ru/v3eXTAqGkzg.txt",
+            "segmentCount": 910,
+            "videoDurationSec": 1846.88,
+            "paidPromoBlocks": [
+                { "startSec": 242.12, "endSec": 331.6 },
+                { "startSec": 826.56, "endSec": 947.56 },
+                { "startSec": 1580.48, "endSec": 1600.799 }
+            ]
+        },
+        {
+            "videoId": "NOG7mWcVUeI",
+            "languageCode": "ru",
+            "title": "Главная фабрика планеты // Пора валить в Гуанчжоу",
+            "transcriptHash": "92161a1a4db040bb4a200d69f967d51d2709ecf76247e575576c1ff1fda94224",
+            "fixtureSha256": "d1bfeb9c9473f04de7e89b93e49dc3eb18007fbe5b2cbd69dfa47d74a9824efa",
+            "fixturePath": "data/ru/NOG7mWcVUeI.txt",
+            "segmentCount": 1044,
+            "videoDurationSec": 2784.8,
+            "paidPromoBlocks": [
+                { "startSec": 41.559, "endSec": 54.199 },
+                { "startSec": 740.6, "endSec": 798.079 }
+            ]
+        },
+        {
+            "videoId": "7hJUNj3UjQE",
+            "languageCode": "ru",
+            "title": "Высадка Вермахта в Британии: как прошла бы операция \"Морской Лев\"",
+            "transcriptHash": "6ca6435a3997f306206b9d6e16e27cb03cf2c503685334e1b8ad0b465efea534",
+            "fixtureSha256": "fe52e286f4e569f501170fb2b3f6fd299ae4293eed1db74551fba26f9ebba082",
+            "fixturePath": "data/ru/7hJUNj3UjQE.txt",
+            "segmentCount": 850,
+            "videoDurationSec": 2100.52,
+            "paidPromoBlocks": [],
+            "referenceNote": "Self-promotion is intentionally excluded."
+        },
+        {
+            "videoId": "OpBBQpyt9EI",
+            "languageCode": "ru",
+            "title": "Греция после «Одиссеи»: Баунов и Дудь гуляют по Афинам",
+            "transcriptHash": "0009ab0b2b7bc8f978eceff319474e9ad34cf0607d4841eb5e63725eb3ad1f8b",
+            "fixtureSha256": "be9257f0264f67b653cf55dd583ca6445774b79fcb7d11bc11db8ecd3e5057f6",
+            "fixturePath": "data/ru/OpBBQpyt9EI.txt",
+            "segmentCount": 827,
+            "videoDurationSec": 1934.919,
+            "paidPromoBlocks": []
+        },
+        {
+            "videoId": "OUunDHYY-xk",
+            "languageCode": "ru",
+            "title": "Мстители: Доктор Дум - Разбор трейлера. Судный День Близко!",
+            "transcriptHash": "2b07323ae62651cc17ba56b22a50879c0da35862ae50be23845978febd3302a6",
+            "fixtureSha256": "c998a8f51358fffabafce82e479e64468d0806460a88c782ab3ba1ae3d8ce585",
+            "fixturePath": "data/ru/OUunDHYY-xk.txt",
+            "segmentCount": 418,
+            "videoDurationSec": 923.48,
+            "paidPromoBlocks": [
+                { "startSec": 116, "endSec": 224.68 }
+            ]
+        }
+    ]
+}

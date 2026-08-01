@@ -2,7 +2,7 @@ import * as v from 'valibot';
 import { randomUUID } from 'node:crypto';
 
 import { LocalPromoAnalysisFixtureAdapter } from '@topskip/backend/analysis/local-analysis-fixtures';
-import { OpenRouterGeminiAnalysisAdapter } from '@topskip/backend/analysis/openrouter-gemini-analysis-adapter';
+import { OpenRouterAnalysisAdapter } from '@topskip/backend/analysis/openrouter-analysis-adapter';
 import { normalizeBackendPromoBlocks } from '@topskip/backend/analysis/promo-block-normalization';
 import { buildServerTranscriptChunks } from '@topskip/backend/analysis/promo-analysis-chunking';
 import {
@@ -364,14 +364,14 @@ export class BackendPromoAnalysisWorker {
     }
 
     /**
-     * Keeps deterministic fixtures test-only while production always uses Gemini.
+     * Keeps deterministic fixtures test-only while production uses the fixed server model.
      *
      * @returns Environment-appropriate backend adapter.
      */
     private static defaultAdapter(): BackendLlmAnalysisAdapter {
         return process.env.NODE_ENV === 'test'
             ? LocalPromoAnalysisFixtureAdapter
-            : OpenRouterGeminiAnalysisAdapter.createFromEnvironment();
+            : OpenRouterAnalysisAdapter.createFromEnvironment();
     }
 
     /**

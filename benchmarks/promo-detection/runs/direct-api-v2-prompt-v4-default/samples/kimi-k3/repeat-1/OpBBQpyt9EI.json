@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "runKey": "direct-api-v2-prompt-v4-default",
+  "corpusId": "promo-paid-v2",
+  "corpusManifestSha256": "b038b4ade2a65284690cc774b4d550176946643b39de7ad0595407eb632ebafa",
+  "model": "kimi-k3",
+  "reasoning": "default",
+  "repeat": 1,
+  "videoId": "OpBBQpyt9EI",
+  "languageCode": "ru",
+  "transcriptHash": "0009ab0b2b7bc8f978eceff319474e9ad34cf0607d4841eb5e63725eb3ad1f8b",
+  "fixtureSha256": "be9257f0264f67b653cf55dd583ca6445774b79fcb7d11bc11db8ecd3e5057f6",
+  "promptVersion": "4",
+  "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+  "messageSha256": "501180f5bf3aed00d8cb964014c3653ef7bd65ed7441e204b96b124c5362b6d3",
+  "harness": "Direct API",
+  "streamed": true,
+  "valid": true,
+  "latencyMs": 2332.909333999967,
+  "rawAssistant": "{\"hasPromo\": false}",
+  "prediction": {
+    "hasPromo": false
+  },
+  "finishReason": "stop",
+  "usage": {
+    "promptTokens": 12878,
+    "completionTokens": 82,
+    "totalTokens": 12960,
+    "cachedTokens": 0,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 0
+  },
+  "ttftMs": 2193.159834000049,
+  "outputTokensPerSecond": 586.7641744696624,
+  "costUsd": 0.039864
+}

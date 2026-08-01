@@ -10,7 +10,7 @@ import {
 /**
  * Server-owned algorithm version separates exact uploaded-caption artifacts from older results.
  */
-export const SERVER_ANALYSIS_ALGORITHM_VERSION = 'server-v6';
+export const SERVER_ANALYSIS_ALGORITHM_VERSION = 'server-v7';
 
 /**
  * Stable wire boundary for the current public analysis API.

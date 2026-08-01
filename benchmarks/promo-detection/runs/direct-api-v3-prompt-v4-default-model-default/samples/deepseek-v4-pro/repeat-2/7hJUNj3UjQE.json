@@ -1,0 +1,45 @@
+{
+  "schemaVersion": 2,
+  "runKey": "direct-api-v3-prompt-v4-default-model-default",
+  "corpusId": "promo-paid-v2",
+  "corpusManifestSha256": "b038b4ade2a65284690cc774b4d550176946643b39de7ad0595407eb632ebafa",
+  "model": "deepseek-v4-pro",
+  "reasoning": "default",
+  "repeat": 2,
+  "videoId": "7hJUNj3UjQE",
+  "languageCode": "ru",
+  "transcriptHash": "6ca6435a3997f306206b9d6e16e27cb03cf2c503685334e1b8ad0b465efea534",
+  "fixtureSha256": "fe52e286f4e569f501170fb2b3f6fd299ae4293eed1db74551fba26f9ebba082",
+  "promptVersion": "4",
+  "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+  "messageSha256": "b6f2d71d545152c50ef184a1089f9c7f18717c50d8d02a7d10468283e07cd8be",
+  "outputLimitPolicy": "model_default",
+  "requestConfigSha256": "821259cad09d266c1243f1169f0138b9016bcb6c8bad8be76aa1bf6d48bb1fca",
+  "harness": "Direct API",
+  "streamed": true,
+  "valid": true,
+  "latencyMs": 23773.798540999647,
+  "rawAssistant": "{\n  \"hasPromo\": true,\n  \"promoBlocks\": [\n    {\n      \"startSec\": 937.12,\n      \"endSec\": 1013.24,\n      \"confidence\": \"high\"\n    }\n  ]\n}",
+  "prediction": {
+    "hasPromo": true,
+    "promoBlocks": [
+      {
+        "startSec": 937.12,
+        "endSec": 1013.24,
+        "confidence": "high"
+      }
+    ]
+  },
+  "finishReason": "stop",
+  "usage": {
+    "promptTokens": 13941,
+    "completionTokens": 1309,
+    "totalTokens": 15250,
+    "cachedTokens": 13824,
+    "cacheWriteTokens": 0,
+    "reasoningTokens": 1257
+  },
+  "ttftMs": 23772.873957999982,
+  "outputTokensPerSecond": 1415773.3815935112,
+  "costUsd": 0.001239837
+}

@@ -420,13 +420,13 @@ describe('backend promo analysis worker', () => {
         });
     });
 
-    it('uses the OpenRouter Gemini adapter outside the test environment', async () => {
+    it('uses the fixed OpenRouter server adapter outside tests', async () => {
         const previousNodeEnv = process.env.NODE_ENV;
         const previousApiKey = process.env.OPENROUTER_API_KEY;
         const fetchMock = vi.fn().mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    model: 'google/gemini-3.5-flash-20260519',
+                    model: 'deepseek/deepseek-v4-flash',
                     choices: [{ message: { content: '{"hasPromo":false}' } }],
                 }),
             ),
@@ -447,7 +447,7 @@ describe('backend promo analysis worker', () => {
             expect(result.terminalResponse.status).toBe('no_promo');
             expect(result.analysisRun).toMatchObject({
                 provider: 'openrouter',
-                model: 'google/gemini-3.5-flash-20260519',
+                model: 'deepseek/deepseek-v4-flash',
                 promptVersion: '4',
             });
             expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -476,7 +476,7 @@ describe('backend promo analysis worker', () => {
             clock: () => 1_900_000_046_000,
             adapter: {
                 providerId: 'openrouter',
-                model: 'google/gemini-3.5-flash',
+                model: 'deepseek/deepseek-v4-flash',
                 promptVersion: '1',
                 analyze: () => Promise.reject(new Error('secret details')),
             },
@@ -488,7 +488,7 @@ describe('backend promo analysis worker', () => {
         });
         expect(result.analysisRun).toMatchObject({
             provider: 'openrouter',
-            model: 'google/gemini-3.5-flash',
+            model: 'deepseek/deepseek-v4-flash',
             promptVersion: '1',
             startedAtMs: 1_900_000_001_000,
             completedAtMs: 1_900_000_046_000,

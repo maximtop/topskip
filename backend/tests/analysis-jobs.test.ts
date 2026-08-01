@@ -459,7 +459,7 @@ describe('BackendAnalysisJobs', () => {
         }
     });
 
-    it('sends an uploaded artifact directly to Gemini', async () => {
+    it('sends an uploaded artifact directly to model analysis', async () => {
         const extraction = vi.spyOn(
             BackendSubtitleExtractionPipeline,
             'extract',

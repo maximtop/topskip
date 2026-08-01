@@ -1,0 +1,13 @@
+{
+    "schemaVersion": 1,
+    "runId": "codex-agent-v1-prompt-v4-max",
+    "corpusId": "promo-paid-v1",
+    "harness": "Codex agent",
+    "model": "gpt-5.6-sol",
+    "reasoning": "max",
+    "promptVersion": "4",
+    "promptSha256": "644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0",
+    "repeatCount": 3,
+    "expectedSampleCount": 30,
+    "sessionIsolation": "one fresh no-history agent per video and repeat"
+}

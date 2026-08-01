@@ -159,8 +159,8 @@ describe('server analysis contract', () => {
         },
     );
 
-    it('uses server-v6 and the 8 MiB public body limit', () => {
-        expect(SERVER_ANALYSIS_ALGORITHM_VERSION).toBe('server-v6');
+    it('uses server-v7 and the 8 MiB public body limit', () => {
+        expect(SERVER_ANALYSIS_ALGORITHM_VERSION).toBe('server-v7');
         expect(SERVER_ANALYSIS_API_VERSION).toBe(1);
         expect(SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES).toBe(8 * 1024 * 1024);
     });

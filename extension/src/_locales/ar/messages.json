@@ -8,7 +8,7 @@
         "description": "Short name for the extension. Used in the toolbar."
     },
     "description": {
-        "message": "LLM-assisted promo skip on YouTube (MVP)",
+        "message": "تخطي المقاطع الترويجية على YouTube بمساعدة LLM (MVP)",
         "description": "Extension description for Chrome Web Store listing. TEXT MAX LENGTH: 132"
     },
     "popup_heading": {
@@ -16,187 +16,187 @@
         "description": "Popup heading text"
     },
     "popup_enable_promo_skip": {
-        "message": "Enable promo skip (YouTube)",
+        "message": "تفعيل تخطي المقاطع الترويجية (YouTube)",
         "description": "Label next to the main enable/disable switch in the popup"
     },
     "popup_enable_auto_skip_aria": {
-        "message": "Enable auto-skip",
+        "message": "تمكين التخطي التلقائي",
         "description": "Accessible label for the enable/disable switch in the popup"
     },
     "popup_active_tab_prefix": {
-        "message": "Active tab: ",
+        "message": "علامة التبويب النشطة: ",
         "description": "Prefix before the detection status line in the popup. Includes trailing space."
     },
     "popup_open_settings": {
-        "message": "Open settings (OpenRouter)",
+        "message": "افتح الإعدادات (OpenRouter)",
         "description": "Button in the popup that opens the options page"
     },
     "popup_reliability_notice_title": {
-        "message": "Reliability notice",
+        "message": "تنبيه بشأن الموثوقية",
         "description": "Title for the yellow alert box in the popup"
     },
     "popup_reliability_notice_body_1": {
-        "message": "TopSkip may rely on parts of YouTube's site that are not a documented public API—the same general area the YouTube web client uses. There is no guarantee that auto-skip will keep working if YouTube changes how the page behaves.",
+        "message": "قد يعتمد TopSkip على أجزاء من موقع YouTube لا تندرج ضمن API عام موثّق، وهي المنطقة نفسها التي يستخدمها عميل YouTube على الويب. إذا غيّر YouTube طريقة عمل الصفحة، فقد يتوقف التخطي التلقائي.",
         "description": "First paragraph of the reliability notice in the popup"
     },
     "popup_reliability_notice_body_2": {
-        "message": "If it stops working, please report it where you installed this extension (for example the Chrome Web Store support options, if you installed it from there).",
+        "message": "إذا توقفت الميزة، فأبلغ عن المشكلة في المكان الذي ثبّتَّ منه الإضافة (مثل خيارات الدعم في Chrome Web Store إذا ثبّتَّها منه).",
         "description": "Second paragraph of the reliability notice in the popup"
     },
     "popup_detection_not_configured": {
-        "message": "LLM not configured",
+        "message": "لم يتم إعداد LLM",
         "description": "Detection status shown when OpenRouter is not set up"
     },
     "popup_detection_unavailable": {
-        "message": "Unavailable",
+        "message": "غير متاح",
         "description": "Detection status shown when detection is unavailable"
     },
     "popup_detection_analyzing": {
-        "message": "Analyzing…",
+        "message": "جارٍ التحليل…",
         "description": "Detection status shown during transcript analysis"
     },
     "popup_detection_detected": {
-        "message": "Promo blocks detected",
+        "message": "تم اكتشاف مقاطع ترويجية",
         "description": "Detection status shown when promo blocks are found"
     },
     "popup_detection_no_promo": {
-        "message": "No promo found",
+        "message": "لم يتم العثور على مقاطع ترويجية",
         "description": "Detection status shown when no promo blocks are found"
     },
     "popup_detection_error": {
-        "message": "Detection error",
+        "message": "خطأ في اكتشاف المقاطع الترويجية",
         "description": "Detection status shown when detection fails"
     },
     "popup_detection_server_acquisition_badge": {
-        "message": "Captions",
+        "message": "الترجمة النصية",
         "description": "Popup status badge shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_title": {
-        "message": "Getting captions",
+        "message": "جارٍ الحصول على الترجمة النصية",
         "description": "Popup title shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_description": {
-        "message": "TopSkip is reading timed captions from this video.",
+        "message": "يقرأ TopSkip الترجمة النصية الموقّتة لهذا الفيديو.",
         "description": "Popup description shown during caption acquisition."
     },
     "popup_detection_server_acquisition_headline": {
-        "message": "Getting video captions…",
+        "message": "جارٍ الحصول على الترجمة النصية للفيديو…",
         "description": "Popup headline shown during caption acquisition."
     },
     "popup_detection_server_acquisition_body": {
-        "message": "Promo analysis will start as soon as captions are ready.",
+        "message": "سيبدأ تحليل المقاطع الترويجية فور جاهزية الترجمة النصية.",
         "description": "Popup body shown during caption acquisition."
     },
     "popup_detection_server_pending_badge": {
-        "message": "Server",
+        "message": "الخادم",
         "description": "Popup status badge shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_title": {
-        "message": "Server analysis pending",
+        "message": "تحليل الخادم قيد الانتظار",
         "description": "Popup title shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_description": {
-        "message": "TopSkip asked the server to analyze this video.",
+        "message": "طلب TopSkip من الخادم تحليل هذا الفيديو.",
         "description": "Popup description shown while the TopSkip server is processing a video."
     },
     "popup_detection_server_pending_headline": {
-        "message": "Server analysis is in progress.",
+        "message": "تحليل الخادم قيد التقدم.",
         "description": "Popup headline shown for a server processing response."
     },
     "popup_detection_server_pending_body": {
-        "message": "Skipping will start when the TopSkip backend has promo blocks for a future playback position.",
+        "message": "سيبدأ التخطي عندما يكتشف خادم TopSkip مقاطع ترويجية لاحقة أثناء التشغيل.",
         "description": "Popup body shown for a server processing response."
     },
     "popup_detection_server_error_badge": {
-        "message": "Server",
+        "message": "الخادم",
         "description": "Popup status badge shown when server analysis fails."
     },
     "popup_detection_server_error_title": {
-        "message": "Server analysis unavailable",
+        "message": "تحليل الخادم غير متاح",
         "description": "Popup title shown when the TopSkip server request fails."
     },
     "popup_detection_server_error_description": {
-        "message": "TopSkip could not use the server for this video.",
+        "message": "تعذر على TopSkip استخدام الخادم لهذا الفيديو.",
         "description": "Popup description shown when server analysis cannot run."
     },
     "popup_detection_server_error_headline": {
-        "message": "Server analysis failed.",
+        "message": "فشل تحليل الخادم.",
         "description": "Fallback popup headline shown when no specific server error is available."
     },
     "popup_detection_server_error_body": {
-        "message": "The TopSkip server did not return a usable response. Playback continues without server-detected skips.",
+        "message": "لم يُرجع خادم TopSkip استجابة صالحة. يستمر التشغيل من دون تخطي المقاطع التي يكتشفها الخادم.",
         "description": "Popup body shown for server request failures."
     },
     "popup_detection_server_cache_badge": {
-        "message": "Server cache",
+        "message": "ذاكرة التخزين المؤقت للخادم",
         "description": "Popup status badge shown when promo blocks came from the TopSkip backend cache."
     },
     "popup_detection_server_cache_title": {
-        "message": "Server-detected blocks ready",
+        "message": "المقاطع التي اكتشفها الخادم جاهزة",
         "description": "Popup title shown when the TopSkip backend returns cached promo blocks."
     },
     "popup_detection_server_cache_description": {
-        "message": "TopSkip received cached promo blocks from the server.",
+        "message": "تلقى TopSkip المقاطع الترويجية المحفوظة في ذاكرة الخادم المؤقتة.",
         "description": "Popup description shown for a server cache-hit response."
     },
     "popup_detection_server_cache_headline": {
-        "message": "Server cache hit.",
+        "message": "عُثر على النتيجة في ذاكرة الخادم المؤقتة.",
         "description": "Popup headline shown when a server cache hit is ready."
     },
     "popup_detection_server_no_promo_badge": {
-        "message": "Server",
+        "message": "الخادم",
         "description": "Popup status badge shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_title": {
-        "message": "Server analysis complete",
+        "message": "اكتمل تحليل الخادم",
         "description": "Popup title shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_description": {
-        "message": "TopSkip checked the server result for this video.",
+        "message": "قام TopSkip بفحص نتيجة الخادم لهذا الفيديو.",
         "description": "Popup description shown when a server terminal no-promo result is available."
     },
     "popup_detection_server_no_promo_headline": {
-        "message": "No server promo blocks detected.",
+        "message": "لم يكتشف الخادم أي مقاطع ترويجية.",
         "description": "Popup headline shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_no_promo_body": {
-        "message": "Playback continues normally unless future server results add blocks.",
+        "message": "يستمر التشغيل بشكل طبيعي ما لم تضف نتائج أحدث من الخادم مقاطع ترويجية.",
         "description": "Popup body shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_unavailable_badge": {
-        "message": "Server",
+        "message": "الخادم",
         "description": "Popup status badge shown when server analysis is unavailable."
     },
     "popup_detection_server_unavailable_title": {
-        "message": "Server analysis unavailable",
+        "message": "تحليل الخادم غير متاح",
         "description": "Popup title shown when server analysis reaches an unavailable terminal state."
     },
     "popup_detection_server_unavailable_description": {
-        "message": "The TopSkip server could not produce a result for this video.",
+        "message": "تعذر على خادم TopSkip إنتاج نتيجة لهذا الفيديو.",
         "description": "Popup description shown when server analysis cannot produce a result."
     },
     "popup_detection_server_unavailable_headline": {
-        "message": "Server analysis is unavailable.",
+        "message": "تحليل الخادم غير متاح.",
         "description": "Fallback popup headline shown when no specific server unavailable reason is available."
     },
     "popup_detection_server_unavailable_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "يستمر التشغيل من دون تخطي المقاطع التي يكتشفها الخادم.",
         "description": "Popup body shown when server analysis is unavailable."
     },
     "options_heading": {
-        "message": "TopSkip — LLM promo detection",
+        "message": "TopSkip — اكتشاف المقاطع الترويجية باستخدام LLM",
         "description": "Heading on the options page"
     },
     "options_description": {
-        "message": "Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).",
+        "message": "اضبط OpenRouter لتحليل الترجمة النصية. يُخزَّن مفتاح API في ملف تعريف المتصفح هذا فقط (ضمن التخزين المحلي للإضافة).",
         "description": "Description text below the heading on the options page"
     },
     "options_enable_detection": {
-        "message": "Enable LLM promo detection",
+        "message": "تفعيل اكتشاف المقاطع الترويجية باستخدام LLM",
         "description": "Checkbox label on the options page"
     },
     "options_api_key_label": {
-        "message": "OpenRouter API key",
+        "message": "مفتاح API لـ OpenRouter",
         "description": "Label for the API key input on the options page"
     },
     "options_api_key_placeholder": {
@@ -204,31 +204,31 @@
         "description": "Placeholder text for the API key input"
     },
     "options_api_key_saved": {
-        "message": "Saved key: %mask% - leave blank to keep it.",
+        "message": "المفتاح المحفوظ: %mask% — اترك الحقل فارغًا للاحتفاظ به.",
         "description": "Shown below API key input when a key is already saved. %mask% is the masked key value."
     },
     "options_api_key_none": {
-        "message": "No key saved yet.",
+        "message": "لم يتم حفظ أي مفتاح حتى الآن.",
         "description": "Shown below API key input when no key has been saved"
     },
     "options_model_label": {
-        "message": "Model",
+        "message": "نموذج",
         "description": "Label for the model select dropdown on the options page"
     },
     "options_model_description": {
-        "message": "Built-in presets and models you added below.",
+        "message": "الإعدادات المسبقة المدمجة والنماذج التي أضفتها أدناه.",
         "description": "Help text below the model select dropdown"
     },
     "options_add_model_heading": {
-        "message": "Add a model",
+        "message": "إضافة نموذج",
         "description": "Heading for the custom model section on the options page"
     },
     "options_add_model_description": {
-        "message": "Type an OpenRouter model id (for example vendor/model), then Add to keep it for later sessions. This is not the same as Save below.",
+        "message": "أدخل معرّف نموذج OpenRouter (مثل vendor/model)، ثم اختر «إضافة» للاحتفاظ به للجلسات اللاحقة. يختلف ذلك عن زر «حفظ» أدناه.",
         "description": "Help text for the custom model input section"
     },
     "options_custom_model_label": {
-        "message": "Custom model id",
+        "message": "معرف النموذج المخصص",
         "description": "Label for the custom model text input"
     },
     "options_custom_model_placeholder": {
@@ -236,235 +236,299 @@
         "description": "Placeholder for the custom model text input"
     },
     "options_add_button": {
-        "message": "Add",
+        "message": "إضافة",
         "description": "Button to add a custom model id"
     },
     "options_your_models_heading": {
-        "message": "Your added models",
+        "message": "النماذج التي أضفتها",
         "description": "Heading above the list of user-added custom models"
     },
     "options_remove_button": {
-        "message": "Remove",
+        "message": "إزالة",
         "description": "Button to remove a custom model from the list"
     },
     "options_saved": {
-        "message": "Saved.",
+        "message": "تم الحفظ.",
         "description": "Success message shown after saving settings"
     },
     "options_save_button": {
-        "message": "Save",
+        "message": "حفظ",
         "description": "Button to save all settings on the options page"
     },
     "options_reload_button": {
-        "message": "Reload",
+        "message": "إعادة تحميل",
         "description": "Button to reload settings from storage on the options page"
     },
     "options_save_help": {
-        "message": "Save applies the detection toggle, API key (if changed), and the selected model. Use Add to store extra model ids in your list.",
+        "message": "يطبّق زر «حفظ» إعداد الاكتشاف ومفتاح API إذا تغيّر والنموذج المحدد. استخدم «إضافة» لحفظ معرّفات نماذج أخرى في قائمتك.",
         "description": "Help text below the Save/Reload buttons"
     },
     "options_error_bg_no_response": {
-        "message": "Extension background did not respond. Click Reload or reload the extension on chrome://extensions.",
+        "message": "لم تستجب عملية الإضافة في الخلفية. اختر «إعادة تحميل» أو أعد تحميل الإضافة من صفحة chrome://extensions.",
         "description": "Error shown when the background service worker is unreachable"
     },
     "options_error_load_failed": {
-        "message": "Failed to load settings",
+        "message": "فشل تحميل الإعدادات",
         "description": "Generic error when loading settings fails"
     },
     "options_error_save_failed": {
-        "message": "Save failed",
+        "message": "فشل الحفظ",
         "description": "Generic error when saving settings fails"
     },
     "options_error_add_model": {
-        "message": "Could not add model",
+        "message": "تعذرت إضافة النموذج",
         "description": "Error when adding a custom model fails"
     },
     "options_error_remove_model": {
-        "message": "Could not remove model",
+        "message": "تعذرت إزالة النموذج",
         "description": "Error when removing a custom model fails"
     },
     "content_skip_applied": {
-        "message": "Skip applied",
+        "message": "تم تخطي المقطع",
         "description": "Brief toast notification shown on YouTube after a promo block is skipped"
     },
     "prefs_error_load": {
-        "message": "failed to load preferences",
+        "message": "تعذر تحميل التفضيلات",
         "description": "Error fallback in preferences store when loading fails"
     },
     "prefs_error_save": {
-        "message": "failed to save preferences",
+        "message": "تعذر حفظ التفضيلات",
         "description": "Error fallback in preferences store when saving fails"
     },
     "options_no_custom_models": {
-        "message": "No custom models saved yet.",
+        "message": "لم يتم حفظ أي نماذج مخصصة حتى الآن.",
         "description": "Shown in the add-model section when the user has not saved custom models yet."
     },
     "options_connections_heading": {
-        "message": "Connections",
+        "message": "الاتصالات",
         "description": "Heading for the provider API key connections section on the options page."
     },
     "options_connections_description": {
-        "message": "Save and test API keys for cloud models.",
+        "message": "احفظ مفاتيح API للنماذج السحابية واختبرها.",
         "description": "Help text for the provider API key connections section on the options page."
     },
     "options_connection_required_badge": {
-        "message": "Required for selected model",
+        "message": "مطلوب للنموذج المحدد",
         "description": "Badge shown on a provider connection when the active model needs that API key."
     },
     "options_connection_key_saved": {
-        "message": "Key saved",
+        "message": "تم حفظ المفتاح",
         "description": "Status badge for a provider connection with a saved API key."
     },
     "options_connection_key_missing": {
-        "message": "Key missing",
+        "message": "المفتاح غير موجود",
         "description": "Status badge for a provider connection without a saved API key."
     },
     "options_connection_key_placeholder": {
-        "message": "Enter API key",
+        "message": "أدخل مفتاح API",
         "description": "Placeholder for provider API key inputs in the connections section."
     },
     "options_connection_test_button": {
-        "message": "Test",
+        "message": "اختبار",
         "description": "Button that validates a provider API key in the connections section."
     },
     "options_connection_key_valid": {
-        "message": "Key is valid.",
+        "message": "المفتاح صالح.",
         "description": "Success message shown after a provider API key test passes."
     },
     "options_analysis_mode_heading": {
-        "message": "Analysis mode",
+        "message": "وضع التحليل",
         "description": "Heading for the analysis route selector in extension settings."
     },
     "options_analysis_mode_server_label": {
-        "message": "TopSkip Server",
+        "message": "خادم TopSkip",
         "description": "Label for the default server-backed analysis mode."
     },
     "options_analysis_mode_server_description": {
-        "message": "Uses TopSkip analysis and shared cached results.",
+        "message": "يستخدم تحليل TopSkip والنتائج المشتركة المحفوظة مؤقتًا.",
         "description": "Description shown when TopSkip Server mode is selected."
     },
     "options_analysis_mode_byok_label": {
-        "message": "Private BYOK",
+        "message": "BYOK الخاص",
         "description": "Label for the private bring-your-own-key analysis mode."
     },
     "options_analysis_mode_byok_description": {
-        "message": "Uses your configured provider in this extension.",
+        "message": "يستخدم المزوّد الذي أعددته داخل هذه الإضافة.",
         "description": "Description shown when Private BYOK mode is selected."
     },
     "options_analysis_mode_byok_privacy": {
-        "message": "Your watched video ID and analysis result are not sent to TopSkip Server. TopSkip Server is never used as a fallback in this mode.",
+        "message": "لا يُرسل معرّف الفيديو الذي شاهدته ولا نتيجة التحليل إلى خادم TopSkip. ولا يُستخدم خادم TopSkip أبدًا كخيار احتياطي في هذا الوضع.",
         "description": "Privacy and no-fallback disclosure shown for Private BYOK mode."
     },
     "options_analysis_mode_setup_required": {
-        "message": "Setup required: choose a provider and configure the selected model before using Private BYOK.",
+        "message": "الإعداد مطلوب: اختر مزوّدًا واضبط النموذج المحدد قبل استخدام BYOK الخاص.",
         "description": "Guidance shown when Private BYOK is selected without a runnable provider."
     },
     "options_analysis_mode_save_error": {
-        "message": "Could not change analysis mode.",
+        "message": "لا يمكن تغيير وضع التحليل.",
         "description": "Fallback error shown when saving the selected analysis mode fails."
     },
     "popup_analysis_mode_label": {
-        "message": "Analysis mode",
+        "message": "وضع التحليل",
         "description": "Label for the selected analysis route in the popup."
     },
     "popup_analysis_mode_server": {
-        "message": "TopSkip Server",
+        "message": "خادم TopSkip",
         "description": "Popup label for the server-backed analysis mode."
     },
     "popup_analysis_mode_byok": {
-        "message": "Private BYOK",
+        "message": "BYOK الخاص",
         "description": "Popup label for the private provider analysis mode."
     },
     "popup_byok_setup_badge": {
-        "message": "Setup required",
+        "message": "الإعداد مطلوب",
         "description": "Popup status badge shown when Private BYOK is not configured."
     },
     "popup_byok_setup_title": {
-        "message": "Private BYOK setup required",
+        "message": "إعداد BYOK الخاص مطلوب",
         "description": "Popup title shown when the selected BYOK provider is unavailable."
     },
     "popup_byok_setup_description": {
-        "message": "Configure %provider% in settings before promo analysis can run.",
+        "message": "اضبط %provider% في الإعدادات قبل بدء تحليل المقاطع الترويجية.",
         "description": "Popup BYOK setup guidance. %provider% is replaced with the selected provider name."
     },
     "popup_byok_setup_body": {
-        "message": "Analysis stays with your configured provider and is not shared with TopSkip.",
+        "message": "يبقى التحليل لدى المزوّد الذي أعددته ولا تتم مشاركته مع TopSkip.",
         "description": "Popup privacy reminder for an unconfigured Private BYOK route."
     },
     "popup_server_limitation_title": {
-        "message": "This video could not be analyzed",
+        "message": "لا يمكن تحليل هذا الفيديو",
         "description": "Popup title for a server analysis limitation specific to the video."
     },
     "popup_server_limitation_description": {
-        "message": "Your TopSkip settings are working.",
+        "message": "إعدادات TopSkip تعمل.",
         "description": "Popup reassurance for video-specific server limitations."
     },
     "popup_server_limitation_headline": {
-        "message": "TopSkip could not process this video.",
+        "message": "تعذر على TopSkip معالجة هذا الفيديو.",
         "description": "Popup headline for video-specific server limitations."
     },
     "popup_server_limitation_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "يستمر التشغيل من دون تخطي المقاطع التي يكتشفها الخادم.",
         "description": "Popup body for video-specific server limitations."
     },
     "popup_server_temporary_title": {
-        "message": "TopSkip Server is temporarily busy",
+        "message": "خادم TopSkip مشغول مؤقتًا",
         "description": "Popup title for temporary server capacity failures."
     },
     "popup_server_temporary_description": {
-        "message": "Your settings are working. Try again later.",
+        "message": "الإعدادات الخاصة بك تعمل. حاول مرة أخرى لاحقًا.",
         "description": "Popup reassurance for temporary server capacity failures."
     },
     "popup_server_temporary_headline": {
-        "message": "Server capacity is temporarily unavailable.",
+        "message": "سعة الخادم غير متاحة مؤقتًا.",
         "description": "Popup headline for temporary server capacity failures."
     },
     "popup_server_temporary_body": {
-        "message": "Try this video again later.",
+        "message": "حاول تشغيل هذا الفيديو مرة أخرى لاحقًا.",
         "description": "Popup body when the server does not provide a retry time."
     },
     "popup_server_temporary_retry": {
-        "message": "Try again in %seconds% seconds.",
+        "message": "حاول مرة أخرى بعد %seconds% ثانية.",
         "description": "Popup retry guidance. %seconds% is replaced with the server retry delay."
     },
     "popup_server_failure_title": {
-        "message": "TopSkip Server error",
+        "message": "خطأ في خادم TopSkip",
         "description": "Popup title for a reportable TopSkip server failure."
     },
     "popup_server_failure_description": {
-        "message": "The problem is on the TopSkip server, not in your settings.",
+        "message": "المشكلة موجودة في خادم TopSkip، وليس في إعداداتك.",
         "description": "Popup reassurance for a reportable server failure."
     },
     "popup_server_failure_headline": {
-        "message": "The server could not analyze this video.",
+        "message": "لم يتمكن الخادم من تحليل هذا الفيديو.",
         "description": "Popup headline for a reportable TopSkip server failure."
     },
     "popup_server_failure_body": {
-        "message": "Playback continues normally. You can report this error on GitHub.",
+        "message": "يستمر التشغيل بشكل طبيعي. يمكنك الإبلاغ عن هذا الخطأ على GitHub.",
         "description": "Popup body for a reportable TopSkip server failure."
     },
     "popup_server_upgrade_title": {
-        "message": "Update TopSkip",
+        "message": "تحديث TopSkip",
         "description": "Popup title when the server requires a newer extension."
     },
     "popup_server_upgrade_description": {
-        "message": "This server version requires a newer extension.",
+        "message": "يتطلب إصدار الخادم هذا نسخة أحدث من الإضافة.",
         "description": "Popup description when the server requires a newer extension."
     },
     "popup_server_upgrade_headline": {
-        "message": "An extension update is required.",
+        "message": "يلزم تحديث الإضافة.",
         "description": "Popup headline when the server requires a newer extension."
     },
     "popup_server_upgrade_body": {
-        "message": "Update TopSkip and try this video again.",
+        "message": "حدّث TopSkip ثم حاول تشغيل هذا الفيديو مرة أخرى.",
         "description": "Popup body when the server requires a newer extension."
     },
+    "popup_capture_failure_badge": {
+        "message": "الترجمة النصية",
+        "description": "Popup badge for a timed-caption capture failure."
+    },
+    "popup_capture_failure_title": {
+        "message": "تعذرت قراءة الترجمة النصية",
+        "description": "Popup title when the extension could not capture timed captions."
+    },
+    "popup_capture_failure_description": {
+        "message": "تعذر على TopSkip استخراج ترجمة نصية صالحة وموقّتة من هذا الفيديو.",
+        "description": "Popup explanation for a timed-caption capture failure."
+    },
+    "popup_capture_failure_headline": {
+        "message": "فشل استخراج الترجمة النصية.",
+        "description": "Popup headline for a timed-caption capture failure."
+    },
+    "popup_capture_failure_body": {
+        "message": "أعد تحميل الفيديو ثم حاول مرة أخرى.",
+        "description": "Popup recovery guidance after a timed-caption capture failure."
+    },
+    "popup_extension_failure_badge": {
+        "message": "تمت المقاطعة",
+        "description": "Popup badge when analysis cannot continue."
+    },
+    "popup_extension_failure_title": {
+        "message": "تعذرت متابعة التحليل",
+        "description": "Popup title when analysis ends before completion."
+    },
+    "popup_extension_failure_description": {
+        "message": "تعذر على TopSkip إكمال تحليل هذا الفيديو.",
+        "description": "Popup explanation when analysis ends before completion."
+    },
+    "popup_extension_failure_headline": {
+        "message": "أعد تحميل الفيديو أو الصفحة للمحاولة مرة أخرى.",
+        "description": "Popup recovery headline for an analysis that could not continue."
+    },
+    "popup_extension_failure_body": {
+        "message": "يستمر التشغيل بشكل طبيعي من دون تخطي المقاطع التي يكتشفها الخادم.",
+        "description": "Popup playback guidance after analysis ends before completion."
+    },
+    "popup_status_unavailable_badge": {
+        "message": "غير متاح",
+        "description": "Popup badge when current extension status cannot be read."
+    },
+    "popup_status_unavailable_title": {
+        "message": "الحالة غير متاحة",
+        "description": "Popup title when current extension status cannot be read."
+    },
+    "popup_status_unavailable_description": {
+        "message": "تعذر على TopSkip تحديث حالته الحالية.",
+        "description": "Popup explanation when current extension status cannot be read."
+    },
+    "popup_status_unavailable_headline": {
+        "message": "تعذر تحميل حالة TopSkip.",
+        "description": "Popup headline when current extension status cannot be read."
+    },
+    "popup_status_unavailable_activity": {
+        "message": "الحالة غير متاحة",
+        "description": "Popup activity label when current extension status cannot be read."
+    },
+    "popup_status_stale_activity": {
+        "message": "تأخر تحديث الحالة",
+        "description": "Popup activity label while the last trustworthy status remains visible."
+    },
     "popup_server_report_primary": {
-        "message": "Report on GitHub",
+        "message": "الإبلاغ على GitHub",
         "description": "Primary popup button for a reportable server failure."
     },
     "popup_server_report_secondary": {
-        "message": "Report if this seems wrong",
+        "message": "أبلغ إذا بدت النتيجة غير صحيحة",
         "description": "Secondary popup button for a possibly incorrect video limitation."
     }
 }

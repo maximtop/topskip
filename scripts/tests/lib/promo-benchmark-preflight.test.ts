@@ -7,9 +7,9 @@ import {
     buildBenchmarkRequestBody,
     loadCorpusManifest,
     runBenchmarkPreflight,
-} from '../lib/promo-benchmark-core';
+} from '../../lib/promo-benchmark-core';
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 
 describe('promo benchmark preflight', () => {
     it('validates the pinned bilingual corpus and default matrix', () => {

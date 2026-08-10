@@ -459,6 +459,70 @@
         "message": "Update TopSkip and try this video again.",
         "description": "Popup body when the server requires a newer extension."
     },
+    "popup_capture_failure_badge": {
+        "message": "Captions",
+        "description": "Popup badge for a timed-caption capture failure."
+    },
+    "popup_capture_failure_title": {
+        "message": "Could not read captions",
+        "description": "Popup title when the extension could not capture timed captions."
+    },
+    "popup_capture_failure_description": {
+        "message": "TopSkip could not capture usable timed captions from this video.",
+        "description": "Popup explanation for a timed-caption capture failure."
+    },
+    "popup_capture_failure_headline": {
+        "message": "Caption capture failed.",
+        "description": "Popup headline for a timed-caption capture failure."
+    },
+    "popup_capture_failure_body": {
+        "message": "Reload the video and try again.",
+        "description": "Popup recovery guidance after a timed-caption capture failure."
+    },
+    "popup_extension_failure_badge": {
+        "message": "Interrupted",
+        "description": "Popup badge when analysis cannot continue."
+    },
+    "popup_extension_failure_title": {
+        "message": "Analysis could not continue",
+        "description": "Popup title when analysis ends before completion."
+    },
+    "popup_extension_failure_description": {
+        "message": "TopSkip could not finish analyzing this video.",
+        "description": "Popup explanation when analysis ends before completion."
+    },
+    "popup_extension_failure_headline": {
+        "message": "Reload the video or page to retry.",
+        "description": "Popup recovery headline for an analysis that could not continue."
+    },
+    "popup_extension_failure_body": {
+        "message": "Playback continues normally without server-detected skips.",
+        "description": "Popup playback guidance after analysis ends before completion."
+    },
+    "popup_status_unavailable_badge": {
+        "message": "Unavailable",
+        "description": "Popup badge when current extension status cannot be read."
+    },
+    "popup_status_unavailable_title": {
+        "message": "Status unavailable",
+        "description": "Popup title when current extension status cannot be read."
+    },
+    "popup_status_unavailable_description": {
+        "message": "TopSkip could not refresh its current state.",
+        "description": "Popup explanation when current extension status cannot be read."
+    },
+    "popup_status_unavailable_headline": {
+        "message": "TopSkip status could not be loaded.",
+        "description": "Popup headline when current extension status cannot be read."
+    },
+    "popup_status_unavailable_activity": {
+        "message": "Status unavailable",
+        "description": "Popup activity label when current extension status cannot be read."
+    },
+    "popup_status_stale_activity": {
+        "message": "Status update delayed",
+        "description": "Popup activity label while the last trustworthy status remains visible."
+    },
     "popup_server_report_primary": {
         "message": "Report on GitHub",
         "description": "Primary popup button for a reportable server failure."

@@ -19,11 +19,6 @@ export class DetectionRefreshGuard {
     private currentIsCoalescedFollowUp = false;
 
     /**
-     * Successful reads make later transport failures non-destructive.
-     */
-    private hasSuccessfulSnapshot = false;
-
-    /**
      * Starts a read or queues one follow-up when another read owns the slot.
      *
      * @returns Whether the caller should start a status read immediately.
@@ -58,21 +53,5 @@ export class DetectionRefreshGuard {
         this.currentIsCoalescedFollowUp = runFollowUp;
 
         return { applyCompletion, runFollowUp };
-    }
-
-    /**
-     * Records that popup state now has a trustworthy background snapshot.
-     */
-    markSuccessfulSnapshot(): void {
-        this.hasSuccessfulSnapshot = true;
-    }
-
-    /**
-     * Keeps a transient refresh failure from replacing a trustworthy snapshot.
-     *
-     * @returns Whether the popup has never loaded a successful snapshot.
-     */
-    shouldSurfaceFailure(): boolean {
-        return !this.hasSuccessfulSnapshot;
     }
 }

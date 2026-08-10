@@ -15,17 +15,33 @@ import {
 
 import { PreferencesStore } from '@/popup/preferences-store';
 import { DetectionRefreshGuard } from '@/popup/detection-refresh-guard';
+import {
+    DETECTION_REFRESH_OUTCOME,
+    DETECTION_PUSH_ACTION,
+    DETECTION_TRANSPORT_STATUS,
+    INITIAL_DETECTION_TRANSPORT_STATE,
+    applyDetectionTransportFailure,
+    applyDetectionTransportSuccess,
+    getDetectionRefreshDelay,
+    getDetectionPushAction,
+    isDetectionReadCurrent,
+    type DetectionTransportState,
+} from '@/popup/detection-transport-state';
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
 import {
+    PROMO_DETECTION_SOURCE,
+    SERVER_ANALYSIS_PHASE,
     TOPSKIP_MESSAGE,
+    pickMessage,
     type GetDetectionStatusResponse,
     type ProviderAvailabilityMessage,
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
-import type {
-    PromoBlock,
-    PromoDetectionStatus,
+import {
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+    type PromoDetectionStatus,
 } from '@topskip/common/promo-types';
 import {
     formatPromoBlocksSummary,
@@ -33,9 +49,10 @@ import {
 } from '@/shared/promo-range-format';
 import { translator } from '@/shared/i18n/translator';
 import {
-    POPUP_DETECTION_POLL_INTERVAL_MS,
+    POPUP_STATE_FAILURE_RETRY_MS,
     MIN_PROMO_BLOCK_WIDTH_SEC,
 } from '@/popup/constants';
+import { requestDetectionStatusWithTimeout } from '@/popup/detection-status-request';
 import {
     ANALYSIS_MODE,
     PERCENT_SCALE,
@@ -69,7 +86,15 @@ const POPUP_DANGER_SOFT = '#fef2f2';
 const POPUP_SLATE_BORDER = '#dbe3ee';
 const ACTIVITY_LABEL_ACTIVE = 'Promo detection active';
 const ACTIVITY_LABEL_PAUSED = 'Promo detection paused';
-const ACTIVITY_LABEL_UNAVAILABLE = 'Status unavailable';
+
+/**
+ * Keeps unavailable activity copy aligned with the selected popup locale.
+ *
+ * @returns Localized unavailable activity label.
+ */
+function getUnavailableActivityLabel(): string {
+    return translator.getMessage('popup_status_unavailable_activity');
+}
 
 const POPUP_TONE_STYLES: Record<
     PopupTone,
@@ -134,11 +159,14 @@ const POPUP_TONE_STYLES: Record<
 function isGetDetectionOk(
     res: unknown,
 ): res is Extract<GetDetectionStatusResponse, { ok: true }> {
+    if (typeof res !== 'object' || res === null) {
+        return false;
+    }
+    const tabId: unknown = Reflect.get(res, 'tabId');
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true
+        Reflect.get(res, 'ok') === true &&
+        (tabId === null || typeof tabId === 'number') &&
+        'state' in res
     );
 }
 
@@ -150,18 +178,17 @@ function isGetDetectionOk(
  */
 function detectionLabel(s: PromoDetectionStatus): string {
     switch (s) {
-        // FIXME why not enums are used here? or map?
-        case 'not_configured':
+        case PROMO_DETECTION_STATUS.NotConfigured:
             return translator.getMessage('popup_detection_not_configured');
-        case 'unavailable':
+        case PROMO_DETECTION_STATUS.Unavailable:
             return translator.getMessage('popup_detection_unavailable');
-        case 'analyzing':
+        case PROMO_DETECTION_STATUS.Analyzing:
             return translator.getMessage('popup_detection_analyzing');
-        case 'detected':
+        case PROMO_DETECTION_STATUS.Detected:
             return translator.getMessage('popup_detection_detected');
-        case 'no_promo':
+        case PROMO_DETECTION_STATUS.NoPromo:
             return translator.getMessage('popup_detection_no_promo');
-        case 'error':
+        case PROMO_DETECTION_STATUS.Error:
             return translator.getMessage('popup_detection_error');
         default:
             return s;
@@ -227,52 +254,12 @@ type PopupViewModelArgs = {
     detectionState: PromoDetectionStatePayload | null;
     prefsError: string | null;
     detectionError: string | null;
+    detectionStale: boolean;
     providerId: string;
     providerDisplayName: string;
     modelDisplayName: string;
     chromeModelAvailability: ProviderAvailabilityMessage | null;
 };
-
-const SERVER_POPUP_PHASE_RANK = {
-    caption_acquisition: 0,
-    server_analysis: 1,
-    terminal: 2,
-} as const;
-
-/**
- * Prevents delayed popup polling from rendering an earlier phase of one session.
- *
- * @param current - Snapshot already visible in the popup.
- * @param incoming - Newly observed background snapshot.
- * @returns Incoming state unless it moves the same Server session backwards.
- */
-export function chooseMonotonicDetectionSnapshot(
-    current: PromoDetectionStatePayload | null,
-    incoming: PromoDetectionStatePayload | null,
-): PromoDetectionStatePayload | null {
-    if (current === null || incoming === null) {
-        return incoming;
-    }
-    if (
-        current.sessionId === undefined ||
-        incoming.sessionId === undefined ||
-        current.sessionId !== incoming.sessionId
-    ) {
-        return incoming;
-    }
-    const currentPhase =
-        current.status === 'analyzing'
-            ? (current.serverAnalysisPhase ?? 'server_analysis')
-            : 'terminal';
-    const incomingPhase =
-        incoming.status === 'analyzing'
-            ? (incoming.serverAnalysisPhase ?? 'server_analysis')
-            : 'terminal';
-    return SERVER_POPUP_PHASE_RANK[incomingPhase] <
-        SERVER_POPUP_PHASE_RANK[currentPhase]
-        ? current
-        : incoming;
-}
 
 /**
  * Builds localized public-server failure copy from stable codes only.
@@ -314,11 +301,30 @@ function buildServerFailureViewModel(input: {
             description: translator.getMessage(
                 'popup_server_limitation_description',
             ),
-            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            activityLabel: getUnavailableActivityLabel(),
             statusHeadline: translator.getMessage(
                 'popup_server_limitation_headline',
             ),
             statusBody: translator.getMessage('popup_server_limitation_body'),
+            settingsLabel,
+            providerLabel: input.providerLabel,
+            ...reportState,
+        };
+    }
+    if (category === SERVER_FAILURE_CATEGORY.CaptureFailure) {
+        return {
+            tone: 'warning',
+            badgeLabel: translator.getMessage('popup_capture_failure_badge'),
+            badgeColor: 'warning',
+            title: translator.getMessage('popup_capture_failure_title'),
+            description: translator.getMessage(
+                'popup_capture_failure_description',
+            ),
+            activityLabel: getUnavailableActivityLabel(),
+            statusHeadline: translator.getMessage(
+                'popup_capture_failure_headline',
+            ),
+            statusBody: translator.getMessage('popup_capture_failure_body'),
             settingsLabel,
             providerLabel: input.providerLabel,
             ...reportState,
@@ -335,7 +341,7 @@ function buildServerFailureViewModel(input: {
             description: translator.getMessage(
                 'popup_server_temporary_description',
             ),
-            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            activityLabel: getUnavailableActivityLabel(),
             statusHeadline: translator.getMessage(
                 'popup_server_temporary_headline',
             ),
@@ -360,11 +366,29 @@ function buildServerFailureViewModel(input: {
             description: translator.getMessage(
                 'popup_server_upgrade_description',
             ),
-            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            activityLabel: getUnavailableActivityLabel(),
             statusHeadline: translator.getMessage(
                 'popup_server_upgrade_headline',
             ),
             statusBody: translator.getMessage('popup_server_upgrade_body'),
+            settingsLabel,
+            providerLabel: input.providerLabel,
+        };
+    }
+    if (category === SERVER_FAILURE_CATEGORY.ExtensionFailure) {
+        return {
+            tone: 'warning',
+            badgeLabel: translator.getMessage('popup_extension_failure_badge'),
+            badgeColor: 'warning',
+            title: translator.getMessage('popup_extension_failure_title'),
+            description: translator.getMessage(
+                'popup_extension_failure_description',
+            ),
+            activityLabel: getUnavailableActivityLabel(),
+            statusHeadline: translator.getMessage(
+                'popup_extension_failure_headline',
+            ),
+            statusBody: translator.getMessage('popup_extension_failure_body'),
             settingsLabel,
             providerLabel: input.providerLabel,
         };
@@ -375,7 +399,7 @@ function buildServerFailureViewModel(input: {
         badgeColor: 'error',
         title: translator.getMessage('popup_server_failure_title'),
         description: translator.getMessage('popup_server_failure_description'),
-        activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+        activityLabel: getUnavailableActivityLabel(),
         statusHeadline: translator.getMessage('popup_server_failure_headline'),
         statusBody: translator.getMessage('popup_server_failure_body'),
         settingsLabel,
@@ -411,17 +435,20 @@ function buildPopupStatusViewModel(
         : providerDisplayName;
 
     if (prefsError !== null || detectionError !== null) {
-        const message = prefsError ?? detectionError ?? 'Status unavailable';
         return {
             tone: 'danger',
-            badgeLabel: 'Error',
+            badgeLabel: translator.getMessage('popup_status_unavailable_badge'),
             badgeColor: 'error',
-            title: 'Status unavailable',
-            description: 'TopSkip could not refresh its current state.',
-            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
-            statusHeadline: message,
+            title: translator.getMessage('popup_status_unavailable_title'),
+            description: translator.getMessage(
+                'popup_status_unavailable_description',
+            ),
+            activityLabel: getUnavailableActivityLabel(),
+            statusHeadline: translator.getMessage(
+                'popup_status_unavailable_headline',
+            ),
             statusBody: null,
-            settingsLabel: 'Open settings',
+            settingsLabel: translator.getMessage('popup_open_settings'),
             providerLabel,
         };
     }
@@ -464,7 +491,7 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.source === 'server' &&
+        detectionState.source === PROMO_DETECTION_SOURCE.Server &&
         detectionState.serverFailure !== undefined
     ) {
         return buildServerFailureViewModel({
@@ -474,11 +501,12 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === 'analyzing' &&
-        detectionState.source === 'server'
+        detectionState.status === PROMO_DETECTION_STATUS.Analyzing &&
+        detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
         const isCaptionAcquisition =
-            detectionState.serverAnalysisPhase === 'caption_acquisition';
+            detectionState.serverAnalysisPhase ===
+            SERVER_ANALYSIS_PHASE.CaptionAcquisition;
         const keyPrefix = isCaptionAcquisition
             ? 'popup_detection_server_acquisition'
             : 'popup_detection_server_pending';
@@ -497,8 +525,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === 'error' &&
-        detectionState.source === 'server'
+        detectionState.status === PROMO_DETECTION_STATUS.Error &&
+        detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
         return {
             tone: 'danger',
@@ -510,7 +538,7 @@ function buildPopupStatusViewModel(
             description: translator.getMessage(
                 'popup_detection_server_error_description',
             ),
-            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            activityLabel: getUnavailableActivityLabel(),
             statusHeadline:
                 detectionState.error ??
                 translator.getMessage('popup_detection_server_error_headline'),
@@ -523,8 +551,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === 'detected' &&
-        detectionState.source === 'server_cache'
+        detectionState.status === PROMO_DETECTION_STATUS.Detected &&
+        detectionState.source === PROMO_DETECTION_SOURCE.ServerCache
     ) {
         return {
             tone: 'brand',
@@ -551,8 +579,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === 'no_promo' &&
-        detectionState.source === 'server'
+        detectionState.status === PROMO_DETECTION_STATUS.NoPromo &&
+        detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
         return {
             tone: 'success',
@@ -579,8 +607,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === 'unavailable' &&
-        detectionState.source === 'server'
+        detectionState.status === PROMO_DETECTION_STATUS.Unavailable &&
+        detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
         return {
             tone: 'warning',
@@ -594,7 +622,7 @@ function buildPopupStatusViewModel(
             description: translator.getMessage(
                 'popup_detection_server_unavailable_description',
             ),
-            activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+            activityLabel: getUnavailableActivityLabel(),
             statusHeadline:
                 detectionState.error ??
                 translator.getMessage(
@@ -610,8 +638,8 @@ function buildPopupStatusViewModel(
 
     if (
         analysisMode === ANALYSIS_MODE.Byok &&
-        detectionState.status === 'not_configured' &&
-        detectionState.source === 'local_provider'
+        detectionState.status === PROMO_DETECTION_STATUS.NotConfigured &&
+        detectionState.source === PROMO_DETECTION_SOURCE.LocalProvider
     ) {
         const providerName =
             providerDisplayName.trim() ||
@@ -687,7 +715,7 @@ function buildPopupStatusViewModel(
     }
 
     switch (detectionState.status) {
-        case 'not_configured':
+        case PROMO_DETECTION_STATUS.NotConfigured:
             return {
                 tone: 'warning',
                 badgeLabel: 'Setup',
@@ -704,7 +732,7 @@ function buildPopupStatusViewModel(
                 settingsLabel: 'Continue setup',
                 providerLabel,
             };
-        case 'unavailable':
+        case PROMO_DETECTION_STATUS.Unavailable:
             return {
                 tone: 'neutral',
                 badgeLabel: 'Unavailable',
@@ -722,7 +750,7 @@ function buildPopupStatusViewModel(
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
-        case 'analyzing':
+        case PROMO_DETECTION_STATUS.Analyzing:
             return {
                 tone: 'brand',
                 badgeLabel: 'Live',
@@ -739,7 +767,7 @@ function buildPopupStatusViewModel(
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
-        case 'detected': {
+        case PROMO_DETECTION_STATUS.Detected: {
             const count = detectionState.promoBlocks?.length ?? 0;
             return {
                 tone: 'brand',
@@ -760,7 +788,7 @@ function buildPopupStatusViewModel(
                 providerLabel,
             };
         }
-        case 'no_promo':
+        case PROMO_DETECTION_STATUS.NoPromo:
             return {
                 tone: 'success',
                 badgeLabel: 'Clear',
@@ -777,7 +805,7 @@ function buildPopupStatusViewModel(
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
-        case 'error':
+        case PROMO_DETECTION_STATUS.Error:
             return {
                 tone: 'danger',
                 badgeLabel: 'Error',
@@ -785,7 +813,7 @@ function buildPopupStatusViewModel(
                 title: 'Detection error',
                 description:
                     'TopSkip could not analyze the ' + 'current transcript.',
-                activityLabel: ACTIVITY_LABEL_UNAVAILABLE,
+                activityLabel: getUnavailableActivityLabel(),
                 statusHeadline:
                     detectionState.error ?? 'Detection failed for this tab.',
                 statusBody:
@@ -804,8 +832,16 @@ function buildPopupStatusViewModel(
  * @returns Status copy with an explicit selected analysis mode.
  */
 export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
+    const status = buildPopupStatusViewModel(args);
     return {
-        ...buildPopupStatusViewModel(args),
+        ...status,
+        ...(args.detectionStale && args.prefsError === null
+            ? {
+                    activityLabel: translator.getMessage(
+                        'popup_status_stale_activity',
+                    ),
+                }
+            : {}),
         modeLabel: translator.getMessage(
             args.analysisMode === ANALYSIS_MODE.Byok
                 ? 'popup_analysis_mode_byok'
@@ -906,36 +942,76 @@ function PromoTimeline({
 export const PopupApp = observer(function PopupApp() {
     const store = useMemo(() => new PreferencesStore(), []);
     const [prefsError, setPrefsError] = useState<string | null>(null);
-    const [detectionState, setDetectionState] =
-        useState<PromoDetectionStatePayload | null>(null);
-    const [detectionError, setDetectionError] = useState<string | null>(null);
-    const [detectionLoaded, setDetectionLoaded] = useState(false);
+    const [detectionTransport, setDetectionTransport] =
+        useState<DetectionTransportState>(INITIAL_DETECTION_TRANSPORT_STATE);
 
     useEffect(() => {
-        void store.load().then(
-            () => {
+        let cancelled = false;
+        let retryTimerId: number | null = null;
+        const loadPrefs = async (): Promise<void> => {
+            try {
+                await store.load();
+                if (cancelled) {
+                    return;
+                }
                 setPrefsError(null);
-            },
-            (e: unknown) => {
+            } catch (e) {
+                if (cancelled) {
+                    return;
+                }
                 setPrefsError(getErrorMessage(e));
-            },
-        );
+                retryTimerId = window.setTimeout(() => {
+                    retryTimerId = null;
+                    void loadPrefs();
+                }, POPUP_STATE_FAILURE_RETRY_MS);
+            }
+        };
+
+        void loadPrefs();
         store.connectPort();
         return () => {
+            cancelled = true;
+            if (retryTimerId !== null) {
+                window.clearTimeout(retryTimerId);
+            }
             store.disconnectPort();
         };
     }, [store]);
 
     useEffect(() => {
         let cancelled = false;
+        let refreshTimerId: number | null = null;
+        let pushRevision = 0;
+        let activeTabId: number | null | undefined;
         const detectionRefreshGuard = new DetectionRefreshGuard();
 
-        const handleRefreshCompletion = (applyCompletion: () => void): void => {
+        const clearRefreshTimer = (): void => {
+            if (refreshTimerId !== null) {
+                window.clearTimeout(refreshTimerId);
+                refreshTimerId = null;
+            }
+        };
+
+        const scheduleRefresh = (delayMs: number): void => {
+            clearRefreshTimer();
+            refreshTimerId = window.setTimeout(() => {
+                refreshTimerId = null;
+                refreshDetection();
+            }, delayMs);
+        };
+
+        const handleRefreshCompletion = (
+            startedPushRevision: number,
+            applyCompletion: () => void,
+        ): void => {
             const completion = detectionRefreshGuard.completeRefresh();
             if (cancelled) {
                 return;
             }
-            if (completion.applyCompletion) {
+            if (
+                completion.applyCompletion &&
+                isDetectionReadCurrent(startedPushRevision, pushRevision)
+            ) {
                 applyCompletion();
             }
             if (completion.runFollowUp) {
@@ -944,36 +1020,51 @@ export const PopupApp = observer(function PopupApp() {
         };
 
         const runDetectionRefresh = async (): Promise<void> => {
+            const startedPushRevision = pushRevision;
             try {
-                const res: unknown = await browser.runtime.sendMessage({
-                    type: TOPSKIP_MESSAGE.GET_DETECTION_STATUS,
-                });
-                handleRefreshCompletion(() => {
+                const res = await requestDetectionStatusWithTimeout();
+                handleRefreshCompletion(startedPushRevision, () => {
                     if (!isGetDetectionOk(res)) {
-                        if (detectionRefreshGuard.shouldSurfaceFailure()) {
-                            setDetectionLoaded(true);
-                            setDetectionError(
-                                'Could not load detection status.',
-                            );
-                        }
+                        setDetectionTransport((current) =>
+                            applyDetectionTransportFailure(
+                                current,
+                                'Detection status response was invalid.',
+                            ),
+                        );
+                        scheduleRefresh(
+                            getDetectionRefreshDelay(
+                                DETECTION_REFRESH_OUTCOME.Failure,
+                            ),
+                        );
                         return;
                     }
-                    detectionRefreshGuard.markSuccessfulSnapshot();
-                    setDetectionLoaded(true);
-                    setDetectionError(null);
-                    setDetectionState((current) => {
-                        return chooseMonotonicDetectionSnapshot(
+                    activeTabId = res.tabId;
+                    setDetectionTransport((current) =>
+                        applyDetectionTransportSuccess(
                             current,
+                            res.tabId,
                             res.state,
-                        );
-                    });
+                        ),
+                    );
+                    scheduleRefresh(
+                        getDetectionRefreshDelay(
+                            DETECTION_REFRESH_OUTCOME.Healthy,
+                        ),
+                    );
                 });
             } catch (e) {
-                handleRefreshCompletion(() => {
-                    if (detectionRefreshGuard.shouldSurfaceFailure()) {
-                        setDetectionLoaded(true);
-                        setDetectionError(getErrorMessage(e));
-                    }
+                handleRefreshCompletion(startedPushRevision, () => {
+                    setDetectionTransport((current) =>
+                        applyDetectionTransportFailure(
+                            current,
+                            getErrorMessage(e),
+                        ),
+                    );
+                    scheduleRefresh(
+                        getDetectionRefreshDelay(
+                            DETECTION_REFRESH_OUTCOME.Failure,
+                        ),
+                    );
                 });
             }
         };
@@ -985,28 +1076,54 @@ export const PopupApp = observer(function PopupApp() {
             void runDetectionRefresh();
         };
 
-        refreshDetection();
-        const id = window.setInterval(() => {
-            refreshDetection();
-        }, POPUP_DETECTION_POLL_INTERVAL_MS);
-
         const onRuntimeMessage = (message: unknown): void => {
-            if (
-                message &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED
-            ) {
-                refreshDetection();
+            const pushed = pickMessage(
+                TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED,
+                message,
+            );
+            if (pushed === undefined) {
+                return;
             }
+            const action = getDetectionPushAction(
+                activeTabId,
+                pushed.tabId,
+            );
+            if (action === DETECTION_PUSH_ACTION.Reconcile) {
+                clearRefreshTimer();
+                refreshDetection();
+                return;
+            }
+            if (action === DETECTION_PUSH_ACTION.Ignore) {
+                return;
+            }
+            pushRevision += 1;
+            setDetectionTransport((current) =>
+                applyDetectionTransportSuccess(
+                    current,
+                    pushed.tabId,
+                    pushed.payload,
+                ),
+            );
+            scheduleRefresh(
+                getDetectionRefreshDelay(DETECTION_REFRESH_OUTCOME.Healthy),
+            );
         };
         browser.runtime.onMessage.addListener(onRuntimeMessage);
+        refreshDetection();
         return () => {
             cancelled = true;
-            window.clearInterval(id);
+            clearRefreshTimer();
             browser.runtime.onMessage.removeListener(onRuntimeMessage);
         };
     }, []);
+
+    const detectionState = detectionTransport.snapshot;
+    const detectionLoaded =
+        detectionTransport.status !== DETECTION_TRANSPORT_STATUS.Loading;
+    const detectionError =
+        detectionTransport.status === DETECTION_TRANSPORT_STATUS.Unavailable
+            ? detectionTransport.error
+            : null;
 
     const view = buildPopupViewModel({
         enabled: store.enabled,
@@ -1014,6 +1131,8 @@ export const PopupApp = observer(function PopupApp() {
         detectionState,
         prefsError,
         detectionError,
+        detectionStale:
+            detectionTransport.status === DETECTION_TRANSPORT_STATUS.Stale,
         providerId: store.providerId,
         providerDisplayName: store.providerDisplayName,
         modelDisplayName: store.modelDisplayName,
@@ -1021,7 +1140,7 @@ export const PopupApp = observer(function PopupApp() {
     });
 
     const detectedBlocks =
-        detectionState?.status === 'detected' &&
+        detectionState?.status === PROMO_DETECTION_STATUS.Detected &&
         detectionState.promoBlocks !== undefined
             ? detectionState.promoBlocks
             : [];

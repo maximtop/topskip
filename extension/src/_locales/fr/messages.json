@@ -8,7 +8,7 @@
         "description": "Short name for the extension. Used in the toolbar."
     },
     "description": {
-        "message": "LLM-assisted promo skip on YouTube (MVP)",
+        "message": "Saut des segments promotionnels sur YouTube assisté par LLM (MVP)",
         "description": "Extension description for Chrome Web Store listing. TEXT MAX LENGTH: 132"
     },
     "popup_heading": {
@@ -16,187 +16,187 @@
         "description": "Popup heading text"
     },
     "popup_enable_promo_skip": {
-        "message": "Enable promo skip (YouTube)",
+        "message": "Activer le saut des segments promotionnels (YouTube)",
         "description": "Label next to the main enable/disable switch in the popup"
     },
     "popup_enable_auto_skip_aria": {
-        "message": "Enable auto-skip",
+        "message": "Activer le saut automatique",
         "description": "Accessible label for the enable/disable switch in the popup"
     },
     "popup_active_tab_prefix": {
-        "message": "Active tab: ",
+        "message": "Onglet actif : ",
         "description": "Prefix before the detection status line in the popup. Includes trailing space."
     },
     "popup_open_settings": {
-        "message": "Open settings (OpenRouter)",
+        "message": "Ouvrir les paramètres (OpenRouter)",
         "description": "Button in the popup that opens the options page"
     },
     "popup_reliability_notice_title": {
-        "message": "Reliability notice",
+        "message": "Avertissement sur la fiabilité",
         "description": "Title for the yellow alert box in the popup"
     },
     "popup_reliability_notice_body_1": {
-        "message": "TopSkip may rely on parts of YouTube's site that are not a documented public API—the same general area the YouTube web client uses. There is no guarantee that auto-skip will keep working if YouTube changes how the page behaves.",
+        "message": "TopSkip peut dépendre de certaines parties du site YouTube qui ne font pas partie d’une API publique documentée, dans la même zone générale que celle utilisée par le client web YouTube. Le saut automatique n’est donc pas garanti si YouTube modifie le fonctionnement de la page.",
         "description": "First paragraph of the reliability notice in the popup"
     },
     "popup_reliability_notice_body_2": {
-        "message": "If it stops working, please report it where you installed this extension (for example the Chrome Web Store support options, if you installed it from there).",
+        "message": "Si le saut automatique cesse de fonctionner, veuillez signaler le problème là où vous avez installé cette extension (par exemple dans les options d’assistance du Chrome Web Store, si vous l’avez installée depuis cette plateforme).",
         "description": "Second paragraph of the reliability notice in the popup"
     },
     "popup_detection_not_configured": {
-        "message": "LLM not configured",
+        "message": "LLM non configuré",
         "description": "Detection status shown when OpenRouter is not set up"
     },
     "popup_detection_unavailable": {
-        "message": "Unavailable",
+        "message": "Indisponible",
         "description": "Detection status shown when detection is unavailable"
     },
     "popup_detection_analyzing": {
-        "message": "Analyzing…",
+        "message": "Analyse en cours…",
         "description": "Detection status shown during transcript analysis"
     },
     "popup_detection_detected": {
-        "message": "Promo blocks detected",
+        "message": "Segments promotionnels détectés",
         "description": "Detection status shown when promo blocks are found"
     },
     "popup_detection_no_promo": {
-        "message": "No promo found",
+        "message": "Aucune promotion détectée",
         "description": "Detection status shown when no promo blocks are found"
     },
     "popup_detection_error": {
-        "message": "Detection error",
+        "message": "Erreur de détection",
         "description": "Detection status shown when detection fails"
     },
     "popup_detection_server_acquisition_badge": {
-        "message": "Captions",
+        "message": "Sous-titres",
         "description": "Popup status badge shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_title": {
-        "message": "Getting captions",
+        "message": "Récupération des sous-titres",
         "description": "Popup title shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_description": {
-        "message": "TopSkip is reading timed captions from this video.",
+        "message": "TopSkip lit les sous-titres horodatés de cette vidéo.",
         "description": "Popup description shown during caption acquisition."
     },
     "popup_detection_server_acquisition_headline": {
-        "message": "Getting video captions…",
+        "message": "Récupération des sous-titres de la vidéo…",
         "description": "Popup headline shown during caption acquisition."
     },
     "popup_detection_server_acquisition_body": {
-        "message": "Promo analysis will start as soon as captions are ready.",
+        "message": "L’analyse des promotions commencera dès que les sous-titres seront prêts.",
         "description": "Popup body shown during caption acquisition."
     },
     "popup_detection_server_pending_badge": {
-        "message": "Server",
+        "message": "Serveur",
         "description": "Popup status badge shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_title": {
-        "message": "Server analysis pending",
+        "message": "Analyse serveur en attente",
         "description": "Popup title shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_description": {
-        "message": "TopSkip asked the server to analyze this video.",
+        "message": "TopSkip a demandé au serveur d’analyser cette vidéo.",
         "description": "Popup description shown while the TopSkip server is processing a video."
     },
     "popup_detection_server_pending_headline": {
-        "message": "Server analysis is in progress.",
+        "message": "L’analyse serveur est en cours.",
         "description": "Popup headline shown for a server processing response."
     },
     "popup_detection_server_pending_body": {
-        "message": "Skipping will start when the TopSkip backend has promo blocks for a future playback position.",
+        "message": "Le saut commencera dès que le backend TopSkip disposera de segments promotionnels situés plus loin dans la lecture.",
         "description": "Popup body shown for a server processing response."
     },
     "popup_detection_server_error_badge": {
-        "message": "Server",
+        "message": "Serveur",
         "description": "Popup status badge shown when server analysis fails."
     },
     "popup_detection_server_error_title": {
-        "message": "Server analysis unavailable",
+        "message": "Analyse serveur indisponible",
         "description": "Popup title shown when the TopSkip server request fails."
     },
     "popup_detection_server_error_description": {
-        "message": "TopSkip could not use the server for this video.",
+        "message": "TopSkip n’a pas pu utiliser le serveur pour cette vidéo.",
         "description": "Popup description shown when server analysis cannot run."
     },
     "popup_detection_server_error_headline": {
-        "message": "Server analysis failed.",
+        "message": "Échec de l’analyse serveur.",
         "description": "Fallback popup headline shown when no specific server error is available."
     },
     "popup_detection_server_error_body": {
-        "message": "The TopSkip server did not return a usable response. Playback continues without server-detected skips.",
+        "message": "Le serveur TopSkip n’a pas renvoyé de réponse exploitable. La lecture continue sans saut des segments promotionnels détectés par le serveur.",
         "description": "Popup body shown for server request failures."
     },
     "popup_detection_server_cache_badge": {
-        "message": "Server cache",
+        "message": "Cache serveur",
         "description": "Popup status badge shown when promo blocks came from the TopSkip backend cache."
     },
     "popup_detection_server_cache_title": {
-        "message": "Server-detected blocks ready",
+        "message": "Les segments détectés par le serveur sont prêts",
         "description": "Popup title shown when the TopSkip backend returns cached promo blocks."
     },
     "popup_detection_server_cache_description": {
-        "message": "TopSkip received cached promo blocks from the server.",
+        "message": "TopSkip a reçu du serveur des segments promotionnels mis en cache.",
         "description": "Popup description shown for a server cache-hit response."
     },
     "popup_detection_server_cache_headline": {
-        "message": "Server cache hit.",
+        "message": "Résultat trouvé dans le cache serveur.",
         "description": "Popup headline shown when a server cache hit is ready."
     },
     "popup_detection_server_no_promo_badge": {
-        "message": "Server",
+        "message": "Serveur",
         "description": "Popup status badge shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_title": {
-        "message": "Server analysis complete",
+        "message": "Analyse serveur terminée",
         "description": "Popup title shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_description": {
-        "message": "TopSkip checked the server result for this video.",
+        "message": "TopSkip a vérifié le résultat du serveur pour cette vidéo.",
         "description": "Popup description shown when a server terminal no-promo result is available."
     },
     "popup_detection_server_no_promo_headline": {
-        "message": "No server promo blocks detected.",
+        "message": "Aucun segment promotionnel détecté par le serveur.",
         "description": "Popup headline shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_no_promo_body": {
-        "message": "Playback continues normally unless future server results add blocks.",
+        "message": "La lecture continue normalement, sauf si des résultats serveur ultérieurs ajoutent des segments.",
         "description": "Popup body shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_unavailable_badge": {
-        "message": "Server",
+        "message": "Serveur",
         "description": "Popup status badge shown when server analysis is unavailable."
     },
     "popup_detection_server_unavailable_title": {
-        "message": "Server analysis unavailable",
+        "message": "Analyse serveur indisponible",
         "description": "Popup title shown when server analysis reaches an unavailable terminal state."
     },
     "popup_detection_server_unavailable_description": {
-        "message": "The TopSkip server could not produce a result for this video.",
+        "message": "Le serveur TopSkip n’a pas pu produire de résultat pour cette vidéo.",
         "description": "Popup description shown when server analysis cannot produce a result."
     },
     "popup_detection_server_unavailable_headline": {
-        "message": "Server analysis is unavailable.",
+        "message": "L’analyse serveur est indisponible.",
         "description": "Fallback popup headline shown when no specific server unavailable reason is available."
     },
     "popup_detection_server_unavailable_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "La lecture continue sans saut des segments promotionnels détectés par le serveur.",
         "description": "Popup body shown when server analysis is unavailable."
     },
     "options_heading": {
-        "message": "TopSkip — LLM promo detection",
+        "message": "TopSkip — Détection des promotions par LLM",
         "description": "Heading on the options page"
     },
     "options_description": {
-        "message": "Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).",
+        "message": "Configurez OpenRouter pour analyser les transcriptions. La clé API est stockée uniquement dans ce profil de navigateur (stockage local de l’extension).",
         "description": "Description text below the heading on the options page"
     },
     "options_enable_detection": {
-        "message": "Enable LLM promo detection",
+        "message": "Activer la détection des promotions par LLM",
         "description": "Checkbox label on the options page"
     },
     "options_api_key_label": {
-        "message": "OpenRouter API key",
+        "message": "Clé API OpenRouter",
         "description": "Label for the API key input on the options page"
     },
     "options_api_key_placeholder": {
@@ -204,31 +204,31 @@
         "description": "Placeholder text for the API key input"
     },
     "options_api_key_saved": {
-        "message": "Saved key: %mask% - leave blank to keep it.",
+        "message": "Clé enregistrée : %mask% — laissez ce champ vide pour la conserver.",
         "description": "Shown below API key input when a key is already saved. %mask% is the masked key value."
     },
     "options_api_key_none": {
-        "message": "No key saved yet.",
+        "message": "Aucune clé enregistrée pour le moment.",
         "description": "Shown below API key input when no key has been saved"
     },
     "options_model_label": {
-        "message": "Model",
+        "message": "Modèle",
         "description": "Label for the model select dropdown on the options page"
     },
     "options_model_description": {
-        "message": "Built-in presets and models you added below.",
+        "message": "Préréglages intégrés et modèles que vous avez ajoutés ci-dessous.",
         "description": "Help text below the model select dropdown"
     },
     "options_add_model_heading": {
-        "message": "Add a model",
+        "message": "Ajouter un modèle",
         "description": "Heading for the custom model section on the options page"
     },
     "options_add_model_description": {
-        "message": "Type an OpenRouter model id (for example vendor/model), then Add to keep it for later sessions. This is not the same as Save below.",
+        "message": "Saisissez un identifiant de modèle OpenRouter (par exemple vendor/model), puis cliquez sur Ajouter pour le conserver lors des prochaines sessions. Cette action est différente de l’option Enregistrer ci-dessous.",
         "description": "Help text for the custom model input section"
     },
     "options_custom_model_label": {
-        "message": "Custom model id",
+        "message": "Identifiant de modèle personnalisé",
         "description": "Label for the custom model text input"
     },
     "options_custom_model_placeholder": {
@@ -236,103 +236,103 @@
         "description": "Placeholder for the custom model text input"
     },
     "options_add_button": {
-        "message": "Add",
+        "message": "Ajouter",
         "description": "Button to add a custom model id"
     },
     "options_your_models_heading": {
-        "message": "Your added models",
+        "message": "Vos modèles ajoutés",
         "description": "Heading above the list of user-added custom models"
     },
     "options_remove_button": {
-        "message": "Remove",
+        "message": "Supprimer",
         "description": "Button to remove a custom model from the list"
     },
     "options_saved": {
-        "message": "Saved.",
+        "message": "Enregistré.",
         "description": "Success message shown after saving settings"
     },
     "options_save_button": {
-        "message": "Save",
+        "message": "Enregistrer",
         "description": "Button to save all settings on the options page"
     },
     "options_reload_button": {
-        "message": "Reload",
+        "message": "Recharger",
         "description": "Button to reload settings from storage on the options page"
     },
     "options_save_help": {
-        "message": "Save applies the detection toggle, API key (if changed), and the selected model. Use Add to store extra model ids in your list.",
+        "message": "Enregistrer applique l’option de détection, la clé API (si elle a changé) et le modèle sélectionné. Utilisez Ajouter pour conserver d’autres identifiants de modèle dans votre liste.",
         "description": "Help text below the Save/Reload buttons"
     },
     "options_error_bg_no_response": {
-        "message": "Extension background did not respond. Click Reload or reload the extension on chrome://extensions.",
+        "message": "Le service d’arrière-plan de l’extension n’a pas répondu. Cliquez sur Recharger ou rechargez l’extension depuis chrome://extensions.",
         "description": "Error shown when the background service worker is unreachable"
     },
     "options_error_load_failed": {
-        "message": "Failed to load settings",
+        "message": "Échec du chargement des paramètres",
         "description": "Generic error when loading settings fails"
     },
     "options_error_save_failed": {
-        "message": "Save failed",
+        "message": "Échec de l’enregistrement",
         "description": "Generic error when saving settings fails"
     },
     "options_error_add_model": {
-        "message": "Could not add model",
+        "message": "Impossible d’ajouter le modèle",
         "description": "Error when adding a custom model fails"
     },
     "options_error_remove_model": {
-        "message": "Could not remove model",
+        "message": "Impossible de supprimer le modèle",
         "description": "Error when removing a custom model fails"
     },
     "content_skip_applied": {
-        "message": "Skip applied",
+        "message": "Segment ignoré",
         "description": "Brief toast notification shown on YouTube after a promo block is skipped"
     },
     "prefs_error_load": {
-        "message": "failed to load preferences",
+        "message": "Échec du chargement des préférences",
         "description": "Error fallback in preferences store when loading fails"
     },
     "prefs_error_save": {
-        "message": "failed to save preferences",
+        "message": "Échec de l’enregistrement des préférences",
         "description": "Error fallback in preferences store when saving fails"
     },
     "options_no_custom_models": {
-        "message": "No custom models saved yet.",
+        "message": "Aucun modèle personnalisé enregistré pour le moment.",
         "description": "Shown in the add-model section when the user has not saved custom models yet."
     },
     "options_connections_heading": {
-        "message": "Connections",
+        "message": "Connexions",
         "description": "Heading for the provider API key connections section on the options page."
     },
     "options_connections_description": {
-        "message": "Save and test API keys for cloud models.",
+        "message": "Enregistrez et testez les clés API des modèles cloud.",
         "description": "Help text for the provider API key connections section on the options page."
     },
     "options_connection_required_badge": {
-        "message": "Required for selected model",
+        "message": "Requis pour le modèle sélectionné",
         "description": "Badge shown on a provider connection when the active model needs that API key."
     },
     "options_connection_key_saved": {
-        "message": "Key saved",
+        "message": "Clé enregistrée",
         "description": "Status badge for a provider connection with a saved API key."
     },
     "options_connection_key_missing": {
-        "message": "Key missing",
+        "message": "Clé manquante",
         "description": "Status badge for a provider connection without a saved API key."
     },
     "options_connection_key_placeholder": {
-        "message": "Enter API key",
+        "message": "Saisissez la clé API",
         "description": "Placeholder for provider API key inputs in the connections section."
     },
     "options_connection_test_button": {
-        "message": "Test",
+        "message": "Tester",
         "description": "Button that validates a provider API key in the connections section."
     },
     "options_connection_key_valid": {
-        "message": "Key is valid.",
+        "message": "La clé est valide.",
         "description": "Success message shown after a provider API key test passes."
     },
     "options_analysis_mode_heading": {
-        "message": "Analysis mode",
+        "message": "Mode d’analyse",
         "description": "Heading for the analysis route selector in extension settings."
     },
     "options_analysis_mode_server_label": {
@@ -340,31 +340,31 @@
         "description": "Label for the default server-backed analysis mode."
     },
     "options_analysis_mode_server_description": {
-        "message": "Uses TopSkip analysis and shared cached results.",
+        "message": "Utilise l’analyse TopSkip et les résultats partagés mis en cache.",
         "description": "Description shown when TopSkip Server mode is selected."
     },
     "options_analysis_mode_byok_label": {
-        "message": "Private BYOK",
+        "message": "BYOK privé",
         "description": "Label for the private bring-your-own-key analysis mode."
     },
     "options_analysis_mode_byok_description": {
-        "message": "Uses your configured provider in this extension.",
+        "message": "Utilise le fournisseur que vous avez configuré dans cette extension.",
         "description": "Description shown when Private BYOK mode is selected."
     },
     "options_analysis_mode_byok_privacy": {
-        "message": "Your watched video ID and analysis result are not sent to TopSkip Server. TopSkip Server is never used as a fallback in this mode.",
+        "message": "L’identifiant de la vidéo regardée et le résultat de l’analyse ne sont pas envoyés à TopSkip Server. Dans ce mode, TopSkip Server n’est jamais utilisé comme solution de secours.",
         "description": "Privacy and no-fallback disclosure shown for Private BYOK mode."
     },
     "options_analysis_mode_setup_required": {
-        "message": "Setup required: choose a provider and configure the selected model before using Private BYOK.",
+        "message": "Configuration requise : choisissez un fournisseur et configurez le modèle sélectionné avant d’utiliser le BYOK privé.",
         "description": "Guidance shown when Private BYOK is selected without a runnable provider."
     },
     "options_analysis_mode_save_error": {
-        "message": "Could not change analysis mode.",
+        "message": "Impossible de changer le mode d’analyse.",
         "description": "Fallback error shown when saving the selected analysis mode fails."
     },
     "popup_analysis_mode_label": {
-        "message": "Analysis mode",
+        "message": "Mode d’analyse",
         "description": "Label for the selected analysis route in the popup."
     },
     "popup_analysis_mode_server": {
@@ -372,99 +372,163 @@
         "description": "Popup label for the server-backed analysis mode."
     },
     "popup_analysis_mode_byok": {
-        "message": "Private BYOK",
+        "message": "BYOK privé",
         "description": "Popup label for the private provider analysis mode."
     },
     "popup_byok_setup_badge": {
-        "message": "Setup required",
+        "message": "Configuration requise",
         "description": "Popup status badge shown when Private BYOK is not configured."
     },
     "popup_byok_setup_title": {
-        "message": "Private BYOK setup required",
+        "message": "Configuration du BYOK privé requise",
         "description": "Popup title shown when the selected BYOK provider is unavailable."
     },
     "popup_byok_setup_description": {
-        "message": "Configure %provider% in settings before promo analysis can run.",
+        "message": "Configurez %provider% dans les paramètres avant de lancer l’analyse des promotions.",
         "description": "Popup BYOK setup guidance. %provider% is replaced with the selected provider name."
     },
     "popup_byok_setup_body": {
-        "message": "Analysis stays with your configured provider and is not shared with TopSkip.",
+        "message": "L’analyse reste chez le fournisseur que vous avez configuré et n’est pas partagée avec TopSkip.",
         "description": "Popup privacy reminder for an unconfigured Private BYOK route."
     },
     "popup_server_limitation_title": {
-        "message": "This video could not be analyzed",
+        "message": "Cette vidéo n’a pas pu être analysée",
         "description": "Popup title for a server analysis limitation specific to the video."
     },
     "popup_server_limitation_description": {
-        "message": "Your TopSkip settings are working.",
+        "message": "Vos paramètres TopSkip fonctionnent.",
         "description": "Popup reassurance for video-specific server limitations."
     },
     "popup_server_limitation_headline": {
-        "message": "TopSkip could not process this video.",
+        "message": "TopSkip n’a pas pu traiter cette vidéo.",
         "description": "Popup headline for video-specific server limitations."
     },
     "popup_server_limitation_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "La lecture continue sans saut des segments promotionnels détectés par le serveur.",
         "description": "Popup body for video-specific server limitations."
     },
     "popup_server_temporary_title": {
-        "message": "TopSkip Server is temporarily busy",
+        "message": "TopSkip Server est temporairement surchargé",
         "description": "Popup title for temporary server capacity failures."
     },
     "popup_server_temporary_description": {
-        "message": "Your settings are working. Try again later.",
+        "message": "Vos paramètres fonctionnent. Réessayez plus tard.",
         "description": "Popup reassurance for temporary server capacity failures."
     },
     "popup_server_temporary_headline": {
-        "message": "Server capacity is temporarily unavailable.",
+        "message": "La capacité du serveur est temporairement indisponible.",
         "description": "Popup headline for temporary server capacity failures."
     },
     "popup_server_temporary_body": {
-        "message": "Try this video again later.",
+        "message": "Réessayez cette vidéo plus tard.",
         "description": "Popup body when the server does not provide a retry time."
     },
     "popup_server_temporary_retry": {
-        "message": "Try again in %seconds% seconds.",
+        "message": "Réessayez dans %seconds% secondes.",
         "description": "Popup retry guidance. %seconds% is replaced with the server retry delay."
     },
     "popup_server_failure_title": {
-        "message": "TopSkip Server error",
+        "message": "Erreur de TopSkip Server",
         "description": "Popup title for a reportable TopSkip server failure."
     },
     "popup_server_failure_description": {
-        "message": "The problem is on the TopSkip server, not in your settings.",
+        "message": "Le problème vient du serveur TopSkip, et non de vos paramètres.",
         "description": "Popup reassurance for a reportable server failure."
     },
     "popup_server_failure_headline": {
-        "message": "The server could not analyze this video.",
+        "message": "Le serveur n’a pas pu analyser cette vidéo.",
         "description": "Popup headline for a reportable TopSkip server failure."
     },
     "popup_server_failure_body": {
-        "message": "Playback continues normally. You can report this error on GitHub.",
+        "message": "La lecture continue normalement. Vous pouvez signaler cette erreur sur GitHub.",
         "description": "Popup body for a reportable TopSkip server failure."
     },
     "popup_server_upgrade_title": {
-        "message": "Update TopSkip",
+        "message": "Mettre TopSkip à jour",
         "description": "Popup title when the server requires a newer extension."
     },
     "popup_server_upgrade_description": {
-        "message": "This server version requires a newer extension.",
+        "message": "Cette version du serveur nécessite une extension plus récente.",
         "description": "Popup description when the server requires a newer extension."
     },
     "popup_server_upgrade_headline": {
-        "message": "An extension update is required.",
+        "message": "Une mise à jour de l’extension est requise.",
         "description": "Popup headline when the server requires a newer extension."
     },
     "popup_server_upgrade_body": {
-        "message": "Update TopSkip and try this video again.",
+        "message": "Mettez TopSkip à jour et réessayez cette vidéo.",
         "description": "Popup body when the server requires a newer extension."
     },
+    "popup_capture_failure_badge": {
+        "message": "Sous-titres",
+        "description": "Popup badge for a timed-caption capture failure."
+    },
+    "popup_capture_failure_title": {
+        "message": "Impossible de lire les sous-titres",
+        "description": "Popup title when the extension could not capture timed captions."
+    },
+    "popup_capture_failure_description": {
+        "message": "TopSkip n’a pas pu extraire de sous-titres horodatés exploitables de cette vidéo.",
+        "description": "Popup explanation for a timed-caption capture failure."
+    },
+    "popup_capture_failure_headline": {
+        "message": "Échec de l’extraction des sous-titres.",
+        "description": "Popup headline for a timed-caption capture failure."
+    },
+    "popup_capture_failure_body": {
+        "message": "Rechargez la vidéo et réessayez.",
+        "description": "Popup recovery guidance after a timed-caption capture failure."
+    },
+    "popup_extension_failure_badge": {
+        "message": "Interrompue",
+        "description": "Popup badge when analysis cannot continue."
+    },
+    "popup_extension_failure_title": {
+        "message": "L’analyse n’a pas pu continuer",
+        "description": "Popup title when analysis ends before completion."
+    },
+    "popup_extension_failure_description": {
+        "message": "TopSkip n’a pas pu terminer l’analyse de cette vidéo.",
+        "description": "Popup explanation when analysis ends before completion."
+    },
+    "popup_extension_failure_headline": {
+        "message": "Rechargez la vidéo ou la page pour réessayer.",
+        "description": "Popup recovery headline for an analysis that could not continue."
+    },
+    "popup_extension_failure_body": {
+        "message": "La lecture continue normalement, mais les segments promotionnels détectés par le serveur ne seront pas ignorés.",
+        "description": "Popup playback guidance after analysis ends before completion."
+    },
+    "popup_status_unavailable_badge": {
+        "message": "Indisponible",
+        "description": "Popup badge when current extension status cannot be read."
+    },
+    "popup_status_unavailable_title": {
+        "message": "Statut indisponible",
+        "description": "Popup title when current extension status cannot be read."
+    },
+    "popup_status_unavailable_description": {
+        "message": "TopSkip n’a pas pu actualiser son état.",
+        "description": "Popup explanation when current extension status cannot be read."
+    },
+    "popup_status_unavailable_headline": {
+        "message": "Impossible de charger le statut de TopSkip.",
+        "description": "Popup headline when current extension status cannot be read."
+    },
+    "popup_status_unavailable_activity": {
+        "message": "Statut indisponible",
+        "description": "Popup activity label when current extension status cannot be read."
+    },
+    "popup_status_stale_activity": {
+        "message": "Mise à jour du statut retardée",
+        "description": "Popup activity label while the last trustworthy status remains visible."
+    },
     "popup_server_report_primary": {
-        "message": "Report on GitHub",
+        "message": "Signaler sur GitHub",
         "description": "Primary popup button for a reportable server failure."
     },
     "popup_server_report_secondary": {
-        "message": "Report if this seems wrong",
+        "message": "Signaler si ce résultat semble incorrect",
         "description": "Secondary popup button for a possibly incorrect video limitation."
     }
 }

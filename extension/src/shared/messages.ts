@@ -6,11 +6,13 @@ import {
     userPreferencesSchema,
     type UserPreferences,
 } from '@/shared/constants';
-import type {
-    PromoBlock,
-    PromoDetectionStatus,
+import {
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+    type PromoDetectionStatus,
 } from '@topskip/common/promo-types';
 import {
+    extensionVersionSchema,
     serverTranscriptIdentitySchema,
     youtubeVideoIdSchema,
     type ServerAnalysisFailureCode,
@@ -71,6 +73,21 @@ export const TOPSKIP_MESSAGE = {
      * service worker console for easier debugging.
      */
     CONTENT_LOG: 'TOPSKIP_CONTENT_LOG',
+} as const;
+
+/**
+ * Versioned readiness handshake prevents a cold worker from replacing the
+ * current content bundle after a transient probe failure.
+ */
+export const CONTENT_SCRIPT_PROTOCOL_VERSION = 1;
+
+/**
+ * Safe local reasons distinguish worker transport loss from an analysis
+ * session that exceeded its bounded lifetime.
+ */
+export const SERVER_ANALYSIS_INTERRUPTION_REASON = {
+    RuntimeUnavailable: 'runtime_unavailable',
+    AnalysisDeadlineExceeded: 'analysis_deadline_exceeded',
 } as const;
 
 /**
@@ -234,13 +251,28 @@ export type MutateOpenRouterCustomModelResponse =
     | { ok: false; error: string };
 
 /**
+ * Stable origins for promo-detection state crossing extension bundles.
+ */
+export const PROMO_DETECTION_SOURCE = {
+    Server: 'server',
+    LocalProvider: 'local_provider',
+    LocalCache: 'local_cache',
+    ServerCache: 'server_cache',
+} as const;
+
+/**
  * Origin of the latest promo detection state shown in the popup.
  */
 export type PromoDetectionSource =
-    | 'server'
-    | 'local_provider'
-    | 'local_cache'
-    | 'server_cache';
+    (typeof PROMO_DETECTION_SOURCE)[keyof typeof PROMO_DETECTION_SOURCE];
+
+/**
+ * Server and exact-cache paths exclude the private local provider source.
+ */
+export type ServerPromoDetectionSource = Exclude<
+    PromoDetectionSource,
+    typeof PROMO_DETECTION_SOURCE.LocalProvider
+>;
 
 /**
  * Message-free server context used for localized popup copy and safe issue
@@ -259,7 +291,21 @@ export type ServerAnalysisFailureContext = {
 /**
  * Explicit progress phase for one Server-mode caption session.
  */
-export type ServerAnalysisPhase = 'caption_acquisition' | 'server_analysis';
+export const SERVER_ANALYSIS_PHASE = {
+    CaptionAcquisition: 'caption_acquisition',
+    ServerAnalysis: 'server_analysis',
+} as const;
+
+/**
+ * Terminal ordering sentinel is never serialized as a pending phase field.
+ */
+export const SERVER_ANALYSIS_TERMINAL_PHASE = 'terminal';
+
+/**
+ * Serializable Server progress phases accepted across extension bundles.
+ */
+export type ServerAnalysisPhase =
+    (typeof SERVER_ANALYSIS_PHASE)[keyof typeof SERVER_ANALYSIS_PHASE];
 
 /**
  * Fields shared by every detection snapshot shown for the active tab.
@@ -281,8 +327,8 @@ type PromoDetectionStateBase = {
  * Pending Server work must identify both its session and visible phase.
  */
 type PendingServerDetectionState = PromoDetectionStateBase & {
-    status: 'analyzing';
-    source: 'server';
+    status: typeof PROMO_DETECTION_STATUS.Analyzing;
+    source: typeof PROMO_DETECTION_SOURCE.Server;
     sessionId: string;
     serverAnalysisPhase: ServerAnalysisPhase;
 };
@@ -291,8 +337,14 @@ type PendingServerDetectionState = PromoDetectionStateBase & {
  * Terminal Server-route results retain their session but cannot carry a phase.
  */
 type TerminalServerDetectionState = PromoDetectionStateBase & {
-    status: Exclude<PromoDetectionStatus, 'analyzing'>;
-    source: Exclude<PromoDetectionSource, 'local_provider'>;
+    status: Exclude<
+        PromoDetectionStatus,
+        typeof PROMO_DETECTION_STATUS.Analyzing
+    >;
+    source: Exclude<
+        PromoDetectionSource,
+        typeof PROMO_DETECTION_SOURCE.LocalProvider
+    >;
     sessionId: string;
     serverAnalysisPhase?: never;
 };
@@ -302,7 +354,7 @@ type TerminalServerDetectionState = PromoDetectionStateBase & {
  */
 export type LocalDetectionState = PromoDetectionStateBase & {
     status: PromoDetectionStatus;
-    source?: 'local_provider';
+    source?: typeof PROMO_DETECTION_SOURCE.LocalProvider;
     sessionId?: never;
     serverAnalysisPhase?: never;
 };
@@ -319,8 +371,21 @@ export type PromoDetectionStatePayload =
  * Popup response containing the latest detection state for the active tab.
  */
 export type GetDetectionStatusResponse =
-    | { ok: true; state: PromoDetectionStatePayload | null }
+    | {
+          ok: true;
+          tabId: number | null;
+          state: PromoDetectionStatePayload | null;
+      }
     | { ok: false; error: string };
+
+/**
+ * Tab-scoped detection push sent over the extension-global runtime channel.
+ */
+export type PromoDetectionUpdatedMessage = {
+    type: typeof TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED;
+    tabId: number;
+    payload: PromoDetectionStatePayload | null;
+};
 
 /**
  * Bounded UUID schema used to reject stale or malformed Server session events.
@@ -331,21 +396,44 @@ export const serverAnalysisSessionIdSchema = v.pipe(
     v.maxLength(36),
 );
 
+/**
+ * Local session events update extension state without becoming backend codes.
+ */
+export const SERVER_ANALYSIS_SESSION_EVENT = {
+    AcquisitionStarted: 'acquisition_started',
+    Cancelled: 'cancelled',
+    CaptionsUnavailable: 'captions_unavailable',
+    CaptionExtractionFailed: 'caption_extraction_failed',
+    AnalysisInterrupted: 'analysis_interrupted',
+} as const;
+
 const serverAnalysisSessionEventNameSchema = v.picklist([
-    'acquisition_started',
-    'cancelled',
-    'captions_unavailable',
-    'caption_extraction_failed',
+    SERVER_ANALYSIS_SESSION_EVENT.AcquisitionStarted,
+    SERVER_ANALYSIS_SESSION_EVENT.Cancelled,
+    SERVER_ANALYSIS_SESSION_EVENT.CaptionsUnavailable,
+    SERVER_ANALYSIS_SESSION_EVENT.CaptionExtractionFailed,
 ] as const);
+
+const serverAnalysisInterruptionReasonSchema = v.picklist(
+    Object.values(SERVER_ANALYSIS_INTERRUPTION_REASON),
+);
 
 /**
  * Strict local session event that updates detection state without making HTTP.
  */
-export const serverAnalysisSessionEventPayloadSchema = v.strictObject({
-    event: serverAnalysisSessionEventNameSchema,
-    sessionId: serverAnalysisSessionIdSchema,
-    videoId: youtubeVideoIdSchema,
-});
+export const serverAnalysisSessionEventPayloadSchema = v.union([
+    v.strictObject({
+        event: serverAnalysisSessionEventNameSchema,
+        sessionId: serverAnalysisSessionIdSchema,
+        videoId: youtubeVideoIdSchema,
+    }),
+    v.strictObject({
+        event: v.literal(SERVER_ANALYSIS_SESSION_EVENT.AnalysisInterrupted),
+        reason: serverAnalysisInterruptionReasonSchema,
+        sessionId: serverAnalysisSessionIdSchema,
+        videoId: youtubeVideoIdSchema,
+    }),
+]);
 
 /**
  * Session event payload emitted before submission or after local cancellation.
@@ -414,6 +502,23 @@ export type PreflightByokSetupPayload = {
 export type PreflightByokSetupResponse =
     | { ok: true; status: 'inactive' | 'ready' | 'setup_required' }
     | { ok: false; error: string };
+
+/**
+ * Typed readiness acknowledgement lets background distinguish the current
+ * content protocol from an invalidated or older injected bundle.
+ */
+export const contentScriptReadyResponseSchema = v.strictObject({
+    ok: v.literal(true),
+    protocolVersion: v.literal(CONTENT_SCRIPT_PROTOCOL_VERSION),
+    extensionVersion: extensionVersionSchema,
+});
+
+/**
+ * Readiness acknowledgement returned by the active watch content script.
+ */
+export type ContentScriptReadyResponse = v.InferOutput<
+    typeof contentScriptReadyResponseSchema
+>;
 
 /**
  * Strict identity-bearing poll payload that survives worker suspension.
@@ -729,13 +834,10 @@ export type TopSkipRuntimeMessage =
           type: typeof TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS;
           state: PromoDetectionStatePayload | null;
       }
-    | {
-          type: typeof TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED;
-          payload: PromoDetectionStatePayload | null;
-      }
+    | PromoDetectionUpdatedMessage
     | {
           type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
-          source: 'server' | 'local_cache' | 'server_cache';
+          source: ServerPromoDetectionSource;
           sessionId: string;
           videoId: string;
           promoBlocks: PromoBlock[];
@@ -748,7 +850,7 @@ export type TopSkipRuntimeMessage =
       }
     | {
           type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
-          source: 'local_provider';
+          source: typeof PROMO_DETECTION_SOURCE.LocalProvider;
           videoId: string;
           promoBlocks: PromoBlock[];
           partialCoverage?: boolean;
@@ -959,7 +1061,11 @@ const promoBlockSchema = v.strictObject({
 export const promoBlocksDetectedMessageSchema = v.union([
     v.strictObject({
         type: v.literal(TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED),
-        source: v.picklist(['server', 'local_cache', 'server_cache'] as const),
+        source: v.picklist([
+            PROMO_DETECTION_SOURCE.Server,
+            PROMO_DETECTION_SOURCE.LocalCache,
+            PROMO_DETECTION_SOURCE.ServerCache,
+        ] as const),
         sessionId: serverAnalysisSessionIdSchema,
         videoId: youtubeVideoIdSchema,
         promoBlocks: v.array(promoBlockSchema),
@@ -967,7 +1073,7 @@ export const promoBlocksDetectedMessageSchema = v.union([
     }),
     v.strictObject({
         type: v.literal(TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED),
-        source: v.literal('local_provider'),
+        source: v.literal(PROMO_DETECTION_SOURCE.LocalProvider),
         videoId: youtubeVideoIdSchema,
         promoBlocks: v.array(promoBlockSchema),
         partialCoverage: v.optional(v.boolean()),

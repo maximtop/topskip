@@ -5,6 +5,7 @@ const prefsMocks = vi.hoisted(() => ({
     load: vi.fn(),
 }));
 const detectionMocks = vi.hoisted(() => ({
+    ready: vi.fn().mockResolvedValue(undefined),
     get: vi.fn(),
 }));
 const browserMocks = vi.hoisted(() => ({

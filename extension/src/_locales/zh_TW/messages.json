@@ -8,7 +8,7 @@
         "description": "Short name for the extension. Used in the toolbar."
     },
     "description": {
-        "message": "LLM-assisted promo skip on YouTube (MVP)",
+        "message": "在 YouTube 上使用 LLM 輔助略過推廣內容（MVP）",
         "description": "Extension description for Chrome Web Store listing. TEXT MAX LENGTH: 132"
     },
     "popup_heading": {
@@ -16,187 +16,187 @@
         "description": "Popup heading text"
     },
     "popup_enable_promo_skip": {
-        "message": "Enable promo skip (YouTube)",
+        "message": "啟用略過推廣內容（YouTube）",
         "description": "Label next to the main enable/disable switch in the popup"
     },
     "popup_enable_auto_skip_aria": {
-        "message": "Enable auto-skip",
+        "message": "啟用自動略過",
         "description": "Accessible label for the enable/disable switch in the popup"
     },
     "popup_active_tab_prefix": {
-        "message": "Active tab: ",
+        "message": "目前分頁： ",
         "description": "Prefix before the detection status line in the popup. Includes trailing space."
     },
     "popup_open_settings": {
-        "message": "Open settings (OpenRouter)",
+        "message": "開啟設定（OpenRouter）",
         "description": "Button in the popup that opens the options page"
     },
     "popup_reliability_notice_title": {
-        "message": "Reliability notice",
+        "message": "可靠性提醒",
         "description": "Title for the yellow alert box in the popup"
     },
     "popup_reliability_notice_body_1": {
-        "message": "TopSkip may rely on parts of YouTube's site that are not a documented public API—the same general area the YouTube web client uses. There is no guarantee that auto-skip will keep working if YouTube changes how the page behaves.",
+        "message": "TopSkip 可能會依賴 YouTube 網站中未記載為公開 API 的部分，也就是 YouTube 網頁版用戶端所使用的相關區域。如果 YouTube 變更頁面的運作方式，無法保證自動略過功能仍能正常運作。",
         "description": "First paragraph of the reliability notice in the popup"
     },
     "popup_reliability_notice_body_2": {
-        "message": "If it stops working, please report it where you installed this extension (for example the Chrome Web Store support options, if you installed it from there).",
+        "message": "如果功能停止運作，請前往安裝此擴充功能的平台回報問題（例如，若從 Chrome Web Store 安裝，可使用其中的支援選項）。",
         "description": "Second paragraph of the reliability notice in the popup"
     },
     "popup_detection_not_configured": {
-        "message": "LLM not configured",
+        "message": "尚未設定 LLM",
         "description": "Detection status shown when OpenRouter is not set up"
     },
     "popup_detection_unavailable": {
-        "message": "Unavailable",
+        "message": "無法使用",
         "description": "Detection status shown when detection is unavailable"
     },
     "popup_detection_analyzing": {
-        "message": "Analyzing…",
+        "message": "分析中…",
         "description": "Detection status shown during transcript analysis"
     },
     "popup_detection_detected": {
-        "message": "Promo blocks detected",
+        "message": "已偵測到推廣片段",
         "description": "Detection status shown when promo blocks are found"
     },
     "popup_detection_no_promo": {
-        "message": "No promo found",
+        "message": "找不到推廣內容",
         "description": "Detection status shown when no promo blocks are found"
     },
     "popup_detection_error": {
-        "message": "Detection error",
+        "message": "偵測錯誤",
         "description": "Detection status shown when detection fails"
     },
     "popup_detection_server_acquisition_badge": {
-        "message": "Captions",
+        "message": "字幕",
         "description": "Popup status badge shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_title": {
-        "message": "Getting captions",
+        "message": "正在取得字幕",
         "description": "Popup title shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_description": {
-        "message": "TopSkip is reading timed captions from this video.",
+        "message": "TopSkip 正在讀取此影片中含時間資訊的字幕。",
         "description": "Popup description shown during caption acquisition."
     },
     "popup_detection_server_acquisition_headline": {
-        "message": "Getting video captions…",
+        "message": "正在取得影片字幕…",
         "description": "Popup headline shown during caption acquisition."
     },
     "popup_detection_server_acquisition_body": {
-        "message": "Promo analysis will start as soon as captions are ready.",
+        "message": "字幕準備完成後，將立即開始分析推廣內容。",
         "description": "Popup body shown during caption acquisition."
     },
     "popup_detection_server_pending_badge": {
-        "message": "Server",
+        "message": "伺服器",
         "description": "Popup status badge shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_title": {
-        "message": "Server analysis pending",
+        "message": "正在等待伺服器分析",
         "description": "Popup title shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_description": {
-        "message": "TopSkip asked the server to analyze this video.",
+        "message": "TopSkip 已要求伺服器分析此影片。",
         "description": "Popup description shown while the TopSkip server is processing a video."
     },
     "popup_detection_server_pending_headline": {
-        "message": "Server analysis is in progress.",
+        "message": "伺服器正在分析。",
         "description": "Popup headline shown for a server processing response."
     },
     "popup_detection_server_pending_body": {
-        "message": "Skipping will start when the TopSkip backend has promo blocks for a future playback position.",
+        "message": "當 TopSkip 後端取得未來播放位置的推廣片段後，將開始自動略過。",
         "description": "Popup body shown for a server processing response."
     },
     "popup_detection_server_error_badge": {
-        "message": "Server",
+        "message": "伺服器",
         "description": "Popup status badge shown when server analysis fails."
     },
     "popup_detection_server_error_title": {
-        "message": "Server analysis unavailable",
+        "message": "無法使用伺服器分析",
         "description": "Popup title shown when the TopSkip server request fails."
     },
     "popup_detection_server_error_description": {
-        "message": "TopSkip could not use the server for this video.",
+        "message": "TopSkip 無法為此影片使用伺服器。",
         "description": "Popup description shown when server analysis cannot run."
     },
     "popup_detection_server_error_headline": {
-        "message": "Server analysis failed.",
+        "message": "伺服器分析失敗。",
         "description": "Fallback popup headline shown when no specific server error is available."
     },
     "popup_detection_server_error_body": {
-        "message": "The TopSkip server did not return a usable response. Playback continues without server-detected skips.",
+        "message": "TopSkip 伺服器未傳回可用的回應。影片會繼續播放，但不會略過伺服器偵測到的片段。",
         "description": "Popup body shown for server request failures."
     },
     "popup_detection_server_cache_badge": {
-        "message": "Server cache",
+        "message": "伺服器快取",
         "description": "Popup status badge shown when promo blocks came from the TopSkip backend cache."
     },
     "popup_detection_server_cache_title": {
-        "message": "Server-detected blocks ready",
+        "message": "伺服器偵測到的片段已就緒",
         "description": "Popup title shown when the TopSkip backend returns cached promo blocks."
     },
     "popup_detection_server_cache_description": {
-        "message": "TopSkip received cached promo blocks from the server.",
+        "message": "TopSkip 已從伺服器收到快取的推廣片段。",
         "description": "Popup description shown for a server cache-hit response."
     },
     "popup_detection_server_cache_headline": {
-        "message": "Server cache hit.",
+        "message": "已找到伺服器快取。",
         "description": "Popup headline shown when a server cache hit is ready."
     },
     "popup_detection_server_no_promo_badge": {
-        "message": "Server",
+        "message": "伺服器",
         "description": "Popup status badge shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_title": {
-        "message": "Server analysis complete",
+        "message": "伺服器分析完成",
         "description": "Popup title shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_description": {
-        "message": "TopSkip checked the server result for this video.",
+        "message": "TopSkip 已檢查此影片的伺服器分析結果。",
         "description": "Popup description shown when a server terminal no-promo result is available."
     },
     "popup_detection_server_no_promo_headline": {
-        "message": "No server promo blocks detected.",
+        "message": "伺服器未偵測到推廣片段。",
         "description": "Popup headline shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_no_promo_body": {
-        "message": "Playback continues normally unless future server results add blocks.",
+        "message": "除非後續伺服器結果新增片段，否則影片會繼續正常播放。",
         "description": "Popup body shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_unavailable_badge": {
-        "message": "Server",
+        "message": "伺服器",
         "description": "Popup status badge shown when server analysis is unavailable."
     },
     "popup_detection_server_unavailable_title": {
-        "message": "Server analysis unavailable",
+        "message": "無法使用伺服器分析",
         "description": "Popup title shown when server analysis reaches an unavailable terminal state."
     },
     "popup_detection_server_unavailable_description": {
-        "message": "The TopSkip server could not produce a result for this video.",
+        "message": "TopSkip 伺服器無法產生此影片的結果。",
         "description": "Popup description shown when server analysis cannot produce a result."
     },
     "popup_detection_server_unavailable_headline": {
-        "message": "Server analysis is unavailable.",
+        "message": "無法使用伺服器分析。",
         "description": "Fallback popup headline shown when no specific server unavailable reason is available."
     },
     "popup_detection_server_unavailable_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "影片會繼續播放，但不會略過伺服器偵測到的片段。",
         "description": "Popup body shown when server analysis is unavailable."
     },
     "options_heading": {
-        "message": "TopSkip — LLM promo detection",
+        "message": "TopSkip — LLM 推廣內容偵測",
         "description": "Heading on the options page"
     },
     "options_description": {
-        "message": "Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).",
+        "message": "設定 OpenRouter 以分析轉錄文字。API 金鑰只會儲存在此瀏覽器設定檔中（擴充功能的本機儲存空間）。",
         "description": "Description text below the heading on the options page"
     },
     "options_enable_detection": {
-        "message": "Enable LLM promo detection",
+        "message": "啟用 LLM 推廣內容偵測",
         "description": "Checkbox label on the options page"
     },
     "options_api_key_label": {
-        "message": "OpenRouter API key",
+        "message": "OpenRouter API 金鑰",
         "description": "Label for the API key input on the options page"
     },
     "options_api_key_placeholder": {
@@ -204,31 +204,31 @@
         "description": "Placeholder text for the API key input"
     },
     "options_api_key_saved": {
-        "message": "Saved key: %mask% - leave blank to keep it.",
+        "message": "已儲存的金鑰：%mask% - 保持空白即可繼續使用。",
         "description": "Shown below API key input when a key is already saved. %mask% is the masked key value."
     },
     "options_api_key_none": {
-        "message": "No key saved yet.",
+        "message": "尚未儲存金鑰。",
         "description": "Shown below API key input when no key has been saved"
     },
     "options_model_label": {
-        "message": "Model",
+        "message": "模型",
         "description": "Label for the model select dropdown on the options page"
     },
     "options_model_description": {
-        "message": "Built-in presets and models you added below.",
+        "message": "內建預設和您在下方新增的模型。",
         "description": "Help text below the model select dropdown"
     },
     "options_add_model_heading": {
-        "message": "Add a model",
+        "message": "新增模型",
         "description": "Heading for the custom model section on the options page"
     },
     "options_add_model_description": {
-        "message": "Type an OpenRouter model id (for example vendor/model), then Add to keep it for later sessions. This is not the same as Save below.",
+        "message": "輸入 OpenRouter 模型 ID（例如 vendor/model），然後按一下「新增」以供後續工作階段使用。這與下方的「儲存」不同。",
         "description": "Help text for the custom model input section"
     },
     "options_custom_model_label": {
-        "message": "Custom model id",
+        "message": "自訂模型 ID",
         "description": "Label for the custom model text input"
     },
     "options_custom_model_placeholder": {
@@ -236,235 +236,299 @@
         "description": "Placeholder for the custom model text input"
     },
     "options_add_button": {
-        "message": "Add",
+        "message": "新增",
         "description": "Button to add a custom model id"
     },
     "options_your_models_heading": {
-        "message": "Your added models",
+        "message": "您新增的模型",
         "description": "Heading above the list of user-added custom models"
     },
     "options_remove_button": {
-        "message": "Remove",
+        "message": "移除",
         "description": "Button to remove a custom model from the list"
     },
     "options_saved": {
-        "message": "Saved.",
+        "message": "已儲存。",
         "description": "Success message shown after saving settings"
     },
     "options_save_button": {
-        "message": "Save",
+        "message": "儲存",
         "description": "Button to save all settings on the options page"
     },
     "options_reload_button": {
-        "message": "Reload",
+        "message": "重新載入",
         "description": "Button to reload settings from storage on the options page"
     },
     "options_save_help": {
-        "message": "Save applies the detection toggle, API key (if changed), and the selected model. Use Add to store extra model ids in your list.",
+        "message": "「儲存」會套用偵測開關、API 金鑰（若有變更）和所選模型。使用「新增」可將其他模型 ID 儲存到清單中。",
         "description": "Help text below the Save/Reload buttons"
     },
     "options_error_bg_no_response": {
-        "message": "Extension background did not respond. Click Reload or reload the extension on chrome://extensions.",
+        "message": "擴充功能背景程序沒有回應。請按一下「重新載入」，或前往 chrome://extensions 重新載入擴充功能。",
         "description": "Error shown when the background service worker is unreachable"
     },
     "options_error_load_failed": {
-        "message": "Failed to load settings",
+        "message": "無法載入設定",
         "description": "Generic error when loading settings fails"
     },
     "options_error_save_failed": {
-        "message": "Save failed",
+        "message": "儲存失敗",
         "description": "Generic error when saving settings fails"
     },
     "options_error_add_model": {
-        "message": "Could not add model",
+        "message": "無法新增模型",
         "description": "Error when adding a custom model fails"
     },
     "options_error_remove_model": {
-        "message": "Could not remove model",
+        "message": "無法移除模型",
         "description": "Error when removing a custom model fails"
     },
     "content_skip_applied": {
-        "message": "Skip applied",
+        "message": "已略過",
         "description": "Brief toast notification shown on YouTube after a promo block is skipped"
     },
     "prefs_error_load": {
-        "message": "failed to load preferences",
+        "message": "無法載入偏好設定",
         "description": "Error fallback in preferences store when loading fails"
     },
     "prefs_error_save": {
-        "message": "failed to save preferences",
+        "message": "無法儲存偏好設定",
         "description": "Error fallback in preferences store when saving fails"
     },
     "options_no_custom_models": {
-        "message": "No custom models saved yet.",
+        "message": "尚未儲存自訂模型。",
         "description": "Shown in the add-model section when the user has not saved custom models yet."
     },
     "options_connections_heading": {
-        "message": "Connections",
+        "message": "連線",
         "description": "Heading for the provider API key connections section on the options page."
     },
     "options_connections_description": {
-        "message": "Save and test API keys for cloud models.",
+        "message": "儲存並測試雲端模型的 API 金鑰。",
         "description": "Help text for the provider API key connections section on the options page."
     },
     "options_connection_required_badge": {
-        "message": "Required for selected model",
+        "message": "所選模型需要此項目",
         "description": "Badge shown on a provider connection when the active model needs that API key."
     },
     "options_connection_key_saved": {
-        "message": "Key saved",
+        "message": "金鑰已儲存",
         "description": "Status badge for a provider connection with a saved API key."
     },
     "options_connection_key_missing": {
-        "message": "Key missing",
+        "message": "缺少金鑰",
         "description": "Status badge for a provider connection without a saved API key."
     },
     "options_connection_key_placeholder": {
-        "message": "Enter API key",
+        "message": "輸入 API 金鑰",
         "description": "Placeholder for provider API key inputs in the connections section."
     },
     "options_connection_test_button": {
-        "message": "Test",
+        "message": "測試",
         "description": "Button that validates a provider API key in the connections section."
     },
     "options_connection_key_valid": {
-        "message": "Key is valid.",
+        "message": "金鑰有效。",
         "description": "Success message shown after a provider API key test passes."
     },
     "options_analysis_mode_heading": {
-        "message": "Analysis mode",
+        "message": "分析模式",
         "description": "Heading for the analysis route selector in extension settings."
     },
     "options_analysis_mode_server_label": {
-        "message": "TopSkip Server",
+        "message": "TopSkip 伺服器",
         "description": "Label for the default server-backed analysis mode."
     },
     "options_analysis_mode_server_description": {
-        "message": "Uses TopSkip analysis and shared cached results.",
+        "message": "使用 TopSkip 分析和共用的快取結果。",
         "description": "Description shown when TopSkip Server mode is selected."
     },
     "options_analysis_mode_byok_label": {
-        "message": "Private BYOK",
+        "message": "私密 BYOK",
         "description": "Label for the private bring-your-own-key analysis mode."
     },
     "options_analysis_mode_byok_description": {
-        "message": "Uses your configured provider in this extension.",
+        "message": "使用您在此擴充功能中設定的服務供應商。",
         "description": "Description shown when Private BYOK mode is selected."
     },
     "options_analysis_mode_byok_privacy": {
-        "message": "Your watched video ID and analysis result are not sent to TopSkip Server. TopSkip Server is never used as a fallback in this mode.",
+        "message": "您觀看的影片 ID 和分析結果不會傳送至 TopSkip 伺服器。在此模式下，絕不會使用 TopSkip 伺服器作為備援。",
         "description": "Privacy and no-fallback disclosure shown for Private BYOK mode."
     },
     "options_analysis_mode_setup_required": {
-        "message": "Setup required: choose a provider and configure the selected model before using Private BYOK.",
+        "message": "需要設定：使用私密 BYOK 前，請選擇服務供應商並設定所選模型。",
         "description": "Guidance shown when Private BYOK is selected without a runnable provider."
     },
     "options_analysis_mode_save_error": {
-        "message": "Could not change analysis mode.",
+        "message": "無法變更分析模式。",
         "description": "Fallback error shown when saving the selected analysis mode fails."
     },
     "popup_analysis_mode_label": {
-        "message": "Analysis mode",
+        "message": "分析模式",
         "description": "Label for the selected analysis route in the popup."
     },
     "popup_analysis_mode_server": {
-        "message": "TopSkip Server",
+        "message": "TopSkip 伺服器",
         "description": "Popup label for the server-backed analysis mode."
     },
     "popup_analysis_mode_byok": {
-        "message": "Private BYOK",
+        "message": "私密 BYOK",
         "description": "Popup label for the private provider analysis mode."
     },
     "popup_byok_setup_badge": {
-        "message": "Setup required",
+        "message": "需要設定",
         "description": "Popup status badge shown when Private BYOK is not configured."
     },
     "popup_byok_setup_title": {
-        "message": "Private BYOK setup required",
+        "message": "需要設定私密 BYOK",
         "description": "Popup title shown when the selected BYOK provider is unavailable."
     },
     "popup_byok_setup_description": {
-        "message": "Configure %provider% in settings before promo analysis can run.",
+        "message": "請先在設定中完成 %provider% 的設定，才能分析推廣內容。",
         "description": "Popup BYOK setup guidance. %provider% is replaced with the selected provider name."
     },
     "popup_byok_setup_body": {
-        "message": "Analysis stays with your configured provider and is not shared with TopSkip.",
+        "message": "分析只會由您設定的服務供應商處理，不會與 TopSkip 共用。",
         "description": "Popup privacy reminder for an unconfigured Private BYOK route."
     },
     "popup_server_limitation_title": {
-        "message": "This video could not be analyzed",
+        "message": "無法分析此影片",
         "description": "Popup title for a server analysis limitation specific to the video."
     },
     "popup_server_limitation_description": {
-        "message": "Your TopSkip settings are working.",
+        "message": "您的 TopSkip 設定運作正常。",
         "description": "Popup reassurance for video-specific server limitations."
     },
     "popup_server_limitation_headline": {
-        "message": "TopSkip could not process this video.",
+        "message": "TopSkip 無法處理此影片。",
         "description": "Popup headline for video-specific server limitations."
     },
     "popup_server_limitation_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "影片會繼續播放，但不會略過伺服器偵測到的片段。",
         "description": "Popup body for video-specific server limitations."
     },
     "popup_server_temporary_title": {
-        "message": "TopSkip Server is temporarily busy",
+        "message": "TopSkip 伺服器暫時忙碌",
         "description": "Popup title for temporary server capacity failures."
     },
     "popup_server_temporary_description": {
-        "message": "Your settings are working. Try again later.",
+        "message": "您的設定運作正常，請稍後再試。",
         "description": "Popup reassurance for temporary server capacity failures."
     },
     "popup_server_temporary_headline": {
-        "message": "Server capacity is temporarily unavailable.",
+        "message": "伺服器暫時沒有可用容量。",
         "description": "Popup headline for temporary server capacity failures."
     },
     "popup_server_temporary_body": {
-        "message": "Try this video again later.",
+        "message": "請稍後再試此影片。",
         "description": "Popup body when the server does not provide a retry time."
     },
     "popup_server_temporary_retry": {
-        "message": "Try again in %seconds% seconds.",
+        "message": "請在 %seconds% 秒後再試。",
         "description": "Popup retry guidance. %seconds% is replaced with the server retry delay."
     },
     "popup_server_failure_title": {
-        "message": "TopSkip Server error",
+        "message": "TopSkip 伺服器錯誤",
         "description": "Popup title for a reportable TopSkip server failure."
     },
     "popup_server_failure_description": {
-        "message": "The problem is on the TopSkip server, not in your settings.",
+        "message": "問題出在 TopSkip 伺服器，而不是您的設定。",
         "description": "Popup reassurance for a reportable server failure."
     },
     "popup_server_failure_headline": {
-        "message": "The server could not analyze this video.",
+        "message": "伺服器無法分析此影片。",
         "description": "Popup headline for a reportable TopSkip server failure."
     },
     "popup_server_failure_body": {
-        "message": "Playback continues normally. You can report this error on GitHub.",
+        "message": "影片會繼續正常播放。您可以在 GitHub 回報此錯誤。",
         "description": "Popup body for a reportable TopSkip server failure."
     },
     "popup_server_upgrade_title": {
-        "message": "Update TopSkip",
+        "message": "更新 TopSkip",
         "description": "Popup title when the server requires a newer extension."
     },
     "popup_server_upgrade_description": {
-        "message": "This server version requires a newer extension.",
+        "message": "此伺服器版本需要較新的擴充功能。",
         "description": "Popup description when the server requires a newer extension."
     },
     "popup_server_upgrade_headline": {
-        "message": "An extension update is required.",
+        "message": "需要更新擴充功能。",
         "description": "Popup headline when the server requires a newer extension."
     },
     "popup_server_upgrade_body": {
-        "message": "Update TopSkip and try this video again.",
+        "message": "請更新 TopSkip，然後再試此影片。",
         "description": "Popup body when the server requires a newer extension."
     },
+    "popup_capture_failure_badge": {
+        "message": "字幕",
+        "description": "Popup badge for a timed-caption capture failure."
+    },
+    "popup_capture_failure_title": {
+        "message": "無法讀取字幕",
+        "description": "Popup title when the extension could not capture timed captions."
+    },
+    "popup_capture_failure_description": {
+        "message": "TopSkip 無法從此影片取得可用的含時間資訊字幕。",
+        "description": "Popup explanation for a timed-caption capture failure."
+    },
+    "popup_capture_failure_headline": {
+        "message": "字幕擷取失敗。",
+        "description": "Popup headline for a timed-caption capture failure."
+    },
+    "popup_capture_failure_body": {
+        "message": "請重新載入影片，然後再試一次。",
+        "description": "Popup recovery guidance after a timed-caption capture failure."
+    },
+    "popup_extension_failure_badge": {
+        "message": "已中斷",
+        "description": "Popup badge when analysis cannot continue."
+    },
+    "popup_extension_failure_title": {
+        "message": "無法繼續分析",
+        "description": "Popup title when analysis ends before completion."
+    },
+    "popup_extension_failure_description": {
+        "message": "TopSkip 無法完成此影片的分析。",
+        "description": "Popup explanation when analysis ends before completion."
+    },
+    "popup_extension_failure_headline": {
+        "message": "請重新載入影片或頁面，然後再試一次。",
+        "description": "Popup recovery headline for an analysis that could not continue."
+    },
+    "popup_extension_failure_body": {
+        "message": "影片會繼續正常播放，但不會略過伺服器偵測到的片段。",
+        "description": "Popup playback guidance after analysis ends before completion."
+    },
+    "popup_status_unavailable_badge": {
+        "message": "無法使用",
+        "description": "Popup badge when current extension status cannot be read."
+    },
+    "popup_status_unavailable_title": {
+        "message": "無法取得狀態",
+        "description": "Popup title when current extension status cannot be read."
+    },
+    "popup_status_unavailable_description": {
+        "message": "TopSkip 無法重新整理目前的狀態。",
+        "description": "Popup explanation when current extension status cannot be read."
+    },
+    "popup_status_unavailable_headline": {
+        "message": "無法載入 TopSkip 狀態。",
+        "description": "Popup headline when current extension status cannot be read."
+    },
+    "popup_status_unavailable_activity": {
+        "message": "無法取得狀態",
+        "description": "Popup activity label when current extension status cannot be read."
+    },
+    "popup_status_stale_activity": {
+        "message": "狀態更新延遲",
+        "description": "Popup activity label while the last trustworthy status remains visible."
+    },
     "popup_server_report_primary": {
-        "message": "Report on GitHub",
+        "message": "在 GitHub 回報",
         "description": "Primary popup button for a reportable server failure."
     },
     "popup_server_report_secondary": {
-        "message": "Report if this seems wrong",
+        "message": "如果您認為結果有誤，請回報",
         "description": "Secondary popup button for a possibly incorrect video limitation."
     }
 }

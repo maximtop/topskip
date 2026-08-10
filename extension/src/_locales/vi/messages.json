@@ -8,7 +8,7 @@
         "description": "Short name for the extension. Used in the toolbar."
     },
     "description": {
-        "message": "LLM-assisted promo skip on YouTube (MVP)",
+        "message": "Bỏ qua nội dung quảng bá trên YouTube với sự hỗ trợ của LLM (MVP)",
         "description": "Extension description for Chrome Web Store listing. TEXT MAX LENGTH: 132"
     },
     "popup_heading": {
@@ -16,187 +16,187 @@
         "description": "Popup heading text"
     },
     "popup_enable_promo_skip": {
-        "message": "Enable promo skip (YouTube)",
+        "message": "Bật bỏ qua nội dung quảng bá (YouTube)",
         "description": "Label next to the main enable/disable switch in the popup"
     },
     "popup_enable_auto_skip_aria": {
-        "message": "Enable auto-skip",
+        "message": "Bật tự động bỏ qua",
         "description": "Accessible label for the enable/disable switch in the popup"
     },
     "popup_active_tab_prefix": {
-        "message": "Active tab: ",
+        "message": "Thẻ đang hoạt động: ",
         "description": "Prefix before the detection status line in the popup. Includes trailing space."
     },
     "popup_open_settings": {
-        "message": "Open settings (OpenRouter)",
+        "message": "Mở cài đặt (OpenRouter)",
         "description": "Button in the popup that opens the options page"
     },
     "popup_reliability_notice_title": {
-        "message": "Reliability notice",
+        "message": "Lưu ý về độ tin cậy",
         "description": "Title for the yellow alert box in the popup"
     },
     "popup_reliability_notice_body_1": {
-        "message": "TopSkip may rely on parts of YouTube's site that are not a documented public API—the same general area the YouTube web client uses. There is no guarantee that auto-skip will keep working if YouTube changes how the page behaves.",
+        "message": "TopSkip có thể phụ thuộc vào một số phần của trang YouTube không được công bố dưới dạng API công khai—cùng khu vực mà ứng dụng web YouTube sử dụng. Không có gì đảm bảo tính năng tự động bỏ qua sẽ tiếp tục hoạt động nếu YouTube thay đổi cách trang vận hành.",
         "description": "First paragraph of the reliability notice in the popup"
     },
     "popup_reliability_notice_body_2": {
-        "message": "If it stops working, please report it where you installed this extension (for example the Chrome Web Store support options, if you installed it from there).",
+        "message": "Nếu tính năng ngừng hoạt động, vui lòng báo cáo tại nơi bạn đã cài đặt tiện ích này (ví dụ: các tùy chọn hỗ trợ của Chrome Web Store nếu bạn cài đặt từ đó).",
         "description": "Second paragraph of the reliability notice in the popup"
     },
     "popup_detection_not_configured": {
-        "message": "LLM not configured",
+        "message": "Chưa cấu hình LLM",
         "description": "Detection status shown when OpenRouter is not set up"
     },
     "popup_detection_unavailable": {
-        "message": "Unavailable",
+        "message": "Không khả dụng",
         "description": "Detection status shown when detection is unavailable"
     },
     "popup_detection_analyzing": {
-        "message": "Analyzing…",
+        "message": "Đang phân tích…",
         "description": "Detection status shown during transcript analysis"
     },
     "popup_detection_detected": {
-        "message": "Promo blocks detected",
+        "message": "Đã phát hiện các đoạn quảng bá",
         "description": "Detection status shown when promo blocks are found"
     },
     "popup_detection_no_promo": {
-        "message": "No promo found",
+        "message": "Không tìm thấy nội dung quảng bá",
         "description": "Detection status shown when no promo blocks are found"
     },
     "popup_detection_error": {
-        "message": "Detection error",
+        "message": "Lỗi phát hiện",
         "description": "Detection status shown when detection fails"
     },
     "popup_detection_server_acquisition_badge": {
-        "message": "Captions",
+        "message": "Phụ đề",
         "description": "Popup status badge shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_title": {
-        "message": "Getting captions",
+        "message": "Đang lấy phụ đề",
         "description": "Popup title shown while the extension obtains timed captions."
     },
     "popup_detection_server_acquisition_description": {
-        "message": "TopSkip is reading timed captions from this video.",
+        "message": "TopSkip đang đọc phụ đề có mốc thời gian từ video này.",
         "description": "Popup description shown during caption acquisition."
     },
     "popup_detection_server_acquisition_headline": {
-        "message": "Getting video captions…",
+        "message": "Đang lấy phụ đề video…",
         "description": "Popup headline shown during caption acquisition."
     },
     "popup_detection_server_acquisition_body": {
-        "message": "Promo analysis will start as soon as captions are ready.",
+        "message": "Quá trình phân tích nội dung quảng bá sẽ bắt đầu ngay khi phụ đề sẵn sàng.",
         "description": "Popup body shown during caption acquisition."
     },
     "popup_detection_server_pending_badge": {
-        "message": "Server",
+        "message": "Máy chủ",
         "description": "Popup status badge shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_title": {
-        "message": "Server analysis pending",
+        "message": "Đang chờ máy chủ phân tích",
         "description": "Popup title shown while the TopSkip backend is analyzing the current video."
     },
     "popup_detection_server_pending_description": {
-        "message": "TopSkip asked the server to analyze this video.",
+        "message": "TopSkip đã yêu cầu máy chủ phân tích video này.",
         "description": "Popup description shown while the TopSkip server is processing a video."
     },
     "popup_detection_server_pending_headline": {
-        "message": "Server analysis is in progress.",
+        "message": "Máy chủ đang phân tích.",
         "description": "Popup headline shown for a server processing response."
     },
     "popup_detection_server_pending_body": {
-        "message": "Skipping will start when the TopSkip backend has promo blocks for a future playback position.",
+        "message": "Việc bỏ qua sẽ bắt đầu khi hệ thống máy chủ TopSkip có các đoạn quảng bá ở vị trí phát sắp tới.",
         "description": "Popup body shown for a server processing response."
     },
     "popup_detection_server_error_badge": {
-        "message": "Server",
+        "message": "Máy chủ",
         "description": "Popup status badge shown when server analysis fails."
     },
     "popup_detection_server_error_title": {
-        "message": "Server analysis unavailable",
+        "message": "Không thể phân tích bằng máy chủ",
         "description": "Popup title shown when the TopSkip server request fails."
     },
     "popup_detection_server_error_description": {
-        "message": "TopSkip could not use the server for this video.",
+        "message": "TopSkip không thể sử dụng máy chủ cho video này.",
         "description": "Popup description shown when server analysis cannot run."
     },
     "popup_detection_server_error_headline": {
-        "message": "Server analysis failed.",
+        "message": "Phân tích bằng máy chủ không thành công.",
         "description": "Fallback popup headline shown when no specific server error is available."
     },
     "popup_detection_server_error_body": {
-        "message": "The TopSkip server did not return a usable response. Playback continues without server-detected skips.",
+        "message": "Máy chủ TopSkip không trả về phản hồi có thể sử dụng. Video vẫn tiếp tục phát nhưng không bỏ qua các đoạn do máy chủ phát hiện.",
         "description": "Popup body shown for server request failures."
     },
     "popup_detection_server_cache_badge": {
-        "message": "Server cache",
+        "message": "Bộ nhớ đệm máy chủ",
         "description": "Popup status badge shown when promo blocks came from the TopSkip backend cache."
     },
     "popup_detection_server_cache_title": {
-        "message": "Server-detected blocks ready",
+        "message": "Các đoạn do máy chủ phát hiện đã sẵn sàng",
         "description": "Popup title shown when the TopSkip backend returns cached promo blocks."
     },
     "popup_detection_server_cache_description": {
-        "message": "TopSkip received cached promo blocks from the server.",
+        "message": "TopSkip đã nhận các đoạn quảng bá được lưu trong bộ nhớ đệm từ máy chủ.",
         "description": "Popup description shown for a server cache-hit response."
     },
     "popup_detection_server_cache_headline": {
-        "message": "Server cache hit.",
+        "message": "Đã tìm thấy kết quả trong bộ nhớ đệm máy chủ.",
         "description": "Popup headline shown when a server cache hit is ready."
     },
     "popup_detection_server_no_promo_badge": {
-        "message": "Server",
+        "message": "Máy chủ",
         "description": "Popup status badge shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_title": {
-        "message": "Server analysis complete",
+        "message": "Phân tích bằng máy chủ đã hoàn tất",
         "description": "Popup title shown when server analysis completes with no promo blocks."
     },
     "popup_detection_server_no_promo_description": {
-        "message": "TopSkip checked the server result for this video.",
+        "message": "TopSkip đã kiểm tra kết quả máy chủ cho video này.",
         "description": "Popup description shown when a server terminal no-promo result is available."
     },
     "popup_detection_server_no_promo_headline": {
-        "message": "No server promo blocks detected.",
+        "message": "Máy chủ không phát hiện đoạn quảng bá nào.",
         "description": "Popup headline shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_no_promo_body": {
-        "message": "Playback continues normally unless future server results add blocks.",
+        "message": "Video tiếp tục phát bình thường trừ khi kết quả máy chủ sau đó bổ sung thêm đoạn.",
         "description": "Popup body shown when server analysis finds no promo blocks."
     },
     "popup_detection_server_unavailable_badge": {
-        "message": "Server",
+        "message": "Máy chủ",
         "description": "Popup status badge shown when server analysis is unavailable."
     },
     "popup_detection_server_unavailable_title": {
-        "message": "Server analysis unavailable",
+        "message": "Không thể phân tích bằng máy chủ",
         "description": "Popup title shown when server analysis reaches an unavailable terminal state."
     },
     "popup_detection_server_unavailable_description": {
-        "message": "The TopSkip server could not produce a result for this video.",
+        "message": "Máy chủ TopSkip không thể tạo kết quả cho video này.",
         "description": "Popup description shown when server analysis cannot produce a result."
     },
     "popup_detection_server_unavailable_headline": {
-        "message": "Server analysis is unavailable.",
+        "message": "Không thể phân tích bằng máy chủ.",
         "description": "Fallback popup headline shown when no specific server unavailable reason is available."
     },
     "popup_detection_server_unavailable_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "Video vẫn tiếp tục phát nhưng không bỏ qua các đoạn do máy chủ phát hiện.",
         "description": "Popup body shown when server analysis is unavailable."
     },
     "options_heading": {
-        "message": "TopSkip — LLM promo detection",
+        "message": "TopSkip — Phát hiện nội dung quảng bá bằng LLM",
         "description": "Heading on the options page"
     },
     "options_description": {
-        "message": "Configure OpenRouter for transcript analysis. The API key is stored only in this browser profile (extension local storage).",
+        "message": "Cấu hình OpenRouter để phân tích bản chép lời. Khóa API chỉ được lưu trong hồ sơ trình duyệt này (bộ nhớ cục bộ của tiện ích).",
         "description": "Description text below the heading on the options page"
     },
     "options_enable_detection": {
-        "message": "Enable LLM promo detection",
+        "message": "Bật phát hiện nội dung quảng bá bằng LLM",
         "description": "Checkbox label on the options page"
     },
     "options_api_key_label": {
-        "message": "OpenRouter API key",
+        "message": "Khóa API OpenRouter",
         "description": "Label for the API key input on the options page"
     },
     "options_api_key_placeholder": {
@@ -204,31 +204,31 @@
         "description": "Placeholder text for the API key input"
     },
     "options_api_key_saved": {
-        "message": "Saved key: %mask% - leave blank to keep it.",
+        "message": "Khóa đã lưu: %mask% - để trống nếu muốn giữ nguyên.",
         "description": "Shown below API key input when a key is already saved. %mask% is the masked key value."
     },
     "options_api_key_none": {
-        "message": "No key saved yet.",
+        "message": "Chưa có khóa nào được lưu.",
         "description": "Shown below API key input when no key has been saved"
     },
     "options_model_label": {
-        "message": "Model",
+        "message": "Mô hình",
         "description": "Label for the model select dropdown on the options page"
     },
     "options_model_description": {
-        "message": "Built-in presets and models you added below.",
+        "message": "Các cấu hình cài sẵn và mô hình bạn thêm bên dưới.",
         "description": "Help text below the model select dropdown"
     },
     "options_add_model_heading": {
-        "message": "Add a model",
+        "message": "Thêm mô hình",
         "description": "Heading for the custom model section on the options page"
     },
     "options_add_model_description": {
-        "message": "Type an OpenRouter model id (for example vendor/model), then Add to keep it for later sessions. This is not the same as Save below.",
+        "message": "Nhập ID mô hình OpenRouter (ví dụ: vendor/model), rồi chọn Thêm để lưu cho các phiên sau. Thao tác này khác với nút Lưu bên dưới.",
         "description": "Help text for the custom model input section"
     },
     "options_custom_model_label": {
-        "message": "Custom model id",
+        "message": "ID mô hình tùy chỉnh",
         "description": "Label for the custom model text input"
     },
     "options_custom_model_placeholder": {
@@ -236,235 +236,299 @@
         "description": "Placeholder for the custom model text input"
     },
     "options_add_button": {
-        "message": "Add",
+        "message": "Thêm",
         "description": "Button to add a custom model id"
     },
     "options_your_models_heading": {
-        "message": "Your added models",
+        "message": "Mô hình bạn đã thêm",
         "description": "Heading above the list of user-added custom models"
     },
     "options_remove_button": {
-        "message": "Remove",
+        "message": "Xóa",
         "description": "Button to remove a custom model from the list"
     },
     "options_saved": {
-        "message": "Saved.",
+        "message": "Đã lưu.",
         "description": "Success message shown after saving settings"
     },
     "options_save_button": {
-        "message": "Save",
+        "message": "Lưu",
         "description": "Button to save all settings on the options page"
     },
     "options_reload_button": {
-        "message": "Reload",
+        "message": "Tải lại",
         "description": "Button to reload settings from storage on the options page"
     },
     "options_save_help": {
-        "message": "Save applies the detection toggle, API key (if changed), and the selected model. Use Add to store extra model ids in your list.",
+        "message": "Nút Lưu áp dụng công tắc phát hiện, khóa API (nếu đã thay đổi) và mô hình được chọn. Dùng Thêm để lưu các ID mô hình khác vào danh sách.",
         "description": "Help text below the Save/Reload buttons"
     },
     "options_error_bg_no_response": {
-        "message": "Extension background did not respond. Click Reload or reload the extension on chrome://extensions.",
+        "message": "Tiến trình nền của tiện ích không phản hồi. Nhấp vào Tải lại hoặc tải lại tiện ích tại chrome://extensions.",
         "description": "Error shown when the background service worker is unreachable"
     },
     "options_error_load_failed": {
-        "message": "Failed to load settings",
+        "message": "Không thể tải cài đặt",
         "description": "Generic error when loading settings fails"
     },
     "options_error_save_failed": {
-        "message": "Save failed",
+        "message": "Lưu không thành công",
         "description": "Generic error when saving settings fails"
     },
     "options_error_add_model": {
-        "message": "Could not add model",
+        "message": "Không thể thêm mô hình",
         "description": "Error when adding a custom model fails"
     },
     "options_error_remove_model": {
-        "message": "Could not remove model",
+        "message": "Không thể xóa mô hình",
         "description": "Error when removing a custom model fails"
     },
     "content_skip_applied": {
-        "message": "Skip applied",
+        "message": "Đã bỏ qua",
         "description": "Brief toast notification shown on YouTube after a promo block is skipped"
     },
     "prefs_error_load": {
-        "message": "failed to load preferences",
+        "message": "Không thể tải tùy chọn",
         "description": "Error fallback in preferences store when loading fails"
     },
     "prefs_error_save": {
-        "message": "failed to save preferences",
+        "message": "Không thể lưu tùy chọn",
         "description": "Error fallback in preferences store when saving fails"
     },
     "options_no_custom_models": {
-        "message": "No custom models saved yet.",
+        "message": "Chưa lưu mô hình tùy chỉnh nào.",
         "description": "Shown in the add-model section when the user has not saved custom models yet."
     },
     "options_connections_heading": {
-        "message": "Connections",
+        "message": "Kết nối",
         "description": "Heading for the provider API key connections section on the options page."
     },
     "options_connections_description": {
-        "message": "Save and test API keys for cloud models.",
+        "message": "Lưu và kiểm tra khóa API cho các mô hình đám mây.",
         "description": "Help text for the provider API key connections section on the options page."
     },
     "options_connection_required_badge": {
-        "message": "Required for selected model",
+        "message": "Bắt buộc đối với mô hình đã chọn",
         "description": "Badge shown on a provider connection when the active model needs that API key."
     },
     "options_connection_key_saved": {
-        "message": "Key saved",
+        "message": "Đã lưu khóa",
         "description": "Status badge for a provider connection with a saved API key."
     },
     "options_connection_key_missing": {
-        "message": "Key missing",
+        "message": "Thiếu khóa",
         "description": "Status badge for a provider connection without a saved API key."
     },
     "options_connection_key_placeholder": {
-        "message": "Enter API key",
+        "message": "Nhập khóa API",
         "description": "Placeholder for provider API key inputs in the connections section."
     },
     "options_connection_test_button": {
-        "message": "Test",
+        "message": "Kiểm tra",
         "description": "Button that validates a provider API key in the connections section."
     },
     "options_connection_key_valid": {
-        "message": "Key is valid.",
+        "message": "Khóa hợp lệ.",
         "description": "Success message shown after a provider API key test passes."
     },
     "options_analysis_mode_heading": {
-        "message": "Analysis mode",
+        "message": "Chế độ phân tích",
         "description": "Heading for the analysis route selector in extension settings."
     },
     "options_analysis_mode_server_label": {
-        "message": "TopSkip Server",
+        "message": "Máy chủ TopSkip",
         "description": "Label for the default server-backed analysis mode."
     },
     "options_analysis_mode_server_description": {
-        "message": "Uses TopSkip analysis and shared cached results.",
+        "message": "Sử dụng phân tích của TopSkip và kết quả bộ nhớ đệm dùng chung.",
         "description": "Description shown when TopSkip Server mode is selected."
     },
     "options_analysis_mode_byok_label": {
-        "message": "Private BYOK",
+        "message": "BYOK riêng tư",
         "description": "Label for the private bring-your-own-key analysis mode."
     },
     "options_analysis_mode_byok_description": {
-        "message": "Uses your configured provider in this extension.",
+        "message": "Sử dụng nhà cung cấp bạn đã cấu hình trong tiện ích này.",
         "description": "Description shown when Private BYOK mode is selected."
     },
     "options_analysis_mode_byok_privacy": {
-        "message": "Your watched video ID and analysis result are not sent to TopSkip Server. TopSkip Server is never used as a fallback in this mode.",
+        "message": "ID video bạn xem và kết quả phân tích không được gửi đến Máy chủ TopSkip. Máy chủ TopSkip không bao giờ được dùng làm phương án dự phòng trong chế độ này.",
         "description": "Privacy and no-fallback disclosure shown for Private BYOK mode."
     },
     "options_analysis_mode_setup_required": {
-        "message": "Setup required: choose a provider and configure the selected model before using Private BYOK.",
+        "message": "Cần thiết lập: chọn nhà cung cấp và cấu hình mô hình đã chọn trước khi dùng BYOK riêng tư.",
         "description": "Guidance shown when Private BYOK is selected without a runnable provider."
     },
     "options_analysis_mode_save_error": {
-        "message": "Could not change analysis mode.",
+        "message": "Không thể thay đổi chế độ phân tích.",
         "description": "Fallback error shown when saving the selected analysis mode fails."
     },
     "popup_analysis_mode_label": {
-        "message": "Analysis mode",
+        "message": "Chế độ phân tích",
         "description": "Label for the selected analysis route in the popup."
     },
     "popup_analysis_mode_server": {
-        "message": "TopSkip Server",
+        "message": "Máy chủ TopSkip",
         "description": "Popup label for the server-backed analysis mode."
     },
     "popup_analysis_mode_byok": {
-        "message": "Private BYOK",
+        "message": "BYOK riêng tư",
         "description": "Popup label for the private provider analysis mode."
     },
     "popup_byok_setup_badge": {
-        "message": "Setup required",
+        "message": "Cần thiết lập",
         "description": "Popup status badge shown when Private BYOK is not configured."
     },
     "popup_byok_setup_title": {
-        "message": "Private BYOK setup required",
+        "message": "Cần thiết lập BYOK riêng tư",
         "description": "Popup title shown when the selected BYOK provider is unavailable."
     },
     "popup_byok_setup_description": {
-        "message": "Configure %provider% in settings before promo analysis can run.",
+        "message": "Cấu hình %provider% trong phần cài đặt trước khi chạy phân tích nội dung quảng bá.",
         "description": "Popup BYOK setup guidance. %provider% is replaced with the selected provider name."
     },
     "popup_byok_setup_body": {
-        "message": "Analysis stays with your configured provider and is not shared with TopSkip.",
+        "message": "Quá trình phân tích do nhà cung cấp bạn đã cấu hình thực hiện và không được chia sẻ với TopSkip.",
         "description": "Popup privacy reminder for an unconfigured Private BYOK route."
     },
     "popup_server_limitation_title": {
-        "message": "This video could not be analyzed",
+        "message": "Không thể phân tích video này",
         "description": "Popup title for a server analysis limitation specific to the video."
     },
     "popup_server_limitation_description": {
-        "message": "Your TopSkip settings are working.",
+        "message": "Cài đặt TopSkip của bạn đang hoạt động bình thường.",
         "description": "Popup reassurance for video-specific server limitations."
     },
     "popup_server_limitation_headline": {
-        "message": "TopSkip could not process this video.",
+        "message": "TopSkip không thể xử lý video này.",
         "description": "Popup headline for video-specific server limitations."
     },
     "popup_server_limitation_body": {
-        "message": "Playback continues without server-detected skips.",
+        "message": "Video vẫn tiếp tục phát nhưng không bỏ qua các đoạn do máy chủ phát hiện.",
         "description": "Popup body for video-specific server limitations."
     },
     "popup_server_temporary_title": {
-        "message": "TopSkip Server is temporarily busy",
+        "message": "Máy chủ TopSkip hiện đang bận",
         "description": "Popup title for temporary server capacity failures."
     },
     "popup_server_temporary_description": {
-        "message": "Your settings are working. Try again later.",
+        "message": "Cài đặt của bạn đang hoạt động bình thường. Hãy thử lại sau.",
         "description": "Popup reassurance for temporary server capacity failures."
     },
     "popup_server_temporary_headline": {
-        "message": "Server capacity is temporarily unavailable.",
+        "message": "Máy chủ tạm thời không thể xử lý thêm yêu cầu.",
         "description": "Popup headline for temporary server capacity failures."
     },
     "popup_server_temporary_body": {
-        "message": "Try this video again later.",
+        "message": "Hãy thử lại video này sau.",
         "description": "Popup body when the server does not provide a retry time."
     },
     "popup_server_temporary_retry": {
-        "message": "Try again in %seconds% seconds.",
+        "message": "Hãy thử lại sau %seconds% giây.",
         "description": "Popup retry guidance. %seconds% is replaced with the server retry delay."
     },
     "popup_server_failure_title": {
-        "message": "TopSkip Server error",
+        "message": "Lỗi Máy chủ TopSkip",
         "description": "Popup title for a reportable TopSkip server failure."
     },
     "popup_server_failure_description": {
-        "message": "The problem is on the TopSkip server, not in your settings.",
+        "message": "Sự cố nằm ở máy chủ TopSkip, không phải cài đặt của bạn.",
         "description": "Popup reassurance for a reportable server failure."
     },
     "popup_server_failure_headline": {
-        "message": "The server could not analyze this video.",
+        "message": "Máy chủ không thể phân tích video này.",
         "description": "Popup headline for a reportable TopSkip server failure."
     },
     "popup_server_failure_body": {
-        "message": "Playback continues normally. You can report this error on GitHub.",
+        "message": "Video vẫn tiếp tục phát bình thường. Bạn có thể báo cáo lỗi này trên GitHub.",
         "description": "Popup body for a reportable TopSkip server failure."
     },
     "popup_server_upgrade_title": {
-        "message": "Update TopSkip",
+        "message": "Cập nhật TopSkip",
         "description": "Popup title when the server requires a newer extension."
     },
     "popup_server_upgrade_description": {
-        "message": "This server version requires a newer extension.",
+        "message": "Phiên bản máy chủ này yêu cầu phiên bản tiện ích mới hơn.",
         "description": "Popup description when the server requires a newer extension."
     },
     "popup_server_upgrade_headline": {
-        "message": "An extension update is required.",
+        "message": "Cần cập nhật tiện ích.",
         "description": "Popup headline when the server requires a newer extension."
     },
     "popup_server_upgrade_body": {
-        "message": "Update TopSkip and try this video again.",
+        "message": "Cập nhật TopSkip rồi thử lại video này.",
         "description": "Popup body when the server requires a newer extension."
     },
+    "popup_capture_failure_badge": {
+        "message": "Phụ đề",
+        "description": "Popup badge for a timed-caption capture failure."
+    },
+    "popup_capture_failure_title": {
+        "message": "Không thể đọc phụ đề",
+        "description": "Popup title when the extension could not capture timed captions."
+    },
+    "popup_capture_failure_description": {
+        "message": "TopSkip không thể lấy phụ đề có mốc thời gian phù hợp từ video này.",
+        "description": "Popup explanation for a timed-caption capture failure."
+    },
+    "popup_capture_failure_headline": {
+        "message": "Không thể lấy phụ đề.",
+        "description": "Popup headline for a timed-caption capture failure."
+    },
+    "popup_capture_failure_body": {
+        "message": "Hãy tải lại video rồi thử lại.",
+        "description": "Popup recovery guidance after a timed-caption capture failure."
+    },
+    "popup_extension_failure_badge": {
+        "message": "Bị gián đoạn",
+        "description": "Popup badge when analysis cannot continue."
+    },
+    "popup_extension_failure_title": {
+        "message": "Không thể tiếp tục phân tích",
+        "description": "Popup title when analysis ends before completion."
+    },
+    "popup_extension_failure_description": {
+        "message": "TopSkip không thể hoàn tất việc phân tích video này.",
+        "description": "Popup explanation when analysis ends before completion."
+    },
+    "popup_extension_failure_headline": {
+        "message": "Hãy tải lại video hoặc trang rồi thử lại.",
+        "description": "Popup recovery headline for an analysis that could not continue."
+    },
+    "popup_extension_failure_body": {
+        "message": "Video vẫn phát bình thường nhưng không bỏ qua các đoạn do máy chủ phát hiện.",
+        "description": "Popup playback guidance after analysis ends before completion."
+    },
+    "popup_status_unavailable_badge": {
+        "message": "Không khả dụng",
+        "description": "Popup badge when current extension status cannot be read."
+    },
+    "popup_status_unavailable_title": {
+        "message": "Trạng thái không khả dụng",
+        "description": "Popup title when current extension status cannot be read."
+    },
+    "popup_status_unavailable_description": {
+        "message": "TopSkip không thể làm mới trạng thái hiện tại.",
+        "description": "Popup explanation when current extension status cannot be read."
+    },
+    "popup_status_unavailable_headline": {
+        "message": "Không thể tải trạng thái TopSkip.",
+        "description": "Popup headline when current extension status cannot be read."
+    },
+    "popup_status_unavailable_activity": {
+        "message": "Trạng thái không khả dụng",
+        "description": "Popup activity label when current extension status cannot be read."
+    },
+    "popup_status_stale_activity": {
+        "message": "Cập nhật trạng thái bị chậm",
+        "description": "Popup activity label while the last trustworthy status remains visible."
+    },
     "popup_server_report_primary": {
-        "message": "Report on GitHub",
+        "message": "Báo cáo trên GitHub",
         "description": "Primary popup button for a reportable server failure."
     },
     "popup_server_report_secondary": {
-        "message": "Report if this seems wrong",
+        "message": "Báo cáo nếu kết quả có vẻ không đúng",
         "description": "Secondary popup button for a possibly incorrect video limitation."
     }
 }

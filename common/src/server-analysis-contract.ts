@@ -265,9 +265,15 @@ export const SERVER_ANALYSIS_UNAVAILABLE_REASON = {
 
 /**
  * Full extension-safe vocabulary includes local and private legacy outcomes.
+ * `AnalysisInterrupted` belongs only to extension recovery state; public
+ * backend emission schemas intentionally exclude it from `/v1` responses.
  */
 export const SERVER_ANALYSIS_FAILURE_CODE = {
     ...SERVER_ANALYSIS_UNAVAILABLE_REASON,
+    /**
+     * Extension-local recovery exhausted; never emitted by public `/v1`.
+     */
+    AnalysisInterrupted: 'analysis_interrupted',
     RateLimited: 'rate_limited',
     CapacityLimited: 'capacity_limited',
     BudgetExhausted: 'budget_exhausted',

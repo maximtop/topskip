@@ -1,15 +1,28 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
+const mocks = vi.hoisted(() => ({
+    tabsQuery: vi.fn(),
+    detectionReady: vi.fn(),
+    detectionGet: vi.fn(),
+}));
+
 // Prevent webextension-polyfill from throwing in Node; ContentLogMessages does
 // not touch browser APIs, but this module pulls them in for its other exports.
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: {},
-        tabs: {},
+        tabs: { query: mocks.tabsQuery },
     },
 }));
 
-const { ContentLogMessages } =
+vi.mock('@/background/promo-detection-store', () => ({
+    PromoDetectionStore: {
+        ready: mocks.detectionReady,
+        get: mocks.detectionGet,
+    },
+}));
+
+const { ContentLogMessages, PromoDetectionRuntimeMessages } =
     await import('@/background/messaging/misc-runtime-messages');
 
 describe('ContentLogMessages.log', () => {
@@ -54,5 +67,62 @@ describe('ContentLogMessages.log', () => {
             'b',
             'c',
         );
+    });
+});
+
+describe('PromoDetectionRuntimeMessages.handleGet', () => {
+    beforeEach(() => {
+        mocks.tabsQuery.mockReset();
+        mocks.detectionReady.mockReset();
+        mocks.detectionGet.mockReset();
+        mocks.detectionReady.mockResolvedValue(undefined);
+    });
+
+    it('returns the resolved active tab id with its snapshot', async () => {
+        const state = { videoId: 'activeVideo', status: 'no_promo' };
+        mocks.tabsQuery.mockResolvedValue([{ id: 82 }]);
+        mocks.detectionGet.mockReturnValue(state);
+
+        await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
+            {
+                ok: true,
+                tabId: 82,
+                state,
+            },
+        );
+        expect(mocks.detectionGet).toHaveBeenCalledWith(82);
+    });
+
+    it('returns an explicit null identity when no active tab exists', async () => {
+        mocks.tabsQuery.mockResolvedValue([]);
+
+        await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
+            {
+                ok: true,
+                tabId: null,
+                state: null,
+            },
+        );
+        expect(mocks.detectionGet).not.toHaveBeenCalled();
+    });
+
+    it('selects only the frontmost tab from two stored tab snapshots', async () => {
+        const states = new Map([
+            [41, { videoId: 'backgroundVideo', status: 'no_promo' }],
+            [82, { videoId: 'frontVideo', status: 'no_promo' }],
+        ]);
+        mocks.tabsQuery.mockResolvedValue([{ id: 82 }]);
+        mocks.detectionGet.mockImplementation((tabId: number) =>
+            states.get(tabId),
+        );
+
+        await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
+            {
+                ok: true,
+                tabId: 82,
+                state: states.get(82),
+            },
+        );
+        expect(mocks.detectionGet).not.toHaveBeenCalledWith(41);
     });
 });

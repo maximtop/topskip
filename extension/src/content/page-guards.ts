@@ -1,7 +1,7 @@
 import { YOUTUBE_WATCH_VIDEO_ID_PARAM } from '@/shared/constants';
 
 /**
- * Local static server host used by Playwright e2e (see `e2e/fixtures`).
+ * Local static server host used by Playwright e2e (see `tests/e2e/fixtures`).
  */
 export const E2E_HOST = '127.0.0.1';
 

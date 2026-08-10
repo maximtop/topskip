@@ -6,6 +6,7 @@ const {
     removeRuntimeMessageListener,
     capture,
     disposeCaptions,
+    getManifest,
     installPageBridge,
     scheduleForVideoId,
     sendMessage,
@@ -15,6 +16,7 @@ const {
     removeRuntimeMessageListener: vi.fn(),
     capture: vi.fn(),
     disposeCaptions: vi.fn(),
+    getManifest: vi.fn(() => ({ version: '0.1.0' })),
     installPageBridge: vi.fn(),
     scheduleForVideoId: vi.fn(),
     sendMessage: vi.fn<(message: unknown) => Promise<unknown>>(),
@@ -23,6 +25,7 @@ const {
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: {
+            getManifest,
             sendMessage,
             onMessage: {
                 addListener: addRuntimeMessageListener,
@@ -48,16 +51,30 @@ import {
     computePromoBlockTargetTime,
 } from '@/content/promo-skip-logic';
 import type { PromoBlock } from '@topskip/common/promo-types';
-import { ANALYSIS_MODE, type UserPreferences } from '@/shared/constants';
 import {
+    ANALYSIS_MODE,
+    MS_PER_SECOND,
+    type UserPreferences,
+} from '@/shared/constants';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
     TOPSKIP_MESSAGE,
     requestServerAnalysisRuntimeMessageSchema,
 } from '@/shared/messages';
-import { shouldAcceptPromoBlocksForActiveRoute } from '@/content/youtube-watch';
+import {
+    CONTENT_PREFS_REQUEST_TIMEOUT_MS,
+    CONTENT_PREFS_RETRY_DELAY_MS,
+    shouldAcceptPromoBlocksForActiveRoute,
+} from '@/content/youtube-watch';
 import {
     VIDEO_BINDING_POLL_INTERVAL_MS,
     YOUTUBE_VIDEO_ELEMENT_SELECTOR,
 } from '@/content/youtube-dom';
+import {
+    SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS,
+    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS,
+    SERVER_ANALYSIS_SESSION_DEADLINE_MS,
+} from '@/content/server-analysis-session';
 
 /**
  * Simulates the YoutubeWatch.onTimeUpdate loop by calling
@@ -107,6 +124,40 @@ function simulateTimeUpdate(params: {
         firedStartKeys,
         blocks,
     });
+}
+
+/**
+ * Reads dynamic test-message fields without allowing `Reflect.get` to leak `any`.
+ *
+ * @param value - Opaque runtime value.
+ * @param key - Dynamic property requested by the test.
+ * @returns Opaque property value, or `undefined` for non-objects.
+ */
+function readTestProperty(value: unknown, key: string): unknown {
+    if (value === null || typeof value !== 'object') {
+        return undefined;
+    }
+    const property: unknown = Reflect.get(value, key);
+    return property;
+}
+
+/**
+ * Identifies only the terminal transport-interruption event under test.
+ *
+ * @param message - Opaque runtime message recorded by the harness.
+ * @param videoId - Optional route identity used to exclude replacement work.
+ * @returns Whether this is the matching analysis interruption event.
+ */
+function isAnalysisInterruptionMessage(
+    message: unknown,
+    videoId?: string,
+): boolean {
+    const payload = readTestProperty(message, 'payload');
+    return (
+        readTestProperty(payload, 'event') === 'analysis_interrupted' &&
+        (videoId === undefined ||
+            readTestProperty(payload, 'videoId') === videoId)
+    );
 }
 
 describe('onTimeUpdate skip pipeline integration', () => {
@@ -506,6 +557,17 @@ describe('per-video analysis route lifecycle', () => {
 
     type RuntimeMessageListener = (message: unknown) => unknown;
 
+    type ServerRuntimeResponder = (
+        message: Record<string, unknown>,
+    ) => Promise<unknown>;
+
+    type PrefsRuntimeResponder = () => Promise<unknown>;
+
+    type CaptionCaptureResponder = (input: {
+        videoId: string;
+        signal: AbortSignal;
+    }) => Promise<unknown>;
+
     class FakeVideoElement extends EventTarget {
         currentTime = 0;
         duration = 120;
@@ -521,9 +583,15 @@ describe('per-video analysis route lifecycle', () => {
         initialPrefs: UserPreferences,
         initialVideoPresent = true,
         initialDurationSec = 120,
+        serverResponder?: ServerRuntimeResponder,
+        sessionEventResponder?: ServerRuntimeResponder,
+        prefsResponder?: PrefsRuntimeResponder,
+        captureResponder?: CaptionCaptureResponder,
     ): Promise<{
         advanceBindingTime(elapsedMs: number): Promise<void>;
+        disposeContent(): void;
         emitPrefs(prefs: UserPreferences): Promise<void>;
+        emitRuntimeMessage(message: unknown): Promise<void>;
         probeContent(): unknown;
         messagesOfType(type: string): unknown[];
         navigateToVideo(videoId: string): Promise<void>;
@@ -564,26 +632,27 @@ describe('per-video analysis route lifecycle', () => {
             },
         );
         capture.mockImplementation(
-            (input: { videoId: string; signal: AbortSignal }) => {
-                if (input.signal.aborted) {
-                    return Promise.resolve({ status: 'cancelled' });
-                }
-                return Promise.resolve({
-                    status: 'ready',
-                    payload: {
-                        ok: true,
-                        videoId: input.videoId,
-                        languageCode: 'en',
-                        segments: [
-                            {
-                                startSec: 0,
-                                durationSec: 1,
-                                text: 'Caption',
-                            },
-                        ],
-                    },
-                });
-            },
+            captureResponder ??
+                ((input: { videoId: string; signal: AbortSignal }) => {
+                    if (input.signal.aborted) {
+                        return Promise.resolve({ status: 'cancelled' });
+                    }
+                    return Promise.resolve({
+                        status: 'ready',
+                        payload: {
+                            ok: true,
+                            videoId: input.videoId,
+                            languageCode: 'en',
+                            segments: [
+                                {
+                                    startSec: 0,
+                                    durationSec: 1,
+                                    text: 'Caption',
+                                },
+                            ],
+                        },
+                    });
+                }),
         );
         sendMessage.mockImplementation((message: unknown) => {
             if (
@@ -592,13 +661,26 @@ describe('per-video analysis route lifecycle', () => {
                 'type' in message
             ) {
                 if (message.type === TOPSKIP_MESSAGE.GET_PREFS) {
+                    if (prefsResponder !== undefined) {
+                        return prefsResponder();
+                    }
                     return Promise.resolve({ ok: true, prefs: initialPrefs });
+                }
+                if (
+                    message.type ===
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT &&
+                    sessionEventResponder !== undefined
+                ) {
+                    return sessionEventResponder(message);
                 }
                 if (
                     message.type === TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS ||
                     message.type ===
                         TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
                 ) {
+                    if (serverResponder !== undefined) {
+                        return serverResponder(message);
+                    }
                     const payload: unknown = Reflect.get(message, 'payload');
                     const payloadVideoId: unknown =
                         payload !== null && typeof payload === 'object'
@@ -647,6 +729,14 @@ describe('per-video analysis route lifecycle', () => {
 
         const { YoutubeWatch } = await import('@/content/youtube-watch');
         const disposeWatch = YoutubeWatch.init();
+        let contentDisposed = false;
+        const disposeContent = (): void => {
+            if (contentDisposed) {
+                return;
+            }
+            contentDisposed = true;
+            disposeWatch();
+        };
         await flushAsyncWork();
 
         const getRuntimeMessageListener = (): RuntimeMessageListener => {
@@ -665,11 +755,16 @@ describe('per-video analysis route lifecycle', () => {
                 await vi.advanceTimersByTimeAsync(elapsedMs);
                 await flushAsyncWork();
             },
+            disposeContent,
             async emitPrefs(prefs: UserPreferences): Promise<void> {
                 getRuntimeMessageListener()({
                     type: TOPSKIP_MESSAGE.PREFS_UPDATED,
                     prefs,
                 });
+                await flushAsyncWork();
+            },
+            async emitRuntimeMessage(message: unknown): Promise<void> {
+                getRuntimeMessageListener()(message);
                 await flushAsyncWork();
             },
             probeContent(): unknown {
@@ -711,7 +806,7 @@ describe('per-video analysis route lifecycle', () => {
                 return fetchMock.mock.calls.length;
             },
             dispose(): void {
-                disposeWatch();
+                disposeContent();
                 vi.clearAllTimers();
                 vi.useRealTimers();
                 vi.unstubAllGlobals();
@@ -722,13 +817,242 @@ describe('per-video analysis route lifecycle', () => {
     it('acknowledges the background readiness probe and disposes replacement state', async () => {
         const harness = await createRouteHarness(serverPrefs);
         try {
-            expect(harness.probeContent()).toEqual({ ok: true });
+            expect(harness.probeContent()).toEqual({
+                ok: true,
+                protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                extensionVersion: '0.1.0',
+            });
         } finally {
             harness.dispose();
         }
 
         expect(removeRuntimeMessageListener).toHaveBeenCalledOnce();
         expect(disposeCaptions).toHaveBeenCalledOnce();
+    });
+
+    it('retries preferences after a transient runtime rejection', async () => {
+        let attempt = 0;
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            undefined,
+            () => {
+                attempt += 1;
+                return attempt === 1
+                    ? Promise.reject(new Error('worker stopped'))
+                    : Promise.resolve({ ok: true, prefs: serverPrefs });
+            },
+        );
+
+        try {
+            expect(capture).not.toHaveBeenCalled();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(1);
+            await harness.advanceBindingTime(
+                CONTENT_PREFS_RETRY_DELAY_MS - 1,
+            );
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(1);
+            await harness.advanceBindingTime(1);
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(2);
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('times out a lost preferences reply and eventually routes once', async () => {
+        let attempt = 0;
+        const never = new Promise<unknown>(() => undefined);
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            undefined,
+            () => {
+                attempt += 1;
+                return attempt === 1
+                    ? never
+                    : Promise.resolve({ ok: true, prefs: serverPrefs });
+            },
+        );
+
+        try {
+            expect(capture).not.toHaveBeenCalled();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(1);
+            await harness.advanceBindingTime(
+                CONTENT_PREFS_REQUEST_TIMEOUT_MS - 1,
+            );
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(1);
+            await harness.advanceBindingTime(
+                CONTENT_PREFS_RETRY_DELAY_MS + 1,
+            );
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(2);
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('keeps retrying until preferences have a valid shape', async () => {
+        let attempt = 0;
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            undefined,
+            () => {
+                attempt += 1;
+                return attempt === 1
+                    ? Promise.resolve({
+                            ok: true,
+                            prefs: { ...serverPrefs, enabled: 'yes' },
+                        })
+                    : Promise.resolve({ ok: true, prefs: serverPrefs });
+            },
+        );
+
+        try {
+            expect(capture).not.toHaveBeenCalled();
+            await harness.advanceBindingTime(CONTENT_PREFS_RETRY_DELAY_MS);
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(2);
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('ignores a timed-out reply after a newer preferences response', async () => {
+        let attempt = 0;
+        let resolveOld: (response: unknown) => void = () => undefined;
+        const oldReply = new Promise<unknown>((resolve) => {
+            resolveOld = resolve;
+        });
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            undefined,
+            () => {
+                attempt += 1;
+                return attempt === 1
+                    ? oldReply
+                    : Promise.resolve({
+                            ok: true,
+                            prefs: { ...serverPrefs, enabled: false },
+                        });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(
+                CONTENT_PREFS_REQUEST_TIMEOUT_MS +
+                    CONTENT_PREFS_RETRY_DELAY_MS,
+            );
+            resolveOld({ ok: true, prefs: serverPrefs });
+            await harness.advanceBindingTime(0);
+            await harness.pollBindings();
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(2);
+            expect(capture).not.toHaveBeenCalled();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(0);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('does not let a late preferences reply overwrite a broadcast', async () => {
+        let resolveOld: (response: unknown) => void = () => undefined;
+        const oldReply = new Promise<unknown>((resolve) => {
+            resolveOld = resolve;
+        });
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            undefined,
+            () => oldReply,
+        );
+
+        try {
+            await harness.emitPrefs({ ...serverPrefs, enabled: false });
+            resolveOld({ ok: true, prefs: serverPrefs });
+            await harness.advanceBindingTime(
+                CONTENT_PREFS_REQUEST_TIMEOUT_MS +
+                    CONTENT_PREFS_RETRY_DELAY_MS,
+            );
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(1);
+            expect(capture).not.toHaveBeenCalled();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(0);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('cancels preferences timeout and retry ownership on dispose', async () => {
+        const never = new Promise<unknown>(() => undefined);
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            undefined,
+            () => never,
+        );
+
+        try {
+            harness.disposeContent();
+            await harness.advanceBindingTime(
+                CONTENT_PREFS_REQUEST_TIMEOUT_MS +
+                    CONTENT_PREFS_RETRY_DELAY_MS,
+            );
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
+            ).toHaveLength(1);
+            expect(capture).not.toHaveBeenCalled();
+        } finally {
+            harness.dispose();
+        }
     });
 
     it('does not request the backend route while disabled or before video binding', async () => {
@@ -788,6 +1112,48 @@ describe('per-video analysis route lifecycle', () => {
                 },
             });
             expect(harness.fetchCallCount()).toBe(0);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('does not let an unresolved acquisition event block the request', async () => {
+        const never = new Promise<unknown>(() => undefined);
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            () => never,
+        );
+
+        try {
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('keeps an inactive response as a same-video terminal sentinel', async () => {
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => Promise.resolve({ ok: true, status: 'inactive' }),
+        );
+
+        try {
+            await harness.pollBindings();
+            await harness.replaceVideoElement();
+            await harness.pollBindings();
+
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
         } finally {
             harness.dispose();
         }
@@ -858,6 +1224,948 @@ describe('per-video analysis route lifecycle', () => {
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
             ).toHaveLength(1);
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+            expect(capture).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('retries an interrupted submit without recapturing captions', async () => {
+        let submitCount = 0;
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                submitCount += 1;
+                if (submitCount === 1) {
+                    return Promise.reject(new Error('message port closed'));
+                }
+                const payload = readTestProperty(message, 'payload');
+                const videoId = readTestProperty(payload, 'videoId');
+                return Promise.resolve({
+                    ok: true,
+                    status: 'processing',
+                    jobId: 'job-after-restart',
+                    pollAfterSec: 60,
+                    identity: {
+                        videoId,
+                        languageCode: 'en',
+                        transcriptHash: 'a'.repeat(64),
+                        algorithmVersion: 'server-v6',
+                    },
+                });
+            },
+        );
+
+        try {
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            const requests = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            );
+            expect(requests).toHaveLength(2);
+            expect(requests[1]).toEqual(requests[0]);
+            expect(capture).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('retries the same poll job after a worker restart', async () => {
+        let pollCount = 0;
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                const videoId = readTestProperty(payload, 'videoId');
+                if (
+                    readTestProperty(message, 'type') ===
+                    TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
+                ) {
+                    pollCount += 1;
+                    if (pollCount === 1) {
+                        return Promise.reject(
+                            new Error('message port closed'),
+                        );
+                    }
+                }
+                return Promise.resolve({
+                    ok: true,
+                    status: 'processing',
+                    jobId: 'job-stable',
+                    pollAfterSec: 1,
+                    identity: {
+                        videoId,
+                        languageCode: 'en',
+                        transcriptHash: 'b'.repeat(64),
+                        algorithmVersion: 'server-v6',
+                    },
+                });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(MS_PER_SECOND);
+            const firstPoll = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+            )[0];
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            const polls = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+            );
+            expect(polls).toHaveLength(2);
+            expect(polls[1]).toEqual(firstPoll);
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('retries a timed-out poll with the same job and identity', async () => {
+        let pollCount = 0;
+        const never = new Promise<unknown>(() => undefined);
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                const videoId = readTestProperty(payload, 'videoId');
+                if (
+                    readTestProperty(message, 'type') ===
+                    TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
+                ) {
+                    pollCount += 1;
+                    if (pollCount === 1) {
+                        return never;
+                    }
+                }
+                return Promise.resolve({
+                    ok: true,
+                    status: 'processing',
+                    jobId: 'job-timeout-stable',
+                    pollAfterSec: 1,
+                    identity: {
+                        videoId,
+                        languageCode: 'en',
+                        transcriptHash: 'f'.repeat(64),
+                        algorithmVersion: 'server-v6',
+                    },
+                });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(MS_PER_SECOND);
+            const timedOutPoll = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+            )[0];
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            const polls = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+            );
+            expect(polls).toHaveLength(2);
+            expect(polls[1]).toEqual(timedOutPoll);
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+            expect(capture).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('retries the same exact resubmission after a worker restart', async () => {
+        let requestCount = 0;
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                const type = readTestProperty(message, 'type');
+                const payload = readTestProperty(message, 'payload');
+                const videoId = readTestProperty(payload, 'videoId');
+                if (type === TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 'resubmit_required',
+                    });
+                }
+                requestCount += 1;
+                if (requestCount === 1) {
+                    return Promise.resolve({
+                        ok: true,
+                        status: 'processing',
+                        jobId: 'job-before-restart',
+                        pollAfterSec: 1,
+                        identity: {
+                            videoId,
+                            languageCode: 'en',
+                            transcriptHash: 'e'.repeat(64),
+                            algorithmVersion: 'server-v6',
+                        },
+                    });
+                }
+                if (requestCount === 2) {
+                    return Promise.reject(new Error('message port closed'));
+                }
+                return Promise.resolve({ ok: true, status: 'no_promo' });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(MS_PER_SECOND);
+            const failedResubmission = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            )[1];
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            const requests = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            );
+            expect(requests).toHaveLength(3);
+            expect(requests[2]).toEqual(failedResubmission);
+            expect(
+                harness.messagesOfType(
+                    TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+                ),
+            ).toHaveLength(1);
+            expect(capture).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('recovers an unresolved submit after the runtime watchdog', async () => {
+        let submitCount = 0;
+        const never = new Promise<unknown>(() => undefined);
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                submitCount += 1;
+                if (submitCount === 1) {
+                    return never;
+                }
+                const payload = readTestProperty(message, 'payload');
+                const videoId = readTestProperty(payload, 'videoId');
+                return Promise.resolve({
+                    ok: true,
+                    status: 'processing',
+                    jobId: 'job-after-watchdog',
+                    pollAfterSec: 60,
+                    identity: {
+                        videoId,
+                        languageCode: 'en',
+                        transcriptHash: 'c'.repeat(64),
+                        algorithmVersion: 'server-v6',
+                    },
+                });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            const requests = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            );
+            expect(requests).toHaveLength(2);
+            expect(requests[1]).toEqual(requests[0]);
+            expect(capture).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('ends after bounded transport retries without starting a new session', async () => {
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => Promise.reject(new Error('message port closed')),
+        );
+
+        try {
+            for (const retryAfterMs of SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS) {
+                await harness.advanceBindingTime(retryAfterMs);
+            }
+            await harness.pollBindings();
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(5);
+            expect(capture).toHaveBeenCalledOnce();
+            const interruption = harness
+                .messagesOfType(
+                    TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                )
+                .find((message) => {
+                    const payload = readTestProperty(message, 'payload');
+                    return (
+                        readTestProperty(payload, 'event') ===
+                            'analysis_interrupted' &&
+                        readTestProperty(payload, 'reason') ===
+                            'runtime_unavailable'
+                    );
+                });
+            expect(interruption).toBeDefined();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('retries a rejected interruption delivery without recapturing', async () => {
+        let deliveryAttempt = 0;
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => Promise.resolve({ invalid: true }),
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                if (
+                    readTestProperty(payload, 'event') !==
+                    'analysis_interrupted'
+                ) {
+                    return Promise.resolve({ ok: true });
+                }
+                deliveryAttempt += 1;
+                return deliveryAttempt === 1
+                    ? Promise.reject(new Error('worker stopped'))
+                    : Promise.resolve({ ok: true });
+            },
+        );
+
+        try {
+            expect(
+                harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) =>
+                        isAnalysisInterruptionMessage(message),
+                    ),
+            ).toHaveLength(1);
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            expect(
+                harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) =>
+                        isAnalysisInterruptionMessage(message),
+                    ),
+            ).toHaveLength(2);
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    for (const testCase of [
+        {
+            failureReason: 'captions-unavailable',
+            terminalEvent: 'captions_unavailable',
+        },
+        {
+            failureReason: 'capture-timeout',
+            terminalEvent: 'caption_extraction_failed',
+        },
+    ]) {
+        it(`retries rejected ${testCase.terminalEvent} delivery`, async () => {
+            let deliveryAttempt = 0;
+            const harness = await createRouteHarness(
+                serverPrefs,
+                true,
+                120,
+                undefined,
+                (message) => {
+                    const payload = readTestProperty(message, 'payload');
+                    if (
+                        readTestProperty(payload, 'event') !==
+                        testCase.terminalEvent
+                    ) {
+                        return Promise.resolve({ ok: true });
+                    }
+                    deliveryAttempt += 1;
+                    return deliveryAttempt === 1
+                        ? Promise.reject(new Error('worker stopped'))
+                        : Promise.resolve({ ok: true });
+                },
+                undefined,
+                () =>
+                    Promise.resolve({
+                        status: 'failed',
+                        failure: {
+                            reason: testCase.failureReason,
+                            message: 'Safe test failure',
+                        },
+                    }),
+            );
+
+            try {
+                await harness.advanceBindingTime(
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                );
+                const terminalEvents = harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) => {
+                        const payload = readTestProperty(message, 'payload');
+                        return (
+                            readTestProperty(payload, 'event') ===
+                            testCase.terminalEvent
+                        );
+                    });
+
+                expect(terminalEvents).toHaveLength(2);
+                expect(capture).toHaveBeenCalledOnce();
+                expect(
+                    harness.messagesOfType(
+                        TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                    ),
+                ).toHaveLength(0);
+            } finally {
+                harness.dispose();
+            }
+        });
+    }
+
+    it('retries interruption delivery after its acknowledgement times out', async () => {
+        let deliveryAttempt = 0;
+        const never = new Promise<unknown>(() => undefined);
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => Promise.resolve({ invalid: true }),
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                if (
+                    readTestProperty(payload, 'event') !==
+                    'analysis_interrupted'
+                ) {
+                    return Promise.resolve({ ok: true });
+                }
+                deliveryAttempt += 1;
+                return deliveryAttempt === 1
+                    ? never
+                    : Promise.resolve({ ok: true });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            expect(
+                harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) =>
+                        isAnalysisInterruptionMessage(message),
+                    ),
+            ).toHaveLength(2);
+            expect(capture).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('ignores a duplicate late interruption acknowledgement', async () => {
+        let deliveryAttempt = 0;
+        let resolveOld: (response: unknown) => void = () => undefined;
+        const oldAcknowledgement = new Promise<unknown>((resolve) => {
+            resolveOld = resolve;
+        });
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => Promise.resolve({ invalid: true }),
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                if (
+                    readTestProperty(payload, 'event') !==
+                    'analysis_interrupted'
+                ) {
+                    return Promise.resolve({ ok: true });
+                }
+                deliveryAttempt += 1;
+                return deliveryAttempt === 1
+                    ? oldAcknowledgement
+                    : Promise.resolve({ ok: true });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+            resolveOld({ ok: true });
+            await harness.advanceBindingTime(0);
+            harness.probeContent();
+            await harness.advanceBindingTime(0);
+
+            expect(
+                harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) =>
+                        isAnalysisInterruptionMessage(message),
+                    ),
+            ).toHaveLength(2);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('redelivers an exhausted interruption on the next readiness probe', async () => {
+        let deliveryAttempt = 0;
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => Promise.resolve({ invalid: true }),
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                if (
+                    readTestProperty(payload, 'event') !==
+                    'analysis_interrupted'
+                ) {
+                    return Promise.resolve({ ok: true });
+                }
+                deliveryAttempt += 1;
+                return deliveryAttempt <= 5
+                    ? Promise.reject(new Error('worker stopped'))
+                    : Promise.resolve({ ok: true });
+            },
+        );
+
+        try {
+            for (const retryAfterMs of SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS) {
+                await harness.advanceBindingTime(retryAfterMs);
+            }
+            const interruptionMessages = (): unknown[] =>
+                harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) =>
+                        isAnalysisInterruptionMessage(message),
+                    );
+            expect(interruptionMessages()).toHaveLength(5);
+
+            await harness.advanceBindingTime(10 * MS_PER_SECOND);
+            expect(interruptionMessages()).toHaveLength(5);
+            harness.probeContent();
+            await harness.advanceBindingTime(0);
+            expect(interruptionMessages()).toHaveLength(6);
+            harness.probeContent();
+            await harness.advanceBindingTime(0);
+            expect(interruptionMessages()).toHaveLength(6);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('clears pending interruption delivery when its route is replaced', async () => {
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                return readTestProperty(payload, 'videoId') ===
+                    'dQw4w9WgXcQ'
+                    ? Promise.resolve({ invalid: true })
+                    : Promise.resolve({ ok: true, status: 'inactive' });
+            },
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                return readTestProperty(payload, 'event') ===
+                    'analysis_interrupted'
+                    ? Promise.reject(new Error('worker stopped'))
+                    : Promise.resolve({ ok: true });
+            },
+        );
+
+        try {
+            await harness.navigateToVideo('e2eFixture1');
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+            harness.probeContent();
+            await harness.advanceBindingTime(0);
+
+            expect(
+                harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) =>
+                        isAnalysisInterruptionMessage(
+                            message,
+                            'dQw4w9WgXcQ',
+                        ),
+                    ),
+            ).toHaveLength(1);
+            expect(capture).toHaveBeenCalledTimes(2);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    for (const testCase of [
+        {
+            label: 'disabled',
+            prefs: { ...serverPrefs, enabled: false },
+        },
+        {
+            label: 'BYOK mode',
+            prefs: { ...serverPrefs, analysisMode: ANALYSIS_MODE.Byok },
+        },
+    ]) {
+        it(`clears terminal-event delivery in ${testCase.label}`, async () => {
+            const harness = await createRouteHarness(
+                serverPrefs,
+                true,
+                120,
+                () => Promise.resolve({ invalid: true }),
+                (message) => {
+                    const payload = readTestProperty(message, 'payload');
+                    return readTestProperty(payload, 'event') ===
+                        'analysis_interrupted'
+                        ? Promise.reject(new Error('worker stopped'))
+                        : Promise.resolve({ ok: true });
+                },
+            );
+
+            try {
+                await harness.emitPrefs(testCase.prefs);
+                await harness.advanceBindingTime(
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                );
+                harness.probeContent();
+                await harness.advanceBindingTime(0);
+
+                expect(
+                    harness
+                        .messagesOfType(
+                            TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                        )
+                        .filter((message) =>
+                            isAnalysisInterruptionMessage(message),
+                        ),
+                ).toHaveLength(1);
+            } finally {
+                harness.dispose();
+            }
+        });
+    }
+
+    it('clears terminal-event delivery when the content context is disposed', async () => {
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => Promise.resolve({ invalid: true }),
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                return readTestProperty(payload, 'event') ===
+                    'analysis_interrupted'
+                    ? Promise.reject(new Error('worker stopped'))
+                    : Promise.resolve({ ok: true });
+            },
+        );
+
+        try {
+            harness.disposeContent();
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            expect(
+                harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) =>
+                        isAnalysisInterruptionMessage(message),
+                    ),
+            ).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('cancels a pending retry when the watch route changes', async () => {
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                if (readTestProperty(payload, 'videoId') === 'dQw4w9WgXcQ') {
+                    return Promise.reject(new Error('message port closed'));
+                }
+                return Promise.resolve({ ok: true, status: 'no_promo' });
+            },
+        );
+
+        try {
+            await harness.navigateToVideo('e2eFixture1');
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
+            const oldRequests = harness
+                .messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS)
+                .filter((message) => {
+                    const payload = readTestProperty(message, 'payload');
+                    return (
+                        readTestProperty(payload, 'videoId') === 'dQw4w9WgXcQ'
+                    );
+                });
+            expect(oldRequests).toHaveLength(1);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    for (const testCase of [
+        {
+            label: 'disabled',
+            prefs: { ...serverPrefs, enabled: false },
+        },
+        {
+            label: 'BYOK mode',
+            prefs: {
+                ...serverPrefs,
+                analysisMode: ANALYSIS_MODE.Byok,
+            },
+        },
+    ]) {
+        it(`cancels a pending retry when prefs switch to ${testCase.label}`, async () => {
+            const harness = await createRouteHarness(
+                serverPrefs,
+                true,
+                120,
+                () => Promise.reject(new Error('message port closed')),
+            );
+
+            try {
+                await harness.emitPrefs(testCase.prefs);
+                await harness.advanceBindingTime(
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                );
+
+                expect(
+                    harness.messagesOfType(
+                        TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                    ),
+                ).toHaveLength(1);
+                expect(capture).toHaveBeenCalledOnce();
+            } finally {
+                harness.dispose();
+            }
+        });
+    }
+
+    it('keeps replacement operation ownership after the old promise settles', async () => {
+        let resolveOld: (response: unknown) => void = () => undefined;
+        let resolveReplacement: (response: unknown) => void = () => undefined;
+        const oldRequest = new Promise<unknown>((resolve) => {
+            resolveOld = resolve;
+        });
+        const replacementRequest = new Promise<unknown>((resolve) => {
+            resolveReplacement = resolve;
+        });
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                const type = readTestProperty(message, 'type');
+                const payload = readTestProperty(message, 'payload');
+                const videoId = readTestProperty(payload, 'videoId');
+                if (type === TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS) {
+                    return Promise.resolve({ ok: true, status: 'no_promo' });
+                }
+                return videoId === 'dQw4w9WgXcQ'
+                    ? oldRequest
+                    : replacementRequest;
+            },
+        );
+
+        try {
+            await harness.navigateToVideo('e2eFixture1');
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(2);
+
+            resolveOld({ ok: true, status: 'ready' });
+            await harness.advanceBindingTime(0);
+            resolveReplacement({
+                ok: true,
+                status: 'processing',
+                jobId: 'job-replacement',
+                pollAfterSec: 1,
+                identity: {
+                    videoId: 'e2eFixture1',
+                    languageCode: 'en',
+                    transcriptHash: '1'.repeat(64),
+                    algorithmVersion: 'server-v6',
+                },
+            });
+            await harness.advanceBindingTime(MS_PER_SECOND);
+
+            const polls = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+            );
+            expect(polls).toHaveLength(1);
+            expect(
+                readTestProperty(
+                    readTestProperty(polls[0], 'payload'),
+                    'videoId',
+                ),
+            ).toBe('e2eFixture1');
+            expect(capture).toHaveBeenCalledTimes(2);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('performs one final poll at the analysis deadline', async () => {
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            (message) => {
+                const payload = readTestProperty(message, 'payload');
+                const videoId = readTestProperty(payload, 'videoId');
+                return Promise.resolve({
+                    ok: true,
+                    status: 'processing',
+                    jobId: 'job-deadline',
+                    pollAfterSec: 60 * 60,
+                    identity: {
+                        videoId,
+                        languageCode: 'en',
+                        transcriptHash: 'd'.repeat(64),
+                        algorithmVersion: 'server-v6',
+                    },
+                });
+            },
+        );
+
+        try {
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_SESSION_DEADLINE_MS,
+            );
+
+            expect(
+                harness.messagesOfType(
+                    TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
+                ),
+            ).toHaveLength(1);
+            const interruption = harness
+                .messagesOfType(
+                    TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                )
+                .find((message) => {
+                    const payload = readTestProperty(message, 'payload');
+                    return (
+                        readTestProperty(payload, 'event') ===
+                            'analysis_interrupted' &&
+                        readTestProperty(payload, 'reason') ===
+                            'analysis_deadline_exceeded'
+                    );
+                });
+            expect(interruption).toBeDefined();
+            await harness.pollBindings();
+            expect(capture).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('dedupes terminal blocks without invalidating their pending ack', async () => {
+        let resolveRequest: (response: unknown) => void = () => undefined;
+        const pendingRequest = new Promise<unknown>((resolve) => {
+            resolveRequest = resolve;
+        });
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            () => pendingRequest,
+        );
+
+        try {
+            const request = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            )[0];
+            const payload = readTestProperty(request, 'payload');
+            const sessionId = readTestProperty(payload, 'sessionId');
+            const terminal = {
+                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'server' as const,
+                sessionId,
+                videoId: 'dQw4w9WgXcQ',
+                promoBlocks: [{ startSec: 10, endSec: 20 }],
+            };
+            await harness.emitRuntimeMessage(terminal);
+            await harness.emitRuntimeMessage(terminal);
+            resolveRequest({ ok: true, status: 'ready' });
+            await harness.advanceBindingTime(0);
+            await harness.advanceBindingTime(
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
+                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+            );
+
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
             ).toHaveLength(1);

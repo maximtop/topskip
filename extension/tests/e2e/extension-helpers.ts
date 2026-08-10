@@ -92,9 +92,16 @@ export async function openPopupAndWaitForUi(
     context: BrowserContext,
     extensionId: string,
     errors: string[],
+    owningTab?: Page,
 ): Promise<Page> {
     const popupPage = await context.newPage();
     trackPageErrors(popupPage, 'popup', errors);
+    if (owningTab !== undefined) {
+        // A direct popup URL is a normal Playwright tab, unlike Chrome's
+        // toolbar popup. Restore the tab whose detection state Chrome should
+        // expose before popup startup sends GET_DETECTION_STATUS.
+        await owningTab.bringToFront();
+    }
     await popupPage.goto(`chrome-extension://${extensionId}/popup.html`, {
         waitUntil: 'domcontentloaded',
     });

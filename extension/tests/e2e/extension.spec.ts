@@ -256,6 +256,7 @@ async function installRuntimeMessageGate(
             }
 
             let heldCalls: unknown[][] = [];
+            let released = false;
             const gatedSendMessage = (...args: unknown[]): unknown => {
                 const matchingMessage = args.find(
                     (argument) =>
@@ -264,6 +265,9 @@ async function installRuntimeMessageGate(
                         Reflect.get(argument, 'type') === messageType,
                 );
                 if (matchingMessage === undefined) {
+                    return Reflect.apply(sendMessage, runtime, args);
+                }
+                if (released) {
                     return Reflect.apply(sendMessage, runtime, args);
                 }
 
@@ -278,6 +282,7 @@ async function installRuntimeMessageGate(
                 }
                 const calls = heldCalls;
                 heldCalls = [];
+                released = true;
                 Reflect.set(globalThis, stateKey, releasedState);
                 for (const args of calls) {
                     Reflect.apply(sendMessage, runtime, args);
@@ -823,8 +828,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                page,
             );
-            await page.bringToFront();
             await expect(
                 popupPage.getByText('Server analysis pending'),
             ).toBeVisible({ timeout: 10_000 });
@@ -968,8 +973,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                page,
             );
-            await page.bringToFront();
             await expect(
                 popupPage.getByText('Server-detected blocks ready'),
             ).toBeVisible({ timeout: 10_000 });
@@ -1430,8 +1435,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                page,
             );
-            await page.bringToFront();
             await expect(
                 popupPage.getByText('Server-detected blocks ready'),
             ).toBeVisible({ timeout: 10_000 });
@@ -1503,8 +1508,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                setupPage,
             );
-            await setupPage.bringToFront();
             await expect(
                 popupPage.getByRole('button', {
                     name: 'Report if this seems wrong',
@@ -1555,8 +1560,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                setupPage,
             );
-            await setupPage.bringToFront();
 
             const staleSessionId = '00000000-0000-4000-8000-000000000021';
             const currentSessionId = '00000000-0000-4000-8000-000000000022';
@@ -1658,8 +1663,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                byokWatchPage,
             );
-            await byokWatchPage.bringToFront();
             await expect(
                 popupPage.getByText('Private BYOK setup required'),
             ).toBeVisible({ timeout: 10_000 });

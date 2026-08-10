@@ -1479,9 +1479,12 @@ test.describe('TopSkip extension', () => {
                 `chrome-extension://${extensionId}/options.html`,
                 { waitUntil: 'domcontentloaded' },
             );
+            const captionsUnavailableSessionId =
+                '00000000-0000-4000-8000-000000000012';
+            const captionExtractionFailureSessionId =
+                '00000000-0000-4000-8000-000000000013';
             const baseFailureState = {
                 videoId: E2E_VIDEO_ID,
-                sessionId: '00000000-0000-4000-8000-000000000012',
                 source: 'server',
                 serverFailure: {
                     apiVersion: E2E_SERVER_API_VERSION,
@@ -1490,13 +1493,14 @@ test.describe('TopSkip extension', () => {
             } as const;
             await seedPopupState(setupPage, {
                 videoId: baseFailureState.videoId,
-                sessionId: baseFailureState.sessionId,
+                sessionId: captionsUnavailableSessionId,
                 status: 'analyzing',
                 source: 'server',
                 serverAnalysisPhase: 'caption_acquisition',
             });
             await seedPopupState(setupPage, {
                 ...baseFailureState,
+                sessionId: captionsUnavailableSessionId,
                 status: 'unavailable',
                 serverFailure: {
                     ...baseFailureState.serverFailure,
@@ -1518,7 +1522,15 @@ test.describe('TopSkip extension', () => {
             await expect(popupPage.getByText(/support id/iu)).toHaveCount(0);
 
             await seedPopupState(setupPage, {
+                videoId: baseFailureState.videoId,
+                sessionId: captionExtractionFailureSessionId,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            });
+            await seedPopupState(setupPage, {
                 ...baseFailureState,
+                sessionId: captionExtractionFailureSessionId,
                 status: 'error',
                 serverFailure: {
                     ...baseFailureState.serverFailure,

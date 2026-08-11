@@ -31,7 +31,6 @@
         "extension/src/**/*.tsx",
         "extension/src/**/*.d.ts",
         "extension/tests/**/*.ts",
-        "extension/e2e/**/*.ts",
         "extension/rspack.config.ts",
         "extension/playwright.config.ts",
         "deploy/rspack.config.ts",

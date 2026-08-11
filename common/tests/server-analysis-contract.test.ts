@@ -325,6 +325,7 @@ describe('server analysis contract', () => {
         'captions_unavailable',
         'subtitle_response_too_large',
         'caption_extraction_failed',
+        'analysis_interrupted',
         'invalid_server_response',
     ])('rejects local or legacy-only public upload code %s', (code) => {
         expect(

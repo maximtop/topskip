@@ -21,6 +21,10 @@ import {
     isPrefsPortMessage,
 } from '@/shared/messages';
 import { translator } from '@/shared/i18n/translator';
+import { POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS } from '@/popup/constants';
+import { requestPopupRuntimeMessage } from '@/popup/runtime-message-request';
+
+const CORE_PREFS_TIMEOUT_ERROR = 'Core preferences request timed out.';
 
 /**
  * Type guard for a successful GET_PREFS response from the background page.
@@ -225,6 +229,19 @@ export class PreferencesStore {
     }
 
     /**
+     * Keeps optional presentation metadata from making validated core
+     * preferences unusable when a secondary background read is interrupted.
+     *
+     * @returns Promise resolved after both best-effort refresh attempts settle.
+     */
+    private async refreshPresentationMetadata(): Promise<void> {
+        await Promise.allSettled([
+            this.refreshProviderDisplay(),
+            this.refreshChromeModelAvailability(),
+        ]);
+    }
+
+    /**
      * Opens a long-lived port to the background and listens for preference
      * updates. Call once on mount; call {@link disconnectPort} on unmount.
      */
@@ -242,8 +259,7 @@ export class PreferencesStore {
                     }
                 });
                 if (msg.prefs.providerId !== prevProviderId) {
-                    void this.refreshProviderDisplay();
-                    void this.refreshChromeModelAvailability();
+                    void this.refreshPresentationMetadata();
                 }
             }
         });
@@ -265,9 +281,11 @@ export class PreferencesStore {
      * @returns A promise that resolves when `enabled` reflects stored prefs.
      */
     async load(): Promise<void> {
-        const [prefsRes] = await Promise.all([
-            browser.runtime.sendMessage({ type: TOPSKIP_MESSAGE.GET_PREFS }),
-        ]);
+        const prefsRes = await requestPopupRuntimeMessage(
+            { type: TOPSKIP_MESSAGE.GET_PREFS },
+            POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS,
+            CORE_PREFS_TIMEOUT_ERROR,
+        );
 
         // FIXME use valibot for validating; tighten response types so the
         // background contract is checked when message shapes change.
@@ -290,8 +308,7 @@ export class PreferencesStore {
             }
         });
 
-        await this.refreshProviderDisplay();
-        await this.refreshChromeModelAvailability();
+        void this.refreshPresentationMetadata();
     }
 
     /**

@@ -8,8 +8,10 @@ import {
  */
 export const SERVER_FAILURE_CATEGORY = {
     VideoLimitation: 'video_limitation',
+    CaptureFailure: 'capture_failure',
     TemporaryCapacity: 'temporary_capacity',
     UpgradeRequired: 'upgrade_required',
+    ExtensionFailure: 'extension_failure',
     ServerFailure: 'server_failure',
 } as const;
 
@@ -50,6 +52,14 @@ const TEMPORARY_CAPACITY_CODES = new Set<ServerAnalysisFailureCode>([
     SERVER_ANALYSIS_FAILURE_CODE.BudgetExhausted,
 ]);
 
+const CAPTURE_FAILURE_CODES = new Set<ServerAnalysisFailureCode>([
+    SERVER_ANALYSIS_FAILURE_CODE.CaptionExtractionFailed,
+]);
+
+const EXTENSION_FAILURE_CODES = new Set<ServerAnalysisFailureCode>([
+    SERVER_ANALYSIS_FAILURE_CODE.AnalysisInterrupted,
+]);
+
 /**
  * Maps the public failure vocabulary to one stable UX category.
  *
@@ -62,11 +72,17 @@ export function classifyServerFailure(
     if (VIDEO_LIMITATION_CODES.has(code)) {
         return SERVER_FAILURE_CATEGORY.VideoLimitation;
     }
+    if (CAPTURE_FAILURE_CODES.has(code)) {
+        return SERVER_FAILURE_CATEGORY.CaptureFailure;
+    }
     if (TEMPORARY_CAPACITY_CODES.has(code)) {
         return SERVER_FAILURE_CATEGORY.TemporaryCapacity;
     }
     if (code === SERVER_ANALYSIS_FAILURE_CODE.ClientUpgradeRequired) {
         return SERVER_FAILURE_CATEGORY.UpgradeRequired;
+    }
+    if (EXTENSION_FAILURE_CODES.has(code)) {
+        return SERVER_FAILURE_CATEGORY.ExtensionFailure;
     }
     return SERVER_FAILURE_CATEGORY.ServerFailure;
 }
@@ -83,6 +99,9 @@ export function getServerFailureReportAction(
     const category = classifyServerFailure(code);
     if (category === SERVER_FAILURE_CATEGORY.VideoLimitation) {
         return SERVER_FAILURE_REPORT_ACTION.Secondary;
+    }
+    if (category === SERVER_FAILURE_CATEGORY.CaptureFailure) {
+        return SERVER_FAILURE_REPORT_ACTION.Primary;
     }
     if (category === SERVER_FAILURE_CATEGORY.ServerFailure) {
         return SERVER_FAILURE_REPORT_ACTION.Primary;

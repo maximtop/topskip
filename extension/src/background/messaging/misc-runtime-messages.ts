@@ -7,7 +7,6 @@ import {
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
 import { LOG_PREFIX_CONTENT } from '@/shared/constants';
-import { PromoDetectionBroadcast } from '@/background/messaging/broadcast-promo-detection-updated';
 
 /**
  * Handles `TOPSKIP_CONTENT_LOG` messages from the content
@@ -54,10 +53,10 @@ export class PromoDetectionRuntimeMessages {
             });
             const tabId = tabs[0]?.id;
             if (tabId === undefined) {
-                return { ok: true, state: null };
+                return { ok: true, tabId: null, state: null };
             }
             const state = PromoDetectionStore.get(tabId);
-            return { ok: true, state };
+            return { ok: true, tabId, state };
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
         }
@@ -70,31 +69,30 @@ export class PromoDetectionRuntimeMessages {
      * @param tabId - Sender tab id whose popup state should be seeded.
      * @returns Ack response for the dev-only mutation.
      */
-    static handleDevSet(
+    static async handleDevSet(
         state: PromoDetectionStatePayload | null,
         tabId: number | undefined,
     ): Promise<{ ok: true } | { ok: false; error: string }> {
         if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
-            return Promise.resolve({
+            return {
                 ok: false,
                 error: 'Dev detection seeding is disabled.',
-            });
+            };
         }
 
         if (tabId === undefined) {
-            return Promise.resolve({
+            return {
                 ok: false,
                 error: 'Missing sender tab id.',
-            });
+            };
         }
 
         if (state === null) {
-            PromoDetectionStore.clear(tabId);
-            return Promise.resolve({ ok: true });
+            await PromoDetectionStore.clear(tabId);
+            return { ok: true };
         }
 
-        PromoDetectionStore.set(tabId, state);
-        PromoDetectionBroadcast.notify(state);
-        return Promise.resolve({ ok: true });
+        await PromoDetectionStore.set(tabId, state);
+        return { ok: true };
     }
 }

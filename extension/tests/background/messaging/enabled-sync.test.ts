@@ -7,6 +7,7 @@ const {
     storageSet,
     tabsQuery,
     tabsSendMessage,
+    getRegisteredContentScripts,
     registerContentScripts,
     unregisterContentScripts,
 } = vi.hoisted(() => ({
@@ -16,6 +17,7 @@ const {
     storageSet: vi.fn(),
     tabsQuery: vi.fn().mockResolvedValue([]),
     tabsSendMessage: vi.fn().mockResolvedValue(undefined),
+    getRegisteredContentScripts: vi.fn().mockResolvedValue([]),
     registerContentScripts: vi.fn().mockResolvedValue(undefined),
     unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
 }));
@@ -32,6 +34,7 @@ vi.mock('@/shared/browser', () => ({
         },
         tabs: { query: tabsQuery, sendMessage: tabsSendMessage },
         scripting: {
+            getRegisteredContentScripts,
             registerContentScripts,
             unregisterContentScripts,
         },

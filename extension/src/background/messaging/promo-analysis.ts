@@ -17,6 +17,7 @@ import {
 } from '@/shared/constants';
 import browser from '@/shared/browser';
 import {
+    PROMO_DETECTION_SOURCE,
     TOPSKIP_MESSAGE,
     type CaptionsFromContentPayload,
     type LocalDetectionState,
@@ -45,7 +46,10 @@ import {
     PROMO_DETECTION_PROMPT_VERSION,
     PROMO_DETECTION_SYSTEM_PROMPT,
 } from '@/background/openrouter/promo-detection-system-prompt';
-import type { PromoBlock } from '@topskip/common/promo-types';
+import {
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+} from '@topskip/common/promo-types';
 
 /**
  * Orchestrates LLM analysis after captions arrive; static API only.
@@ -240,10 +244,10 @@ export class PromoAnalysis {
 
         const setStatus = (
             state: Omit<LocalDetectionState, 'source'>,
-        ): void => {
-            PromoDetectionStore.set(tabId, {
+        ): Promise<void> => {
+            return PromoDetectionStore.set(tabId, {
                 ...state,
-                source: 'local_provider',
+                source: PROMO_DETECTION_SOURCE.LocalProvider,
             });
         };
 
@@ -264,13 +268,19 @@ export class PromoAnalysis {
 
             const adapter = PromoAnalysis.registry.get(providerId);
             if (!adapter) {
-                setStatus({ videoId, status: 'not_configured' });
+                await setStatus({
+                    videoId,
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
+                });
                 return;
             }
 
             const avail = await adapter.availability();
             if (avail === PROVIDER_AVAILABILITY.UNAVAILABLE) {
-                setStatus({ videoId, status: 'not_configured' });
+                await setStatus({
+                    videoId,
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
+                });
                 return;
             }
 
@@ -279,17 +289,23 @@ export class PromoAnalysis {
                 MAX_CAPTION_TRANSCRIPT_CHARS,
             );
             if (segments.length === 0 || merged.text.trim().length === 0) {
-                setStatus({ videoId, status: 'no_promo' });
+                await setStatus({
+                    videoId,
+                    status: PROMO_DETECTION_STATUS.NoPromo,
+                });
                 return;
             }
 
-            setStatus({ videoId, status: 'analyzing' });
+            await setStatus({
+                videoId,
+                status: PROMO_DETECTION_STATUS.Analyzing,
+            });
 
             const budget = await adapter.maxTranscriptChars();
             if (budget <= 0) {
-                setStatus({
+                await setStatus({
                     videoId,
-                    status: 'not_configured',
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
                     error: 'LLM provider has no transcript budget',
                 });
                 return;
@@ -434,7 +450,7 @@ export class PromoAnalysis {
                 try {
                     await browser.tabs.sendMessage(tabId, {
                         type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
-                        source: 'local_provider',
+                        source: PROMO_DETECTION_SOURCE.LocalProvider,
                         videoId,
                         promoBlocks: mergedBlocks,
                         partialCoverage: anyPartial,
@@ -443,9 +459,9 @@ export class PromoAnalysis {
                     // tab closed
                 }
 
-                setStatus({
+                await setStatus({
                     videoId,
-                    status: 'detected',
+                    status: PROMO_DETECTION_STATUS.Detected,
                     promoBlocks: mergedBlocks,
                     partialCoverage: anyPartial,
                 });
@@ -568,7 +584,7 @@ export class PromoAnalysis {
                 try {
                     await browser.tabs.sendMessage(tabId, {
                         type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
-                        source: 'local_provider',
+                        source: PROMO_DETECTION_SOURCE.LocalProvider,
                         videoId,
                         promoBlocks: mergedBlocks,
                         partialCoverage: anyPartial,
@@ -577,9 +593,9 @@ export class PromoAnalysis {
                     // tab closed
                 }
 
-                setStatus({
+                await setStatus({
                     videoId,
-                    status: 'detected',
+                    status: PROMO_DETECTION_STATUS.Detected,
                     promoBlocks: mergedBlocks,
                     partialCoverage: anyPartial,
                 });
@@ -603,9 +619,9 @@ export class PromoAnalysis {
                         : { type: 'no_promo' as const };
 
             if (chunkFailures >= plan.chunks.length && plan.chunks.length > 0) {
-                setStatus({
+                await setStatus({
                     videoId,
-                    status: 'error',
+                    status: PROMO_DETECTION_STATUS.Error,
                     error: 'All transcript chunks failed',
                     partialCoverage: anyPartial,
                 });
@@ -689,9 +705,9 @@ export class PromoAnalysis {
                         }),
                     );
                 }
-                setStatus({
+                await setStatus({
                     videoId,
-                    status: 'no_promo',
+                    status: PROMO_DETECTION_STATUS.NoPromo,
                     partialCoverage: anyPartial,
                 });
                 return;
@@ -734,9 +750,9 @@ export class PromoAnalysis {
                     }),
                 );
             }
-            setStatus({
+            await setStatus({
                 videoId,
-                status: 'detected',
+                status: PROMO_DETECTION_STATUS.Detected,
                 promoBlocks: mergedBlocks,
                 partialCoverage: anyPartial,
             });
@@ -746,9 +762,9 @@ export class PromoAnalysis {
             }
             const msg = e instanceof Error ? e.message : String(e);
             console.error('[TopSkip] Promo analysis failed', msg);
-            setStatus({
+            await setStatus({
                 videoId,
-                status: 'error',
+                status: PROMO_DETECTION_STATUS.Error,
                 error: msg,
             });
         } finally {

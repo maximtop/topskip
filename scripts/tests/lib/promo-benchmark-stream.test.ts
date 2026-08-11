@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     buildBenchmarkRequestBody,
     callBenchmarkModel,
-} from '../lib/promo-benchmark-core';
+} from '../../lib/promo-benchmark-core';
 
 function streamingResponse(lines: readonly string[]): Response {
     const encoder = new TextEncoder();

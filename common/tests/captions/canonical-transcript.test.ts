@@ -76,6 +76,34 @@ describe('CaptionTranscriptCanonicalizer', () => {
         });
     });
 
+    it('keeps a meaningful caption text correction as a distinct exact identity', () => {
+        const original = CaptionTranscriptCanonicalizer.canonicalize({
+            languageCode: 'ru',
+            segments: [{ startSec: 453.479, durationSec: 2, text: 'первый' }],
+        });
+        const corrected = CaptionTranscriptCanonicalizer.canonicalize({
+            languageCode: 'ru',
+            segments: [
+                { startSec: 453.479, durationSec: 2, text: 'исправленный' },
+            ],
+        });
+
+        expect(original.ok).toBe(true);
+        expect(corrected.ok).toBe(true);
+        if (!original.ok || !corrected.ok) {
+            return;
+        }
+        expect(
+            createHash('sha256')
+                .update(original.transcript.canonicalBytes)
+                .digest('hex'),
+        ).not.toBe(
+            createHash('sha256')
+                .update(corrected.transcript.canonicalBytes)
+                .digest('hex'),
+        );
+    });
+
     it('preserves internal whitespace, controls, formats, and combining marks once text is meaningful', () => {
         const text = 'a\u0000\u200d\u0301  b';
         const result = CaptionTranscriptCanonicalizer.canonicalize({

@@ -39,8 +39,13 @@ vi.mock('@/background/storage/server-result-cache', () => ({
 }));
 
 const detectionMocks = vi.hoisted(() => ({
-    set: vi.fn<(tabId: number, state: PromoDetectionStatePayload) => boolean>(),
-    clear: vi.fn(),
+    set: vi.fn(
+        (
+            _tabId: number,
+            _state: PromoDetectionStatePayload,
+        ): Promise<void> => Promise.resolve(),
+    ),
+    clear: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/background/promo-detection-store', () => ({
@@ -181,6 +186,64 @@ describe('ServerAnalysisRuntimeMessages', () => {
         expect(cacheMocks.loadExact).not.toHaveBeenCalled();
         expect(clientMocks.requestAnalysis).not.toHaveBeenCalled();
         expect(clientMocks.requestJobStatus).not.toHaveBeenCalled();
+    });
+
+    it('keeps worker transport exhaustion distinct from caption failure', async () => {
+        await ServerAnalysisRuntimeMessages.handleSessionEvent(
+            {
+                event: 'acquisition_started',
+                sessionId: SESSION_ID,
+                videoId: VIDEO_ID,
+            },
+            SENDER,
+        );
+        await ServerAnalysisRuntimeMessages.handleSessionEvent(
+            {
+                event: 'analysis_interrupted',
+                reason: 'runtime_unavailable',
+                sessionId: SESSION_ID,
+                videoId: VIDEO_ID,
+            },
+            SENDER,
+        );
+
+        expect(detectionMocks.set.mock.lastCall?.[1]).toMatchObject({
+            status: 'unavailable',
+            serverFailure: { code: 'analysis_interrupted' },
+        });
+        expect(clientMocks.requestAnalysis).not.toHaveBeenCalled();
+        expect(clientMocks.requestJobStatus).not.toHaveBeenCalled();
+    });
+
+    it('acknowledges acquisition only after its detection snapshot persists', async () => {
+        let releaseWrite = (): void => undefined;
+        detectionMocks.set.mockImplementationOnce(
+            () =>
+                new Promise<void>((resolve) => {
+                    releaseWrite = resolve;
+                }),
+        );
+        let settled = false;
+
+        const response = ServerAnalysisRuntimeMessages.handleSessionEvent(
+            {
+                event: 'acquisition_started',
+                sessionId: SESSION_ID,
+                videoId: VIDEO_ID,
+            },
+            SENDER,
+        ).then((result) => {
+            settled = true;
+            return result;
+        });
+        await vi.waitFor(() => {
+            expect(detectionMocks.set).toHaveBeenCalledOnce();
+        });
+        expect(settled).toBe(false);
+
+        releaseWrite();
+
+        await expect(response).resolves.toEqual({ ok: true });
     });
 
     it('uses exact caption identity for cache and processing', async () => {

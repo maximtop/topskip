@@ -10,18 +10,25 @@ import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { ServerResultCacheStorage } from '@/background/storage/server-result-cache';
 import browser from '@/shared/browser';
 import { ANALYSIS_MODE } from '@/shared/constants';
-import type {
-    RefreshServerAnalysisStatusPayload,
-    RefreshServerAnalysisStatusResponse,
-    RequestServerAnalysisPayload,
-    RequestServerAnalysisResponse,
-    ServerAnalysisFailureContext,
-    ServerAnalysisSessionEventPayload,
-    TopSkipRuntimeMessage,
+import {
+    PROMO_DETECTION_SOURCE,
+    SERVER_ANALYSIS_PHASE,
+    SERVER_ANALYSIS_SESSION_EVENT,
+    TOPSKIP_MESSAGE,
+    type RefreshServerAnalysisStatusPayload,
+    type RefreshServerAnalysisStatusResponse,
+    type RequestServerAnalysisPayload,
+    type RequestServerAnalysisResponse,
+    type ServerAnalysisFailureContext,
+    type ServerAnalysisSessionEventPayload,
+    type ServerPromoDetectionSource,
+    type TopSkipRuntimeMessage,
 } from '@/shared/messages';
-import { TOPSKIP_MESSAGE } from '@/shared/messages';
 import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
-import type { PromoBlock } from '@topskip/common/promo-types';
+import {
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+} from '@topskip/common/promo-types';
 import {
     SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_FAILURE_CODE,
@@ -38,6 +45,21 @@ import {
 
 const WATCH_VIDEO_ID_QUERY_PARAMETER = 'v';
 const LOCAL_E2E_HOST = '127.0.0.1';
+const LOCAL_SESSION_FAILURE_CODE = {
+    [SERVER_ANALYSIS_SESSION_EVENT.CaptionsUnavailable]:
+        SERVER_ANALYSIS_FAILURE_CODE.CaptionsUnavailable,
+    [SERVER_ANALYSIS_SESSION_EVENT.CaptionExtractionFailed]:
+        SERVER_ANALYSIS_FAILURE_CODE.CaptionExtractionFailed,
+    [SERVER_ANALYSIS_SESSION_EVENT.AnalysisInterrupted]:
+        SERVER_ANALYSIS_FAILURE_CODE.AnalysisInterrupted,
+} as const;
+
+/**
+ * Fresh backend responses may be computed or served by the backend cache.
+ */
+type ReadyServerDetectionSource =
+    | typeof PROMO_DETECTION_SOURCE.Server
+    | typeof PROMO_DETECTION_SOURCE.ServerCache;
 
 /**
  * Handles session-bound Server analysis while keeping every HTTP operation in background.
@@ -111,14 +133,14 @@ export class ServerAnalysisRuntimeMessages {
         algorithmVersion?: string;
     }): Promise<void> {
         const category = classifyServerFailure(input.failure.code);
-        PromoDetectionStore.set(input.tabId, {
+        await PromoDetectionStore.set(input.tabId, {
             videoId: input.videoId,
             sessionId: input.sessionId,
             status:
                 category === SERVER_FAILURE_CATEGORY.ServerFailure
-                    ? 'error'
-                    : 'unavailable',
-            source: 'server',
+                    ? PROMO_DETECTION_STATUS.Error
+                    : PROMO_DETECTION_STATUS.Unavailable,
+            source: PROMO_DETECTION_SOURCE.Server,
             serverFailure:
                 await ServerAnalysisRuntimeMessages.buildFailureContext(
                     input.failure,
@@ -138,7 +160,7 @@ export class ServerAnalysisRuntimeMessages {
         sessionId: string;
         videoId: string;
         promoBlocks: PromoBlock[];
-        source: 'server' | 'local_cache' | 'server_cache';
+        source: ServerPromoDetectionSource;
         durationSec?: number;
     }): Promise<void> {
         if (
@@ -173,10 +195,10 @@ export class ServerAnalysisRuntimeMessages {
             input.durationSec >= 0
                 ? { durationSec: input.durationSec }
                 : {};
-        PromoDetectionStore.set(input.tabId, {
+        await PromoDetectionStore.set(input.tabId, {
             videoId: input.videoId,
             sessionId: input.sessionId,
-            status: 'detected',
+            status: PROMO_DETECTION_STATUS.Detected,
             source: input.source,
             promoBlocks: input.promoBlocks,
             ...durationState,
@@ -264,7 +286,7 @@ export class ServerAnalysisRuntimeMessages {
         requestedVideoId: string;
         response: ServerAnalysisResponse;
         durationSec?: number;
-        readySource: 'server' | 'server_cache';
+        readySource: ReadyServerDetectionSource;
     }): Promise<RequestServerAnalysisResponse> {
         if (
             !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
@@ -288,12 +310,12 @@ export class ServerAnalysisRuntimeMessages {
                 if (identity === null) {
                     return { ok: false, error: 'Invalid server response.' };
                 }
-                PromoDetectionStore.set(input.tabId, {
+                await PromoDetectionStore.set(input.tabId, {
                     videoId: input.requestedVideoId,
                     sessionId: input.sessionId,
-                    status: 'analyzing',
-                    source: 'server',
-                    serverAnalysisPhase: 'server_analysis',
+                    status: PROMO_DETECTION_STATUS.Analyzing,
+                    source: PROMO_DETECTION_SOURCE.Server,
+                    serverAnalysisPhase: SERVER_ANALYSIS_PHASE.ServerAnalysis,
                 });
                 return {
                     ok: true,
@@ -327,11 +349,11 @@ export class ServerAnalysisRuntimeMessages {
                 } catch {
                     // Cache persistence cannot block a valid terminal result.
                 }
-                PromoDetectionStore.set(input.tabId, {
+                await PromoDetectionStore.set(input.tabId, {
                     videoId: input.requestedVideoId,
                     sessionId: input.sessionId,
-                    status: 'no_promo',
-                    source: 'server',
+                    status: PROMO_DETECTION_STATUS.NoPromo,
+                    source: PROMO_DETECTION_SOURCE.Server,
                 });
                 return { ok: true, status: 'no_promo' };
             case 'unavailable':
@@ -363,8 +385,8 @@ export class ServerAnalysisRuntimeMessages {
         if (tabId === undefined) {
             return { ok: false, error: 'Missing sender tab id.' };
         }
-        if (payload.event === 'cancelled') {
-            PromoDetectionStore.clear(tabId, payload.sessionId);
+        if (payload.event === SERVER_ANALYSIS_SESSION_EVENT.Cancelled) {
+            await PromoDetectionStore.clear(tabId, payload.sessionId);
             return { ok: true };
         }
         if (
@@ -376,21 +398,21 @@ export class ServerAnalysisRuntimeMessages {
         ) {
             return { ok: true };
         }
-        if (payload.event === 'acquisition_started') {
-            PromoDetectionStore.set(tabId, {
+        if (
+            payload.event === SERVER_ANALYSIS_SESSION_EVENT.AcquisitionStarted
+        ) {
+            await PromoDetectionStore.set(tabId, {
                 videoId: payload.videoId,
                 sessionId: payload.sessionId,
-                status: 'analyzing',
-                source: 'server',
-                serverAnalysisPhase: 'caption_acquisition',
+                status: PROMO_DETECTION_STATUS.Analyzing,
+                source: PROMO_DETECTION_SOURCE.Server,
+                serverAnalysisPhase:
+                    SERVER_ANALYSIS_PHASE.CaptionAcquisition,
             });
             return { ok: true };
         }
 
-        const code =
-            payload.event === 'captions_unavailable'
-                ? SERVER_ANALYSIS_FAILURE_CODE.CaptionsUnavailable
-                : SERVER_ANALYSIS_FAILURE_CODE.CaptionExtractionFailed;
+        const code = LOCAL_SESSION_FAILURE_CODE[payload.event];
         await ServerAnalysisRuntimeMessages.publishFailure({
             tabId,
             sessionId: payload.sessionId,
@@ -454,6 +476,13 @@ export class ServerAnalysisRuntimeMessages {
             return { ok: true, status: 'inactive' };
         }
 
+        await PromoDetectionStore.set(tabId, {
+            videoId: payload.videoId,
+            sessionId: payload.sessionId,
+            status: PROMO_DETECTION_STATUS.Analyzing,
+            source: PROMO_DETECTION_SOURCE.Server,
+            serverAnalysisPhase: SERVER_ANALYSIS_PHASE.CaptionAcquisition,
+        });
         const localIdentity =
             await ServerAnalysisRuntimeMessages.buildLocalIdentity(payload);
         if (!localIdentity.ok) {
@@ -483,17 +512,17 @@ export class ServerAnalysisRuntimeMessages {
                     sessionId: payload.sessionId,
                     videoId: cached.videoId,
                     promoBlocks: cached.promoBlocks,
-                    source: 'local_cache',
+                    source: PROMO_DETECTION_SOURCE.LocalCache,
                     durationSec: payload.durationSec,
                 });
                 return { ok: true, status: 'ready' };
             }
             if (cached?.status === 'no_promo') {
-                PromoDetectionStore.set(tabId, {
+                await PromoDetectionStore.set(tabId, {
                     videoId: cached.videoId,
                     sessionId: payload.sessionId,
-                    status: 'no_promo',
-                    source: 'local_cache',
+                    status: PROMO_DETECTION_STATUS.NoPromo,
+                    source: PROMO_DETECTION_SOURCE.LocalCache,
                 });
                 return { ok: true, status: 'no_promo' };
             }
@@ -511,7 +540,7 @@ export class ServerAnalysisRuntimeMessages {
                 requestedVideoId: payload.videoId,
                 response,
                 durationSec: payload.durationSec,
-                readySource: 'server_cache',
+                readySource: PROMO_DETECTION_SOURCE.ServerCache,
             });
         } catch (error) {
             const failure =
@@ -568,7 +597,7 @@ export class ServerAnalysisRuntimeMessages {
                 sessionId: payload.sessionId,
                 requestedVideoId: payload.videoId,
                 response,
-                readySource: 'server',
+                readySource: PROMO_DETECTION_SOURCE.Server,
             });
         } catch (error) {
             const failure =

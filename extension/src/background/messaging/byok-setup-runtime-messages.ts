@@ -7,10 +7,14 @@ import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import { ANALYSIS_MODE } from '@/shared/constants';
 import { getErrorMessage } from '@/shared/error';
-import type {
-    PreflightByokSetupPayload,
-    PreflightByokSetupResponse,
+import {
+    PROMO_DETECTION_SOURCE,
+    type PreflightByokSetupPayload,
+    type PreflightByokSetupResponse,
 } from '@/shared/messages';
+import {
+    PROMO_DETECTION_STATUS,
+} from '@topskip/common/promo-types';
 
 /**
  * Resolves Private BYOK readiness before caption acquisition can finish.
@@ -67,10 +71,10 @@ export class ByokSetupRuntimeMessages {
                 return { ok: true, status: 'ready' };
             }
 
-            PromoDetectionStore.set(tabId, {
+            await PromoDetectionStore.set(tabId, {
                 videoId: payload.videoId,
-                status: 'not_configured',
-                source: 'local_provider',
+                status: PROMO_DETECTION_STATUS.NotConfigured,
+                source: PROMO_DETECTION_SOURCE.LocalProvider,
             });
             return { ok: true, status: 'setup_required' };
         } catch (e) {

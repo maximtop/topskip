@@ -19,6 +19,7 @@ and architecture**, see [AGENTS.md](./AGENTS.md). For a short **overview**, see
     - [Server-owned DeepSeek analysis](#server-owned-deepseek-analysis)
     - [Build profiles and public API](#build-profiles-and-public-api)
     - [Server-analysis dev logs](#server-analysis-dev-logs)
+    - [MV3 worker suspension and recovery](#mv3-worker-suspension-and-recovery)
 - [Project layout](#project-layout)
     - [Preferences and `browser.storage.local`](#preferences-and-browserstoragelocal)
 - [Commands reference](#commands-reference)
@@ -241,6 +242,51 @@ background probes matching open tabs and injects the current content and
 MAIN-world caption bundles when their previous extension context no longer
 responds; a normal YouTube tab reload is not required.
 
+### MV3 worker suspension and recovery
+
+Server-mode polling is owned by the content script so an idle Manifest V3
+service worker may stop between requests. The next scheduled poll wakes a new
+worker and carries the complete `sessionId`, `jobId`, and exact server identity;
+the background does not depend on memory from its previous lifetime.
+
+If the worker stops while a runtime message is in flight, the content session
+retries the same submit, poll, or one-time exact resubmission. It never captures
+captions again merely because the message port closed. Explicit transport
+retries use bounded backoff, each message has a watchdog, and the complete
+analysis session has a 35-minute limit chosen to cover the bounded server queue
+and five-minute model timeout. A session that exhausts recovery remains
+terminal until navigation or a preference change, preventing the video-binding
+loop from starting another analysis automatically.
+
+Initial preference reads use their own timeout and retry loop, so a live content
+bundle cannot remain permanently idle after losing its first worker reply. The
+initial caption-bearing request also reasserts its session before cache or
+network work, which repairs popup ordering if the advisory acquisition event was
+lost. Local terminal failures remain queued without captions and are retried;
+the next versioned readiness probe can redeliver them after a longer outage.
+
+The retained transcript remains only in the live content context. Reloading the
+YouTube document or replacing the content context intentionally starts a new
+session; TopSkip does not persist an active transcript journal in IndexedDB or
+extension storage. Completed results continue to use the exact
+algorithm/video/language/transcript cache in `browser.storage.local`.
+
+The popup's periodic status reads are extension-local runtime messages, not
+TopSkip HTTP requests. An open popup normally follows tab-scoped background
+push updates and performs a low-frequency reconciliation. During a worker
+wake-up it keeps the last valid snapshot visible with a delayed-status warning
+and retries; a transport failure is not presented as a TopSkip Server failure.
+
+To smoke-test recovery after a fresh `pnpm run dev` build and extension reload:
+
+1. Open a captioned YouTube watch page and wait for a processing job.
+2. Stop the service worker from `chrome://extensions` between two polls.
+3. Keep the watch document alive and reopen the popup if necessary.
+4. Verify the content logs show one caption capture and retries of the same job
+   identity, followed by one terminal result and no second initial submission.
+5. Confirm the popup reaches ready/no-promo or a typed terminal outcome without
+   a generic Server error caused solely by the worker restart.
+
 ---
 
 ## Project layout
@@ -256,8 +302,10 @@ responds; a normal YouTube tab reload is not required.
 | `backend/tests/`              | Backend unit and integration tests                                                                                                                                              |
 | `common/src/`                 | Pure API contracts, promo types, validation schemas, and caption parsing shared by backend and extension                                                                        |
 | `common/tests/`               | Tests for shared contracts and pure helpers                                                                                                                                     |
+| `extension/tests/`            | Extension unit, integration, and E2E tests; module tests mirror `extension/src/` paths                                                                                          |
+| `scripts/tests/`              | Tests for root tooling, mirroring module paths under `scripts/`                                                                                                                  |
 | `extension/dist/`             | **Build output** — load this folder as unpacked extension (gitignored)                                                                                                          |
-| `extension/e2e/`              | Playwright tests and `extension/e2e/fixtures` static HTML                                                                                                                       |
+| `extension/tests/e2e/`        | Playwright tests and `extension/tests/e2e/fixtures` static HTML                                                                                                                 |
 | `extension/src/manifest.json` | Source manifest; **emitted into `extension/dist/`** by the build                                                                                                                |
 | `.sdd/`                       | SDD feature **spec.md** / **plan.md** (e.g. `.sdd/001-init-extension/` MVP baseline, dated folders per feature). **Gitignored — local only, never pushed**                      |
 
@@ -398,6 +446,12 @@ Unit tests live beside their owning package under **`backend/tests/`**,
 **`common/tests/`**, and **`extension/tests/`**. Coverage thresholds apply to
 selected extension logic such as **`skip-logic.ts`**, **`page-guards.ts`**, and
 **`extension/src/popup/preferences-store.ts`** (see `vitest.config.ts`).
+Module tests mirror their source path without adding a `src` directory below
+`tests`: for example, `backend/src/analysis/promo-analysis-worker.ts` is tested
+by `backend/tests/analysis/promo-analysis-worker.test.ts`. Root tooling follows
+the same convention under **`scripts/tests/`**. Cross-module integration suites
+stay under the owning package's `tests/`, and Playwright E2E lives under
+**`extension/tests/e2e/`**.
 
 ### Manual server-mode check
 
@@ -483,9 +537,9 @@ make build
 make test-e2e
 ```
 
-Playwright starts a static server for **`extension/e2e/fixtures`** (see `extension/playwright.config.ts`, port **4173**). The extension manifest includes **`http://127.0.0.1:4173/*`** so the **content script** runs on the fixture page. Tests load the unpacked extension from **`extension/dist/`** using **headless** Chromium by default; set **`PW_EXTENSION_HEADED=1`** when debugging (visible browser).
+Playwright starts a static server for **`extension/tests/e2e/fixtures`** (see `extension/playwright.config.ts`, port **4173**). The extension manifest includes **`http://127.0.0.1:4173/*`** so the **content script** runs on the fixture page. Tests load the unpacked extension from **`extension/dist/`** using **headless** Chromium by default; set **`PW_EXTENSION_HEADED=1`** when debugging (visible browser).
 
-The fixture uses a **small vendored** silent MP4 (`extension/e2e/fixtures/skip-test.mp4`, ~3 KiB, 120s) served from the same static root — **no network** required for e2e. The video is **muted** in HTML and tests (`muted` / `playsinline`) so playback does not emit sound. To regenerate the asset after changing duration/encoding, run:
+The fixture uses a **small vendored** silent MP4 (`extension/tests/e2e/fixtures/skip-test.mp4`, ~3 KiB, 120s) served from the same static root — **no network** required for e2e. The video is **muted** in HTML and tests (`muted` / `playsinline`) so playback does not emit sound. To regenerate the asset after changing duration/encoding, run:
 
 ```bash
 bash scripts/generate-e2e-fixture-video.sh
@@ -564,7 +618,7 @@ stream.
 | ----------------------------- | ------------------------------------------------------------------------------------------------ |
 | **Iterate on UI (popup)**     | Edit `extension/src/popup/*`, `make build`, reload extension on `chrome://extensions`            |
 | **Iterate on content script** | Edit `extension/src/content/*`, `make build`, then reload the extension on `chrome://extensions` |
-| **Add a unit test**           | Add `extension/tests/.../*.test.ts` mirroring the `extension/src/` path; run `pnpm run test`     |
+| **Add a unit test**           | Add `<package>/tests/.../*.test.ts` mirroring its `<package>/src/` path; run `pnpm run test`     |
 | **Debug failing CI locally**  | Run `pnpm install --frozen-lockfile`, then the same commands as `.github/workflows/ci.yml`       |
 | **Clean install**             | Remove `node_modules`, run `pnpm install --frozen-lockfile`                                      |
 
@@ -580,7 +634,7 @@ stream.
 | **Extension doesn’t update after edits**              | Run `make build` again and click **Reload** on `chrome://extensions`; inspect the service-worker `content-scripts-injected-existing-tabs` diagnostic if an open matching tab does not acknowledge or receive the replacement bundle |
 | **Lint errors in IDE but not terminal**               | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service.                                                          |
 | **`pnpm run test:e2e` fails (browser)**               | Run `pnpm exec playwright install chromium`                                                                                                                                                                                         |
-| **`pnpm run test:e2e` times out / video never plays** | Confirm `extension/e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed                                                                                                                |
+| **`pnpm run test:e2e` times out / video never plays** | Confirm `extension/tests/e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed                                                                                                          |
 | **Port 4173 already in use**                          | Stop the other process using the port, or adjust `extension/playwright.config.ts` `webServer` + manifest host if you must (keep them in sync)                                                                                       |
 | **Coverage fails after changes**                      | Run `pnpm run test:coverage` and add tests or adjust coverage scope in `vitest.config.ts` deliberately                                                                                                                              |
 

@@ -95,6 +95,7 @@ export class ServerAnalysisIssueReport {
             if (tabId === undefined) {
                 return { ok: false, error: REPORT_UNAVAILABLE_ERROR };
             }
+            await PromoDetectionStore.ready();
             const state = PromoDetectionStore.get(tabId);
             if (
                 state?.source !== 'server' ||

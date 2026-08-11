@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PreferencesStore } from '@/popup/preferences-store';
+import { POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS } from '@/popup/constants';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 import { ANALYSIS_MODE } from '@/shared/constants';
 
@@ -67,6 +68,7 @@ describe('PreferencesStore', () => {
     });
 
     afterEach(() => {
+        vi.useRealTimers();
         vi.clearAllMocks();
     });
 
@@ -154,6 +156,113 @@ describe('PreferencesStore', () => {
 
         const store = new PreferencesStore();
         await expect(store.load()).rejects.toThrow('storage failure');
+    });
+
+    it('times out a lost core prefs reply and succeeds on retry', async () => {
+        vi.useFakeTimers();
+        let prefsAttempts = 0;
+        mocks.sendMessage.mockImplementation((msg: unknown) => {
+            const type: unknown =
+                msg && typeof msg === 'object'
+                    ? Reflect.get(msg, 'type')
+                    : undefined;
+            if (type !== TOPSKIP_MESSAGE.GET_PREFS) {
+                return defaultSendMessage(msg);
+            }
+            prefsAttempts += 1;
+            if (prefsAttempts === 1) {
+                return new Promise<unknown>(() => {
+                    // Simulates a reply lost with the previous worker.
+                });
+            }
+            return Promise.resolve({
+                ok: true,
+                prefs: {
+                    enabled: false,
+                    providerId: 'openrouter',
+                    analysisMode: ANALYSIS_MODE.Server,
+                },
+            });
+        });
+        const store = new PreferencesStore();
+        let settled = false;
+        const firstLoad = store.load();
+        void firstLoad.then(
+            () => {
+                settled = true;
+            },
+            () => {
+                settled = true;
+            },
+        );
+
+        await vi.advanceTimersByTimeAsync(
+            POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS - 1,
+        );
+        expect(settled).toBe(false);
+
+        await vi.advanceTimersByTimeAsync(1);
+        await expect(firstLoad).rejects.toThrow(
+            'Core preferences request timed out.',
+        );
+        expect(vi.getTimerCount()).toBe(0);
+
+        await expect(store.load()).resolves.toBeUndefined();
+        expect(prefsAttempts).toBe(2);
+        expect(store.enabled).toBe(false);
+    });
+
+    it('keeps validated core prefs when optional metadata refresh rejects', async () => {
+        mocks.sendMessage.mockImplementation((msg: unknown) => {
+            const type: unknown =
+                msg && typeof msg === 'object'
+                    ? Reflect.get(msg, 'type')
+                    : undefined;
+            if (type === TOPSKIP_MESSAGE.GET_PREFS) {
+                return Promise.resolve({
+                    ok: true,
+                    prefs: {
+                        enabled: false,
+                        providerId: 'chrome-prompt-api',
+                        analysisMode: ANALYSIS_MODE.Server,
+                    },
+                });
+            }
+            return Promise.reject(new Error('metadata unavailable'));
+        });
+
+        const store = new PreferencesStore();
+        await expect(store.load()).resolves.toBeUndefined();
+        expect(store.enabled).toBe(false);
+        expect(store.analysisMode).toBe(ANALYSIS_MODE.Server);
+        expect(store.providerId).toBe('chrome-prompt-api');
+    });
+
+    it('does not wait for unresolved optional metadata after core prefs', async () => {
+        mocks.sendMessage.mockImplementation((msg: unknown) => {
+            const type: unknown =
+                msg && typeof msg === 'object'
+                    ? Reflect.get(msg, 'type')
+                    : undefined;
+            if (type === TOPSKIP_MESSAGE.GET_PREFS) {
+                return Promise.resolve({
+                    ok: true,
+                    prefs: {
+                        enabled: false,
+                        providerId: 'openrouter',
+                        analysisMode: ANALYSIS_MODE.Server,
+                    },
+                });
+            }
+            return new Promise<unknown>(() => {
+                // A lost MV3 reply must not keep core preferences pending.
+            });
+        });
+
+        const store = new PreferencesStore();
+        await expect(store.load()).resolves.toBeUndefined();
+        expect(store.enabled).toBe(false);
+        expect(store.providerId).toBe('openrouter');
     });
 
     it('setEnabled rejects and reverts on background error', async () => {
@@ -244,8 +353,10 @@ describe('PreferencesStore', () => {
     it('load populates providerDisplayName and modelDisplayName', async () => {
         const store = new PreferencesStore();
         await store.load();
-        expect(store.providerDisplayName).toBe('OpenRouter');
-        expect(store.modelDisplayName).toBe('google/gemini-2.0-flash');
+        await vi.waitFor(() => {
+            expect(store.providerDisplayName).toBe('OpenRouter');
+            expect(store.modelDisplayName).toBe('google/gemini-2.0-flash');
+        });
         expect(mocks.sendMessage).toHaveBeenCalledWith({
             type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
         });
@@ -363,7 +474,9 @@ describe('PreferencesStore', () => {
         const store = new PreferencesStore();
         await store.load();
 
-        expect(store.chromeModelAvailability).toBe('downloading');
+        await vi.waitFor(() => {
+            expect(store.chromeModelAvailability).toBe('downloading');
+        });
         expect(mocks.sendMessage).toHaveBeenCalledWith({
             type: TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS,
         });

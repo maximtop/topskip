@@ -6,6 +6,8 @@ import {
     captionsFromContentIncomingMessageSchema,
     captionsFromContentPayloadSchema,
     captionsFromContentRuntimeMessageSchema,
+    contentScriptReadyResponseSchema,
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
     promoBlocksDetectedMessageSchema,
     refreshServerAnalysisStatusRuntimeMessageSchema,
     requestServerAnalysisResponseSchema,
@@ -238,6 +240,56 @@ describe('Server analysis session messages', () => {
                     videoId: VIDEO_ID,
                     rawError: 'must not cross the boundary',
                 },
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(serverAnalysisSessionEventRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                payload: {
+                    event: 'analysis_interrupted',
+                    reason: 'runtime_unavailable',
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                },
+            }).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(serverAnalysisSessionEventRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                payload: {
+                    event: 'analysis_interrupted',
+                    reason: 'unknown_reason',
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                },
+            }).success,
+        ).toBe(false);
+        expect(
+            v.safeParse(serverAnalysisSessionEventRuntimeMessageSchema, {
+                type: TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                payload: {
+                    event: 'acquisition_started',
+                    reason: 'runtime_unavailable',
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                },
+            }).success,
+        ).toBe(false);
+    });
+
+    it('requires the current content readiness protocol and extension version', () => {
+        expect(
+            v.safeParse(contentScriptReadyResponseSchema, {
+                ok: true,
+                protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                extensionVersion: '0.1.0',
+            }).success,
+        ).toBe(true);
+        expect(
+            v.safeParse(contentScriptReadyResponseSchema, {
+                ok: true,
+                protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION + 1,
+                extensionVersion: '0.1.0',
             }).success,
         ).toBe(false);
     });

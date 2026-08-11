@@ -13,12 +13,19 @@ export type PromoBlock = {
 };
 
 /**
+ * Stable promo-detection states shared across runtime packages.
+ */
+export const PROMO_DETECTION_STATUS = {
+    NotConfigured: 'not_configured',
+    Unavailable: 'unavailable',
+    Analyzing: 'analyzing',
+    Detected: 'detected',
+    NoPromo: 'no_promo',
+    Error: 'error',
+} as const;
+
+/**
  * High-level detection status for UI (spec Key Entities).
  */
 export type PromoDetectionStatus =
-    | 'not_configured'
-    | 'unavailable'
-    | 'analyzing'
-    | 'detected'
-    | 'no_promo'
-    | 'error';
+    (typeof PROMO_DETECTION_STATUS)[keyof typeof PROMO_DETECTION_STATUS];

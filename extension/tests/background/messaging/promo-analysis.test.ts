@@ -6,6 +6,8 @@ import type {
 } from '@/background/providers/llm-provider-adapter';
 import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
 import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
+import { PROMO_DETECTION_SOURCE } from '@/shared/messages';
+import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
 
 // ── Hoisted mocks (must be defined before imports) ──
 
@@ -188,29 +190,41 @@ describe('PromoAnalysis — adapter routing', () => {
         vi.restoreAllMocks();
     });
 
-    describe('PromoAnalysis inflight map', () => {
-        it('aborts the prior controller when replaced for the same tab', () => {
-            const inflight = new Map<
-                number,
-                { videoId: string; abort: AbortController }
-            >();
-            const first = new AbortController();
-            const onAbort = vi.fn();
-            first.signal.addEventListener('abort', onAbort);
-            inflight.set(7, { videoId: 'oldVid', abort: first });
-
-            const prev = inflight.get(7);
-            prev?.abort.abort();
-            const next = new AbortController();
-            inflight.set(7, { videoId: 'newVid', abort: next });
-
-            expect(onAbort).toHaveBeenCalled();
-            expect(first.signal.aborted).toBe(true);
-            expect(inflight.get(7)?.videoId).toBe('newVid');
-        });
-    });
-
     describe('onCaptionsReady routes through adapter', () => {
+        it('aborts prior analysis when new captions replace the same tab', async () => {
+            const signals: AbortSignal[] = [];
+            const analyze = makePendingAnalyze((signal) => {
+                if (signal) {
+                    signals.push(signal);
+                }
+            });
+            registryMocks.get.mockReturnValue(
+                makeAdapter({ analyzeTranscript: analyze }),
+            );
+
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('firstVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(signals).toHaveLength(1);
+            });
+
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('secondVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(signals).toHaveLength(2);
+            });
+
+            expect(signals[0]?.aborted).toBe(true);
+            expect(signals[1]?.aborted).toBe(false);
+
+            PromoAnalysis.abortForTab(7);
+            expect(signals[1]?.aborted).toBe(true);
+        });
+
         it('resolves adapter from registry and calls analyzeTranscript', () => {
             const adapter = makeAdapter({
                 analyzeTranscript: mockAnalyze,
@@ -316,8 +330,8 @@ describe('PromoAnalysis — adapter routing', () => {
                 expect(mockAnalyze).not.toHaveBeenCalled();
                 expect(detectionStoreMocks.set).toHaveBeenCalledWith(42, {
                     videoId: 'vid123',
-                    status: 'not_configured',
-                    source: 'local_provider',
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
+                    source: PROMO_DETECTION_SOURCE.LocalProvider,
                 });
             });
         });
@@ -340,8 +354,8 @@ describe('PromoAnalysis — adapter routing', () => {
                 expect(analyze).not.toHaveBeenCalled();
                 expect(detectionStoreMocks.set).toHaveBeenCalledWith(42, {
                     videoId: 'vid123',
-                    status: 'not_configured',
-                    source: 'local_provider',
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
+                    source: PROMO_DETECTION_SOURCE.LocalProvider,
                 });
             });
         });

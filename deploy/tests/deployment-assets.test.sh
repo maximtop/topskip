@@ -22,7 +22,7 @@ grep -Fq 'yt-dlp-refresh-pin:' "${REPOSITORY_DIRECTORY}/Makefile"
 test -f "${REPOSITORY_DIRECTORY}/scripts/yt-dlp-manager.ts"
 test -f "${REPOSITORY_DIRECTORY}/scripts/lib/yt-dlp-release.ts"
 test -f "${REPOSITORY_DIRECTORY}/scripts/refresh-yt-dlp-pin.ts"
-test -f "${REPOSITORY_DIRECTORY}/extension/tests/scripts/yt-dlp-release.test.ts"
+test -f "${REPOSITORY_DIRECTORY}/scripts/tests/lib/yt-dlp-release.test.ts"
 
 workflow=${REPOSITORY_DIRECTORY}/.github/workflows/deploy-production.yml
 grep -Fq 'expected_sha:' "${workflow}"

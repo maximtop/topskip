@@ -4,7 +4,7 @@ import {
     compareHumanAlignedBlocks,
     intervalIoU,
     parseReferenceBundleJson,
-} from '../../../scripts/lib/promo-reference-compare';
+} from '../../lib/promo-reference-compare';
 
 describe('intervalIoU', () => {
     it('is 1 for identical intervals', () => {

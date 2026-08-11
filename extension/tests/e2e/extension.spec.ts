@@ -29,7 +29,7 @@ import {
 } from './extension-helpers';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const extensionPath = path.resolve(__dirname, '../dist');
+const extensionPath = path.resolve(__dirname, '../../dist');
 const E2E_SERVER_API_VERSION = 1;
 const E2E_SERVER_ALGORITHM_VERSION = 'server-v7';
 const E2E_VIDEO_ID = 'e2eFixture1';
@@ -58,6 +58,7 @@ const POPUP_RACE_TEST_TIMEOUT_MS = 20_000;
 const RUNTIME_MESSAGE_GATE_TIMEOUT_MS = 5_000;
 const GET_MODEL_SETTINGS_MESSAGE_TYPE = 'TOPSKIP_GET_MODEL_SETTINGS';
 const GET_PREFS_MESSAGE_TYPE = 'TOPSKIP_GET_PREFS';
+const GET_DETECTION_STATUS_MESSAGE_TYPE = 'TOPSKIP_GET_DETECTION_STATUS';
 const BYOK_ANALYSIS_MODE = 'byok';
 const RUNTIME_MESSAGE_GATE_STATE_KEY = '__topskipE2eRuntimeMessageGateState';
 const RUNTIME_MESSAGE_GATE_RELEASE_KEY =
@@ -255,6 +256,7 @@ async function installRuntimeMessageGate(
             }
 
             let heldCalls: unknown[][] = [];
+            let released = false;
             const gatedSendMessage = (...args: unknown[]): unknown => {
                 const matchingMessage = args.find(
                     (argument) =>
@@ -263,6 +265,9 @@ async function installRuntimeMessageGate(
                         Reflect.get(argument, 'type') === messageType,
                 );
                 if (matchingMessage === undefined) {
+                    return Reflect.apply(sendMessage, runtime, args);
+                }
+                if (released) {
                     return Reflect.apply(sendMessage, runtime, args);
                 }
 
@@ -277,6 +282,7 @@ async function installRuntimeMessageGate(
                 }
                 const calls = heldCalls;
                 heldCalls = [];
+                released = true;
                 Reflect.set(globalThis, stateKey, releasedState);
                 for (const args of calls) {
                     Reflect.apply(sendMessage, runtime, args);
@@ -822,8 +828,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                page,
             );
-            await page.bringToFront();
             await expect(
                 popupPage.getByText('Server analysis pending'),
             ).toBeVisible({ timeout: 10_000 });
@@ -967,8 +973,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                page,
             );
-            await page.bringToFront();
             await expect(
                 popupPage.getByText('Server-detected blocks ready'),
             ).toBeVisible({ timeout: 10_000 });
@@ -984,6 +990,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('caption phase reaches ready and skips only future blocks', async () => {
+        test.setTimeout(45_000);
         const jobId = 'local-e2eFixture1-server-v7';
         let terminalReady = false;
         const heldAnalysis: { response: ServerResponse | null } = {
@@ -1096,16 +1103,29 @@ test.describe('TopSkip extension', () => {
             await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
             await requestSeen;
 
-            const acquisitionPopup = await openPopupAndWaitForUi(
-                context,
-                extensionId,
-                errors,
+            const statusPopup = await context.newPage();
+            trackPageErrors(statusPopup, 'popup-status-recovery', errors);
+            await installRuntimeMessageGate(
+                statusPopup,
+                GET_DETECTION_STATUS_MESSAGE_TYPE,
             );
+            await statusPopup.goto(
+                `chrome-extension://${extensionId}/popup.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            await waitForPopupUi(statusPopup);
+            await waitForHeldRuntimeMessage(statusPopup);
             await page.bringToFront();
             await expect(
-                acquisitionPopup.getByText('Getting captions'),
+                statusPopup.getByText(
+                    'TopSkip status could not be loaded.',
+                    { exact: true },
+                ),
             ).toBeVisible({ timeout: 10_000 });
-            await acquisitionPopup.close();
+            await releaseHeldRuntimeMessage(statusPopup);
+            await expect(
+                statusPopup.getByText('Getting captions'),
+            ).toBeVisible({ timeout: 10_000 });
 
             const pendingAnalysisResponse = heldAnalysis.response;
             if (pendingAnalysisResponse === null) {
@@ -1125,40 +1145,27 @@ test.describe('TopSkip extension', () => {
             heldAnalysis.response = null;
             await processingPollSeen;
 
-            const analysisPopup = await openPopupAndWaitForUi(
-                context,
-                extensionId,
-                errors,
-            );
-            await page.bringToFront();
             await expect(
-                analysisPopup.getByText('Server analysis pending'),
+                statusPopup.getByText('Server analysis pending'),
             ).toBeVisible({ timeout: 10_000 });
-            await analysisPopup.close();
 
             terminalReady = true;
             await readyPollSeen;
             await page.waitForTimeout(300);
 
-            const resultPopup = await openPopupAndWaitForUi(
-                context,
-                extensionId,
-                errors,
-            );
-            await page.bringToFront();
             await expect(
-                resultPopup.getByText('2 promo blocks found'),
+                statusPopup.getByText('2 promo blocks found'),
             ).toBeVisible({ timeout: 10_000 });
             await expect(
-                resultPopup.getByText('Server cache hit.', { exact: true }),
+                statusPopup.getByText('Server cache hit.', { exact: true }),
             ).toHaveCount(0);
             await expect(
-                resultPopup.getByText('0:04 - 0:24', { exact: true }),
+                statusPopup.getByText('0:04 - 0:24', { exact: true }),
             ).toBeVisible();
             await expect(
-                resultPopup.getByText('0:35 - 0:45', { exact: true }),
+                statusPopup.getByText('0:35 - 0:45', { exact: true }),
             ).toBeVisible();
-            await resultPopup.close();
+            await statusPopup.close();
 
             await page.evaluate(async () => {
                 const video = document.querySelector('video');
@@ -1428,8 +1435,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                page,
             );
-            await page.bringToFront();
             await expect(
                 popupPage.getByText('Server-detected blocks ready'),
             ).toBeVisible({ timeout: 10_000 });
@@ -1472,9 +1479,12 @@ test.describe('TopSkip extension', () => {
                 `chrome-extension://${extensionId}/options.html`,
                 { waitUntil: 'domcontentloaded' },
             );
+            const captionsUnavailableSessionId =
+                '00000000-0000-4000-8000-000000000012';
+            const captionExtractionFailureSessionId =
+                '00000000-0000-4000-8000-000000000013';
             const baseFailureState = {
                 videoId: E2E_VIDEO_ID,
-                sessionId: '00000000-0000-4000-8000-000000000012',
                 source: 'server',
                 serverFailure: {
                     apiVersion: E2E_SERVER_API_VERSION,
@@ -1483,13 +1493,14 @@ test.describe('TopSkip extension', () => {
             } as const;
             await seedPopupState(setupPage, {
                 videoId: baseFailureState.videoId,
-                sessionId: baseFailureState.sessionId,
+                sessionId: captionsUnavailableSessionId,
                 status: 'analyzing',
                 source: 'server',
                 serverAnalysisPhase: 'caption_acquisition',
             });
             await seedPopupState(setupPage, {
                 ...baseFailureState,
+                sessionId: captionsUnavailableSessionId,
                 status: 'unavailable',
                 serverFailure: {
                     ...baseFailureState.serverFailure,
@@ -1501,8 +1512,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                setupPage,
             );
-            await setupPage.bringToFront();
             await expect(
                 popupPage.getByRole('button', {
                     name: 'Report if this seems wrong',
@@ -1511,7 +1522,15 @@ test.describe('TopSkip extension', () => {
             await expect(popupPage.getByText(/support id/iu)).toHaveCount(0);
 
             await seedPopupState(setupPage, {
+                videoId: baseFailureState.videoId,
+                sessionId: captionExtractionFailureSessionId,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            });
+            await seedPopupState(setupPage, {
                 ...baseFailureState,
+                sessionId: captionExtractionFailureSessionId,
                 status: 'error',
                 serverFailure: {
                     ...baseFailureState.serverFailure,
@@ -1553,8 +1572,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                setupPage,
             );
-            await setupPage.bringToFront();
 
             const staleSessionId = '00000000-0000-4000-8000-000000000021';
             const currentSessionId = '00000000-0000-4000-8000-000000000022';
@@ -1656,8 +1675,8 @@ test.describe('TopSkip extension', () => {
                 context,
                 extensionId,
                 errors,
+                byokWatchPage,
             );
-            await byokWatchPage.bringToFront();
             await expect(
                 popupPage.getByText('Private BYOK setup required'),
             ).toBeVisible({ timeout: 10_000 });

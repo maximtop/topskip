@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
-    buildPopupViewModel,
     chooseMonotonicDetectionSnapshot,
-} from '@/popup/PopupApp';
+} from '@/popup/detection-transport-state';
+import { buildPopupViewModel } from '@/popup/PopupApp';
 import { ANALYSIS_MODE } from '@/shared/constants';
 import type { PromoDetectionStatePayload } from '@/shared/messages';
 
@@ -99,6 +99,32 @@ vi.mock('@/shared/browser', () => ({
                             'An extension update is required.',
                         popup_server_upgrade_body:
                             'Update TopSkip and try this video again.',
+                        popup_capture_failure_badge: 'Captions',
+                        popup_capture_failure_title: 'Could not read captions',
+                        popup_capture_failure_description:
+                            'TopSkip could not capture usable timed captions from this video.',
+                        popup_capture_failure_headline:
+                            'Caption capture failed.',
+                        popup_capture_failure_body:
+                            'Reload the video and try again.',
+                        popup_extension_failure_badge: 'Interrupted',
+                        popup_extension_failure_title:
+                            'Analysis could not continue',
+                        popup_extension_failure_description:
+                            'TopSkip could not finish analyzing this video.',
+                        popup_extension_failure_headline:
+                            'Reload the video or page to retry.',
+                        popup_extension_failure_body:
+                            'Playback continues normally without server-detected skips.',
+                        popup_status_unavailable_badge: 'Unavailable',
+                        popup_status_unavailable_title: 'Status unavailable',
+                        popup_status_unavailable_description:
+                            'TopSkip could not refresh its current state.',
+                        popup_status_unavailable_headline:
+                            'TopSkip status could not be loaded.',
+                        popup_status_unavailable_activity:
+                            'Status unavailable',
+                        popup_status_stale_activity: 'Status update delayed',
                         popup_server_report_primary: 'Report on GitHub',
                         popup_server_report_secondary:
                             'Report if this seems wrong',
@@ -138,6 +164,7 @@ describe('buildPopupViewModel', () => {
         detectionState: null,
         prefsError: null,
         detectionError: null,
+        detectionStale: false,
         providerId: 'openrouter',
         providerDisplayName: 'OpenRouter',
         modelDisplayName: 'google/gemini-2.0-flash',
@@ -381,6 +408,48 @@ describe('buildPopupViewModel', () => {
         );
     });
 
+    it('keeps the last caption phase visible when transport is stale', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionStale: true,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                sessionId: SERVER_SESSION_ID,
+                status: 'analyzing',
+                source: 'server',
+                serverAnalysisPhase: 'caption_acquisition',
+            },
+        });
+
+        expect(vm.title).toBe('Getting captions');
+        expect(vm.activityLabel).toBe('Status update delayed');
+    });
+
+    it('uses generic unavailable copy only when status cannot be read', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionError: 'raw runtime failure',
+        });
+
+        expect(vm.title).toBe('Status unavailable');
+        expect(vm.statusHeadline).toBe('TopSkip status could not be loaded.');
+        expect(vm.activityLabel).toBe('Status unavailable');
+        expect(vm.statusHeadline).not.toContain('raw runtime failure');
+    });
+
+    it('does not expose the raw core preference timeout', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            prefsError: 'Core preferences request timed out.',
+        });
+
+        expect(vm.title).toBe('Status unavailable');
+        expect(vm.statusHeadline).toBe('TopSkip status could not be loaded.');
+        expect(`${vm.description} ${vm.statusHeadline}`).not.toMatch(
+            /timed out/i,
+        );
+    });
+
     it('never chooses an earlier phase from the same session', () => {
         const sessionId = SERVER_SESSION_ID;
         const acquisition = {
@@ -528,6 +597,57 @@ describe('buildPopupViewModel', () => {
         expect(vm.description).toContain('settings are working');
         expect(vm.reportAction).toBe('secondary');
         expect(vm.reportLabel).toBe('Report if this seems wrong');
+    });
+
+    it('shows caption extraction failures as capture failures', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                status: 'error',
+                source: 'server',
+                sessionId: SERVER_SESSION_ID,
+                serverFailure: {
+                    code: 'caption_extraction_failed',
+                    apiVersion: 1,
+                    extensionVersion: '0.1.0',
+                },
+            },
+        });
+
+        expect(vm.title).toBe('Could not read captions');
+        expect(vm.statusHeadline).toBe('Caption capture failed.');
+        expect(vm.reportAction).toBe('primary');
+    });
+
+    it('shows interrupted analysis as an extension lifecycle failure', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionState: {
+                videoId: 'dQw4w9WgXcQ',
+                status: 'unavailable',
+                source: 'server',
+                sessionId: SERVER_SESSION_ID,
+                serverFailure: {
+                    code: 'analysis_interrupted',
+                    apiVersion: 1,
+                    extensionVersion: '0.1.0',
+                },
+            },
+        });
+
+        expect(vm.title).toBe('Analysis could not continue');
+        expect(vm.description).toBe(
+            'TopSkip could not finish analyzing this video.',
+        );
+        expect(vm.statusHeadline).toBe(
+            'Reload the video or page to retry.',
+        );
+        expect(vm.statusBody).toBe(
+            'Playback continues normally without server-detected skips.',
+        );
+        expect(`${vm.title} ${vm.description}`).not.toMatch(/restart/i);
+        expect(vm.reportAction).toBeUndefined();
     });
 
     it('shows upgrade-required without offering a GitHub report', () => {

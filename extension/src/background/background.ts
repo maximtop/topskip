@@ -27,10 +27,7 @@ export class Background {
         void i18n.init();
         void PromoDetectionStore.ready();
         browser.tabs.onRemoved.addListener((tabId) => {
-            // Abort before clearing: a still-running BYOK analysis would keep
-            // issuing paid provider calls and re-insert the cleared entry.
-            PromoAnalysis.abortForTab(tabId);
-            PromoDetectionStore.clear(tabId);
+            void Background.handleTabRemoved(tabId);
         });
         void storageAccess
             .then(() => PrefsSyncStorage.ready())
@@ -39,5 +36,17 @@ export class Background {
                 console.error('[TopSkip] Background storage is unavailable.');
             });
         registerRuntimeMessages(defaultRegistry);
+    }
+
+    /**
+     * Aborts before clearing so a paid BYOK request cannot restore state after
+     * the tab lifecycle has ended.
+     *
+     * @param tabId - Removed browser tab id.
+     * @returns Promise settled after its restart-safe snapshot is cleared.
+     */
+    private static async handleTabRemoved(tabId: number): Promise<void> {
+        PromoAnalysis.abortForTab(tabId);
+        await PromoDetectionStore.clear(tabId);
     }
 }

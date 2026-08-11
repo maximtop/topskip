@@ -12,11 +12,11 @@ import path from 'node:path';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { runBenchmarkPreflight } from '../lib/promo-benchmark-core';
-import { writeBenchmarkReadme } from '../lib/promo-benchmark-report';
-import { runBenchmarkMatrix } from '../lib/promo-benchmark-run';
+import { runBenchmarkPreflight } from '../../lib/promo-benchmark-core';
+import { writeBenchmarkReadme } from '../../lib/promo-benchmark-report';
+import { runBenchmarkMatrix } from '../../lib/promo-benchmark-run';
 
-const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..');
+const REPO_ROOT = path.resolve(import.meta.dirname, '..', '..', '..');
 const temporaryRoots: string[] = [];
 
 function responseStream(): Response {

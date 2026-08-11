@@ -45,9 +45,26 @@ describe('server analysis failure mapping', () => {
         );
     });
 
+    it('classifies caption extraction as a capture failure', () => {
+        expect(classifyServerFailure('caption_extraction_failed')).toBe(
+            SERVER_FAILURE_CATEGORY.CaptureFailure,
+        );
+        expect(
+            getServerFailureReportAction('caption_extraction_failed'),
+        ).toBe(SERVER_FAILURE_REPORT_ACTION.Primary);
+    });
+
+    it('classifies interrupted analysis as an extension failure', () => {
+        expect(classifyServerFailure('analysis_interrupted')).toBe(
+            SERVER_FAILURE_CATEGORY.ExtensionFailure,
+        );
+        expect(getServerFailureReportAction('analysis_interrupted')).toBe(
+            SERVER_FAILURE_REPORT_ACTION.None,
+        );
+    });
+
     it.each([
         'invalid_request',
-        'caption_extraction_failed',
         'model_provider_error',
         'invalid_model_response',
         'unsafe_model_blocks',

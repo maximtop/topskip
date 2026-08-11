@@ -17,7 +17,6 @@ deploy/cloudflared/cert.pem
 **/tmp
 deployment-dist
 design
-extension/e2e
 extension/tests
 backend/tests
 common/tests

@@ -102,9 +102,9 @@ describe(
             { startSec: 1, endSec: 5, confidence: 'high' },
         ];
 
-        beforeEach(() => {
+        beforeEach(async () => {
             vi.clearAllMocks();
-            PromoDetectionStore.clear(TAB_ID);
+            await PromoDetectionStore.clear(TAB_ID);
 
             // Seed prefs: enabled
             storageGet.mockImplementation((key: string) => {
@@ -192,6 +192,7 @@ describe(
 
             expect(response).toEqual({
                 ok: true,
+                tabId: TAB_ID,
                 state: {
                     videoId: VIDEO_ID,
                     status: 'detected',

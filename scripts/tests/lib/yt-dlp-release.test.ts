@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
     selectYtDlpReleaseAsset,
     verifyYtDlpAssetChecksum,
-} from '../../../scripts/lib/yt-dlp-release';
+} from '../../lib/yt-dlp-release';
 
 describe('yt-dlp pinned release', () => {
     it('selects official standalone assets for supported environments', () => {

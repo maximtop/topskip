@@ -11,6 +11,8 @@ const testOpenAiKey = vi.fn();
 const prefsBroadcast = vi.fn();
 const prefsPortBroadcast = vi.fn();
 const abortForProviderChange = vi.fn();
+const providerHostAccessAll = vi.fn();
+const providerHostAccessIsGranted = vi.fn();
 
 vi.mock('@/background/storage/prefs-sync', () => ({
     PrefsSyncStorage: {
@@ -89,13 +91,103 @@ vi.mock('@/background/messaging/promo-analysis', () => ({
     },
 }));
 
+vi.mock('@/background/permissions/provider-host-access', () => ({
+    ProviderHostAccess: {
+        all: (): Promise<unknown> => {
+            const out: unknown = providerHostAccessAll();
+            return Promise.resolve(out);
+        },
+        isGranted: (providerId: string): Promise<unknown> => {
+            const out: unknown = providerHostAccessIsGranted(providerId);
+            return Promise.resolve(out);
+        },
+    },
+}));
+
 const { ModelRuntimeMessages } =
     await import('@/background/messaging/model-runtime-messages');
 
 describe('ModelRuntimeMessages', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        providerHostAccessAll.mockResolvedValue({
+            openrouter: 'granted',
+            openai: 'granted',
+        });
+        providerHostAccessIsGranted.mockResolvedValue(true);
     });
+
+    it.each([
+        {
+            apiKey: '',
+            hostAccessStatus: 'missing',
+            connectionStatus: 'missing',
+            modelAvailability: 'unavailable',
+        },
+        {
+            apiKey: 'sk-or',
+            hostAccessStatus: 'missing',
+            connectionStatus: 'saved',
+            modelAvailability: 'unavailable',
+        },
+        {
+            apiKey: '',
+            hostAccessStatus: 'granted',
+            connectionStatus: 'missing',
+            modelAvailability: 'unavailable',
+        },
+        {
+            apiKey: 'sk-or',
+            hostAccessStatus: 'granted',
+            connectionStatus: 'saved',
+            modelAvailability: 'available',
+        },
+    ])(
+        'keeps OpenRouter key/access independent: %#',
+        async ({
+            apiKey,
+            hostAccessStatus,
+            connectionStatus,
+            modelAvailability,
+        }) => {
+            prefsLoad.mockResolvedValue({
+                enabled: true,
+                providerId: 'openrouter',
+                activeModelId:
+                    'openrouter:google/gemini-3.1-pro-preview',
+            });
+            openRouterLoad.mockResolvedValue({
+                apiKey,
+                model: 'google/gemini-3.1-pro-preview',
+                customModels: [],
+            });
+            openAiLoad.mockResolvedValue({ apiKey: '', model: '' });
+            providerHostAccessAll.mockResolvedValue({
+                openrouter: hostAccessStatus,
+                openai: 'missing',
+            });
+
+            const response = await ModelRuntimeMessages.handleGetSettings();
+
+            expect(response).toEqual(expect.objectContaining({ ok: true }));
+            if (!response.ok) {
+                return;
+            }
+            const connection = response.connections.find(
+                (item) => item.providerId === 'openrouter',
+            );
+            const model = response.models.find(
+                (item) => item.providerId === 'openrouter',
+            );
+            expect(connection).toEqual(
+                expect.objectContaining({
+                    status: connectionStatus,
+                    hostAccessStatus,
+                }),
+            );
+            expect(model?.availability).toBe(modelAvailability);
+        },
+    );
 
     it('returns models and connections', async () => {
         prefsLoad.mockResolvedValue({
@@ -152,4 +244,45 @@ describe('ModelRuntimeMessages', () => {
             model: 'gpt-5.2',
         });
     });
+
+    it.each([
+        {
+            providerId: 'openrouter' as const,
+            load: openRouterLoad,
+            test: testOpenRouterKey,
+            config: {
+                apiKey: 'sk-openrouter',
+                model: 'provider/model',
+                customModels: [],
+            },
+        },
+        {
+            providerId: 'openai' as const,
+            load: openAiLoad,
+            test: testOpenAiKey,
+            config: { apiKey: 'sk-openai', model: 'gpt-5.2' },
+        },
+    ])(
+        'requires the $providerId host grant before testing a saved key',
+        async ({ providerId, load, test, config }) => {
+            load.mockResolvedValue(config);
+            providerHostAccessIsGranted.mockResolvedValue(false);
+
+            const response =
+                await ModelRuntimeMessages.handleTestConnectionKey(
+                    providerId,
+                    undefined,
+                );
+
+            expect(response).toEqual({
+                ok: false,
+                code: 'host_access_required',
+                providerId,
+            });
+            expect(providerHostAccessIsGranted).toHaveBeenCalledWith(
+                providerId,
+            );
+            expect(test).not.toHaveBeenCalled();
+        },
+    );
 });

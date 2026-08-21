@@ -7,7 +7,6 @@ import {
     ContentLogMessages,
     PromoDetectionRuntimeMessages,
 } from '@/background/messaging/misc-runtime-messages';
-import { CaptionPageCaptureMessages } from '@/background/messaging/caption-page-capture-messages';
 import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
 import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
 import { ChromePromptApiRuntimeMessages } from '@/background/messaging/chrome-prompt-api-runtime-messages';
@@ -62,12 +61,6 @@ async function dispatchRuntimeMessage(
         case TOPSKIP_MESSAGE.CONTENT_LOG:
             ContentLogMessages.log(msg.level, msg.args, sender.tab?.id);
             return;
-        case TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE:
-            return CaptionPageCaptureMessages.install(sender.tab?.id);
-        case TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE:
-            return CaptionPageCaptureMessages.activate(sender.tab?.id);
-        case TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE:
-            return CaptionPageCaptureMessages.deactivate(sender.tab?.id);
         case TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT:
             return CaptionRuntimeMessages.handle(msg.payload, sender);
         case TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP:

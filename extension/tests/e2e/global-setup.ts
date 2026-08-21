@@ -6,10 +6,9 @@ import { fileURLToPath } from 'node:url';
 /**
  * Backend origin the specs mock with a local `createServer` on this port.
  *
- * The shipped profiles all target the public backend, so an extension built
- * for release would never contact this listener and every request assertion
- * would time out. The suite therefore builds its own extension against the
- * loopback origin instead of reusing whatever `pnpm run build` produced.
+ * Only the dev profile accepts this exact loopback backend; beta/release reject
+ * it. The suite therefore composes its own dev artifact instead of reusing an
+ * arbitrary prior build whose origin and content-script matches are unknown.
  */
 export const E2E_BACKEND_ORIGIN = 'http://127.0.0.1:8787';
 
@@ -48,6 +47,31 @@ export default function globalSetup(): void {
         throw new Error(
             `Failed to build the extension for E2E against ${E2E_BACKEND_ORIGIN} ` +
                 `(exit code ${String(result.status)}).`,
+        );
+    }
+
+    const validation = spawnSync(
+        'pnpm',
+        [
+            'run',
+            'validate:extension-manifest',
+            '--',
+            '--build',
+            'dev',
+            '--server-origin',
+            E2E_BACKEND_ORIGIN,
+            '--manifest',
+            'extension/dist/manifest.json',
+        ],
+        {
+            cwd: repositoryRoot,
+            stdio: 'inherit',
+        },
+    );
+    if (validation.status !== 0) {
+        throw new Error(
+            'The extension built for E2E failed manifest policy validation ' +
+                `(exit code ${String(validation.status)}).`,
         );
     }
 }

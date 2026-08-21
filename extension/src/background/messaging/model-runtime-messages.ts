@@ -1,6 +1,7 @@
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import { fetchOpenRouterModelList } from '@/background/openrouter/openrouter-models-api';
 import { testOpenAiApiKey } from '@/background/openai/openai-client';
 import {
@@ -20,6 +21,7 @@ import {
 import { getErrorMessage } from '@/shared/error';
 import {
     CONNECTION_STATUS,
+    PROVIDER_CONNECTION_FAILURE_CODE,
     type ConnectionEntryMessage,
     type ConnectionProviderId,
     type DetectionModelMessage,
@@ -33,6 +35,10 @@ import {
     PROVIDER_LABEL,
     type ProviderId,
 } from '@/shared/providers';
+import {
+    PROVIDER_HOST_ACCESS_STATUS,
+    type ProviderHostAccessStatus,
+} from '@/shared/provider-host-permissions';
 
 const ERROR_UNKNOWN_MODEL = 'Unknown model';
 const ERROR_OPENROUTER_KEY_REQUIRED = 'OpenRouter API key is required.';
@@ -43,6 +49,14 @@ const ERROR_OPENAI_KEY_REQUIRED = 'OpenAI API key is required.';
  * Raw API keys indexed by providers that have connection rows.
  */
 type ConnectionApiKeys = Record<ConnectionProviderId, string>;
+
+/**
+ * Optional provider grant states joined into one settings snapshot.
+ */
+type ConnectionHostAccess = Record<
+    ConnectionProviderId,
+    ProviderHostAccessStatus
+>;
 
 /**
  * Storage rows needed when persisting a provider-specific selected model.
@@ -168,16 +182,20 @@ export class ModelRuntimeMessages {
      *
      * @param customOpenRouterModels - Saved custom OpenRouter slugs.
      * @param connectionApiKeys - Raw keys indexed by connection provider.
+     * @param connectionHostAccess - Current optional-host grant states.
      * @returns Runtime-safe model messages.
      */
     private static buildModelMessages(
         customOpenRouterModels: string[],
         connectionApiKeys: ConnectionApiKeys,
+        connectionHostAccess: ConnectionHostAccess,
     ): DetectionModelMessage[] {
         const connectionAvailability: Partial<Record<ProviderId, boolean>> = {};
         for (const connection of CONNECTION_PROVIDER_CONFIGS) {
             connectionAvailability[connection.providerId] =
-                connectionApiKeys[connection.providerId].length > 0;
+                connectionApiKeys[connection.providerId].length > 0 &&
+                connectionHostAccess[connection.providerId] ===
+                    PROVIDER_HOST_ACCESS_STATUS.Granted;
         }
 
         return getDetectionModels(customOpenRouterModels).map((model) => {
@@ -194,11 +212,13 @@ export class ModelRuntimeMessages {
      *
      * @param activeProviderId - Provider used by current active model.
      * @param connectionApiKeys - Raw keys indexed by connection provider.
+     * @param connectionHostAccess - Current optional-host grant states.
      * @returns Masked connection rows.
      */
     private static buildConnectionMessages(
         activeProviderId: string,
         connectionApiKeys: ConnectionApiKeys,
+        connectionHostAccess: ConnectionHostAccess,
     ): ConnectionEntryMessage[] {
         return CONNECTION_PROVIDER_CONFIGS.map((connection) => {
             const apiKey = connectionApiKeys[connection.providerId];
@@ -212,6 +232,8 @@ export class ModelRuntimeMessages {
                     apiKey.length > 0
                         ? CONNECTION_STATUS.Saved
                         : CONNECTION_STATUS.Missing,
+                hostAccessStatus:
+                    connectionHostAccess[connection.providerId],
             };
         });
     }
@@ -224,10 +246,16 @@ export class ModelRuntimeMessages {
     static async handleGetSettings(): Promise<GetModelSettingsResponse> {
         await PrefsSyncStorage.ready();
         try {
-            const [prefs, openRouterConfig, openAiConfig] = await Promise.all([
+            const [
+                prefs,
+                openRouterConfig,
+                openAiConfig,
+                connectionHostAccess,
+            ] = await Promise.all([
                 PrefsSyncStorage.load(),
                 OpenRouterStorage.load(),
                 OpenAiStorage.load(),
+                ProviderHostAccess.all(),
             ]);
             const activeModel = resolveDetectionModel(
                 prefs.activeModelId,
@@ -246,10 +274,12 @@ export class ModelRuntimeMessages {
                 models: ModelRuntimeMessages.buildModelMessages(
                     openRouterConfig.customModels,
                     connectionApiKeys,
+                    connectionHostAccess,
                 ),
                 connections: ModelRuntimeMessages.buildConnectionMessages(
                     activeProviderId,
                     connectionApiKeys,
+                    connectionHostAccess,
                 ),
                 customOpenRouterModels: openRouterConfig.customModels,
             };
@@ -349,6 +379,16 @@ export class ModelRuntimeMessages {
                     ok: true,
                     valid: false,
                     error: connection.missingApiKeyError,
+                };
+            }
+            const hasHostAccess = await ProviderHostAccess.isGranted(
+                providerId,
+            );
+            if (!hasHostAccess) {
+                return {
+                    ok: false,
+                    code: PROVIDER_CONNECTION_FAILURE_CODE.HostAccessRequired,
+                    providerId,
                 };
             }
             return await connection.testApiKey(key);

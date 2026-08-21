@@ -6,9 +6,24 @@ import {
     shouldActivateTopSkip,
 } from '@/content/page-guards';
 
+/**
+ * The vitest build defines the fixture origin the way a dev bundle does, so
+ * the host must be present here even though release bundles carry `null`.
+ *
+ * @returns Local fixture hostname compiled into this test build.
+ */
+function fixtureHost(): string {
+    if (E2E_HOST === null) {
+        throw new Error('Expected the dev fixture host in unit tests.');
+    }
+    return E2E_HOST;
+}
+
 describe('getWatchVideoIdFromSearch', () => {
     it('returns a valid synthetic id for e2e host', () => {
-        expect(getWatchVideoIdFromSearch(E2E_HOST, '')).toBe('e2eFixture1');
+        expect(getWatchVideoIdFromSearch(fixtureHost(), '')).toBe(
+            'e2eFixture1',
+        );
     });
 
     it('returns v param on YouTube watch', () => {
@@ -16,13 +31,22 @@ describe('getWatchVideoIdFromSearch', () => {
             getWatchVideoIdFromSearch('www.youtube.com', '?v=abc123&list=foo'),
         ).toBe('abc123');
     });
+
+    it('rejects a YouTube lookalike host', () => {
+        expect(
+            getWatchVideoIdFromSearch(
+                'www.youtube.com.example',
+                '?v=abc123',
+            ),
+        ).toBeNull();
+    });
 });
 
 describe('shouldActivateTopSkip', () => {
     it('activates on e2e host regardless of path', () => {
         expect(
             shouldActivateTopSkip({
-                hostname: E2E_HOST,
+                hostname: fixtureHost(),
                 pathname: '/video.html',
                 search: '',
             }),

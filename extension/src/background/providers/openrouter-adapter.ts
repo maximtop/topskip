@@ -2,9 +2,12 @@ import { callOpenRouterChat } from '@/background/openrouter/openrouter-client';
 import { parseLlmPromoResponse } from '@/background/openrouter/parse-llm-promo-response';
 import { PROMO_DETECTION_SYSTEM_PROMPT } from '@/background/openrouter/promo-detection-system-prompt';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
+import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import {
     LLM_ROLE,
+    PROVIDER_ANALYSIS_FAILURE_CODE,
     PROVIDER_AVAILABILITY,
+    PROVIDER_HOST_ACCESS_REQUIRED_ERROR,
     PROVIDER_ID,
     type AnalyzeTranscriptParams,
     type AnalyzeTranscriptResult,
@@ -13,9 +16,8 @@ import {
 } from '@/background/providers/llm-provider-adapter';
 
 /**
- * Wraps the existing OpenRouter call path behind the provider adapter
- * interface. No behavioral change — delegates to `callOpenRouterChat`
- * and `parseLlmPromoResponse`.
+ * Wraps OpenRouter behind extension-owned configuration, permission, and
+ * response-parsing boundaries.
  */
 export class OpenRouterAdapter implements LlmProviderAdapter {
     /**
@@ -39,22 +41,25 @@ export class OpenRouterAdapter implements LlmProviderAdapter {
     }
 
     /**
-     * Returns `'available'` when a non-empty API key and model are
-     * configured in `OpenRouterStorage`, `'unavailable'` otherwise.
+     * Returns `'available'` only when key, model, and the optional OpenRouter
+     * host grant are all present.
      *
      * @returns Current provider availability.
      */
     async availability(): Promise<ProviderAvailability> {
         const config = await OpenRouterStorage.load();
-        if (config.apiKey.length > 0 && config.model.length > 0) {
-            return PROVIDER_AVAILABILITY.AVAILABLE;
+        if (config.apiKey.length === 0 || config.model.length === 0) {
+            return PROVIDER_AVAILABILITY.UNAVAILABLE;
         }
-        return PROVIDER_AVAILABILITY.UNAVAILABLE;
+        const hasHostAccess = await ProviderHostAccess.isGranted(this.id);
+        return hasHostAccess
+            ? PROVIDER_AVAILABILITY.AVAILABLE
+            : PROVIDER_AVAILABILITY.UNAVAILABLE;
     }
 
     /**
-     * Sends the transcript to OpenRouter and parses the promo-detection
-     * response.
+     * Rechecks the optional grant immediately before sending the transcript,
+     * then parses the promo-detection response.
      *
      * @param params - Transcript and context.
      * @returns Detection result or error.
@@ -65,6 +70,16 @@ export class OpenRouterAdapter implements LlmProviderAdapter {
         const config = await OpenRouterStorage.load();
         if (config.apiKey.length === 0 || config.model.length === 0) {
             return { ok: false, error: 'OpenRouter is not configured' };
+        }
+
+        const hasHostAccess = await ProviderHostAccess.isGranted(this.id);
+        if (!hasHostAccess) {
+            return {
+                ok: false,
+                failureCode:
+                    PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired,
+                error: PROVIDER_HOST_ACCESS_REQUIRED_ERROR,
+            };
         }
 
         const llm = await callOpenRouterChat({

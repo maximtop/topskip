@@ -15,6 +15,7 @@
         "dev": "tsx scripts/build-extension.ts dev",
         "beta": "tsx scripts/build-extension.ts beta",
         "release": "tsx scripts/build-extension.ts release",
+        "validate:extension-manifest": "tsx scripts/validate-extension-manifest.ts",
         "format": "eslint --fix .",
         "format:check": "pnpm run lint:eslint",
         "lint": "pnpm run lint:eslint && pnpm run lint:md && pnpm run lint:types",
@@ -65,6 +66,7 @@
         "tsx": "^4.21.0",
         "typescript": "^6.0.2",
         "typescript-eslint": "^8.65.0",
+        "valibot": "^1.3.1",
         "vitest": "^4.1.4"
     }
 }

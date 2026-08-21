@@ -1,6 +1,11 @@
 import { createHash } from 'node:crypto';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+} from '@/shared/messages';
+
 const prefsMocks = vi.hoisted(() => ({
     ready: vi.fn().mockResolvedValue(undefined),
     load: vi.fn(),
@@ -22,7 +27,6 @@ const browserMocks = vi.hoisted(() => {
     const sessionData: Record<string, unknown> = {};
     return {
         runtimeSendMessage: vi.fn(),
-        tabsGet: vi.fn(),
         tabsSendMessage: vi.fn(),
         sessionData,
         sessionGet: vi.fn(),
@@ -55,7 +59,6 @@ vi.mock('@/shared/browser', () => ({
             },
         },
         tabs: {
-            get: browserMocks.tabsGet,
             sendMessage: browserMocks.tabsSendMessage,
         },
     },
@@ -88,7 +91,11 @@ const REQUEST = {
     languageCode: 'en',
     segments: SEGMENTS,
 };
-const SENDER = { tab: { id: TAB_ID } } as never;
+const SENDER = {
+    tab: { id: TAB_ID },
+    frameId: 0,
+    url: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
+} as never;
 
 describe('Server request session adoption after worker restart', () => {
     beforeEach(() => {
@@ -110,10 +117,23 @@ describe('Server request session adoption after worker restart', () => {
             },
         );
         browserMocks.runtimeSendMessage.mockResolvedValue(undefined);
-        browserMocks.tabsGet.mockResolvedValue({
-            url: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
-        });
-        browserMocks.tabsSendMessage.mockResolvedValue(undefined);
+        browserMocks.tabsSendMessage.mockImplementation(
+            (_tabId: number, message: { type?: string }) =>
+                Promise.resolve(
+                    message.type === TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS
+                        ? {
+                                ok: true,
+                                protocolVersion:
+                                    CONTENT_SCRIPT_PROTOCOL_VERSION,
+                                extensionVersion: '0.1.0',
+                                videoId: VIDEO_ID,
+                                enabled: true,
+                                analysisMode: 'server',
+                                serverSessionId: SESSION_B,
+                            }
+                        : undefined,
+                ),
+        );
         prefsMocks.load.mockResolvedValue({
             enabled: true,
             providerId: 'openrouter',
@@ -186,6 +206,22 @@ describe('Server request session adoption after worker restart', () => {
             status: 'detected',
             promoBlocks: [{ startSec: 10, endSec: 20 }],
         });
+
+        await expect(
+            ServerAnalysisRuntimeMessages.handleSessionEvent(
+                {
+                    event: 'cancelled',
+                    sessionId: SESSION_A,
+                    videoId: VIDEO_ID,
+                },
+                {
+                    tab: { id: TAB_ID },
+                    frameId: 0,
+                    url: 'https://www.youtube.com/feed/subscriptions',
+                } as never,
+            ),
+        ).resolves.toEqual({ ok: true });
+        expect(PromoDetectionStore.get(TAB_ID)).toEqual(terminalB);
 
         await PromoDetectionStore.set(TAB_ID, {
             videoId: VIDEO_ID,

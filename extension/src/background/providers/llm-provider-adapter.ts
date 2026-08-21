@@ -36,6 +36,44 @@ export type ProviderMeta = {
 };
 
 /**
+ * Extension-owned provider failures that must not become generic LLM errors.
+ */
+export const PROVIDER_ANALYSIS_FAILURE_CODE = {
+    HostAccessRequired: 'host_access_required',
+} as const;
+
+/**
+ * Safe diagnostic shared by adapters when Chrome no longer grants a host.
+ */
+export const PROVIDER_HOST_ACCESS_REQUIRED_ERROR =
+    'Provider host access is required';
+
+/**
+ * A revoked optional host grant stops BYOK analysis before provider I/O.
+ */
+export type ProviderHostAccessRequiredAnalysisResult = {
+    ok: false;
+    failureCode: typeof PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired;
+    error: string;
+    tooLarge?: never;
+    rawAssistant?: never;
+};
+
+/**
+ * Ordinary provider and parsing failures retain partial-analysis behavior.
+ */
+type ProviderAnalysisFailure = {
+    ok: false;
+    error: string;
+    tooLarge?: boolean;
+    /**
+     * Raw model text when available (e.g. parse failures).
+     */
+    rawAssistant?: string;
+    failureCode?: never;
+};
+
+/**
  * Input to `LlmProviderAdapter.analyzeTranscript`.
  */
 export type AnalyzeTranscriptParams = {
@@ -78,15 +116,8 @@ export type AnalyzeTranscriptResult =
           providerMeta: ProviderMeta;
           rawAssistant: string;
       }
-    | {
-          ok: false;
-          error: string;
-          tooLarge?: boolean;
-          /**
-           * Raw model text when available (e.g. parse failures).
-           */
-          rawAssistant?: string;
-      };
+    | ProviderAnalysisFailure
+    | ProviderHostAccessRequiredAnalysisResult;
 
 /**
  * Provider-agnostic contract for LLM-backed transcript analysis.

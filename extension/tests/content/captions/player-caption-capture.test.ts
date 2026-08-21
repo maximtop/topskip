@@ -1,7 +1,26 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { mockSendMessage } = vi.hoisted(() => ({
+const {
+    mockActivateBridge,
+    mockDeactivateBridge,
+    mockDisposeBridge,
+    mockProbeBridge,
+    mockSendMessage,
+} = vi.hoisted(() => ({
+    mockActivateBridge: vi.fn(),
+    mockDeactivateBridge: vi.fn(),
+    mockDisposeBridge: vi.fn(),
+    mockProbeBridge: vi.fn(),
     mockSendMessage: vi.fn(),
+}));
+
+vi.mock('@/content/captions/caption-page-bridge-client', () => ({
+    CaptionPageBridgeClient: {
+        activate: mockActivateBridge,
+        deactivate: mockDeactivateBridge,
+        dispose: mockDisposeBridge,
+        probe: mockProbeBridge,
+    },
 }));
 
 vi.mock('@/shared/browser', () => ({
@@ -207,19 +226,24 @@ function countContentLogStage(stage: string): number {
         if (!Array.isArray(args)) {
             return false;
         }
-        const fields: unknown = Reflect.get(args, '1');
         return (
-            fields !== null &&
-            typeof fields === 'object' &&
-            Reflect.get(fields, 'stage') === stage
+            Reflect.get(args, '0') === 'caption-capture' &&
+            Reflect.get(args, '1') === stage
         );
     }).length;
 }
 
 describe('PlayerCaptionCapture', () => {
-    beforeEach(() => {
+    beforeEach(async () => {
         installWindowStub();
-        PlayerCaptionCapture.resetForTest();
+        await PlayerCaptionCapture.resetForTest();
+        mockActivateBridge.mockReset();
+        mockDeactivateBridge.mockReset();
+        mockDisposeBridge.mockReset();
+        mockProbeBridge.mockReset();
+        mockActivateBridge.mockResolvedValue({ ok: true });
+        mockDeactivateBridge.mockResolvedValue({ ok: true });
+        mockProbeBridge.mockResolvedValue({ ok: true });
         mockSendMessage.mockReset();
         mockSendMessage.mockResolvedValue({ ok: true });
         vi.useFakeTimers();
@@ -230,17 +254,56 @@ describe('PlayerCaptionCapture', () => {
         vi.restoreAllMocks();
     });
 
-    it('installs the page bridge before starting capture', async () => {
-        const run = PlayerCaptionCapture.captureForVideoId('abc', {
-            captureTimeoutMs: 10,
+    it('captures through the local bridge while runtime scripting is unavailable', async () => {
+        mockSendMessage.mockImplementation((message: unknown) => {
+            const messageType: unknown =
+                message !== null && typeof message === 'object'
+                    ? Reflect.get(message, 'type')
+                    : null;
+            if (messageType === TOPSKIP_MESSAGE.CONTENT_LOG) {
+                return Promise.resolve({ ok: true });
+            }
+            return Promise.reject(new Error('worker route unavailable'));
+        });
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
         });
         await acceptActivation();
-        await vi.advanceTimersByTimeAsync(20);
+        dispatchTimedtextCapture(
+            'abc',
+            JSON.stringify({
+                events: [
+                    {
+                        tStartMs: 0,
+                        dDurationMs: 1000,
+                        segs: [{ utf8: 'local bridge' }],
+                    },
+                ],
+            }),
+        );
         await finishCleanup();
-        await run;
-        expect(mockSendMessage).toHaveBeenCalledWith({
-            type: TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE,
+        await expect(run).resolves.toMatchObject({
+            status: 'ready',
         });
+        expect(mockProbeBridge).toHaveBeenCalledOnce();
+        expect(mockActivateBridge).toHaveBeenCalledOnce();
+        expect(mockDeactivateBridge).toHaveBeenCalledOnce();
+        const runtimeTypes = mockSendMessage.mock.calls.map((call) => {
+            const message: unknown = call[0];
+            if (message === null || typeof message !== 'object') {
+                return null;
+            }
+            const messageType: unknown = Reflect.get(message, 'type');
+            return typeof messageType === 'string' ? messageType : null;
+        });
+        expect(runtimeTypes.length).toBeGreaterThan(0);
+        expect(
+            runtimeTypes.every(
+                (messageType) => messageType === TOPSKIP_MESSAGE.CONTENT_LOG,
+            ),
+        ).toBe(true);
     });
 
     it('sends a structured timeout failure when no capture arrives', async () => {
@@ -263,12 +326,37 @@ describe('PlayerCaptionCapture', () => {
         });
     });
 
-    it('does not install the bridge for null video ids', () => {
+    it('does not confirm the bridge for null video ids', () => {
         PlayerCaptionCapture.scheduleForVideoId(null, 'test');
-        expect(mockSendMessage).not.toHaveBeenCalledWith({
-            type: TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE,
-        });
+        expect(mockProbeBridge).not.toHaveBeenCalled();
     });
+
+    it.each(['safe failure', 'rejection'] as const)(
+        'retries bridge readiness after a first %s',
+        async (firstOutcome) => {
+            if (firstOutcome === 'safe failure') {
+                mockProbeBridge.mockResolvedValueOnce({
+                    ok: false,
+                    reason: 'bridge-install-failed',
+                    error: 'Caption bridge is unavailable',
+                });
+            } else {
+                mockProbeBridge.mockRejectedValueOnce(
+                    new Error('worker context replaced'),
+                );
+            }
+            mockProbeBridge.mockResolvedValue({ ok: true });
+
+            PlayerCaptionCapture.prepareBridgeForPage();
+            await flushMicrotasks();
+            PlayerCaptionCapture.prepareBridgeForPage();
+            await flushMicrotasks();
+            PlayerCaptionCapture.prepareBridgeForPage();
+            await flushMicrotasks();
+
+            expect(mockProbeBridge).toHaveBeenCalledTimes(2);
+        },
+    );
 
     it('dedupes repeated schedules for the same video id', () => {
         PlayerCaptionCapture.scheduleForVideoId('abc', 'first');
@@ -278,21 +366,14 @@ describe('PlayerCaptionCapture', () => {
 
     it('allows the same video to retry after a transient player-not-ready result', async () => {
         let activationCalls = 0;
-        mockSendMessage.mockImplementation((message: unknown) => {
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
-            ) {
-                activationCalls += 1;
-                if (activationCalls === 1) {
-                    return Promise.resolve({
-                        ok: false,
-                        reason: 'player-not-ready',
-                        error: 'Watch player is not ready for caption capture',
-                    });
-                }
+        mockActivateBridge.mockImplementation(() => {
+            activationCalls += 1;
+            if (activationCalls === 1) {
+                return Promise.resolve({
+                    ok: false,
+                    reason: 'player-not-ready',
+                    error: 'Watch player is not ready for caption capture',
+                });
             }
             return Promise.resolve({ ok: true });
         });
@@ -301,6 +382,7 @@ describe('PlayerCaptionCapture', () => {
             captureTimeoutMs: 10,
         });
         await flushMicrotasks();
+        await finishCleanup();
         await finishCleanup();
         PlayerCaptionCapture.scheduleForVideoId('abc', 'player-ready', {
             captureTimeoutMs: 10,
@@ -311,7 +393,7 @@ describe('PlayerCaptionCapture', () => {
     });
 
     it('relays safe page diagnostics to the content log channel', async () => {
-        PlayerCaptionCapture.installBridgeForPage();
+        PlayerCaptionCapture.prepareBridgeForPage();
         dispatchPageDiagnostic('bridge:1');
         await flushMicrotasks();
         expect(mockSendMessage).toHaveBeenCalledWith({
@@ -319,26 +401,17 @@ describe('PlayerCaptionCapture', () => {
             level: 'info',
             args: [
                 'caption-capture',
-                {
-                    stage: 'page:timedtext-empty-body',
-                    videoId: 'abc',
-                    languageCode: 'en',
-                    transport: 'xhr',
-                    status: 200,
-                    bodyLength: 0,
-                    urlShape: {
-                        pathname: '/api/timedtext',
-                        paramNames: ['fmt', 'lang', 'pot', 'v'],
-                        fmt: 'json3',
-                        hasPot: true,
-                    },
-                },
+                'page:timedtext-empty-body',
+                'transport=xhr videoId=abc languageCode=en status=200 ' +
+                    'bodyLength=0 urlShape={"pathname":"/api/timedtext",' +
+                    '"paramNames":["fmt","lang","pot","v"],"fmt":"json3",' +
+                    '"hasPot":true}',
             ],
         });
     });
 
     it('logs one diagnostic received over both page transports', async () => {
-        PlayerCaptionCapture.installBridgeForPage();
+        PlayerCaptionCapture.prepareBridgeForPage();
         dispatchPageDiagnostic('bridge:7');
         dispatchPageDiagnostic('bridge:7', 'document');
         await flushMicrotasks();
@@ -405,9 +478,7 @@ describe('PlayerCaptionCapture', () => {
         await vi.advanceTimersByTimeAsync(20);
         await finishCleanup();
         await run;
-        expect(mockSendMessage).toHaveBeenCalledWith({
-            type: TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE,
-        });
+        expect(mockDeactivateBridge).toHaveBeenCalledOnce();
     });
 
     it('ignores duplicate captures for the same video after success', async () => {
@@ -441,21 +512,14 @@ describe('PlayerCaptionCapture', () => {
 
     it('retries activation while the player is not ready', async () => {
         let activationCalls = 0;
-        mockSendMessage.mockImplementation((message: unknown) => {
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
-            ) {
-                activationCalls += 1;
-                if (activationCalls === 1) {
-                    return Promise.resolve({
-                        ok: false,
-                        reason: 'player-not-ready',
-                        error: 'Watch player is not ready for caption capture',
-                    });
-                }
+        mockActivateBridge.mockImplementation(() => {
+            activationCalls += 1;
+            if (activationCalls === 1) {
+                return Promise.resolve({
+                    ok: false,
+                    reason: 'player-not-ready',
+                    error: 'Watch player is not ready for caption capture',
+                });
             }
             return Promise.resolve({ ok: true });
         });
@@ -467,40 +531,21 @@ describe('PlayerCaptionCapture', () => {
         await vi.advanceTimersByTimeAsync(100);
         await finishCleanup();
         await run;
-        const activationMessages = mockSendMessage.mock.calls.filter((item) => {
-            const message: unknown = item[0];
-            return (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
-            );
-        });
-        expect(activationMessages).toHaveLength(2);
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
     });
 
     it('logs safe activation details from the page bridge result', async () => {
-        mockSendMessage.mockImplementation((message: unknown) => {
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
-            ) {
-                return Promise.resolve({
-                    ok: true,
-                    wasOn: false,
-                    userIntervened: false,
-                    hasTracks: 2,
-                    actions: [
-                        'hide-style-added',
-                        'loadModule:captions',
-                        'setOption:track',
-                        'toggleSubtitlesOn',
-                    ],
-                });
-            }
-            return Promise.resolve({ ok: true });
+        mockActivateBridge.mockResolvedValue({
+            ok: true,
+            wasOn: false,
+            userIntervened: false,
+            hasTracks: 2,
+            actions: [
+                'hide-style-added',
+                'loadModule:captions',
+                'setOption:track',
+                'toggleSubtitlesOn',
+            ],
         });
 
         const run = PlayerCaptionCapture.captureForVideoId('abc', {
@@ -516,40 +561,20 @@ describe('PlayerCaptionCapture', () => {
             level: 'info',
             args: [
                 'caption-capture',
-                {
-                    stage: 'activation-accepted',
-                    videoId: 'abc',
-                    attempt: 1,
-                    ok: true,
-                    wasOn: false,
-                    userIntervened: false,
-                    hasTracks: 2,
-                    actions: [
-                        'hide-style-added',
-                        'loadModule:captions',
-                        'setOption:track',
-                        'toggleSubtitlesOn',
-                    ],
-                },
+                'activation-accepted',
+                'videoId=abc attempt=1 ok=true wasOn=false ' +
+                    'userIntervened=false hasTracks=2 ' +
+                    'actions=["hide-style-added","loadModule:captions",' +
+                    '"setOption:track","toggleSubtitlesOn"]',
             ],
         });
     });
 
     it('sends a structured activation failure when captions are unavailable', async () => {
-        mockSendMessage.mockImplementation((message: unknown) => {
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
-            ) {
-                return Promise.resolve({
-                    ok: false,
-                    reason: 'captions-unavailable',
-                    error: 'Caption controls are unavailable',
-                });
-            }
-            return Promise.resolve({ ok: true });
+        mockActivateBridge.mockResolvedValue({
+            ok: false,
+            reason: 'captions-unavailable',
+            error: 'Caption controls are unavailable',
         });
         const run = PlayerCaptionCapture.captureForVideoId('abc', {
             captureTimeoutMs: 1000,
@@ -601,20 +626,10 @@ describe('PlayerCaptionCapture', () => {
             },
         });
 
-        mockSendMessage.mockImplementation((message: unknown) => {
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
-            ) {
-                return Promise.resolve({
-                    ok: false,
-                    reason: 'captions-unavailable',
-                    error: 'Caption controls are unavailable',
-                });
-            }
-            return Promise.resolve({ ok: true });
+        mockActivateBridge.mockResolvedValue({
+            ok: false,
+            reason: 'captions-unavailable',
+            error: 'Caption controls are unavailable',
         });
         await expect(
             PlayerCaptionCapture.capture({
@@ -631,7 +646,7 @@ describe('PlayerCaptionCapture', () => {
             },
         });
 
-        mockSendMessage.mockResolvedValue({ ok: true });
+        mockActivateBridge.mockResolvedValue({ ok: true });
         const cancelledController = new AbortController();
         const cancelledRun = PlayerCaptionCapture.capture({
             videoId: 'cancelled-video',
@@ -662,6 +677,97 @@ describe('PlayerCaptionCapture', () => {
         );
         expect(lateTimeoutMessages).toHaveLength(0);
         expect(vi.getTimerCount()).toBe(0);
+    });
+
+    it('deactivates with an independent signal before disposing the client', async () => {
+        let finishDeactivate: ((value: { ok: true }) => void) | undefined;
+        mockDeactivateBridge.mockImplementation(() => {
+            return new Promise((resolve) => {
+                finishDeactivate = resolve;
+            });
+        });
+        const routeController = new AbortController();
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dispose-video',
+            signal: routeController.signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+
+        routeController.abort();
+        await flushMicrotasks();
+        const disposeRun = PlayerCaptionCapture.dispose();
+
+        expect(mockDeactivateBridge).toHaveBeenCalledOnce();
+        const cleanupSignal: unknown = mockDeactivateBridge.mock.calls[0]?.[0];
+        expect(cleanupSignal).toBeInstanceOf(AbortSignal);
+        expect(cleanupSignal).not.toBe(routeController.signal);
+        expect(
+            cleanupSignal instanceof AbortSignal
+                ? cleanupSignal.aborted
+                : null,
+        ).toBe(false);
+        expect(mockDisposeBridge).not.toHaveBeenCalled();
+
+        finishDeactivate?.({ ok: true });
+        await disposeRun;
+        await expect(run).resolves.toEqual({ status: 'cancelled' });
+        expect(mockDisposeBridge).toHaveBeenCalledOnce();
+    });
+
+    it('cancels late delivery and lets the same video acquire new ownership', async () => {
+        const raw = JSON.stringify({
+            events: [
+                {
+                    tStartMs: 0,
+                    dDurationMs: 1000,
+                    segs: [{ utf8: 'fresh capture' }],
+                },
+            ],
+        });
+        PlayerCaptionCapture.scheduleForVideoId('same-video', 'first', {
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+
+        WatchCaptions.cancel('disabled');
+        dispatchTimedtextCapture('same-video', raw, 'late:first');
+        PlayerCaptionCapture.scheduleForVideoId('same-video', 'retry', {
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        await finishCleanup();
+
+        expect(
+            countRuntimeMessages(TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT),
+        ).toBe(0);
+
+        dispatchTimedtextCapture('same-video', raw, 'fresh:second');
+        await finishCleanup();
+        await vi.advanceTimersByTimeAsync(2000);
+
+        expect(
+            countRuntimeMessages(TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT),
+        ).toBe(1);
+        const readyMessageSent = mockSendMessage.mock.calls.some((call) => {
+            const message: unknown = call[0];
+            if (message === null || typeof message !== 'object') {
+                return false;
+            }
+            const payload: unknown = Reflect.get(message, 'payload');
+            return (
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT &&
+                payload !== null &&
+                typeof payload === 'object' &&
+                Reflect.get(payload, 'ok') === true &&
+                Reflect.get(payload, 'videoId') === 'same-video'
+            );
+        });
+        expect(readyMessageSent).toBe(true);
+        expect(PlayerCaptionCapture.getScheduledVideoIdForTest()).toBe(
+            'same-video',
+        );
     });
 
     it('dedupes only inside one capture session', async () => {
@@ -721,16 +827,7 @@ describe('PlayerCaptionCapture', () => {
             failure: { reason: 'parse-failed' },
         });
 
-        const cleanupMessages = mockSendMessage.mock.calls.filter((call) => {
-            const message: unknown = call[0];
-            return (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE
-            );
-        });
-        expect(cleanupMessages).toHaveLength(4);
+        expect(mockDeactivateBridge).toHaveBeenCalledTimes(4);
     });
 
     it('cancels a superseded session before starting the next capture', async () => {
@@ -770,20 +867,12 @@ describe('PlayerCaptionCapture', () => {
         });
     });
 
-    it('returns cancelled while bridge installation remains pending', async () => {
-        let finishInstall: ((value: { ok: true }) => void) | undefined;
-        mockSendMessage.mockImplementation((message: unknown) => {
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE
-            ) {
-                return new Promise((resolve) => {
-                    finishInstall = resolve;
-                });
-            }
-            return Promise.resolve({ ok: true });
+    it('returns cancelled while bridge confirmation remains pending', async () => {
+        let finishProbe: ((value: { ok: true }) => void) | undefined;
+        mockProbeBridge.mockImplementation(() => {
+            return new Promise((resolve) => {
+                finishProbe = resolve;
+            });
         });
         const controller = new AbortController();
         const run = PlayerCaptionCapture.capture({
@@ -798,7 +887,7 @@ describe('PlayerCaptionCapture', () => {
         await finishCleanup();
         expect(observed).toHaveBeenCalledWith({ status: 'cancelled' });
 
-        finishInstall?.({ ok: true });
+        finishProbe?.({ ok: true });
         await finishCleanup();
         await expect(run).resolves.toEqual({ status: 'cancelled' });
     });

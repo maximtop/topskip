@@ -18,6 +18,7 @@ and architecture**, see [AGENTS.md](./AGENTS.md). For a short **overview**, see
     - [5. Local backend process (optional)](#5-local-backend-process-optional)
     - [Server-owned DeepSeek analysis](#server-owned-deepseek-analysis)
     - [Build profiles and public API](#build-profiles-and-public-api)
+    - [Permissions and static content lifecycle](#permissions-and-static-content-lifecycle)
     - [Server-analysis dev logs](#server-analysis-dev-logs)
     - [MV3 worker suspension and recovery](#mv3-worker-suspension-and-recovery)
 - [Project layout](#project-layout)
@@ -51,7 +52,7 @@ and architecture**, see [AGENTS.md](./AGENTS.md). For a short **overview**, see
 | **Node.js**                     | **22.x or newer** (`package.json` → `"engines": { "node": ">=22" }`)                          |
 | **pnpm**                        | Package manager (`packageManager` in `package.json`; [install](https://pnpm.io/installation)) |
 | **Git**                         | For cloning and version control                                                               |
-| **Google Chrome** (or Chromium) | Required to load the **unpacked** extension from `extension/dist/` during development         |
+| **Google Chrome 111+** (or Chromium) | Required for static MAIN-world content scripts and loading `extension/dist/` unpacked |
 
 Optional:
 
@@ -109,7 +110,11 @@ source maps).
 3. Click **Load unpacked**
 4. Choose **`extension/dist/`** (not the repository root)
 
-After code changes, click **Reload** on the extension card, or run a fresh `make build` and reload again.
+After code changes, run a fresh `make build` and click **Reload** on the
+extension card. Installing, updating, or manually reloading the extension
+invalidates content contexts in already-open documents, so reload those
+YouTube tabs as well. Service-worker sleep/restart alone does not require a tab
+reload while the existing content context is still alive.
 
 ### 4. Watch mode (optional)
 
@@ -137,10 +142,9 @@ the HTTP listener and exits with a safe configuration error when the key is
 missing or blank. The default extension upload source (`extension_upload`)
 neither installs nor requires `yt-dlp`.
 
-It listens on `http://127.0.0.1:8787`, but extension builds do not target that
-loopback process. Dev, beta, and release extensions all carry the same public
-server host permission so ordinary development cannot accidentally test
-against a missing local backend. See
+It listens on `http://127.0.0.1:8787`. A development extension may target that
+process only when `TOPSKIP_SERVER_ORIGIN` is exactly that bare origin. Beta and
+release builds reject it and require a public-looking HTTPS DNS origin. See
 [DEPLOYMENT.md](./DEPLOYMENT.md) for the production route and operations.
 
 On a YouTube `/watch?v=…` page, Server mode starts with **caption acquisition**
@@ -203,16 +207,36 @@ provider errors.
 
 ### Build profiles and public API
 
-The extension origin is compiled in, not selected from runtime storage. All
-three profiles compile in the same public origin, taken from the
-`TOPSKIP_SERVER_ORIGIN` environment variable at build time (root `.env`
-locally, see `.env.example`); only the extension name differs:
+The TopSkip backend origin is compiled in, not selected from runtime storage.
+`TOPSKIP_SERVER_ORIGIN` comes from the root `.env` for local builds or the
+process environment in CI. An absent `TOPSKIP_BUILD` defaults to `dev`; an
+explicit blank, misspelled, or otherwise unknown profile fails closed.
 
-| Profile | Command            | Extension name   |
-| ------- | ------------------ | ---------------- |
-| Dev     | `make build`       | `TopSkip (Dev)`  |
-| Beta    | `pnpm run beta`    | `TopSkip (Beta)` |
-| Release | `pnpm run release` | `TopSkip`        |
+| Profile | Command | Accepted backend origin | Content-script matches |
+| --- | --- | --- | --- |
+| Dev | `make build` | Public-looking HTTPS DNS origin, or exactly `http://127.0.0.1:8787` | YouTube + E2E fixture |
+| Beta | `pnpm run beta` | Public-looking HTTPS DNS origin | YouTube only |
+| Release | `pnpm run release` | Public-looking HTTPS DNS origin | YouTube only |
+
+Dev, beta, and release names remain `TopSkip (Dev)`, `TopSkip (Beta)`, and
+`TopSkip` respectively. The origin validator rejects paths, credentials,
+wildcards, IP literals outside the exact dev exception, cleartext remote
+origins, single-label names, and special-use DNS suffixes. It validates URL and
+DNS *shape* only: the build does not resolve DNS and therefore cannot prove
+that a public-looking name will not resolve to a private address at runtime.
+
+Validate the emitted artifact, rather than relying on the source manifest:
+
+```bash
+pnpm run validate:extension-manifest -- \
+  --build dev \
+  --server-origin "${TOPSKIP_SERVER_ORIGIN}" \
+  --manifest extension/dist/manifest.json
+```
+
+Use `--build beta` or `--build release` for those artifacts. The validator
+checks the exact API, required-host, optional-host, minimum-version, and paired
+content-script policy. CI runs it for every profile.
 
 The public compatibility boundary consists of `/v1/installations/register`,
 `/v1/config`, `/v1/analysis`, `/v1/analysis/jobs/{jobId}`, and `/v1/health`.
@@ -221,11 +245,63 @@ contract lives in the Valibot schemas and inferred types in
 `common/src/server-analysis-contract.ts`. The server computes transcript hashes
 and owns the algorithm version; clients cannot submit either field.
 
+### Permissions and static content lifecycle
+
+The emitted permission boundary is deliberately small:
+
+| Capability | Manifest field | Access |
+| --- | --- | --- |
+| Extension state | `permissions` | Required `storage` only |
+| TopSkip Server | `host_permissions` | Configured backend only |
+| Private BYOK | `optional_host_permissions` | OpenRouter and OpenAI, granted independently |
+| Watch integration | `content_scripts.matches` | YouTube; dev also includes the E2E fixture |
+
+Methods such as `tabs.query()`, `tabs.sendMessage()`, and `tabs.create()` do not
+by themselves require the sensitive `tabs` permission. Route ownership uses
+trusted runtime-sender metadata plus a content-owned status probe instead of
+reading `Tab.url`.
+
+OpenRouter and OpenAI host access is requested only from a direct user gesture
+in Private BYOK settings. **Allow access** is the primary path, while **Test
+connection** may make the same provider-specific request from its click. A
+saved API key and a Chrome host grant are independent: revoking access leaves
+the key and model saved but changes provider availability to setup-required.
+Every background provider entry point rechecks the grant immediately before
+network I/O. Server mode never requests these optional grants and never falls
+back to Private BYOK.
+
+The extension service worker owns all TopSkip and provider HTTP. Content,
+popup, options, and page contexts exchange validated messages and never call
+those services directly.
+
+Chrome 111 is the minimum supported version because both content bundles are
+declarative: the MAIN caption bridge and the ISOLATED owner run at
+`document_start`, with MAIN first. Removing `scripting` also removes the old
+persisted dynamic registration and reinjection path. Installation, update, or
+manual extension **Reload** can invalidate the existing document's bundle, so
+an already-open YouTube tab must be reloaded. New documents receive the current
+static bundles automatically.
+
+A normal MV3 worker sleep/restart is different. The live content context keeps
+its analysis session, and a bounded readiness wake from the new worker only
+resumes content-owned terminal delivery. It does not inject or replace code.
+The bridge's document-lifetime fetch/XHR wrappers delegate unchanged while
+dormant and clone/read timedtext bodies only during a bounded active capture.
+Duplicate/replacement hooks remain a defensive guard if two static bundle
+generations briefly coexist.
+
+Until valid enabled preferences have hydrated, and whenever TopSkip is
+disabled, the static ISOLATED context is inert: no video binding, seek, caption
+activation/read, analysis, or provider operation starts. Disable cancels the
+current capture/session and makes late completions inapplicable.
+
 ### Server-analysis dev logs
 
 Development builds emit structured stages prefixed with
-`[TopSkip server-analysis]`. Content-script stages are forwarded to the
-background, so open **`chrome://extensions` → TopSkip → Service worker** to see
+`[TopSkip server-analysis]` as one line each — `<event> key=value …`, with
+strings that contain spaces JSON-quoted and nested values as JSON — so the
+fields read inline without expanding a console object. Content-script stages
+are forwarded to the background, so open **`chrome://extensions` → TopSkip → Service worker** to see
 the complete extension-side route, cache, HTTP, polling, and delivery flow.
 The terminal running `make extension` only reports compilation; it does not
 display extension runtime logs.
@@ -237,10 +313,10 @@ identifiers, stable codes, counts, latency, tokens, and cost, but never
 transcript text, assistant content, caption bodies, signed URLs, stderr,
 cookies, installation tokens, raw IP, or API keys.
 
-After `make extension` rebuilds, click **Reload** on the extension card. The
-background probes matching open tabs and injects the current content and
-MAIN-world caption bundles when their previous extension context no longer
-responds; a normal YouTube tab reload is not required.
+After `make extension` rebuilds, click **Reload** on the extension card and
+reload every already-open YouTube tab you want to test. Static content scripts
+are installed only when a document loads; a readiness probe can wake a live
+current bundle but cannot replace a bundle invalidated by extension reload.
 
 ### MV3 worker suspension and recovery
 
@@ -287,6 +363,12 @@ To smoke-test recovery after a fresh `pnpm run dev` build and extension reload:
 5. Confirm the popup reaches ready/no-promo or a typed terminal outcome without
    a generic Server error caused solely by the worker restart.
 
+The startup readiness wake is deliberately limited: the worker queries tab IDs
+without reading URLs and sends two bounded versioned probes. A matching live
+content script can acknowledge and resume a queued terminal event. A missing or
+outdated receiver is recorded as unavailable; startup never dynamically
+registers, injects, or repairs bundles.
+
 ---
 
 ## Project layout
@@ -321,7 +403,13 @@ options pages.
 
 Only **`PrefsSyncStorage`** in **`extension/src/background/storage/prefs-sync.ts`** reads or writes **`browser.storage.local`** for the `topskip:prefs` key (query: **`PrefsSyncStorage.load`**, command: **`PrefsSyncStorage.save`**). The service worker entry **`extension/src/background/index.ts`** calls **`Background.init()`** from **`extension/src/background/background.ts`**, which registers install + runtime messaging. Persisted objects are validated with **Valibot** (`userPreferencesSchema` in `extension/src/shared/constants.ts`) — no unchecked casts on storage payloads.
 
-The **popup** and **content** scripts must not call **`storage.local`** for preferences. They use **`browser.runtime.sendMessage`** with **`TOPSKIP_*`** message types from **`extension/src/shared/messages.ts`**. After a successful update, the background notifies content scripts with **`TOPSKIP_PREFS_UPDATED`** via **`tabs.sendMessage`**, which requires the **`tabs`** permission in **`manifest.json`**.
+The **popup** and **content** scripts must not call **`storage.local`** for
+preferences. They use **`browser.runtime.sendMessage`** with **`TOPSKIP_*`**
+message types from **`extension/src/shared/messages.ts`**. After a successful
+update, the background notifies content scripts with
+**`TOPSKIP_PREFS_UPDATED`** via **`tabs.sendMessage`**. Sending to a known tab
+does not require the sensitive **`tabs`** permission; do not reintroduce it just
+because the code uses the Tabs API.
 
 ---
 
@@ -352,6 +440,7 @@ The **popup** and **content** scripts must not call **`storage.local`** for pref
 | `pnpm run yt-dlp:install`                    | Install pinned `yt-dlp` for explicit legacy mode only                                |
 | `pnpm run build`                             | Development build to `extension/dist/`                                               |
 | `pnpm run build:watch`                       | Rspack watch mode                                                                    |
+| `pnpm run validate:extension-manifest -- …` | Validate one emitted manifest against an exact build profile                        |
 | `pnpm run format`                            | Apply formatting and safe autofixes (`eslint --fix .`)                               |
 | `pnpm run format:check`                      | Report formatting without writing (alias of `lint:eslint`)                           |
 | `pnpm run lint`                              | **ESLint** + **markdownlint** + **`tsc --noEmit`**                                    |
@@ -455,7 +544,9 @@ stay under the owning package's `tests/`, and Playwright E2E lives under
 
 ### Manual server-mode check
 
-1. Copy `.env.example` to `.env` and set `OPENROUTER_API_KEY`.
+1. Copy `.env.example` to `.env`, set `OPENROUTER_API_KEY`, and set
+   `TOPSKIP_SERVER_ORIGIN=http://127.0.0.1:8787` for this dev-only loopback
+   check.
 2. `make build`, load **`extension/dist/`** unpacked (see [Getting started](#3-load-the-extension-in-chrome)).
 3. Run the local backend with `make server`; the default extension-upload mode
    needs no extractor or source flag.
@@ -484,9 +575,11 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
 **`extension/src/shared/constants.ts`**. In the service worker console, look for
 **`[TopSkip content ...] caption-capture`** entries with these safe stages:
 
-- **`bridge-install-requested`** / **`bridge-installed`**: content and
-  background installed the page bridge.
-- **`page:bridge-installed`**: MAIN-world bridge ran inside the YouTube page.
+- **`bridge-readiness-requested`** / **`bridge-ready`**: ISOLATED content
+  confirmed that the declarative MAIN bridge responds to local document
+  commands.
+- **`page:bridge-installed`**: the static MAIN-world bridge started at
+  `document_start`; this does not mean capture is active.
 - **`activation-attempt`** / **`activation-accepted`**: TopSkip asked the player
   to load captions.
 - **`page:activation-finished`**: page bridge recorded caption state, hide style,
@@ -509,11 +602,21 @@ or signed parameter values.
 
 ### Developer: player-mediated caption capture
 
-**Default:** **`CAPTION_TRANSCRIPT_DEV_ENABLED`** is **`true`** in **`extension/src/shared/constants.ts`**. On supported YouTube watch pages, TopSkip installs a MAIN-world bridge, briefly asks the player to activate captions when needed, observes the player's own successful `/api/timedtext?fmt=json3` response, parses it in the content script, and sends **`TOPSKIP_CAPTIONS_FROM_CONTENT`** to the background.
+**Default:** **`CAPTION_TRANSCRIPT_DEV_ENABLED`** is **`true`** in
+**`extension/src/shared/constants.ts`**. On supported YouTube watch pages, the
+statically declared MAIN-world bridge remains dormant until ISOLATED content
+briefly asks the player to activate captions. It then observes the player's own
+successful `/api/timedtext?fmt=json3` response, returns it through a validated
+document-local event contract, and content sends
+**`TOPSKIP_CAPTIONS_FROM_CONTENT`** to the background.
 
 The production path no longer uses direct timedtext probing, direct InnerTube fallback clients, or fresh watch-page HTML scraping. The bridge preserves the page's fetch/XHR behavior, forwards caption bodies only to the internal parser pipeline, and keeps diagnostics to bounded metadata such as failure stage, language, body length, segment count, and sanitized timedtext parameter names.
 
-**Trigger:** When TopSkip is enabled and the watch **video id** changes, **`WatchCaptions`** schedules **`PlayerCaptionCapture`**. The capture flow installs the bridge, waits through bounded activation retries if the player appears unstable or an ad is visible, then cleans up temporary caption state after success or timeout.
+**Trigger:** When valid preferences say TopSkip is enabled and the watch
+**video id** changes, **`WatchCaptions`** schedules
+**`PlayerCaptionCapture`**. The capture flow probes the static bridge, waits
+through bounded activation retries if the player appears unstable or an ad is
+visible, then cleans up temporary caption state after success or timeout.
 
 1. `make build`, load **`extension/dist/`** unpacked.
 2. Open **`chrome://extensions`**, find TopSkip, click **Service worker** (this DevTools window is where **chunked transcript** **`[TopSkip captions]`** logs from the background appear).
@@ -524,11 +627,14 @@ The production path no longer uses direct timedtext probing, direct InnerTube fa
 
 - TopSkip logs from `background.js` only appear in the **extension service worker** DevTools console (`chrome://extensions` → TopSkip → **Service worker**). That is the correct “background” console in MV3, even though there is no separate HTML page.
 - **Manifest V3 has no HTML background page** — only a **service worker**. Those logs do **not** appear in the watch tab’s F12 console and **not** in the popup’s Inspect window.
-- Open **`chrome://extensions` → TopSkip → “Service worker”** (link or button). That opens a **dedicated** DevTools instance for the worker. Keep it open; you should see **`[TopSkip] Service worker started`** whenever the worker starts (e.g. after **Reload** on the extension card).
+- Open **`chrome://extensions` → TopSkip → “Service worker”** (link or button). That opens a **dedicated** DevTools instance for the worker. Keep it open; you should see **`[TopSkip] Service worker started`** whenever the worker starts (e.g. after **Reload** on the extension card). The line carries the build label (`version_name`: the base version plus the `dev`/`beta` build timestamp, also shown as the version on the extension card) — compare it with your last `make build` to tell a stale load from the current artifact.
 - Run **`make build`**, **Reload** the extension, then **navigate** to a **`/watch?v=…`** URL (or change the video in-place). Within about half a second, the **service worker** console should show **`[TopSkip captions]`** lines.
 - If you see random lines like “Content script initialized” with icons, those are **not** from TopSkip (this repo has no such strings).
 
-**Toggle-off sanity check:** With the switch **off**, set playback to **4×** and let time pass 0:30 — there should be **no** jump (confirms `chrome.storage` + `onChanged` in the content script).
+**Toggle-off sanity check:** With the switch **off**, set playback to **4×**
+and let time pass 0:30 — there should be **no** jump, caption activation, or
+analysis request. This confirms the background-owned preference message made
+the statically loaded content context inert.
 
 ### End-to-end (Playwright)
 
@@ -537,7 +643,13 @@ make build
 make test-e2e
 ```
 
-Playwright starts a static server for **`extension/tests/e2e/fixtures`** (see `extension/playwright.config.ts`, port **4173**). The extension manifest includes **`http://127.0.0.1:4173/*`** so the **content script** runs on the fixture page. Tests load the unpacked extension from **`extension/dist/`** using **headless** Chromium by default; set **`PW_EXTENSION_HEADED=1`** when debugging (visible browser).
+Playwright starts a static server for **`extension/tests/e2e/fixtures`** (see
+`extension/playwright.config.ts`, port **4173**). Only the development manifest
+includes **`http://127.0.0.1:4173/*`** in both declarative content-script
+entries, so MAIN and ISOLATED run together on the fixture. Beta and release
+artifacts reject that match. Tests load the unpacked extension from
+**`extension/dist/`** using **headless** Chromium by default; set
+**`PW_EXTENSION_HEADED=1`** when debugging (visible browser).
 
 The fixture uses a **small vendored** silent MP4 (`extension/tests/e2e/fixtures/skip-test.mp4`, ~3 KiB, 120s) served from the same static root — **no network** required for e2e. The video is **muted** in HTML and tests (`muted` / `playsinline`) so playback does not emit sound. To regenerate the asset after changing duration/encoding, run:
 
@@ -631,7 +743,7 @@ stream.
 | **`make build` fails**                                | Ensure Node **≥ 22**; run `pnpm install`; check Rspack/TypeScript errors in the terminal                                                                                                                                            |
 | **`make server` reports a missing OpenRouter key**    | Copy `.env.example` to the root `.env`, set `OPENROUTER_API_KEY`, or export it in the shell before starting the server                                                                                                              |
 | **Explicit legacy mode reports missing `yt-dlp`**     | Run `make yt-dlp-install`, or set `TOPSKIP_YT_DLP_PATH` to a working executable; default `extension_upload` mode never requires it                                                                                                  |
-| **Extension doesn’t update after edits**              | Run `make build` again and click **Reload** on `chrome://extensions`; inspect the service-worker `content-scripts-injected-existing-tabs` diagnostic if an open matching tab does not acknowledge or receive the replacement bundle |
+| **Extension doesn’t update after edits**              | Run `make build`, click **Reload** on `chrome://extensions`, then reload already-open YouTube tabs; static scripts cannot replace an invalidated document context |
 | **Lint errors in IDE but not terminal**               | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service.                                                          |
 | **`pnpm run test:e2e` fails (browser)**               | Run `pnpm exec playwright install chromium`                                                                                                                                                                                         |
 | **`pnpm run test:e2e` times out / video never plays** | Confirm `extension/tests/e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed                                                                                                          |

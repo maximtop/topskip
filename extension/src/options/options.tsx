@@ -30,6 +30,7 @@ import {
 } from '@/shared/constants';
 import { PROVIDER_ID } from '@/shared/providers';
 import {
+    CONNECTION_STATUS,
     TOPSKIP_MESSAGE,
     type ConnectionEntryMessage,
     type ConnectionProviderId,
@@ -45,7 +46,6 @@ import {
     type SaveConnectionKeyResponse,
     type SetOpenRouterConfigResponse,
     type SetAnalysisModeResponse,
-    type TestConnectionKeyResponse,
     type ValidateOpenRouterModelResponse,
     isPrefsPortMessage,
 } from '@/shared/messages';
@@ -59,6 +59,12 @@ import {
     ConnectionsPanel,
     type ConnectionTestState,
 } from '@/options/ConnectionsPanel';
+import {
+    ProviderHostAccessActions,
+    type ProviderHostAccessActionEffects,
+    type ProviderHostAccessActionInput,
+} from '@/options/provider-host-access-actions';
+import { ProviderHostAccessRequest } from '@/options/provider-host-access-request';
 import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
 import {
     HomeIcon,
@@ -68,6 +74,10 @@ import {
     TargetIcon,
     TopSkipLogoIcon,
 } from '@/shared/topskip-icons';
+import {
+    PROVIDER_HOST_ACCESS_REQUEST_OUTCOME,
+    PROVIDER_HOST_ACCESS_STATUS,
+} from '@/shared/provider-host-permissions';
 
 /**
  * Successful OpenRouter config response used after runtime shape narrowing.
@@ -638,9 +648,12 @@ function OptionsApp(): ReactElement {
         return null;
     }, [activeModelId, connections, models]);
 
-    const load = useCallback(async (): Promise<void> => {
+    const load = useCallback(async (): Promise<boolean> => {
         setLoading(true);
         setError(null);
+        const safeLoadError = translator.getMessage(
+            'options_error_load_failed',
+        );
         try {
             const [res, prefsRes]: [unknown, unknown] = await Promise.all([
                 browser.runtime.sendMessage({
@@ -655,16 +668,8 @@ function OptionsApp(): ReactElement {
                 res === null ||
                 Reflect.get(res, 'ok') !== true
             ) {
-                const rawError: unknown =
-                    typeof res === 'object' && res !== null
-                        ? Reflect.get(res, 'error')
-                        : undefined;
-                setError(
-                    typeof rawError === 'string'
-                        ? rawError
-                        : translator.getMessage('options_error_load_failed'),
-                );
-                return;
+                setError(safeLoadError);
+                return false;
             }
             const data = res as Extract<GetModelSettingsResponse, { ok: true }>;
             if (
@@ -672,16 +677,8 @@ function OptionsApp(): ReactElement {
                 prefsRes === null ||
                 Reflect.get(prefsRes, 'ok') !== true
             ) {
-                const rawError: unknown =
-                    typeof prefsRes === 'object' && prefsRes !== null
-                        ? Reflect.get(prefsRes, 'error')
-                        : undefined;
-                setError(
-                    typeof rawError === 'string'
-                        ? rawError
-                        : translator.getMessage('options_error_load_failed'),
-                );
-                return;
+                setError(safeLoadError);
+                return false;
             }
             const prefsData = prefsRes as Extract<
                 GetPrefsResponse,
@@ -692,14 +689,18 @@ function OptionsApp(): ReactElement {
             setModels(data.models);
             setConnections(data.connections);
             setCustomModels(data.customOpenRouterModels);
-        } catch (e) {
-            setError(getErrorMessage(e));
+            return true;
+        } catch {
+            setError(safeLoadError);
+            return false;
         } finally {
             setLoading(false);
         }
     }, []);
 
     useEffect(() => {
+        // Initial background synchronization intentionally owns loading state.
+        // eslint-disable-next-line react-hooks/set-state-in-effect
         void load();
     }, [load]);
 
@@ -860,56 +861,115 @@ function OptionsApp(): ReactElement {
         }
     };
 
-    const onTestConnection = async (
+    const createHostAccessActionInput = (
         providerId: ConnectionProviderId,
-    ): Promise<void> => {
-        setError(null);
-        setBusyProviderId(providerId);
-        try {
-            const res: unknown = await browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.TEST_CONNECTION_KEY,
-                providerId,
-                apiKey: connectionDrafts[providerId],
-            });
-            if (
-                typeof res !== 'object' ||
-                res === null ||
-                Reflect.get(res, 'ok') !== true
-            ) {
-                const rawError: unknown =
-                    typeof res === 'object' && res !== null
-                        ? Reflect.get(res, 'error')
-                        : null;
+    ): ProviderHostAccessActionInput => {
+        const connection = connections.find(
+            (entry) => entry.providerId === providerId,
+        );
+        return {
+            providerId,
+            hasCredential:
+                connection?.status === CONNECTION_STATUS.Saved ||
+                connectionDrafts[providerId].trim().length > 0,
+            hostAccessStatus:
+                connection?.hostAccessStatus ??
+                PROVIDER_HOST_ACCESS_STATUS.Missing,
+        };
+    };
+
+    const createHostAccessActionEffects =
+        (): ProviderHostAccessActionEffects => ({
+            request: (providerId) =>
+                ProviderHostAccessRequest.request(providerId),
+            reload: load,
+            sendTest: (providerId) =>
+                browser.runtime.sendMessage({
+                    type: TOPSKIP_MESSAGE.TEST_CONNECTION_KEY,
+                    providerId,
+                    apiKey: connectionDrafts[providerId],
+                }),
+            showKeyRequired: (providerId) => {
                 setTestStates((current) => ({
                     ...current,
                     [providerId]: {
-                        kind: 'error',
-                        error:
-                            typeof rawError === 'string'
-                                ? rawError
-                                : 'Connection test failed',
+                        kind: 'key_required',
                     },
                 }));
-                return;
-            }
-            const data = res as Extract<
-                TestConnectionKeyResponse,
-                { ok: true }
-            >;
-            setTestStates((current) => ({
-                ...current,
-                [providerId]: data.valid
-                    ? { kind: 'valid' }
-                    : { kind: 'invalid', error: data.error },
-            }));
-        } catch (e) {
-            setTestStates((current) => ({
-                ...current,
-                [providerId]: { kind: 'error', error: getErrorMessage(e) },
-            }));
-        } finally {
-            setBusyProviderId(null);
-        }
+            },
+            showRequestOutcome: (providerId, outcome) => {
+                const kind =
+                    outcome ===
+                    PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Denied
+                        ? 'access_denied'
+                        : 'access_request_failed';
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: { kind },
+                }));
+            },
+            applyTestResponse: (providerId, response) => {
+                let state: ConnectionTestState;
+                if (!response.ok && 'code' in response) {
+                    state = { kind: 'host_access_required' };
+                } else if (response.ok && response.valid) {
+                    state = { kind: 'valid' };
+                } else if (response.ok) {
+                    state = { kind: 'invalid' };
+                } else {
+                    state = { kind: 'error' };
+                }
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: state,
+                }));
+            },
+            showTestUnavailable: (providerId) => {
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: { kind: 'error' },
+                }));
+            },
+            showReloadUnavailable: () => {
+                setError(
+                    translator.getMessage('options_error_load_failed'),
+                );
+            },
+            clearFeedback: (providerId) => {
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: { kind: 'idle' },
+                }));
+            },
+            markAccessMissing: (providerId) => {
+                setConnections((current) =>
+                    current.map((entry) =>
+                        entry.providerId === providerId
+                            ? {
+                                    ...entry,
+                                    hostAccessStatus:
+                                        PROVIDER_HOST_ACCESS_STATUS.Missing,
+                                }
+                            : entry,
+                    ),
+                );
+            },
+        });
+
+    const onGrantHostAccess = (
+        providerId: ConnectionProviderId,
+    ): void => {
+        ProviderHostAccessActions.grant(
+            createHostAccessActionInput(providerId),
+            createHostAccessActionEffects(),
+        );
+    };
+
+    const onTestConnection = (providerId: ConnectionProviderId): void => {
+        ProviderHostAccessActions.test(
+            createHostAccessActionInput(providerId),
+            createHostAccessActionEffects(),
+        );
     };
 
     const onAddCustomModel = async (): Promise<void> => {
@@ -1071,7 +1131,10 @@ function OptionsApp(): ReactElement {
                                             void onSaveConnection(providerId);
                                         }}
                                         onTest={(providerId) => {
-                                            void onTestConnection(providerId);
+                                            onTestConnection(providerId);
+                                        }}
+                                        onGrantHostAccess={(providerId) => {
+                                            onGrantHostAccess(providerId);
                                         }}
                                     />
                                     <AddModelPanel

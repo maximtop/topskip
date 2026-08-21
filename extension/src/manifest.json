@@ -10,11 +10,6 @@
         "48": "icons/icon48.png",
         "128": "icons/icon128.png"
     },
-    "permissions": ["storage", "tabs", "scripting"],
-    "host_permissions": [
-        "https://www.youtube.com/*",
-        "https://openrouter.ai/*"
-    ],
     "background": {
         "service_worker": "background.js"
     },

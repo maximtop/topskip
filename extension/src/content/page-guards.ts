@@ -1,9 +1,22 @@
-import { YOUTUBE_WATCH_VIDEO_ID_PARAM } from '@/shared/constants';
+import {
+    DEV_E2E_FIXTURE_VIDEO_ID,
+    DEV_E2E_ORIGIN,
+    YOUTUBE_ORIGIN,
+    YOUTUBE_WATCH_PATH,
+    getWatchVideoIdFromUrl,
+} from '@/shared/watch-route';
 
 /**
- * Local static server host used by Playwright e2e (see `tests/e2e/fixtures`).
+ * Local static server host used by Playwright e2e (see `tests/e2e/fixtures`);
+ * `null` outside development bundles.
  */
-export const E2E_HOST = '127.0.0.1';
+export const E2E_HOST: string | null =
+    DEV_E2E_ORIGIN === null ? null : new URL(DEV_E2E_ORIGIN).hostname;
+
+/**
+ * Exact production hostname accepted by the legacy URL-parts boundary.
+ */
+const YOUTUBE_HOST = new URL(YOUTUBE_ORIGIN).hostname;
 
 /**
  * Returns the YouTube `v` id from the URL, or a fixed id for the e2e fixture
@@ -19,9 +32,14 @@ export function getWatchVideoIdFromSearch(
     search: string,
 ): string | null {
     if (hostname === E2E_HOST) {
-        return 'e2eFixture1';
+        return DEV_E2E_FIXTURE_VIDEO_ID;
     }
-    return new URLSearchParams(search).get(YOUTUBE_WATCH_VIDEO_ID_PARAM);
+    if (hostname !== YOUTUBE_HOST) {
+        return null;
+    }
+    return getWatchVideoIdFromUrl(
+        `${YOUTUBE_ORIGIN}${YOUTUBE_WATCH_PATH}${search}`,
+    );
 }
 
 /**
@@ -37,14 +55,9 @@ export function shouldActivateTopSkip(input: {
     search: string;
 }): boolean {
     const { hostname, pathname, search } = input;
-    if (hostname === E2E_HOST) {
-        return true;
-    }
-    if (pathname.startsWith('/shorts/')) {
-        return false;
-    }
-    return (
-        pathname === '/watch' &&
-        getWatchVideoIdFromSearch(hostname, search) !== null
-    );
+    const origin =
+        DEV_E2E_ORIGIN !== null && hostname === E2E_HOST
+            ? DEV_E2E_ORIGIN
+            : `https://${hostname}`;
+    return getWatchVideoIdFromUrl(`${origin}${pathname}${search}`) !== null;
 }

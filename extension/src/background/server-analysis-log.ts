@@ -1,3 +1,4 @@
+import { formatLogStage } from '@/shared/log-fields';
 import type { ServerAnalysisLogFields } from '@/shared/server-analysis-log-types';
 
 const SERVER_ANALYSIS_LOG_PREFIX = '[TopSkip server-analysis]';
@@ -22,7 +23,10 @@ export class BackgroundServerAnalysisLog {
         if (!enabled) {
             return;
         }
-        console.info(SERVER_ANALYSIS_LOG_PREFIX, event, fields);
+        console.info(
+            SERVER_ANALYSIS_LOG_PREFIX,
+            ...formatLogStage(event, fields),
+        );
     }
 
     /**
@@ -40,6 +44,9 @@ export class BackgroundServerAnalysisLog {
         if (!enabled) {
             return;
         }
-        console.warn(SERVER_ANALYSIS_LOG_PREFIX, event, fields);
+        console.warn(
+            SERVER_ANALYSIS_LOG_PREFIX,
+            ...formatLogStage(event, fields),
+        );
     }
 }

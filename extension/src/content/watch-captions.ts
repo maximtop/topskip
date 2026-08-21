@@ -21,20 +21,30 @@ export type WatchCaptionCaptureInput = CaptionCaptureInput & {
  */
 export class WatchCaptions {
     /**
-     * Releases document listeners and pending capture state before reinjection.
+     * Releases document listeners and pending capture state during teardown.
      */
     static dispose(): void {
-        PlayerCaptionCapture.dispose();
+        void PlayerCaptionCapture.dispose();
     }
 
     /**
-     * Installs passive page hooks before player caption requests begin.
+     * Confirms passive page hooks before player caption requests begin.
      */
-    static installPageBridge(): void {
+    static preparePageBridge(): void {
         if (!CAPTION_TRANSCRIPT_DEV_ENABLED || location.hostname === E2E_HOST) {
             return;
         }
-        PlayerCaptionCapture.installBridgeForPage();
+        PlayerCaptionCapture.prepareBridgeForPage();
+    }
+
+    /**
+     * Cancels capture ownership without depending on the route's aborted
+     * signal for MAIN-world cleanup.
+     *
+     * @param source Diagnostic trigger for the cancellation.
+     */
+    static cancel(source = 'route-cancelled'): void {
+        PlayerCaptionCapture.cancel(source);
     }
 
     /**

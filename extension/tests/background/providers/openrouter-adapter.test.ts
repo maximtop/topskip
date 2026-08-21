@@ -8,12 +8,19 @@ import {
 
 const mocks = vi.hoisted(() => ({
     callOpenRouterChat: vi.fn(),
+    providerHostAccessIsGranted: vi.fn(),
     storageGet: vi.fn(),
     storageSet: vi.fn(),
 }));
 
 vi.mock('@/background/openrouter/openrouter-client', () => ({
     callOpenRouterChat: mocks.callOpenRouterChat,
+}));
+
+vi.mock('@/background/permissions/provider-host-access', () => ({
+    ProviderHostAccess: {
+        isGranted: mocks.providerHostAccessIsGranted,
+    },
 }));
 
 vi.mock('@/shared/browser', () => ({
@@ -41,6 +48,7 @@ const baseParams: AnalyzeTranscriptParams = {
 describe('OpenRouterAdapter', () => {
     beforeEach(() => {
         mocks.callOpenRouterChat.mockReset();
+        mocks.providerHostAccessIsGranted.mockReset().mockResolvedValue(true);
         mocks.storageGet.mockReset();
         mocks.storageSet.mockReset();
     });
@@ -109,6 +117,23 @@ describe('OpenRouterAdapter', () => {
             const adapter = new OpenRouterAdapter();
             const avail = await adapter.availability();
             expect(avail).toBe(PROVIDER_AVAILABILITY.UNAVAILABLE);
+        });
+
+        it('returns unavailable without calling the client when access is missing', async () => {
+            mocks.storageGet.mockResolvedValue({
+                'topskip:openrouter': {
+                    enabled: true,
+                    apiKey: 'sk-test',
+                    model: 'google/gemini-3.1-pro-preview',
+                    customModels: [],
+                },
+            });
+            mocks.providerHostAccessIsGranted.mockResolvedValue(false);
+
+            const availability = await new OpenRouterAdapter().availability();
+
+            expect(availability).toBe(PROVIDER_AVAILABILITY.UNAVAILABLE);
+            expect(mocks.callOpenRouterChat).not.toHaveBeenCalled();
         });
     });
 
@@ -271,6 +296,34 @@ describe('OpenRouterAdapter', () => {
             if (!result.ok) {
                 expect(result.error).toContain('not configured');
             }
+        });
+
+        it('rechecks access immediately before fetch after preflight revocation', async () => {
+            mocks.storageGet.mockResolvedValue({
+                'topskip:openrouter': {
+                    enabled: true,
+                    apiKey: 'sk-test',
+                    model: 'openai/gpt-4o',
+                    customModels: [],
+                },
+            });
+            mocks.providerHostAccessIsGranted
+                .mockResolvedValueOnce(true)
+                .mockResolvedValueOnce(false);
+            const adapter = new OpenRouterAdapter();
+
+            await expect(adapter.availability()).resolves.toBe(
+                PROVIDER_AVAILABILITY.AVAILABLE,
+            );
+            await expect(
+                adapter.analyzeTranscript(baseParams),
+            ).resolves.toEqual({
+                ok: false,
+                failureCode: 'host_access_required',
+                error: 'Provider host access is required',
+            });
+            expect(mocks.providerHostAccessIsGranted).toHaveBeenCalledTimes(2);
+            expect(mocks.callOpenRouterChat).not.toHaveBeenCalled();
         });
     });
 });

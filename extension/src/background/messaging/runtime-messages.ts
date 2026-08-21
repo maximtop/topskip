@@ -4,11 +4,15 @@ import {
     type SetAnalysisModeResponse,
     type SetPrefsResponse,
 } from '@/shared/messages';
-import type { AnalysisMode, UserPreferences } from '@/shared/constants';
+import {
+    ANALYSIS_MODE,
+    type AnalysisMode,
+    type UserPreferences,
+} from '@/shared/constants';
 
-import { ContentScriptsRegistration } from '@/background/lifecycle/content-scripts-registration';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 
 /**
@@ -31,7 +35,7 @@ export class PrefsRuntimeMessages {
     }
 
     /**
-     * Writes prefs, resyncs content scripts, and broadcasts updates.
+     * Writes prefs and broadcasts updates to declarative content contexts.
      *
      * @param enabled - New enabled state from the SET payload.
      * @returns Save result
@@ -41,9 +45,9 @@ export class PrefsRuntimeMessages {
         try {
             const current = await PrefsSyncStorage.load();
             const prefs = { ...current, enabled };
+            PrefsRuntimeMessages.abortSupersededLocalAnalysis(current, prefs);
             await PrefsRuntimeMessages.saveAndBroadcast(prefs);
 
-            await ContentScriptsRegistration.syncFromPrefs();
             return { ok: true };
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
@@ -63,6 +67,7 @@ export class PrefsRuntimeMessages {
         try {
             const current = await PrefsSyncStorage.load();
             const prefs = { ...current, analysisMode };
+            PrefsRuntimeMessages.abortSupersededLocalAnalysis(current, prefs);
             await PrefsRuntimeMessages.saveAndBroadcast(prefs);
             return { ok: true, prefs };
         } catch (e) {
@@ -82,5 +87,25 @@ export class PrefsRuntimeMessages {
         await PrefsSyncStorage.save(prefs);
         await PrefsBroadcast.sendUpdatedToAllTabs(prefs);
         PrefsPortHub.broadcastPrefsUpdate(prefs);
+    }
+
+    /**
+     * Aborts the old BYOK owner before persistence and fan-out can later
+     * re-enable the same video under an indistinguishable content payload.
+     *
+     * @param current - Persisted route that may own provider work.
+     * @param next - Preference snapshot about to replace it.
+     */
+    private static abortSupersededLocalAnalysis(
+        current: UserPreferences,
+        next: UserPreferences,
+    ): void {
+        const localAnalysisWasActive =
+            current.enabled && current.analysisMode === ANALYSIS_MODE.Byok;
+        const localAnalysisRemainsActive =
+            next.enabled && next.analysisMode === ANALYSIS_MODE.Byok;
+        if (localAnalysisWasActive && !localAnalysisRemainsActive) {
+            PromoAnalysis.abortAll();
+        }
     }
 }

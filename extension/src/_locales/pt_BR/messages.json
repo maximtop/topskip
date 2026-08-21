@@ -331,6 +331,38 @@
         "message": "A chave é válida.",
         "description": "Success message shown after a provider API key test passes."
     },
+    "options_connection_host_access_required_badge": {
+        "message": "Acesso necessário",
+        "description": "Badge shown when the provider host permission is missing."
+    },
+    "options_connection_host_access_granted_badge": {
+        "message": "Acesso concedido",
+        "description": "Badge shown when the provider host permission is granted."
+    },
+    "options_connection_host_access_description": {
+        "message": "%provider% precisa acessar %host% apenas para solicitações BYOK privadas.",
+        "description": "Explanation of provider host access. %provider% and %host% are replaced with the provider and host names."
+    },
+    "options_connection_host_access_allow_button": {
+        "message": "Permitir acesso",
+        "description": "Button that requests optional host access for one provider."
+    },
+    "options_connection_host_access_denied": {
+        "message": "O acesso não foi permitido. Suas configurações não foram alteradas.",
+        "description": "Safe message after the user denies an optional host request."
+    },
+    "options_connection_host_access_request_failed": {
+        "message": "Não foi possível solicitar acesso. Tente novamente por este botão.",
+        "description": "Safe message when Chrome cannot complete an optional host request."
+    },
+    "options_connection_host_access_required_for_test": {
+        "message": "Permita o acesso do provedor antes de testar esta conexão.",
+        "description": "Guidance after a connection test finds provider access missing."
+    },
+    "options_connection_test_failed": {
+        "message": "O teste de conexão falhou. Verifique a chave de API e tente novamente.",
+        "description": "Safe fallback after an invalid or unavailable connection test."
+    },
     "options_analysis_mode_heading": {
         "message": "Modo de análise",
         "description": "Heading for the analysis route selector in extension settings."

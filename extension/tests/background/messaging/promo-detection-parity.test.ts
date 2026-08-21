@@ -12,6 +12,7 @@ const {
     storageSetAccessLevel,
     storageGet,
     storageSet,
+    permissionsContains,
     tabsQuery,
     tabsSendMessage,
 } = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const {
     storageSetAccessLevel: vi.fn().mockResolvedValue(undefined),
     storageGet: vi.fn(),
     storageSet: vi.fn().mockResolvedValue(undefined),
+    permissionsContains: vi.fn().mockResolvedValue(true),
     tabsQuery: vi.fn(),
     tabsSendMessage: vi.fn().mockResolvedValue(undefined),
 }));
@@ -33,6 +35,7 @@ vi.mock('@/shared/browser', () => ({
                 set: storageSet,
             },
         },
+        permissions: { contains: permissionsContains },
         tabs: { query: tabsQuery, sendMessage: tabsSendMessage },
     },
 }));

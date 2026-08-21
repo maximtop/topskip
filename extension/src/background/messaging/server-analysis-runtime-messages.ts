@@ -11,6 +11,7 @@ import { ServerResultCacheStorage } from '@/background/storage/server-result-cac
 import browser from '@/shared/browser';
 import { ANALYSIS_MODE } from '@/shared/constants';
 import {
+    contentRouteStatusResponseSchema,
     PROMO_DETECTION_SOURCE,
     SERVER_ANALYSIS_PHASE,
     SERVER_ANALYSIS_SESSION_EVENT,
@@ -24,6 +25,10 @@ import {
     type ServerPromoDetectionSource,
     type TopSkipRuntimeMessage,
 } from '@/shared/messages';
+import {
+    getWatchVideoIdFromUrl,
+    isTopSkipContentDocumentUrl,
+} from '@/shared/watch-route';
 import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     PROMO_DETECTION_STATUS,
@@ -43,8 +48,7 @@ import {
     classifyServerFailure,
 } from '@/shared/server-analysis-failure';
 
-const WATCH_VIDEO_ID_QUERY_PARAMETER = 'v';
-const LOCAL_E2E_HOST = '127.0.0.1';
+const TOP_FRAME_ID = 0;
 const LOCAL_SESSION_FAILURE_CODE = {
     [SERVER_ANALYSIS_SESSION_EVENT.CaptionsUnavailable]:
         SERVER_ANALYSIS_FAILURE_CODE.CaptionsUnavailable,
@@ -123,7 +127,7 @@ export class ServerAnalysisRuntimeMessages {
      * Publishes one safe Server failure without retaining captions or raw responses.
      *
      * @param input - Target session, stable failure, and optional server version.
-     * @returns Promise resolved after the detection snapshot is stored.
+     * @returns Whether the failure still belonged to the live content route.
      */
     private static async publishFailure(input: {
         tabId: number;
@@ -131,8 +135,22 @@ export class ServerAnalysisRuntimeMessages {
         videoId: string;
         failure: ServerAnalysisFailure;
         algorithmVersion?: string;
-    }): Promise<void> {
+    }): Promise<boolean> {
         const category = classifyServerFailure(input.failure.code);
+        const failureContext =
+            await ServerAnalysisRuntimeMessages.buildFailureContext(
+                input.failure,
+                input.algorithmVersion,
+            );
+        if (
+            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+                input.tabId,
+                input.videoId,
+                input.sessionId,
+            ))
+        ) {
+            return false;
+        }
         await PromoDetectionStore.set(input.tabId, {
             videoId: input.videoId,
             sessionId: input.sessionId,
@@ -141,19 +159,16 @@ export class ServerAnalysisRuntimeMessages {
                     ? PROMO_DETECTION_STATUS.Error
                     : PROMO_DETECTION_STATUS.Unavailable,
             source: PROMO_DETECTION_SOURCE.Server,
-            serverFailure:
-                await ServerAnalysisRuntimeMessages.buildFailureContext(
-                    input.failure,
-                    input.algorithmVersion,
-                ),
+            serverFailure: failureContext,
         });
+        return true;
     }
 
     /**
      * Delivers exact-session blocks through content and popup paths.
      *
      * @param input - Current tab/session, blocks, and cache origin.
-     * @returns Promise resolved after best-effort content delivery.
+     * @returns Whether the exact live route accepted the delivery.
      */
     private static async deliverDetectedBlocks(input: {
         tabId: number;
@@ -162,11 +177,12 @@ export class ServerAnalysisRuntimeMessages {
         promoBlocks: PromoBlock[];
         source: ServerPromoDetectionSource;
         durationSec?: number;
-    }): Promise<void> {
+    }): Promise<boolean> {
         if (
-            !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
+            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 input.tabId,
                 input.videoId,
+                input.sessionId,
             ))
         ) {
             BackgroundServerAnalysisLog.info('delivery-skipped', {
@@ -174,7 +190,7 @@ export class ServerAnalysisRuntimeMessages {
                 videoId: input.videoId,
                 reason: 'stale-tab',
             });
-            return;
+            return false;
         }
         const message = {
             type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
@@ -187,6 +203,16 @@ export class ServerAnalysisRuntimeMessages {
             await browser.tabs.sendMessage(input.tabId, message);
         } catch {
             // Navigation may remove the content context after the final guard.
+            return false;
+        }
+        if (
+            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+                input.tabId,
+                input.videoId,
+                input.sessionId,
+            ))
+        ) {
+            return false;
         }
 
         const durationState =
@@ -209,6 +235,7 @@ export class ServerAnalysisRuntimeMessages {
             blockCount: input.promoBlocks.length,
             source: input.source,
         });
+        return true;
     }
 
     /**
@@ -223,30 +250,71 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Avoids applying delayed results after the tab leaves the requested video.
+     * Asks the live isolated bundle to prove exact Server-session ownership.
      *
      * @param tabId - Source tab that initiated the session.
      * @param videoId - Video id tied to the session.
-     * @returns Whether the tab still displays that watch video.
+     * @param sessionId - Content-owned session expected to remain active.
+     * @returns Whether the current bundle still owns the requested route.
      */
-    private static async isTabStillOnRequestedVideo(
+    private static async isCurrentServerRoute(
         tabId: number,
         videoId: string,
+        sessionId: string,
     ): Promise<boolean> {
         try {
-            const tab = await browser.tabs.get(tabId);
-            if (tab.url === undefined) {
+            const response: unknown = await browser.tabs.sendMessage(tabId, {
+                type: TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS,
+            });
+            const parsed = v.safeParse(
+                contentRouteStatusResponseSchema,
+                response,
+            );
+            if (!parsed.success) {
                 return false;
             }
-            const url = new URL(tab.url);
+            const current = parsed.output;
             return (
-                url.hostname === LOCAL_E2E_HOST ||
-                url.searchParams.get(WATCH_VIDEO_ID_QUERY_PARAMETER) === videoId
+                current.extensionVersion ===
+                    browser.runtime.getManifest().version &&
+                current.videoId === videoId &&
+                current.enabled &&
+                current.analysisMode === ANALYSIS_MODE.Server &&
+                current.serverSessionId === sessionId
             );
         } catch {
-            // Content still enforces video/session identity when tab URLs are hidden.
-            return true;
+            return false;
         }
+    }
+
+    /**
+     * Trusts only top-frame messages from a declaratively matched document.
+     *
+     * @param sender - Browser-authenticated runtime sender metadata.
+     * @param videoId - Payload video required for ordinary session traffic.
+     * @param allowNavigatedRoute - Whether SPA cleanup may use the new route.
+     * @returns Trusted source tab id, or `null` without ownership proof.
+     */
+    private static trustedSenderTabId(
+        sender: Runtime.MessageSender,
+        videoId: string,
+        allowNavigatedRoute: boolean,
+    ): number | null {
+        const tabId = sender.tab?.id;
+        const senderUrl = sender.url;
+        if (
+            tabId === undefined ||
+            sender.frameId !== TOP_FRAME_ID ||
+            senderUrl === undefined ||
+            !isTopSkipContentDocumentUrl(senderUrl)
+        ) {
+            return null;
+        }
+        const senderVideoId = getWatchVideoIdFromUrl(senderUrl);
+        if (!allowNavigatedRoute && senderVideoId !== videoId) {
+            return null;
+        }
+        return tabId;
     }
 
     /**
@@ -290,9 +358,10 @@ export class ServerAnalysisRuntimeMessages {
     }): Promise<RequestServerAnalysisResponse> {
         if (
             !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
+            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 input.tabId,
                 input.requestedVideoId,
+                input.sessionId,
             ))
         ) {
             return { ok: true, status: 'inactive' };
@@ -310,6 +379,15 @@ export class ServerAnalysisRuntimeMessages {
                 if (identity === null) {
                     return { ok: false, error: 'Invalid server response.' };
                 }
+                if (
+                    !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+                        input.tabId,
+                        input.requestedVideoId,
+                        input.sessionId,
+                    ))
+                ) {
+                    return { ok: true, status: 'inactive' };
+                }
                 await PromoDetectionStore.set(input.tabId, {
                     videoId: input.requestedVideoId,
                     sessionId: input.sessionId,
@@ -324,7 +402,7 @@ export class ServerAnalysisRuntimeMessages {
                     pollAfterSec: input.response.pollAfterSec,
                     identity,
                 };
-            case 'ready':
+            case 'ready': {
                 try {
                     await ServerResultCacheStorage.saveTerminalResponse(
                         input.response,
@@ -332,15 +410,20 @@ export class ServerAnalysisRuntimeMessages {
                 } catch {
                     // Cache persistence cannot block a valid terminal result.
                 }
-                await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
-                    tabId: input.tabId,
-                    sessionId: input.sessionId,
-                    videoId: input.response.videoId,
-                    promoBlocks: input.response.promoBlocks,
-                    source: input.readySource,
-                    durationSec: input.durationSec,
-                });
+                const delivered =
+                    await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
+                        tabId: input.tabId,
+                        sessionId: input.sessionId,
+                        videoId: input.response.videoId,
+                        promoBlocks: input.response.promoBlocks,
+                        source: input.readySource,
+                        durationSec: input.durationSec,
+                    });
+                if (!delivered) {
+                    return { ok: true, status: 'inactive' };
+                }
                 return { ok: true, status: 'ready' };
+            }
             case 'no_promo':
                 try {
                     await ServerResultCacheStorage.saveTerminalResponse(
@@ -348,6 +431,15 @@ export class ServerAnalysisRuntimeMessages {
                     );
                 } catch {
                     // Cache persistence cannot block a valid terminal result.
+                }
+                if (
+                    !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+                        input.tabId,
+                        input.requestedVideoId,
+                        input.sessionId,
+                    ))
+                ) {
+                    return { ok: true, status: 'inactive' };
                 }
                 await PromoDetectionStore.set(input.tabId, {
                     videoId: input.requestedVideoId,
@@ -359,13 +451,17 @@ export class ServerAnalysisRuntimeMessages {
             case 'unavailable':
             case 'error':
             case 'rate_limited':
-                await ServerAnalysisRuntimeMessages.publishFailure({
-                    tabId: input.tabId,
-                    sessionId: input.sessionId,
-                    videoId: input.requestedVideoId,
-                    failure: input.response.error,
-                    algorithmVersion: input.response.algorithmVersion,
-                });
+                if (
+                    !(await ServerAnalysisRuntimeMessages.publishFailure({
+                        tabId: input.tabId,
+                        sessionId: input.sessionId,
+                        videoId: input.requestedVideoId,
+                        failure: input.response.error,
+                        algorithmVersion: input.response.algorithmVersion,
+                    }))
+                ) {
+                    return { ok: true, status: 'inactive' };
+                }
                 return { ok: true, status: input.response.status };
         }
     }
@@ -381,19 +477,32 @@ export class ServerAnalysisRuntimeMessages {
         payload: ServerAnalysisSessionEventPayload,
         sender: Runtime.MessageSender,
     ): Promise<{ ok: true } | { ok: false; error: string }> {
-        const tabId = sender.tab?.id;
-        if (tabId === undefined) {
-            return { ok: false, error: 'Missing sender tab id.' };
-        }
         if (payload.event === SERVER_ANALYSIS_SESSION_EVENT.Cancelled) {
+            const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
+                sender,
+                payload.videoId,
+                true,
+            );
+            if (tabId === null) {
+                return { ok: false, error: 'Untrusted sender.' };
+            }
             await PromoDetectionStore.clear(tabId, payload.sessionId);
+            return { ok: true };
+        }
+        const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
+            sender,
+            payload.videoId,
+            false,
+        );
+        if (tabId === null) {
             return { ok: true };
         }
         if (
             !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
+            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 tabId,
                 payload.videoId,
+                payload.sessionId,
             ))
         ) {
             return { ok: true };
@@ -462,15 +571,20 @@ export class ServerAnalysisRuntimeMessages {
         payload: RequestServerAnalysisPayload,
         sender: Runtime.MessageSender,
     ): Promise<RequestServerAnalysisResponse> {
-        const tabId = sender.tab?.id;
-        if (tabId === undefined) {
-            return { ok: false, error: 'Missing sender tab id.' };
+        const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
+            sender,
+            payload.videoId,
+            false,
+        );
+        if (tabId === null) {
+            return { ok: true, status: 'inactive' };
         }
         if (
             !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
+            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 tabId,
                 payload.videoId,
+                payload.sessionId,
             ))
         ) {
             return { ok: true, status: 'inactive' };
@@ -486,12 +600,16 @@ export class ServerAnalysisRuntimeMessages {
         const localIdentity =
             await ServerAnalysisRuntimeMessages.buildLocalIdentity(payload);
         if (!localIdentity.ok) {
-            await ServerAnalysisRuntimeMessages.publishFailure({
-                tabId,
-                sessionId: payload.sessionId,
-                videoId: payload.videoId,
-                failure: localIdentity.failure,
-            });
+            if (
+                !(await ServerAnalysisRuntimeMessages.publishFailure({
+                    tabId,
+                    sessionId: payload.sessionId,
+                    videoId: payload.videoId,
+                    failure: localIdentity.failure,
+                }))
+            ) {
+                return { ok: true, status: 'inactive' };
+            }
             return { ok: true, status: 'unavailable' };
         }
 
@@ -507,17 +625,30 @@ export class ServerAnalysisRuntimeMessages {
                             algorithmVersion: config.algorithmVersion,
                         });
             if (cached?.status === 'ready') {
-                await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
-                    tabId,
-                    sessionId: payload.sessionId,
-                    videoId: cached.videoId,
-                    promoBlocks: cached.promoBlocks,
-                    source: PROMO_DETECTION_SOURCE.LocalCache,
-                    durationSec: payload.durationSec,
-                });
+                if (
+                    !(await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
+                        tabId,
+                        sessionId: payload.sessionId,
+                        videoId: cached.videoId,
+                        promoBlocks: cached.promoBlocks,
+                        source: PROMO_DETECTION_SOURCE.LocalCache,
+                        durationSec: payload.durationSec,
+                    }))
+                ) {
+                    return { ok: true, status: 'inactive' };
+                }
                 return { ok: true, status: 'ready' };
             }
             if (cached?.status === 'no_promo') {
+                if (
+                    !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+                        tabId,
+                        payload.videoId,
+                        payload.sessionId,
+                    ))
+                ) {
+                    return { ok: true, status: 'inactive' };
+                }
                 await PromoDetectionStore.set(tabId, {
                     videoId: cached.videoId,
                     sessionId: payload.sessionId,
@@ -527,6 +658,15 @@ export class ServerAnalysisRuntimeMessages {
                 return { ok: true, status: 'no_promo' };
             }
 
+            if (
+                !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+                    tabId,
+                    payload.videoId,
+                    payload.sessionId,
+                ))
+            ) {
+                return { ok: true, status: 'inactive' };
+            }
             const response = await ServerAnalysisClient.requestAnalysis({
                 videoId: payload.videoId,
                 durationSec: payload.durationSec,
@@ -545,12 +685,16 @@ export class ServerAnalysisRuntimeMessages {
         } catch (error) {
             const failure =
                 ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
-            await ServerAnalysisRuntimeMessages.publishFailure({
-                tabId,
-                sessionId: payload.sessionId,
-                videoId: payload.videoId,
-                failure,
-            });
+            if (
+                !(await ServerAnalysisRuntimeMessages.publishFailure({
+                    tabId,
+                    sessionId: payload.sessionId,
+                    videoId: payload.videoId,
+                    failure,
+                }))
+            ) {
+                return { ok: true, status: 'inactive' };
+            }
             return { ok: false, error: 'Server analysis failed.' };
         }
     }
@@ -566,16 +710,21 @@ export class ServerAnalysisRuntimeMessages {
         payload: RefreshServerAnalysisStatusPayload,
         sender: Runtime.MessageSender,
     ): Promise<RefreshServerAnalysisStatusResponse> {
-        const tabId = sender.tab?.id;
-        if (tabId === undefined) {
-            return { ok: false, error: 'Missing sender tab id.' };
+        const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
+            sender,
+            payload.videoId,
+            false,
+        );
+        if (tabId === null) {
+            return { ok: true, status: 'inactive' };
         }
         if (
             payload.videoId !== payload.identity.videoId ||
             !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isTabStillOnRequestedVideo(
+            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 tabId,
                 payload.videoId,
+                payload.sessionId,
             ))
         ) {
             return { ok: true, status: 'inactive' };
@@ -590,6 +739,15 @@ export class ServerAnalysisRuntimeMessages {
                 response.status === 'error' &&
                 response.error.code === SERVER_ANALYSIS_FAILURE_CODE.JobNotFound
             ) {
+                if (
+                    !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+                        tabId,
+                        payload.videoId,
+                        payload.sessionId,
+                    ))
+                ) {
+                    return { ok: true, status: 'inactive' };
+                }
                 return { ok: true, status: 'resubmit_required' };
             }
             return await ServerAnalysisRuntimeMessages.applyServerResponse({
@@ -602,13 +760,17 @@ export class ServerAnalysisRuntimeMessages {
         } catch (error) {
             const failure =
                 ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
-            await ServerAnalysisRuntimeMessages.publishFailure({
-                tabId,
-                sessionId: payload.sessionId,
-                videoId: payload.videoId,
-                failure,
-                algorithmVersion: payload.identity.algorithmVersion,
-            });
+            if (
+                !(await ServerAnalysisRuntimeMessages.publishFailure({
+                    tabId,
+                    sessionId: payload.sessionId,
+                    videoId: payload.videoId,
+                    failure,
+                    algorithmVersion: payload.identity.algorithmVersion,
+                }))
+            ) {
+                return { ok: true, status: 'inactive' };
+            }
             return { ok: false, error: 'Server analysis failed.' };
         }
     }

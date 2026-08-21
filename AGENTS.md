@@ -19,12 +19,14 @@ and options page. Preferences and provider settings are read/written **only in
 the extension background** (`browser.storage.local`, **Valibot** at boundaries);
 popup, options, and content scripts use **`runtime.sendMessage`**.
 
-The service worker may **`fetch` OpenRouter** in BYOK mode. Extension APIs use
-the standardized **`browser.*`** surface via **`webextension-polyfill`** (import
-from **`extension/src/shared/browser.ts`**, not the global `chrome` object).
-Feature intent and dated feature specs live under **`.sdd/`**, which is
-**gitignored and local-only** — it is not published to GitHub, so a fresh clone
-will not have it.
+The service worker may **`fetch` OpenRouter or OpenAI** in BYOK mode only after
+Chrome confirms the provider's optional host grant. Saving a provider key and
+granting host access are separate operations; Server mode never requests those
+grants. Extension APIs use the standardized **`browser.*`** surface via
+**`webextension-polyfill`** (import from
+**`extension/src/shared/browser.ts`**, not the global `chrome` object). Feature
+intent and dated feature specs live under **`.sdd/`**, which is **gitignored and
+local-only** — it is not published to GitHub, so a fresh clone will not have it.
 
 ## Technical context
 
@@ -34,15 +36,15 @@ will not have it.
 | **Runtime (tooling)**  | **Node.js ≥ 22** (`engines` in `package.json`); **pnpm** for installs (`packageManager` in `package.json`)                                                                                                                                                                                                                   |
 | **UI**                 | **React 19.2+** (required by Mantine 9), **Mantine 9.x** (`@mantine/core` / `@mantine/hooks` in `package.json`), **MobX 6** + **mobx-react-lite** (popup only)                                                                                                                                                               |
 | **Bundler**            | **Rspack** (`@rspack/cli`, `@rspack/core`) — multi-entry build to `extension/dist/`                                                                                                                                                                                                                                          |
-| **Extension platform** | **Chrome** MV3 (`extension/src/manifest.json` → `extension/dist/manifest.json`); load unpacked from **`extension/dist/`**                                                                                                                                                                                                    |
-| **Storage**            | **`browser.storage.local`** — prefs + OpenRouter config, **background only**; **Valibot** in `extension/src/shared/constants.ts` and OpenRouter schema; popup/options/content use **`runtime` messaging** (`extension/src/shared/messages.ts`)                                                                               |
+| **Extension platform** | **Chrome 111+** MV3 (`extension/src/manifest.json` → composed `extension/dist/manifest.json`); load unpacked from **`extension/dist/`**                                                                                                                                                                                   |
+| **Storage**            | **`browser.storage.local`** — prefs + provider config, **background only**; **Valibot** at boundaries; popup/options/content use **`runtime` messaging** (`extension/src/shared/messages.ts`)                                                                                                                           |
 | **Unit tests**         | **Vitest** 4.x; coverage thresholds in `vitest.config.ts` (`skip-logic.ts`, `page-guards.ts`, `extension/src/popup/preferences-store.ts`)                                                                                                                                                                                    |
 | **E2E**                | **Playwright** — loads unpacked extension + local static fixture (`extension/tests/e2e/`); **headless** Chromium by default (`PW_EXTENSION_HEADED=1` for a visible browser). CI runs **`pnpm run test:e2e`** (see `.github/workflows/ci.yml`)                                                                                |
 | **Lint / format**      | **`pnpm run lint`** = **ESLint** + markdownlint + **`tsc --noEmit`** (`lint:types`). **ESLint 10** owns both linting and formatting via **ESLint Stylistic** (`eslint.config.ts`, type-aware; 4-space indent, single quotes, semicolons, trailing commas). `pnpm run format` = `eslint --fix .`. Stylistic is not a formatter and never reflows lines: write to 80 columns by hand, `max-len` errors past 100. `.md`/`.json`/`.yaml` are no longer auto-formatted — markdownlint still checks Markdown. |
 | **CI**                 | `.github/workflows/ci.yml` — **`pnpm install --frozen-lockfile`** → **lint** → **build** → deployment asset tests → **test** → **test:coverage** → Playwright Chromium → **`pnpm run test:e2e`**                                                                                                                             |
 | **Project type**       | pnpm workspace: `backend`, `common`, and `extension`                                                                                                                                                                                                                                                                         |
 | **Performance goals**  | N/A beyond product spec (informal UX: skip soon after crossing 30s)                                                                                                                                                                                                                                                          |
-| **Constraints**        | Permissions include `storage`, `tabs`, `scripting`; host access for YouTube and optional **OpenRouter**; avoid shipping dev-only host entries (`127.0.0.1`) to the Web Store — see `extension/DEPLOYMENT.md`                                                                                                                 |
+| **Constraints**        | Required API permission is only `storage`; required host is only the configured backend; OpenRouter/OpenAI are optional hosts; YouTube is declarative site access; loopback matches are dev-only — see `extension/DEPLOYMENT.md`                                                                                         |
 
 ## Project structure
 
@@ -91,6 +93,7 @@ Prefer **`make`** targets; they delegate to **`pnpm run`**.
 | Production container  | `make test-container` or `pnpm run test:container`                                        |
 | E2E only              | `make test-e2e` or `pnpm run test:e2e` (vendored silent MP4 in `extension/tests/e2e/fixtures/`) |
 | E2E UI mode           | `pnpm run test:e2e:ui`                                                                    |
+| Manifest policy       | `pnpm run validate:extension-manifest -- …`                                             |
 
 **CI (GitHub Actions)** matches: `pnpm run lint`, `pnpm run build`, `pnpm run test:deployment`, `pnpm run test:container`, `pnpm run test`, `pnpm run test:coverage`, then `pnpm exec playwright install chromium --with-deps`, **`pnpm run test:e2e`**, and the release-package boundary check.
 
@@ -110,15 +113,34 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
     - `pnpm exec playwright install chromium` (once per machine, if needed)
     - `pnpm run test:e2e`
 4. **Do not** add network dependencies to the extension runtime for MVP without an explicit spec change.
-5. **Chrome Web Store**: Before release, review `extension/DEPLOYMENT.md` (zip `extension/dist/` only; trim dev-only manifest matches if needed).
+5. **Chrome Web Store**: Before release, review `extension/DEPLOYMENT.md` (zip
+   `extension/dist/` only; the composed release profile must already exclude
+   dev-only matches, and the manifest validator must confirm it).
 
 ## Code guidelines
 
 ### Architecture
 
-- **Three bundles** — `background.js`, `content.js`, `popup.js`. Any new entry requires **`extension/rspack.config.ts`** + **`extension/src/manifest.json`** updates.
+- **Five bundles** — `background.js`, `content.js`,
+  `caption-page-bridge.js`, `popup.js`, and `options.js`. Any new entry requires
+  **`extension/rspack.config.ts`** plus the matching composed-manifest or HTML
+  boundary.
 - **Separation**: Pure logic in **`skip-logic.ts`** and **`page-guards.ts`**; DOM + `browser.runtime` messaging in **`YoutubeWatch`** (`youtube-watch.ts`); **popup** prefs via **`extension/src/popup/preferences-store.ts`** (messages only); **only `PrefsSyncStorage`** performs **`browser.storage.local`** read/write for preferences. **Content** (`content.ts`), **background** (`background.ts`), and **popup** (`popup.tsx`) use static-only entry classes; bundle entries **`index.ts`** / **`main.tsx`** only call **`Content.init()`** / **`Background.init()`** / **`Popup.init()`** (no other side effects at load).
-- **Prefs fan-out after writes**: The watch content script caches prefs in memory and does **not** re-read storage on navigation or idle. Whenever the background persists a prefs change (`PrefsSyncStorage.save` path), also call **`PrefsBroadcast.sendUpdatedToAllTabs`** so open tabs receive **`TOPSKIP_MESSAGE.PREFS_UPDATED`** without a full page reload. Extension UI (popup/options) uses **`PrefsPortHub`** for the same event over ports; keep those two paths in sync when adding new prefs fields.
+- **Prefs fan-out after writes**: The watch content script caches prefs in
+  memory and does **not** re-read storage on navigation or idle. Whenever the
+  background persists a prefs change (`PrefsSyncStorage.save` path), also call
+  **`PrefsBroadcast.sendUpdatedToAllTabs`** so open tabs receive
+  **`TOPSKIP_MESSAGE.PREFS_UPDATED`** without a full page reload. This
+  `tabs.sendMessage` use does not require the sensitive `tabs` permission.
+  Extension UI (popup/options) uses **`PrefsPortHub`** for the same event over
+  ports; keep those paths in sync when adding prefs fields.
+- **Runtime message replies**: A `browser.runtime.onMessage` listener replies
+  only by returning a **Promise** (or `true` plus `sendResponse`);
+  `webextension-polyfill` treats a plain-object return as _no reply_, so the
+  sender resolves with `undefined`. The background gates Server analysis on
+  the content `CONTENT_ROUTE_STATUS` reply and wake accounting on
+  `CONTENT_SCRIPT_READY`, so those content handlers must return
+  `Promise.resolve(...)`.
 - **Promo detection UI push**: **`PromoDetectionStore`** is in-memory in the background; the popup reads it via **`GET_DETECTION_STATUS`** and also polls. After **`PromoDetectionStore.set`**, **`PromoDetectionBroadcast.notify`** sends **`TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED`** with **`runtime.sendMessage`** so an open popup can refresh immediately instead of waiting for the next poll. Content scripts are not the audience for this message (they receive promo blocks on a different channel).
 - **Imports**: Use **`@/...`** inside the extension, **`@topskip/backend/...`**
   inside the backend, and **`@topskip/common/...`** for shared contracts.
@@ -130,7 +152,38 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
   TopSkip backend; authentication, exact local-cache lookup, timeout handling,
   response validation, polling response mapping, and support URLs remain
   background-owned. Do not add TopSkip backend `fetch` calls to content code.
-- **Content script** matches YouTube + local e2e origin; **activation** for real users is gated in code via **`shouldActivateTopSkip`** (`page-guards.ts`), not only by broad manifest patterns.
+- **Private BYOK HTTP ownership**: OpenRouter/OpenAI fetches also remain in the
+  background. Each provider entry point must verify its own optional host grant
+  immediately before network I/O. A saved key is not evidence of a grant;
+  missing/revoked access must stop locally and never fall back to Server mode.
+- **Static content lifecycle**: The MAIN bridge and ISOLATED content owner are
+  declarative `document_start` scripts, with MAIN first. Chrome 111 is the
+  minimum. Do not restore dynamic registration, runtime injection, or the
+  `scripting` permission. Install/update/manual extension reload may require
+  reloading already-open YouTube tabs. Worker sleep/restart does not while the
+  content context is alive: startup readiness only wakes content-owned pending
+  delivery and never injects a replacement.
+- **Dormant static bridge**: MAIN fetch/XHR wrappers must delegate unchanged
+  outside a bounded active capture. Missing prefs and disabled prefs keep
+  ISOLATED inert: no player binding, seek, caption read, analysis, or provider
+  operation. Keep replacement/teardown hooks as defensive duplicate guards.
+- **Content script** matches YouTube + the dev-only local E2E origin;
+  **activation** for real users is gated in code via **`shouldActivateTopSkip`**
+  (`page-guards.ts`), not only by broad manifest patterns. Beta/release must
+  contain YouTube only. The fixture origin reaches runtime code only through
+  the `__TOPSKIP_DEV_E2E_ORIGIN__` define (`null` in beta/release), so the
+  loopback literal never ships; build-time code reads `DEV_E2E_FIXTURE_ORIGIN`
+  from `extension/build-modes.ts`. CI greps release artifacts for
+  `127.0.0.1:(8787|4173)`.
+- **Manifest policy**: Emitted manifests have exactly `storage` as required API
+  permission, the configured backend as the only required host, and OpenRouter
+  plus OpenAI as optional hosts. Dev additionally permits only the exact
+  loopback backend `http://127.0.0.1:8787` and fixture match; beta/release require
+  public-looking HTTPS DNS. The build policy performs no DNS lookup, so it does
+  not prove where a syntactically accepted hostname resolves. Dev and beta
+  builds additionally emit `version_name` with the build timestamp (logged at
+  worker start and shown on the extension card); release keeps the bare
+  `version`.
 - **Simple abstractions over repeated branching**: Keep code simple by making variation explicit in data/config/registry maps instead of scattering repeated `if` / `switch` chains across handlers and UI. A one-off conditional is fine, but when the same choice affects multiple behaviors (load/save/test/label/render/routing), define a small typed abstraction for those behaviors and keep the orchestration generic.
 - **`extension/src/shared/`**: Reserve for **constants**, **shared types**, **`browser`**, **message type unions**, and **pure helpers** (deterministic, no network/storage/timers/`console` side effects). Do **not** put modules that perform **I/O** or other ambient side effects in `shared/` — keep those next to the bundle that owns them (e.g. YouTube **`fetch`** lives under **`extension/src/content/captions/`**, not `shared/`). Likewise, **interfaces consumed by a single bundle** (e.g. the `LlmProviderAdapter` interface and provider registry, used only by the background promo-detection pipeline) belong in that bundle's directory (`extension/src/background/`), not in `shared/`. Only the serialized payload types that cross bundle boundaries via `runtime.sendMessage` (provider ID literals, display names) go in `extension/src/shared/messages.ts`.
 - **`common/src/`**: Keep only deterministic code consumed by both runtime

@@ -27,6 +27,8 @@ import { contentLog } from '@/content/content-log';
 import { ContentServerAnalysisLog } from '@/content/server-analysis-log';
 import { WatchCaptions } from '@/content/watch-captions';
 import browser from '@/shared/browser';
+import { getExtensionBuildLabel } from '@/shared/extension-build';
+import { formatLogFields } from '@/shared/log-fields';
 import {
     ANALYSIS_MODE,
     MS_PER_SECOND,
@@ -44,6 +46,8 @@ import {
     SERVER_ANALYSIS_SESSION_EVENT,
     TOPSKIP_MESSAGE,
     type RequestServerAnalysisResponse,
+    type ContentRouteStatusResponse,
+    type ContentScriptReadyResponse,
     type PromoDetectionSource,
     type ServerAnalysisSessionEventPayload,
     type TopSkipRuntimeMessage,
@@ -100,6 +104,15 @@ const CONTENT_RUNTIME_OUTCOME_STATUS = {
 } as const;
 const SERVER_ANALYSIS_DEADLINE_TIMER_REASON = 'analysis-deadline';
 const SERVER_ANALYSIS_FAILED_ACK_LOG_STATUS = 'failed';
+
+/**
+ * Stable capture-owner reasons keep route cleanup diagnostics comparable.
+ */
+const WATCH_CAPTION_CANCEL_REASON = {
+    AnalysisModeChanged: 'analysis-mode-changed',
+    Disabled: 'disabled',
+    Navigation: 'navigation',
+} as const;
 
 /**
  * Safe retry reasons keep diagnostics free of rejected runtime details.
@@ -191,16 +204,19 @@ export function shouldAcceptPromoBlocksForActiveRoute(input: {
     currentVideoId: string | null;
     messageVideoId: string;
     source: PromoDetectionSource;
+    enabled: boolean;
+    analysisMode: AnalysisMode | null;
     activeSessionId: string | null;
     messageSessionId?: string;
 }): boolean {
-    if (input.messageVideoId !== input.currentVideoId) {
+    if (!input.enabled || input.messageVideoId !== input.currentVideoId) {
         return false;
     }
     if (input.source === PROMO_DETECTION_SOURCE.LocalProvider) {
-        return true;
+        return input.analysisMode === ANALYSIS_MODE.Byok;
     }
     return (
+        input.analysisMode === ANALYSIS_MODE.Server &&
         input.activeSessionId !== null &&
         input.messageSessionId === input.activeSessionId
     );
@@ -343,6 +359,34 @@ export class YoutubeWatch {
     }
 
     /**
+     * Reports route ownership from live content state without exposing tab URL.
+     *
+     * A just-completed SPA navigation invalidates the old lock immediately,
+     * even when the binding poll has not yet finished its normal cleanup.
+     *
+     * @returns Versioned identity used by background delayed-result guards.
+     */
+    private static getContentRouteStatus(): ContentRouteStatusResponse {
+        const videoId = YoutubeWatch.shouldActivateForPage()
+            ? YoutubeWatch.getWatchVideoId()
+            : null;
+        const routeIsSynchronized = videoId === YoutubeWatch.currentVideoId;
+        return {
+            ok: true,
+            protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
+            extensionVersion: browser.runtime.getManifest().version,
+            videoId,
+            enabled: YoutubeWatch.prefs?.enabled ?? false,
+            analysisMode: routeIsSynchronized
+                ? YoutubeWatch.analysisModeForCurrentVideo
+                : null,
+            serverSessionId: routeIsSynchronized
+                ? YoutubeWatch.serverAnalysisSession?.sessionId ?? null
+                : null,
+        };
+    }
+
+    /**
      * Whether this document URL is one TopSkip should handle (watch or e2e).
      *
      * @returns `true` when TopSkip should run on this page.
@@ -457,7 +501,7 @@ export class YoutubeWatch {
      */
     private static onTimeUpdate(video: HTMLVideoElement): void {
         if (
-            YoutubeWatch.prefs?.enabled === false ||
+            YoutubeWatch.prefs?.enabled !== true ||
             YoutubeWatch.isLikelyAdPlaying()
         ) {
             YoutubeWatch.lastTime = video.currentTime;
@@ -629,12 +673,44 @@ export class YoutubeWatch {
     private static resetForNewVideo(videoId: string | null): void {
         YoutubeWatch.unbindVideo();
         YoutubeWatch.cancelServerAnalysisSession('navigation');
+        if (
+            YoutubeWatch.analysisModeForCurrentVideo !== null ||
+            YoutubeWatch.captionScheduledVideoId !== null
+        ) {
+            WatchCaptions.cancel(WATCH_CAPTION_CANCEL_REASON.Navigation);
+        }
         YoutubeWatch.currentVideoId = videoId;
         YoutubeWatch.analysisModeForCurrentVideo = null;
         YoutubeWatch.byokPreflightVideoId = null;
         YoutubeWatch.serverAnalysisRouteLogKey = null;
         YoutubeWatch.captionScheduledVideoId = null;
         YoutubeWatch.lastTime = 0;
+        YoutubeWatch.promoBlocks = [];
+        YoutubeWatch.firedPromoBlockStartKeys.clear();
+    }
+
+    /**
+     * Returns a disabled static context to a passive document observer without
+     * issuing cleanup commands when the route never acquired capture ownership.
+     */
+    private static deactivateDisabledRoute(): void {
+        const hadCaptionRouteOwnership =
+            YoutubeWatch.analysisModeForCurrentVideo !== null ||
+            YoutubeWatch.serverAnalysisSession !== null ||
+            YoutubeWatch.captionScheduledVideoId !== null;
+
+        YoutubeWatch.cancelServerAnalysisSession(
+            WATCH_CAPTION_CANCEL_REASON.Disabled,
+        );
+        if (hadCaptionRouteOwnership) {
+            WatchCaptions.cancel(WATCH_CAPTION_CANCEL_REASON.Disabled);
+        }
+        YoutubeWatch.unbindVideo();
+        YoutubeWatch.analysisModeForCurrentVideo = null;
+        YoutubeWatch.byokPreflightVideoId = null;
+        YoutubeWatch.captionScheduledVideoId = null;
+        YoutubeWatch.lastTime = 0;
+        YoutubeWatch.isSeeking = false;
         YoutubeWatch.promoBlocks = [];
         YoutubeWatch.firedPromoBlockStartKeys.clear();
     }
@@ -1634,7 +1710,7 @@ export class YoutubeWatch {
             session,
             SERVER_ANALYSIS_SESSION_EVENT.AcquisitionStarted,
         );
-        WatchCaptions.installPageBridge();
+        WatchCaptions.preparePageBridge();
         const capture = await WatchCaptions.capture({
             videoId,
             signal: session.signal,
@@ -1760,12 +1836,34 @@ export class YoutubeWatch {
         }
 
         const vid = YoutubeWatch.getWatchVideoId();
-        const video = YoutubeWatch.getMainVideo();
         const isNewVideo = vid !== YoutubeWatch.currentVideoId;
 
         if (isNewVideo) {
             YoutubeWatch.resetForNewVideo(vid);
         }
+
+        const prefs = YoutubeWatch.prefs;
+        if (prefs === null) {
+            YoutubeWatch.logServerAnalysisRoute({
+                videoId: vid,
+                outcome: 'waiting-for-prefs',
+                hasVideo: false,
+            });
+            return;
+        }
+        if (!prefs.enabled) {
+            YoutubeWatch.deactivateDisabledRoute();
+            YoutubeWatch.logServerAnalysisRoute({
+                videoId: vid,
+                outcome: 'disabled',
+                hasVideo: false,
+                enabled: prefs.enabled,
+                analysisMode: prefs.analysisMode,
+            });
+            return;
+        }
+
+        const video = YoutubeWatch.getMainVideo();
 
         if (!video) {
             YoutubeWatch.logServerAnalysisRoute({
@@ -1779,16 +1877,6 @@ export class YoutubeWatch {
         const isVideoElementSwap =
             !isNewVideo && YoutubeWatch.boundVideo !== video;
         YoutubeWatch.bindVideo(video);
-
-        const prefs = YoutubeWatch.prefs;
-        if (prefs === null) {
-            YoutubeWatch.logServerAnalysisRoute({
-                videoId: vid,
-                outcome: 'waiting-for-prefs',
-                hasVideo: true,
-            });
-            return;
-        }
 
         YoutubeWatch.analysisModeForCurrentVideo =
             resolveAnalysisModeForCurrentVideo(
@@ -1804,7 +1892,7 @@ export class YoutubeWatch {
                 enabled: prefs.enabled,
                 analysisMode: prefs.analysisMode,
             });
-            YoutubeWatch.cancelServerAnalysisSession('disabled');
+            YoutubeWatch.deactivateDisabledRoute();
             return;
         }
 
@@ -1841,7 +1929,7 @@ export class YoutubeWatch {
         if (vid !== null) {
             YoutubeWatch.requestByokSetupPreflight(vid);
         }
-        WatchCaptions.installPageBridge();
+        WatchCaptions.preparePageBridge();
         if (vid !== null && YoutubeWatch.captionScheduledVideoId !== vid) {
             YoutubeWatch.captionScheduledVideoId = vid;
             WatchCaptions.scheduleForVideoId(vid, 'video-id-change');
@@ -2059,15 +2147,20 @@ export class YoutubeWatch {
                 currentVideoId: YoutubeWatch.currentVideoId,
                 messageVideoId: videoId,
                 source: m.source,
+                enabled: YoutubeWatch.prefs?.enabled === true,
+                analysisMode: YoutubeWatch.analysisModeForCurrentVideo,
                 activeSessionId:
                     YoutubeWatch.serverAnalysisSession?.sessionId ?? null,
                 ...('sessionId' in m ? { messageSessionId: m.sessionId } : {}),
             })
         ) {
-            contentLog.warn('PROMO_BLOCKS_DETECTED: videoId mismatch', {
-                msg: videoId,
-                current: YoutubeWatch.currentVideoId,
-            });
+            contentLog.warn(
+                'PROMO_BLOCKS_DETECTED: videoId mismatch',
+                formatLogFields({
+                    msg: videoId,
+                    current: YoutubeWatch.currentVideoId,
+                }),
+            );
             return;
         }
         if (m.source !== PROMO_DETECTION_SOURCE.LocalProvider) {
@@ -2098,18 +2191,31 @@ export class YoutubeWatch {
             return;
         }
         YoutubeWatch.invalidatePrefsLoading();
-        const previousMode = YoutubeWatch.prefs?.analysisMode;
+        const previousPrefs = YoutubeWatch.prefs;
         YoutubeWatch.prefs = m.prefs;
-        if (!shouldUseServerAnalysis(m.prefs)) {
-            YoutubeWatch.cancelServerAnalysisSession('prefs-changed');
+        if (!m.prefs.enabled) {
+            YoutubeWatch.deactivateDisabledRoute();
+            YoutubeWatch.syncVideoBinding();
+            return;
         }
-        if (
-            previousMode !== undefined &&
-            previousMode !== m.prefs.analysisMode
-        ) {
+
+        const replacesActiveAnalysisMode =
+            previousPrefs?.enabled === true &&
+            previousPrefs.analysisMode !== m.prefs.analysisMode;
+        if (replacesActiveAnalysisMode) {
+            YoutubeWatch.cancelServerAnalysisSession(
+                WATCH_CAPTION_CANCEL_REASON.AnalysisModeChanged,
+            );
+            WatchCaptions.cancel(
+                WATCH_CAPTION_CANCEL_REASON.AnalysisModeChanged,
+            );
             YoutubeWatch.analysisModeForCurrentVideo = null;
             YoutubeWatch.byokPreflightVideoId = null;
             YoutubeWatch.captionScheduledVideoId = null;
+            YoutubeWatch.lastTime = YoutubeWatch.boundVideo?.currentTime ?? 0;
+            YoutubeWatch.isSeeking = false;
+            YoutubeWatch.promoBlocks = [];
+            YoutubeWatch.firedPromoBlockStartKeys.clear();
         }
         YoutubeWatch.syncVideoBinding();
     }
@@ -2122,9 +2228,22 @@ export class YoutubeWatch {
     static init(): () => void {
         ContentServerAnalysisLog.info('content-initialized', {
             videoId: YoutubeWatch.getWatchVideoId(),
+            version: getExtensionBuildLabel(),
         });
         YoutubeWatch.startPrefsLoading();
+        // `runtime.onMessage` replies reach the sender only when the listener
+        // returns a Promise (or `true` plus `sendResponse`); the polyfill
+        // treats a plain object as "no reply", and the background gates
+        // Server analysis and wake accounting on these two replies.
         const onRuntimeMessage = (message: unknown): unknown => {
+            if (
+                message !== null &&
+                typeof message === 'object' &&
+                Reflect.get(message, 'type') ===
+                    TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS
+            ) {
+                return Promise.resolve(YoutubeWatch.getContentRouteStatus());
+            }
             if (
                 message !== null &&
                 typeof message === 'object' &&
@@ -2132,11 +2251,12 @@ export class YoutubeWatch {
                     TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY
             ) {
                 YoutubeWatch.resumePendingTerminalEventDelivery();
-                return {
+                const ack: ContentScriptReadyResponse = {
                     ok: true,
                     protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
                     extensionVersion: browser.runtime.getManifest().version,
                 };
+                return Promise.resolve(ack);
             }
             YoutubeWatch.onPrefsUpdatedMessage(message);
             YoutubeWatch.onPromoBlocksMessage(message);

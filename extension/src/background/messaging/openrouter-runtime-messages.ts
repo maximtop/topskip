@@ -1,5 +1,6 @@
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
+import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import { fetchOpenRouterModelList } from '@/background/openrouter/openrouter-models-api';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
@@ -199,6 +200,13 @@ export class OpenRouterRuntimeMessages {
             }
 
             if (apiKey.length === 0) {
+                return { ok: true, valid: true, unverified: true };
+            }
+
+            const hasHostAccess = await ProviderHostAccess.isGranted(
+                PROVIDER_ID.OpenRouter,
+            );
+            if (!hasHostAccess) {
                 return { ok: true, valid: true, unverified: true };
             }
 

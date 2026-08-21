@@ -7,9 +7,11 @@ import {
 } from '@/shared/watch-route';
 
 /**
- * Local static server host used by Playwright e2e (see `tests/e2e/fixtures`).
+ * Local static server host used by Playwright e2e (see `tests/e2e/fixtures`);
+ * `null` outside development bundles.
  */
-export const E2E_HOST = new URL(DEV_E2E_ORIGIN).hostname;
+export const E2E_HOST: string | null =
+    DEV_E2E_ORIGIN === null ? null : new URL(DEV_E2E_ORIGIN).hostname;
 
 /**
  * Exact production hostname accepted by the legacy URL-parts boundary.
@@ -53,8 +55,9 @@ export function shouldActivateTopSkip(input: {
     search: string;
 }): boolean {
     const { hostname, pathname, search } = input;
-    const origin = hostname === E2E_HOST
-        ? DEV_E2E_ORIGIN
-        : `https://${hostname}`;
+    const origin =
+        DEV_E2E_ORIGIN !== null && hostname === E2E_HOST
+            ? DEV_E2E_ORIGIN
+            : `https://${hostname}`;
     return getWatchVideoIdFromUrl(`${origin}${pathname}${search}`) !== null;
 }

@@ -1,14 +1,14 @@
 import * as v from 'valibot';
 
 import {
+    DEV_E2E_CONTENT_SCRIPT_MATCH,
+    DEV_E2E_FIXTURE_ORIGIN,
     TopSkipBuild,
     getExtensionManifestName,
     validateServerOrigin,
     type TopSkipBuildMode,
 } from './build-modes.ts';
 import {
-    DEV_E2E_CONTENT_SCRIPT_MATCH,
-    DEV_E2E_ORIGIN,
     YOUTUBE_CONTENT_SCRIPT_MATCH,
     YOUTUBE_ORIGIN,
 } from './src/shared/watch-route.ts';
@@ -28,7 +28,7 @@ const providerOrigins = Object.values(PROVIDER_HOST_PERMISSION).map(
 const RESERVED_SERVER_ORIGINS = new Set([
     YOUTUBE_ORIGIN,
     ...providerOrigins,
-    DEV_E2E_ORIGIN,
+    DEV_E2E_FIXTURE_ORIGIN,
 ]);
 
 const nonEmptyStringSchema = v.pipe(v.string(), v.nonEmpty());

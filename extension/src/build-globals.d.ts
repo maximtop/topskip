@@ -15,6 +15,12 @@ declare const __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__: boolean;
 declare const __TOPSKIP_SERVER_BASE_URL__: string;
 
 /**
+ * Local E2E fixture origin compiled into dev bundles only; `null` in
+ * beta/release so no loopback endpoint literal ships.
+ */
+declare const __TOPSKIP_DEV_E2E_ORIGIN__: string | null;
+
+/**
  * Compile-time gate for the Chrome built-in AI provider. Off by default; see
  * `INCLUDE_CHROME_BUILTIN_PROVIDER` in `extension/build-modes.ts` for the
  * measurements behind that decision.

@@ -2,6 +2,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 
+import { DEV_E2E_FIXTURE_ORIGIN } from './extension/build-modes';
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_TEST_YT_DLP_PATH = '/__topskip_test_missing__/yt-dlp';
 
@@ -13,6 +15,7 @@ export default defineConfig({
     define: {
         __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__: false,
         __TOPSKIP_INCLUDE_DEV_LOCAL__: false,
+        __TOPSKIP_DEV_E2E_ORIGIN__: JSON.stringify(DEV_E2E_FIXTURE_ORIGIN),
         __TOPSKIP_INCLUDE_CHROME_BUILTIN__: false,
         __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(TEST_SERVER_ORIGIN),
     },

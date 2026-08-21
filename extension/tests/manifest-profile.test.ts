@@ -1,7 +1,11 @@
 import process from 'node:process';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { TopSkipBuild } from '../build-modes';
+import {
+    DEV_E2E_CONTENT_SCRIPT_MATCH,
+    TopSkipBuild,
+    getDevE2eOrigin,
+} from '../build-modes';
 import {
     TOPSKIP_MINIMUM_CHROME_VERSION,
     composeExtensionManifest,
@@ -203,5 +207,16 @@ describe('composeExtensionManifest', () => {
         );
 
         expect(manifest.version_name).toBeUndefined();
+    });
+});
+
+describe('getDevE2eOrigin', () => {
+    it('compiles the fixture origin into dev bundles only', () => {
+        expect(getDevE2eOrigin(TopSkipBuild.Dev)).toBe(
+            'http://127.0.0.1:4173',
+        );
+        expect(DEV_E2E_CONTENT_SCRIPT_MATCH).toBe('http://127.0.0.1:4173/*');
+        expect(getDevE2eOrigin(TopSkipBuild.Beta)).toBeNull();
+        expect(getDevE2eOrigin(TopSkipBuild.Release)).toBeNull();
     });
 });

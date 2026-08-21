@@ -35,6 +35,30 @@ export const TOPSKIP_BUILD_MODES: readonly TopSkipBuildMode[] = [
 ];
 
 const DEV_LOOPBACK_SERVER_ORIGIN = 'http://127.0.0.1:8787';
+
+/**
+ * Exact local origin reserved for deterministic browser fixtures. Only the dev
+ * manifest and dev bundles may reference it: runtime code receives it through
+ * the `__TOPSKIP_DEV_E2E_ORIGIN__` define, which is `null` for beta/release so
+ * no loopback endpoint literal ships in a user-facing artifact.
+ */
+export const DEV_E2E_FIXTURE_ORIGIN = 'http://127.0.0.1:4173';
+
+/**
+ * Development-only Chrome match pattern for browser fixtures.
+ */
+export const DEV_E2E_CONTENT_SCRIPT_MATCH = `${DEV_E2E_FIXTURE_ORIGIN}/*`;
+
+/**
+ * Resolves the fixture origin compiled into a build profile.
+ *
+ * @param build - Extension build profile.
+ * @returns Fixture origin for dev bundles, otherwise `null`.
+ */
+export function getDevE2eOrigin(build: TopSkipBuildMode): string | null {
+    return build === TopSkipBuild.Dev ? DEV_E2E_FIXTURE_ORIGIN : null;
+}
+
 const HTTP_PROTOCOL = 'http:';
 const HTTPS_PROTOCOL = 'https:';
 const IPV6_OPENING_BRACKET = '[';

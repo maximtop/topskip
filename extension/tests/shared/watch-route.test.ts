@@ -1,20 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import {
-    DEV_E2E_CONTENT_SCRIPT_MATCH,
     DEV_E2E_FIXTURE_VIDEO_ID,
+    DEV_E2E_ORIGIN,
     YOUTUBE_CONTENT_SCRIPT_MATCH,
     getWatchVideoIdFromUrl,
 } from '@/shared/watch-route';
 
 describe('watch route', () => {
-    it('publishes the exact declarative content-script matches', () => {
+    it('publishes the YouTube match and the compiled dev fixture origin', () => {
         expect(YOUTUBE_CONTENT_SCRIPT_MATCH).toBe(
             'https://www.youtube.com/*',
         );
-        expect(DEV_E2E_CONTENT_SCRIPT_MATCH).toBe(
-            'http://127.0.0.1:4173/*',
-        );
+        // vitest defines the fixture origin the way a dev bundle does.
+        expect(DEV_E2E_ORIGIN).toBe('http://127.0.0.1:4173');
     });
 
     it('parses only exact YouTube watch routes with a non-empty video id', () => {

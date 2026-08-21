@@ -170,7 +170,11 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
 - **Content script** matches YouTube + the dev-only local E2E origin;
   **activation** for real users is gated in code via **`shouldActivateTopSkip`**
   (`page-guards.ts`), not only by broad manifest patterns. Beta/release must
-  contain YouTube only.
+  contain YouTube only. The fixture origin reaches runtime code only through
+  the `__TOPSKIP_DEV_E2E_ORIGIN__` define (`null` in beta/release), so the
+  loopback literal never ships; build-time code reads `DEV_E2E_FIXTURE_ORIGIN`
+  from `extension/build-modes.ts`. CI greps release artifacts for
+  `127.0.0.1:(8787|4173)`.
 - **Manifest policy**: Emitted manifests have exactly `storage` as required API
   permission, the configured backend as the only required host, and OpenRouter
   plus OpenAI as optional hosts. Dev additionally permits only the exact

@@ -15,6 +15,7 @@ import {
     BUILD_MODE_ENV_VAR,
     INCLUDE_CHROME_BUILTIN_PROVIDER,
     TopSkipBuild,
+    getDevE2eOrigin,
     getServerAnalysisBaseUrl,
     resolveTopSkipBuild,
     shouldEnableCaptionCaptureVerboseLogs,
@@ -141,6 +142,9 @@ export default defineConfig({
             ),
             __TOPSKIP_INCLUDE_DEV_LOCAL__: JSON.stringify(
                 topSkipBuildMode === TopSkipBuild.Dev,
+            ),
+            __TOPSKIP_DEV_E2E_ORIGIN__: JSON.stringify(
+                getDevE2eOrigin(topSkipBuildMode),
             ),
             __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(
                 topSkipServerOrigin,

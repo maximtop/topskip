@@ -19,14 +19,15 @@ export const YOUTUBE_WATCH_PATH = '/watch';
 export const YOUTUBE_WATCH_VIDEO_ID_PARAM = 'v';
 
 /**
- * Exact local origin reserved for deterministic browser fixtures.
+ * Fixture origin compiled into development bundles only. Beta and release
+ * receive `null`, so the loopback endpoint literal never ships; build-time
+ * manifest composition reads it from `extension/build-modes.ts` instead. The
+ * `typeof` guard keeps this module importable by that Node-side tooling.
  */
-export const DEV_E2E_ORIGIN = 'http://127.0.0.1:4173';
-
-/**
- * Development-only Chrome match pattern for browser fixtures.
- */
-export const DEV_E2E_CONTENT_SCRIPT_MATCH = `${DEV_E2E_ORIGIN}/*`;
+export const DEV_E2E_ORIGIN: string | null =
+    typeof __TOPSKIP_DEV_E2E_ORIGIN__ === 'undefined'
+        ? null
+        : __TOPSKIP_DEV_E2E_ORIGIN__;
 
 /**
  * Stable synthetic identity used by the local fixture page.

@@ -3,21 +3,23 @@ import * as v from 'valibot';
 
 const {
     addRuntimeMessageListener,
+    cancelCaptions,
     removeRuntimeMessageListener,
     capture,
     disposeCaptions,
     getManifest,
-    installPageBridge,
+    preparePageBridge,
     scheduleForVideoId,
     sendMessage,
 } = vi.hoisted(() => ({
     addRuntimeMessageListener:
         vi.fn<(listener: (message: unknown) => unknown) => void>(),
+    cancelCaptions: vi.fn(),
     removeRuntimeMessageListener: vi.fn(),
     capture: vi.fn(),
     disposeCaptions: vi.fn(),
     getManifest: vi.fn(() => ({ version: '0.1.0' })),
-    installPageBridge: vi.fn(),
+    preparePageBridge: vi.fn(),
     scheduleForVideoId: vi.fn(),
     sendMessage: vi.fn<(message: unknown) => Promise<unknown>>(),
 }));
@@ -37,9 +39,10 @@ vi.mock('@/shared/browser', () => ({
 
 vi.mock('@/content/watch-captions', () => ({
     WatchCaptions: {
+        cancel: cancelCaptions,
         capture,
         dispose: disposeCaptions,
-        installPageBridge,
+        preparePageBridge,
         scheduleForVideoId,
     },
 }));
@@ -167,6 +170,8 @@ describe('onTimeUpdate skip pipeline integration', () => {
                 currentVideoId: 'dQw4w9WgXcQ',
                 messageVideoId: 'dQw4w9WgXcQ',
                 source: 'server',
+                enabled: true,
+                analysisMode: ANALYSIS_MODE.Server,
                 activeSessionId: '00000000-0000-4000-8000-000000000002',
                 messageSessionId: '00000000-0000-4000-8000-000000000001',
             }),
@@ -176,6 +181,8 @@ describe('onTimeUpdate skip pipeline integration', () => {
                 currentVideoId: 'dQw4w9WgXcQ',
                 messageVideoId: 'dQw4w9WgXcQ',
                 source: 'server_cache',
+                enabled: true,
+                analysisMode: ANALYSIS_MODE.Server,
                 activeSessionId: '00000000-0000-4000-8000-000000000002',
                 messageSessionId: '00000000-0000-4000-8000-000000000002',
             }),
@@ -185,10 +192,32 @@ describe('onTimeUpdate skip pipeline integration', () => {
                 currentVideoId: 'dQw4w9WgXcQ',
                 messageVideoId: 'dQw4w9WgXcQ',
                 source: 'local_provider',
+                enabled: true,
+                analysisMode: ANALYSIS_MODE.Byok,
                 activeSessionId: null,
                 messageSessionId: undefined,
             }),
         ).toBe(true);
+        expect(
+            shouldAcceptPromoBlocksForActiveRoute({
+                currentVideoId: 'dQw4w9WgXcQ',
+                messageVideoId: 'dQw4w9WgXcQ',
+                source: 'local_provider',
+                enabled: false,
+                analysisMode: null,
+                activeSessionId: null,
+            }),
+        ).toBe(false);
+        expect(
+            shouldAcceptPromoBlocksForActiveRoute({
+                currentVideoId: 'dQw4w9WgXcQ',
+                messageVideoId: 'dQw4w9WgXcQ',
+                source: 'local_provider',
+                enabled: true,
+                analysisMode: ANALYSIS_MODE.Server,
+                activeSessionId: null,
+            }),
+        ).toBe(false);
     });
 
     it('FR-001: skips when crossing a block start naturally', () => {
@@ -571,6 +600,62 @@ describe('per-video analysis route lifecycle', () => {
     class FakeVideoElement extends EventTarget {
         currentTime = 0;
         duration = 120;
+
+        private readonly activeListeners = new Map<
+            string,
+            Set<EventListenerOrEventListenerObject>
+        >();
+
+        /**
+         * Tracks live playback listeners so the static-content inert boundary
+         * is observable without inspecting implementation fields.
+         *
+         * @param type - DOM event name.
+         * @param callback - Listener registered by the content bundle.
+         * @param options - Native listener options.
+         */
+        override addEventListener(
+            type: string,
+            callback: EventListenerOrEventListenerObject | null,
+            options?: boolean | AddEventListenerOptions,
+        ): void {
+            if (callback !== null) {
+                const listeners = this.activeListeners.get(type) ?? new Set();
+                listeners.add(callback);
+                this.activeListeners.set(type, listeners);
+            }
+            super.addEventListener(type, callback, options);
+        }
+
+        /**
+         * Mirrors removals so disabled-route assertions measure active listeners.
+         *
+         * @param type - DOM event name.
+         * @param callback - Listener removed by the content bundle.
+         * @param options - Native listener options.
+         */
+        override removeEventListener(
+            type: string,
+            callback: EventListenerOrEventListenerObject | null,
+            options?: boolean | EventListenerOptions,
+        ): void {
+            if (callback !== null) {
+                this.activeListeners.get(type)?.delete(callback);
+            }
+            super.removeEventListener(type, callback, options);
+        }
+
+        /**
+         * Exposes the current listener total through the fake DOM boundary.
+         *
+         * @returns Number of playback listeners still attached.
+         */
+        activeListenerCount(): number {
+            return [...this.activeListeners.values()].reduce(
+                (total, listeners) => total + listeners.size,
+                0,
+            );
+        }
     }
 
     async function flushAsyncWork(): Promise<void> {
@@ -593,11 +678,16 @@ describe('per-video analysis route lifecycle', () => {
         emitPrefs(prefs: UserPreferences): Promise<void>;
         emitRuntimeMessage(message: unknown): Promise<void>;
         probeContent(): unknown;
+        routeStatus(): unknown;
+        setRouteWithoutNavigation(pathname: string, search: string): void;
         messagesOfType(type: string): unknown[];
+        activeVideoListenerCount(): number;
+        dispatchTimeUpdate(currentTime: number): number;
         navigateToVideo(videoId: string): Promise<void>;
         pollBindings(): Promise<void>;
         replaceVideoElement(): Promise<void>;
         setVideoDuration(durationSec: number): void;
+        videoQueryCount(): number;
         fetchCallCount(): number;
         dispose(): void;
     }> {
@@ -605,10 +695,11 @@ describe('per-video analysis route lifecycle', () => {
         vi.resetModules();
         sendMessage.mockReset();
         addRuntimeMessageListener.mockReset();
+        cancelCaptions.mockReset();
         removeRuntimeMessageListener.mockReset();
         capture.mockReset();
         disposeCaptions.mockReset();
-        installPageBridge.mockReset();
+        preparePageBridge.mockReset();
         scheduleForVideoId.mockReset();
 
         let runtimeMessageListener: RuntimeMessageListener | null = null;
@@ -625,6 +716,7 @@ describe('per-video analysis route lifecycle', () => {
         };
         const windowEvents = new EventTarget();
         const fetchMock = vi.fn();
+        let videoQueryCount = 0;
 
         addRuntimeMessageListener.mockImplementation(
             (listener: RuntimeMessageListener) => {
@@ -712,6 +804,7 @@ describe('per-video analysis route lifecycle', () => {
         vi.stubGlobal('location', locationState);
         vi.stubGlobal('document', {
             querySelector(selector: string): FakeVideoElement | null {
+                videoQueryCount += 1;
                 return selector === YOUTUBE_VIDEO_ELEMENT_SELECTOR
                     ? video
                     : null;
@@ -772,6 +865,15 @@ describe('per-video analysis route lifecycle', () => {
                     type: TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY,
                 });
             },
+            routeStatus(): unknown {
+                return getRuntimeMessageListener()({
+                    type: TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS,
+                });
+            },
+            setRouteWithoutNavigation(pathname: string, search: string): void {
+                locationState.pathname = pathname;
+                locationState.search = search;
+            },
             messagesOfType(type: string): unknown[] {
                 return sendMessage.mock.calls
                     .map(([message]) => message)
@@ -782,6 +884,17 @@ describe('per-video analysis route lifecycle', () => {
                             'type' in message &&
                             message.type === type,
                     );
+            },
+            activeVideoListenerCount(): number {
+                return video?.activeListenerCount() ?? 0;
+            },
+            dispatchTimeUpdate(currentTime: number): number {
+                if (video === null) {
+                    throw new Error('Missing fake video.');
+                }
+                video.currentTime = currentTime;
+                video.dispatchEvent(new Event('timeupdate'));
+                return video.currentTime;
             },
             async navigateToVideo(videoId: string): Promise<void> {
                 locationState.search = `?v=${videoId}`;
@@ -802,6 +915,9 @@ describe('per-video analysis route lifecycle', () => {
                     video.duration = durationSec;
                 }
             },
+            videoQueryCount(): number {
+                return videoQueryCount;
+            },
             fetchCallCount(): number {
                 return fetchMock.mock.calls.length;
             },
@@ -817,7 +933,12 @@ describe('per-video analysis route lifecycle', () => {
     it('acknowledges the background readiness probe and disposes replacement state', async () => {
         const harness = await createRouteHarness(serverPrefs);
         try {
-            expect(harness.probeContent()).toEqual({
+            const ack = harness.probeContent();
+
+            // Only a Promise (or `true` + sendResponse) becomes a reply through
+            // webextension-polyfill; a plain object would be dropped silently.
+            expect(ack).toBeInstanceOf(Promise);
+            await expect(ack).resolves.toEqual({
                 ok: true,
                 protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
                 extensionVersion: '0.1.0',
@@ -828,6 +949,57 @@ describe('per-video analysis route lifecycle', () => {
 
         expect(removeRuntimeMessageListener).toHaveBeenCalledOnce();
         expect(disposeCaptions).toHaveBeenCalledOnce();
+    });
+
+    it('reports exact live ownership without exposing the document URL', async () => {
+        const harness = await createRouteHarness(serverPrefs);
+        try {
+            const request = harness.messagesOfType(
+                TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+            )[0];
+            const requestPayload = readTestProperty(request, 'payload');
+            const pendingStatus = harness.routeStatus();
+
+            expect(pendingStatus).toBeInstanceOf(Promise);
+            const status: unknown = await pendingStatus;
+            expect(status).toEqual({
+                ok: true,
+                protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                extensionVersion: '0.1.0',
+                videoId: 'dQw4w9WgXcQ',
+                enabled: true,
+                analysisMode: ANALYSIS_MODE.Server,
+                serverSessionId: readTestProperty(
+                    requestPayload,
+                    'sessionId',
+                ),
+            });
+            expect(readTestProperty(status, 'url')).toBeUndefined();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('invalidates ownership from the live pathname before SPA cleanup', async () => {
+        const harness = await createRouteHarness(serverPrefs);
+        try {
+            harness.setRouteWithoutNavigation(
+                '/shorts/replacement',
+                '?v=dQw4w9WgXcQ',
+            );
+
+            await expect(harness.routeStatus()).resolves.toEqual({
+                ok: true,
+                protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                extensionVersion: '0.1.0',
+                videoId: null,
+                enabled: true,
+                analysisMode: null,
+                serverSessionId: null,
+            });
+        } finally {
+            harness.dispose();
+        }
     });
 
     it('retries preferences after a transient runtime rejection', async () => {
@@ -848,6 +1020,8 @@ describe('per-video analysis route lifecycle', () => {
 
         try {
             expect(capture).not.toHaveBeenCalled();
+            expect(harness.videoQueryCount()).toBe(0);
+            expect(harness.activeVideoListenerCount()).toBe(0);
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
             ).toHaveLength(1);
@@ -890,6 +1064,8 @@ describe('per-video analysis route lifecycle', () => {
 
         try {
             expect(capture).not.toHaveBeenCalled();
+            expect(harness.videoQueryCount()).toBe(0);
+            expect(harness.activeVideoListenerCount()).toBe(0);
             expect(
                 harness.messagesOfType(TOPSKIP_MESSAGE.GET_PREFS),
             ).toHaveLength(1);
@@ -936,6 +1112,8 @@ describe('per-video analysis route lifecycle', () => {
 
         try {
             expect(capture).not.toHaveBeenCalled();
+            expect(harness.videoQueryCount()).toBe(0);
+            expect(harness.activeVideoListenerCount()).toBe(0);
             await harness.advanceBindingTime(CONTENT_PREFS_RETRY_DELAY_MS);
 
             expect(
@@ -1067,6 +1245,11 @@ describe('per-video analysis route lifecycle', () => {
                 ),
             ).toHaveLength(0);
             expect(disabledHarness.fetchCallCount()).toBe(0);
+            expect(disabledHarness.videoQueryCount()).toBe(0);
+            expect(disabledHarness.activeVideoListenerCount()).toBe(0);
+            expect(preparePageBridge).not.toHaveBeenCalled();
+            expect(scheduleForVideoId).not.toHaveBeenCalled();
+            expect(cancelCaptions).not.toHaveBeenCalled();
         } finally {
             disabledHarness.dispose();
         }
@@ -1081,6 +1264,157 @@ describe('per-video analysis route lifecycle', () => {
             expect(waitingHarness.fetchCallCount()).toBe(0);
         } finally {
             waitingHarness.dispose();
+        }
+    });
+
+    it('routes exactly once after re-enabling a disabled static context', async () => {
+        const disabledPrefs = { ...serverPrefs, enabled: false };
+        const harness = await createRouteHarness(disabledPrefs);
+
+        try {
+            expect(harness.videoQueryCount()).toBe(0);
+            expect(harness.activeVideoListenerCount()).toBe(0);
+
+            await harness.emitPrefs(serverPrefs);
+            await harness.pollBindings();
+
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(1);
+            expect(harness.activeVideoListenerCount()).toBe(3);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('does not preflight or schedule Private BYOK while disabled at load', async () => {
+        const disabledByokPrefs: UserPreferences = {
+            ...serverPrefs,
+            enabled: false,
+            analysisMode: ANALYSIS_MODE.Byok,
+        };
+        const harness = await createRouteHarness(disabledByokPrefs);
+
+        try {
+            expect(harness.videoQueryCount()).toBe(0);
+            expect(harness.activeVideoListenerCount()).toBe(0);
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP),
+            ).toHaveLength(0);
+            expect(preparePageBridge).not.toHaveBeenCalled();
+            expect(scheduleForVideoId).not.toHaveBeenCalled();
+            expect(capture).not.toHaveBeenCalled();
+            expect(cancelCaptions).not.toHaveBeenCalled();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('cancels active capture and ignores its completion after disable', async () => {
+        let resolveCapture: (result: unknown) => void = () => undefined;
+        const captureOwner: { signal: AbortSignal | null } = {
+            signal: null,
+        };
+        const pendingCapture = new Promise<unknown>((resolve) => {
+            resolveCapture = resolve;
+        });
+        const harness = await createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            undefined,
+            undefined,
+            undefined,
+            (input) => {
+                captureOwner.signal = input.signal;
+                return pendingCapture;
+            },
+        );
+
+        try {
+            expect(capture).toHaveBeenCalledOnce();
+            expect(harness.activeVideoListenerCount()).toBe(3);
+
+            await harness.emitPrefs({ ...serverPrefs, enabled: false });
+
+            expect(captureOwner.signal?.aborted).toBe(true);
+            expect(cancelCaptions).toHaveBeenCalledOnce();
+            expect(harness.activeVideoListenerCount()).toBe(0);
+            await expect(harness.routeStatus()).resolves.toMatchObject({
+                enabled: false,
+                analysisMode: null,
+                serverSessionId: null,
+            });
+
+            resolveCapture({
+                status: 'ready',
+                payload: {
+                    ok: true,
+                    videoId: 'dQw4w9WgXcQ',
+                    languageCode: 'en',
+                    segments: [
+                        { startSec: 0, durationSec: 1, text: 'Late caption' },
+                    ],
+                },
+            });
+            await harness.pollBindings();
+
+            expect(
+                harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+            ).toHaveLength(0);
+            expect(harness.activeVideoListenerCount()).toBe(0);
+            expect(cancelCaptions).toHaveBeenCalledOnce();
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('ignores LocalProvider blocks delivered after disable and re-enable', async () => {
+        const byokPrefs: UserPreferences = {
+            ...serverPrefs,
+            analysisMode: ANALYSIS_MODE.Byok,
+        };
+        const harness = await createRouteHarness(byokPrefs);
+
+        try {
+            await harness.emitPrefs({ ...byokPrefs, enabled: false });
+            await harness.emitRuntimeMessage({
+                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'local_provider',
+                videoId: 'dQw4w9WgXcQ',
+                promoBlocks: [{ startSec: 10, endSec: 20 }],
+            });
+            await harness.emitPrefs(byokPrefs);
+
+            expect(harness.dispatchTimeUpdate(9)).toBe(9);
+            expect(harness.dispatchTimeUpdate(10.2)).toBe(10.2);
+        } finally {
+            harness.dispose();
+        }
+    });
+
+    it('rejects late LocalProvider blocks after replacing BYOK with Server', async () => {
+        const byokPrefs: UserPreferences = {
+            ...serverPrefs,
+            analysisMode: ANALYSIS_MODE.Byok,
+        };
+        const harness = await createRouteHarness(byokPrefs);
+
+        try {
+            await harness.emitPrefs(serverPrefs);
+            await harness.emitRuntimeMessage({
+                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                source: 'local_provider',
+                videoId: 'dQw4w9WgXcQ',
+                promoBlocks: [{ startSec: 10, endSec: 20 }],
+            });
+
+            expect(cancelCaptions).toHaveBeenCalledOnce();
+            expect(harness.dispatchTimeUpdate(9)).toBe(9);
+            expect(harness.dispatchTimeUpdate(10.2)).toBe(10.2);
+        } finally {
+            harness.dispose();
         }
     });
 
@@ -1803,6 +2137,12 @@ describe('per-video analysis route lifecycle', () => {
             harness.probeContent();
             await harness.advanceBindingTime(0);
             expect(interruptionMessages()).toHaveLength(6);
+            expect(capture).toHaveBeenCalledOnce();
+            expect(
+                harness.messagesOfType(
+                    TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                ),
+            ).toHaveLength(1);
             harness.probeContent();
             await harness.advanceBindingTime(0);
             expect(interruptionMessages()).toHaveLength(6);

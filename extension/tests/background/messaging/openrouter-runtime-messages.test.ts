@@ -13,6 +13,7 @@ const prefsLoadMock = vi.fn();
 const prefsSaveMock = vi.fn();
 const prefsBroadcastMock = vi.fn();
 const prefsPortBroadcastMock = vi.fn();
+const providerHostAccessIsGrantedMock = vi.fn();
 
 vi.mock('@/background/storage/openrouter-storage', () => ({
     OpenRouterStorage: {
@@ -74,6 +75,15 @@ vi.mock('@/background/openrouter/openrouter-models-api', () => ({
     },
 }));
 
+vi.mock('@/background/permissions/provider-host-access', () => ({
+    ProviderHostAccess: {
+        isGranted: (providerId: string): Promise<unknown> => {
+            const out: unknown = providerHostAccessIsGrantedMock(providerId);
+            return Promise.resolve(out);
+        },
+    },
+}));
+
 describe('OpenRouterRuntimeMessages', () => {
     beforeEach(() => {
         loadMock.mockReset();
@@ -84,6 +94,7 @@ describe('OpenRouterRuntimeMessages', () => {
         prefsSaveMock.mockReset();
         prefsBroadcastMock.mockReset();
         prefsPortBroadcastMock.mockReset();
+        providerHostAccessIsGrantedMock.mockReset().mockResolvedValue(true);
         prefsLoadMock.mockResolvedValue({
             enabled: true,
             providerId: 'openrouter',
@@ -243,6 +254,26 @@ describe('OpenRouterRuntimeMessages', () => {
             valid: true,
             unverified: true,
         });
+    });
+
+    it('keeps a valid slug local and unverified without host access', async () => {
+        providerHostAccessIsGrantedMock.mockResolvedValue(false);
+
+        const result =
+            await OpenRouterRuntimeMessages.handleValidateModelSlug(
+                'google/gemini-2.5-flash',
+                'sk-test',
+            );
+
+        expect(result).toEqual({
+            ok: true,
+            valid: true,
+            unverified: true,
+        });
+        expect(providerHostAccessIsGrantedMock).toHaveBeenCalledWith(
+            'openrouter',
+        );
+        expect(fetchModelsMock).not.toHaveBeenCalled();
     });
 
     it('checks API when key is present slug found', async () => {

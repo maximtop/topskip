@@ -1,4 +1,5 @@
 import process from 'node:process';
+import { isIP } from 'node:net';
 
 /**
  * Environment variable holding the public backend origin.
@@ -9,6 +10,11 @@ import process from 'node:process';
  * as an environment variable.
  */
 export const SERVER_ORIGIN_ENV_VAR = 'TOPSKIP_SERVER_ORIGIN';
+
+/**
+ * Environment variable selecting the extension build profile.
+ */
+export const BUILD_MODE_ENV_VAR = 'TOPSKIP_BUILD';
 
 /**
  * Shared `TOPSKIP_BUILD` profile names (Rspack manifest + build script).
@@ -28,22 +34,135 @@ export const TOPSKIP_BUILD_MODES: readonly TopSkipBuildMode[] = [
     TopSkipBuild.Release,
 ];
 
+const DEV_LOOPBACK_SERVER_ORIGIN = 'http://127.0.0.1:8787';
+const HTTP_PROTOCOL = 'http:';
+const HTTPS_PROTOCOL = 'https:';
+const IPV6_OPENING_BRACKET = '[';
+const IPV6_CLOSING_BRACKET = ']';
+const MAX_DNS_HOSTNAME_LENGTH = 253;
+const MAX_DNS_LABEL_LENGTH = 63;
+const DNS_LABEL_PATTERN = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/u;
+const SPECIAL_USE_DNS_SUFFIXES = new Set([
+    'localhost',
+    'local',
+    'localdomain',
+    'localnet',
+    'internal',
+    'home',
+    'lan',
+    'test',
+    'example',
+    'invalid',
+    'onion',
+    'arpa',
+    'alt',
+]);
+
 /**
- * Reads and validates the configured backend origin.
+ * Defaults only a missing profile so malformed release inputs cannot silently
+ * produce a development bundle.
  *
- * Throws rather than defaulting: a silently wrong origin would ship an
- * extension that talks to the wrong backend, which is worse than a failed
- * build. The value must be a bare origin because callers append paths to it.
- *
- * @returns Scheme and host with no trailing slash, e.g. `https://api.example`.
+ * @param raw - Untrusted `TOPSKIP_BUILD` environment value.
+ * @returns Validated extension build profile.
  */
-function readServerOrigin(): string {
-    const raw = process.env[SERVER_ORIGIN_ENV_VAR]?.trim() ?? '';
-    if (raw === '') {
+export function resolveTopSkipBuild(
+    raw: string | undefined,
+): TopSkipBuildMode {
+    if (raw === undefined) {
+        return TopSkipBuild.Dev;
+    }
+    if (
+        raw === TopSkipBuild.Dev ||
+        raw === TopSkipBuild.Beta ||
+        raw === TopSkipBuild.Release
+    ) {
+        return raw;
+    }
+    throw new Error(
+        `${BUILD_MODE_ENV_VAR} must be one of ${TOPSKIP_BUILD_MODES.join(', ')}, ` +
+            `got '${raw}'.`,
+    );
+}
+
+/**
+ * Removes URL syntax around IPv6 before passing a hostname to Node's IP
+ * classifier.
+ *
+ * @param hostname - Canonical hostname returned by `URL`.
+ * @returns Hostname without IPv6 brackets.
+ */
+function removeIpv6Brackets(hostname: string): string {
+    const hasOpeningBracket = hostname.startsWith(IPV6_OPENING_BRACKET);
+    const hasClosingBracket = hostname.endsWith(IPV6_CLOSING_BRACKET);
+    if (!hasOpeningBracket || !hasClosingBracket) {
+        return hostname;
+    }
+    return hostname.slice(1, -1);
+}
+
+/**
+ * Applies a deterministic DNS-shape policy without pretending to resolve the
+ * hostname or classify the address it may resolve to at runtime.
+ *
+ * @param hostname - Canonical, unrooted hostname returned by `URL`.
+ * @returns Whether the hostname looks suitable for a public HTTPS endpoint.
+ */
+function isPublicLookingDnsHostname(hostname: string): boolean {
+    if (hostname.length > MAX_DNS_HOSTNAME_LENGTH) {
+        return false;
+    }
+    const labels = hostname.split('.');
+    if (labels.length < 2) {
+        return false;
+    }
+    const suffix = labels.at(-1);
+    if (suffix === undefined || SPECIAL_USE_DNS_SUFFIXES.has(suffix)) {
+        return false;
+    }
+    return labels.every(
+        (label) =>
+            label.length <= MAX_DNS_LABEL_LENGTH &&
+            DNS_LABEL_PATTERN.test(label),
+    );
+}
+
+/**
+ * Reports one stable policy error for cleartext, IP, private-looking, and
+ * malformed DNS endpoints without exposing a misleading partial allowlist.
+ *
+ * @param raw - Rejected backend origin.
+ * @returns Never returns because an invalid origin stops the build.
+ */
+function rejectNonPublicOrigin(raw: string): never {
+    throw new Error(
+        `${SERVER_ORIGIN_ENV_VAR} must be a public HTTPS DNS origin, got ` +
+            `'${raw}'.`,
+    );
+}
+
+/**
+ * Enforces the backend boundary before manifest composition can grant host
+ * access to an unsafe or accidentally development-only endpoint.
+ *
+ * @param build - Extension build profile receiving the backend origin.
+ * @param raw - Untrusted build-time backend origin.
+ * @returns Canonical bare origin accepted for the selected profile.
+ */
+export function validateServerOrigin(
+    build: TopSkipBuildMode,
+    raw: string | undefined,
+): string {
+    if (raw === undefined || raw.trim() === '') {
         throw new Error(
             `${SERVER_ORIGIN_ENV_VAR} is not set. Copy .env.example to .env and ` +
                 'set it to your backend origin, or export it in the build ' +
                 'environment.',
+        );
+    }
+    if (raw !== raw.trim()) {
+        throw new Error(
+            `${SERVER_ORIGIN_ENV_VAR} must not contain surrounding whitespace, ` +
+                `got '${raw}'.`,
         );
     }
 
@@ -55,10 +174,35 @@ function readServerOrigin(): string {
             `${SERVER_ORIGIN_ENV_VAR} must be an absolute URL, got '${raw}'.`,
         );
     }
-    if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
+    if (parsed.protocol !== HTTPS_PROTOCOL && parsed.protocol !== HTTP_PROTOCOL) {
         throw new Error(
             `${SERVER_ORIGIN_ENV_VAR} must use http or https, got '${raw}'.`,
         );
+    }
+
+    const canonicalHostname = parsed.hostname;
+    if (canonicalHostname.endsWith('.')) {
+        return rejectNonPublicOrigin(raw);
+    }
+    const ipVersion = isIP(removeIpv6Brackets(canonicalHostname));
+    const isExactDevException =
+        build === TopSkipBuild.Dev &&
+        parsed.origin === DEV_LOOPBACK_SERVER_ORIGIN;
+    if (isExactDevException) {
+        if (raw !== parsed.origin) {
+            throw new Error(
+                `${SERVER_ORIGIN_ENV_VAR} must be a bare origin with no path or ` +
+                    `trailing slash, got '${raw}' (expected '${parsed.origin}').`,
+            );
+        }
+        return parsed.origin;
+    }
+
+    const usesHttps = parsed.protocol === HTTPS_PROTOCOL;
+    const isDnsHostname = ipVersion === 0;
+    const looksPublic = isPublicLookingDnsHostname(canonicalHostname);
+    if (!usesHttps || !isDnsHostname || !looksPublic) {
+        return rejectNonPublicOrigin(raw);
     }
     if (raw !== parsed.origin) {
         throw new Error(
@@ -70,18 +214,17 @@ function readServerOrigin(): string {
 }
 
 /**
- * Every profile currently targets the same backend; the shape is kept so a
- * profile can diverge without reworking callers.
+ * Reads and validates the configured backend origin.
  *
- * @returns Backend origin per build profile.
+ * Throws rather than defaulting: a silently wrong origin would ship an
+ * extension that talks to the wrong backend, which is worse than a failed
+ * build. The value must be a bare origin because callers append paths to it.
+ *
+ * @param build - Extension build profile receiving the configured origin.
+ * @returns Scheme and host with no trailing slash, e.g. `https://api.example`.
  */
-function serverAnalysisBaseUrlByBuild(): Record<TopSkipBuildMode, string> {
-    const origin = readServerOrigin();
-    return {
-        [TopSkipBuild.Dev]: origin,
-        [TopSkipBuild.Beta]: origin,
-        [TopSkipBuild.Release]: origin,
-    };
+function readServerOrigin(build: TopSkipBuildMode): string {
+    return validateServerOrigin(build, process.env[SERVER_ORIGIN_ENV_VAR]);
 }
 
 const EXTENSION_NAME_BY_BUILD = {
@@ -107,7 +250,7 @@ export function getExtensionManifestName(build: TopSkipBuildMode): string {
  * @returns Backend origin without a trailing slash.
  */
 export function getServerAnalysisBaseUrl(build: TopSkipBuildMode): string {
-    return serverAnalysisBaseUrlByBuild()[build];
+    return readServerOrigin(build);
 }
 
 /**

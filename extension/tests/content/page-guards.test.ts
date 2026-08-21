@@ -16,6 +16,15 @@ describe('getWatchVideoIdFromSearch', () => {
             getWatchVideoIdFromSearch('www.youtube.com', '?v=abc123&list=foo'),
         ).toBe('abc123');
     });
+
+    it('rejects a YouTube lookalike host', () => {
+        expect(
+            getWatchVideoIdFromSearch(
+                'www.youtube.com.example',
+                '?v=abc123',
+            ),
+        ).toBeNull();
+    });
 });
 
 describe('shouldActivateTopSkip', () => {

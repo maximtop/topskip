@@ -43,6 +43,13 @@ jobs:
             - name: Build
               run: pnpm run build
 
+            - name: Validate development extension manifest
+              run: |
+                  pnpm run validate:extension-manifest -- \
+                      --build dev \
+                      --server-origin "${TOPSKIP_SERVER_ORIGIN}" \
+                      --manifest extension/dist/manifest.json
+
             - name: Deployment asset tests
               run: pnpm run test:deployment
 
@@ -63,12 +70,16 @@ jobs:
 
             - name: Validate release packaging boundary
               run: |
+                  pnpm run beta
+                  pnpm run validate:extension-manifest -- \
+                      --build beta \
+                      --server-origin "${TOPSKIP_SERVER_ORIGIN}" \
+                      --manifest extension/dist/manifest.json
                   pnpm run release
-                  jq --exit-status --arg origin "${TOPSKIP_SERVER_ORIGIN}/*" '
-                    .host_permissions as $hosts |
-                    ($hosts | index($origin)) != null and
-                    ($hosts | all(.[]; startswith("http://") | not))
-                  ' extension/dist/manifest.json >/dev/null
+                  pnpm run validate:extension-manifest -- \
+                      --build release \
+                      --server-origin "${TOPSKIP_SERVER_ORIGIN}" \
+                      --manifest extension/dist/manifest.json
                   if find extension/dist -type f -name '*.map' -print -quit | grep --quiet .; then
                       echo 'Release package must not contain source maps.' >&2
                       exit 1

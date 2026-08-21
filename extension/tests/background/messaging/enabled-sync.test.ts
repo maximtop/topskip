@@ -7,9 +7,6 @@ const {
     storageSet,
     tabsQuery,
     tabsSendMessage,
-    getRegisteredContentScripts,
-    registerContentScripts,
-    unregisterContentScripts,
 } = vi.hoisted(() => ({
     sendMessage: vi.fn(),
     storageSetAccessLevel: vi.fn().mockResolvedValue(undefined),
@@ -17,9 +14,6 @@ const {
     storageSet: vi.fn(),
     tabsQuery: vi.fn().mockResolvedValue([]),
     tabsSendMessage: vi.fn().mockResolvedValue(undefined),
-    getRegisteredContentScripts: vi.fn().mockResolvedValue([]),
-    registerContentScripts: vi.fn().mockResolvedValue(undefined),
-    unregisterContentScripts: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('@/shared/browser', () => ({
@@ -33,15 +27,12 @@ vi.mock('@/shared/browser', () => ({
             },
         },
         tabs: { query: tabsQuery, sendMessage: tabsSendMessage },
-        scripting: {
-            getRegisteredContentScripts,
-            registerContentScripts,
-            unregisterContentScripts,
-        },
     },
 }));
 
 import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import {
@@ -201,5 +192,78 @@ describe('SET_ANALYSIS_MODE', () => {
         await expect(
             PrefsRuntimeMessages.handleSetAnalysisMode(ANALYSIS_MODE.Byok),
         ).resolves.toEqual({ ok: false, error: 'storage unavailable' });
+    });
+});
+
+describe('BYOK preference transition ownership', () => {
+    const currentByokPrefs = {
+        enabled: true,
+        providerId: 'openrouter',
+        activeModelId: 'openrouter:test',
+        analysisMode: ANALYSIS_MODE.Byok,
+    };
+
+    beforeEach(async () => {
+        vi.clearAllMocks();
+        storageGet.mockResolvedValue({
+            [STORAGE_KEY_PREFS]: currentByokPrefs,
+        });
+        storageSet.mockResolvedValue(undefined);
+        tabsQuery.mockResolvedValue([]);
+        await PrefsSyncStorage.save(currentByokPrefs);
+        vi.clearAllMocks();
+        storageSet.mockResolvedValue(undefined);
+        tabsQuery.mockResolvedValue([]);
+    });
+
+    it('aborts BYOK analysis before persisting a disable transition', async () => {
+        const abortAll = vi
+            .spyOn(PromoAnalysis, 'abortAll')
+            .mockImplementation(() => {});
+
+        await expect(PrefsRuntimeMessages.handleSet(false)).resolves.toEqual({
+            ok: true,
+        });
+
+        expect(abortAll).toHaveBeenCalledOnce();
+        const abortOrder = abortAll.mock.invocationCallOrder[0];
+        const saveOrder = storageSet.mock.invocationCallOrder.at(-1);
+        if (abortOrder === undefined || saveOrder === undefined) {
+            throw new Error('Missing preference transition invocation');
+        }
+        expect(abortOrder).toBeLessThan(saveOrder);
+    });
+
+    it('aborts BYOK analysis before switching to Server mode', async () => {
+        const abortAll = vi
+            .spyOn(PromoAnalysis, 'abortAll')
+            .mockImplementation(() => {});
+
+        await expect(
+            PrefsRuntimeMessages.handleSetAnalysisMode(ANALYSIS_MODE.Server),
+        ).resolves.toMatchObject({ ok: true });
+
+        expect(abortAll).toHaveBeenCalledOnce();
+        const abortOrder = abortAll.mock.invocationCallOrder[0];
+        const saveOrder = storageSet.mock.invocationCallOrder.at(-1);
+        if (abortOrder === undefined || saveOrder === undefined) {
+            throw new Error('Missing preference transition invocation');
+        }
+        expect(abortOrder).toBeLessThan(saveOrder);
+    });
+
+    it('retains current BYOK work for non-invalidating writes', async () => {
+        const abortAll = vi
+            .spyOn(PromoAnalysis, 'abortAll')
+            .mockImplementation(() => {});
+
+        await expect(PrefsRuntimeMessages.handleSet(true)).resolves.toEqual({
+            ok: true,
+        });
+        await expect(
+            PrefsRuntimeMessages.handleSetAnalysisMode(ANALYSIS_MODE.Byok),
+        ).resolves.toMatchObject({ ok: true });
+
+        expect(abortAll).not.toHaveBeenCalled();
     });
 });

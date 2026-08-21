@@ -2,7 +2,15 @@ import {
     createCaptureSession,
     shouldIgnoreCapturedTimedtext,
 } from '@/content/captions/caption-capture-state';
+import { CaptionPageBridgeClient } from '@/content/captions/caption-page-bridge-client';
+import {
+    CAPTION_PAGE_BRIDGE_COMMAND,
+    CAPTION_PAGE_BRIDGE_COMMAND_TIMEOUT_MS,
+    CAPTION_PAGE_BRIDGE_EVENT,
+    CAPTION_PAGE_BRIDGE_SOURCE,
+} from '@/content/captions/caption-page-bridge-contract';
 import { contentLog } from '@/content/content-log';
+import { formatLogStage } from '@/shared/log-fields';
 import type {
     CaptionCaptureFailure,
     CaptionCaptureInput,
@@ -22,11 +30,17 @@ import {
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 15_000;
 const ACTIVATION_RETRY_DELAY_MS = 250;
-const PAGE_SOURCE = 'TOPSKIP_CAPTION_CAPTURE_PAGE';
-const PAGE_EVENT = 'topskip:caption-capture-page';
+const PAGE_SOURCE = CAPTION_PAGE_BRIDGE_SOURCE.Main;
+const PAGE_EVENT = CAPTION_PAGE_BRIDGE_EVENT.PageMessage;
 const MAX_RECENT_PAGE_BRIDGE_MESSAGES = 256;
 const MAX_PAGE_BRIDGE_MESSAGE_ID_LENGTH = 96;
 const EMPTY_TRANSCRIPT_PARSE_ERROR = 'No caption cues found in JSON transcript';
+const BRIDGE_UNAVAILABLE_ERROR = 'Caption bridge is unavailable';
+const BRIDGE_UNAVAILABLE_RESULT = Object.freeze({
+    ok: false,
+    reason: CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed,
+    error: BRIDGE_UNAVAILABLE_ERROR,
+});
 
 /**
  * Optional timing knobs for caption capture tests and runtime calls.
@@ -47,9 +61,11 @@ type ActiveCaptureWait = {
 };
 
 /**
- * Background bridge command names used by the content orchestrator.
+ * Local lifecycle commands used by the content orchestrator.
  */
-type BridgeCommandName = 'activate-captions' | 'deactivate-captions';
+type BridgeCommandName =
+    | typeof CAPTION_PAGE_BRIDGE_COMMAND.Activate
+    | typeof CAPTION_PAGE_BRIDGE_COMMAND.Deactivate;
 
 /**
  * Safe diagnostic fields forwarded from page-world capture.
@@ -109,6 +125,17 @@ export class PlayerCaptionCapture {
     private static completedScheduledVideoId: string | null = null;
 
     /**
+     * Monotonic ownership prevents an older same-video capture from clearing a
+     * replacement schedule after cancellation.
+     */
+    private static nextScheduledCaptureId = 0;
+
+    /**
+     * Only the matching scheduled operation may publish dedupe ownership.
+     */
+    private static activeScheduledCaptureId: number | null = null;
+
+    /**
      * Active per-video capture session for page-world events.
      */
     private static activeSession: CaptionCaptureSession | null = null;
@@ -137,14 +164,16 @@ export class PlayerCaptionCapture {
         null;
 
     /**
-     * Prevents multiple cleanup commands for the same active session.
+     * Shared cleanup promise keeps disposal behind an already-running local
+     * Deactivate command.
      */
-    private static cleanupStarted = false;
+    private static cleanupPromise: Promise<void> | null = null;
 
     /**
-     * Shared bridge install request so document-start setup and capture reuse it.
+     * Shared bridge readiness probe lets document setup and capture reuse one
+     * bounded acknowledgement.
      */
-    private static bridgeInstallPromise: Promise<unknown> | null = null;
+    private static bridgeReadyPromise: Promise<unknown> | null = null;
 
     /**
      * Bounds document-scoped message identities while both transports race.
@@ -169,12 +198,7 @@ export class PlayerCaptionCapture {
         options: CaptureOptions = {},
     ): void {
         if (videoId === null) {
-            PlayerCaptionCapture.log('schedule-clear', { source });
-            PlayerCaptionCapture.scheduledVideoId = null;
-            PlayerCaptionCapture.completedScheduledVideoId = null;
-            if (PlayerCaptionCapture.activeSession !== null) {
-                void PlayerCaptionCapture.cleanupActiveSession();
-            }
+            PlayerCaptionCapture.cancel(source);
             return;
         }
         if (
@@ -190,11 +214,36 @@ export class PlayerCaptionCapture {
                 source,
                 previousVideoId: PlayerCaptionCapture.scheduledVideoId,
             });
-            void PlayerCaptionCapture.cleanupActiveSession();
+            PlayerCaptionCapture.cancel('schedule-replaced');
         }
         PlayerCaptionCapture.log('schedule-start', { videoId, source });
+        PlayerCaptionCapture.nextScheduledCaptureId += 1;
+        const scheduledCaptureId =
+            PlayerCaptionCapture.nextScheduledCaptureId;
+        PlayerCaptionCapture.activeScheduledCaptureId = scheduledCaptureId;
         PlayerCaptionCapture.scheduledVideoId = videoId;
-        void PlayerCaptionCapture.runScheduledCapture(videoId, options);
+        void PlayerCaptionCapture.runScheduledCapture(
+            scheduledCaptureId,
+            videoId,
+            options,
+        );
+    }
+
+    /**
+     * Cancels current route ownership synchronously so late page events and
+     * timers cannot publish captions while independent MAIN cleanup settles.
+     *
+     * @param source Diagnostic trigger for the cancellation.
+     */
+    static cancel(source = 'route-cancelled'): void {
+        PlayerCaptionCapture.log('schedule-clear', { source });
+        PlayerCaptionCapture.activeScheduledCaptureId = null;
+        PlayerCaptionCapture.scheduledVideoId = null;
+        PlayerCaptionCapture.completedScheduledVideoId = null;
+        PlayerCaptionCapture.resolveActiveWait({ status: 'cancelled' });
+        if (PlayerCaptionCapture.activeSession !== null) {
+            void PlayerCaptionCapture.cleanupActiveSession();
+        }
     }
 
     /**
@@ -211,48 +260,64 @@ export class PlayerCaptionCapture {
 
     /**
      * Resets document-scoped capture state for isolated unit tests.
+     *
+     * @returns Resolves after any active page state is restored.
      */
-    static resetForTest(): void {
+    static async resetForTest(): Promise<void> {
+        PlayerCaptionCapture.resolveActiveWait({ status: 'cancelled' });
+        if (PlayerCaptionCapture.activeSession !== null) {
+            await PlayerCaptionCapture.cleanupActiveSession();
+        }
+        CaptionPageBridgeClient.dispose();
         PlayerCaptionCapture.removeMessageListeners();
         PlayerCaptionCapture.scheduledVideoId = null;
         PlayerCaptionCapture.completedScheduledVideoId = null;
+        PlayerCaptionCapture.activeScheduledCaptureId = null;
         PlayerCaptionCapture.activeSession = null;
-        PlayerCaptionCapture.resolveActiveWait({ status: 'cancelled' });
         PlayerCaptionCapture.activeWait = null;
-        PlayerCaptionCapture.cleanupStarted = false;
-        PlayerCaptionCapture.bridgeInstallPromise = null;
+        PlayerCaptionCapture.cleanupPromise = null;
+        PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
         PlayerCaptionCapture.recentPageBridgeMessageOrder.length = 0;
     }
 
     /**
-     * Stops document-owned work so a newly injected bundle can take ownership.
+     * Stops document-owned work before a replacement context takes ownership.
+     *
+     * @returns Resolves after bounded page cleanup precedes client disposal.
      */
-    static dispose(): void {
+    static async dispose(): Promise<void> {
         PlayerCaptionCapture.scheduledVideoId = null;
         PlayerCaptionCapture.completedScheduledVideoId = null;
+        PlayerCaptionCapture.activeScheduledCaptureId = null;
         PlayerCaptionCapture.resolveActiveWait({ status: 'cancelled' });
-        void PlayerCaptionCapture.cleanupActiveSession().catch(() => undefined);
+        if (PlayerCaptionCapture.activeSession !== null) {
+            await PlayerCaptionCapture.cleanupActiveSession().catch(
+                () => undefined,
+            );
+        }
+        CaptionPageBridgeClient.dispose();
         PlayerCaptionCapture.activeSession = null;
         PlayerCaptionCapture.activeWait = null;
-        PlayerCaptionCapture.bridgeInstallPromise = null;
+        PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.removeMessageListeners();
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
         PlayerCaptionCapture.recentPageBridgeMessageOrder.length = 0;
     }
 
     /**
-     * Installs page-world capture hooks before YouTube caches request APIs.
+     * Confirms the document-start MAIN bridge while its wrappers remain
+     * dormant until an owned capture begins.
      */
-    static installBridgeForPage(): void {
+    static prepareBridgeForPage(): void {
         PlayerCaptionCapture.ensureMessageListener();
-        PlayerCaptionCapture.log('bridge-install-requested');
+        PlayerCaptionCapture.log('bridge-readiness-requested');
         try {
-            void PlayerCaptionCapture.getOrInstallBridge().catch(
+            void PlayerCaptionCapture.getOrConfirmBridge().catch(
                 () => undefined,
             );
         } catch {
-            // The replacement content bundle will install through its live context.
+            // A later owned capture retries after the local client is reset.
         }
     }
 
@@ -273,35 +338,73 @@ export class PlayerCaptionCapture {
             signal: new AbortController().signal,
             captureTimeoutMs: options.captureTimeoutMs,
         });
+        await PlayerCaptionCapture.deliverCaptureResult(videoId, result);
+        return result;
+    }
+
+    /**
+     * Keeps runtime delivery separate so scheduled ownership can be rechecked
+     * after asynchronous capture cleanup.
+     *
+     * @param videoId Video identity owned by the capture.
+     * @param result Terminal capture result to deliver when applicable.
+     * @returns Resolves after the existing caption channel settles.
+     */
+    private static async deliverCaptureResult(
+        videoId: string,
+        result: CaptionCaptureResult,
+    ): Promise<void> {
         if (result.status === 'ready') {
             await browser.runtime.sendMessage({
                 type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,
                 payload: result.payload,
             });
-            return result;
+            return;
         }
         if (result.status === 'failed') {
             await PlayerCaptionCapture.sendFailure(videoId, result.failure);
         }
-        return result;
     }
 
     /**
      * Releases active dedupe after transient failure so a readiness signal may retry.
      *
+     * @param scheduledCaptureId Monotonic ownership for this scheduled run.
      * @param videoId Scheduled watch video.
      * @param options Capture timeout override used by focused tests.
      * @returns Promise settled after dedupe state reflects the terminal result.
      */
     private static async runScheduledCapture(
+        scheduledCaptureId: number,
         videoId: string,
         options: CaptureOptions,
     ): Promise<void> {
-        try {
-            const result = await PlayerCaptionCapture.captureForVideoId(
+        if (PlayerCaptionCapture.cleanupPromise !== null) {
+            await PlayerCaptionCapture.cleanupPromise;
+        }
+        if (
+            !PlayerCaptionCapture.isScheduledCaptureCurrent(
+                scheduledCaptureId,
                 videoId,
-                options,
-            );
+            )
+        ) {
+            return;
+        }
+        try {
+            const result = await PlayerCaptionCapture.capture({
+                videoId,
+                signal: new AbortController().signal,
+                captureTimeoutMs: options.captureTimeoutMs,
+            });
+            if (
+                !PlayerCaptionCapture.isScheduledCaptureCurrent(
+                    scheduledCaptureId,
+                    videoId,
+                )
+            ) {
+                return;
+            }
+            await PlayerCaptionCapture.deliverCaptureResult(videoId, result);
             const retryable =
                 result.status === 'cancelled' ||
                 (result.status === 'failed' &&
@@ -311,16 +414,47 @@ export class PlayerCaptionCapture {
                             CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout ||
                         result.failure.reason ===
                             CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed));
-            if (!retryable) {
+            if (
+                !retryable &&
+                PlayerCaptionCapture.isScheduledCaptureCurrent(
+                    scheduledCaptureId,
+                    videoId,
+                )
+            ) {
                 PlayerCaptionCapture.completedScheduledVideoId = videoId;
             }
         } catch {
             // A later readiness signal may retry after runtime replacement.
         } finally {
-            if (PlayerCaptionCapture.scheduledVideoId === videoId) {
+            if (
+                PlayerCaptionCapture.isScheduledCaptureCurrent(
+                    scheduledCaptureId,
+                    videoId,
+                )
+            ) {
+                PlayerCaptionCapture.activeScheduledCaptureId = null;
                 PlayerCaptionCapture.scheduledVideoId = null;
             }
         }
+    }
+
+    /**
+     * Couples video dedupe with operation identity so A→cancel→A cannot let
+     * the first operation clear the replacement.
+     *
+     * @param scheduledCaptureId Operation identity captured at scheduling.
+     * @param videoId Video identity captured at scheduling.
+     * @returns Whether the operation still owns scheduled delivery.
+     */
+    private static isScheduledCaptureCurrent(
+        scheduledCaptureId: number,
+        videoId: string,
+    ): boolean {
+        return (
+            PlayerCaptionCapture.activeScheduledCaptureId ===
+                scheduledCaptureId &&
+            PlayerCaptionCapture.scheduledVideoId === videoId
+        );
     }
 
     /**
@@ -341,7 +475,6 @@ export class PlayerCaptionCapture {
             input.captureTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS,
         );
         PlayerCaptionCapture.activeSession = session;
-        PlayerCaptionCapture.cleanupStarted = false;
         const waitForCapture = PlayerCaptionCapture.waitForCapture(
             session,
             input.signal,
@@ -353,32 +486,34 @@ export class PlayerCaptionCapture {
         });
 
         try {
-            const installStage = await Promise.race([
-                PlayerCaptionCapture.getOrInstallBridge().then((value) => ({
-                    kind: 'installed' as const,
-                    value,
-                })),
+            const readinessStage = await Promise.race([
+                PlayerCaptionCapture.getOrConfirmBridge().then(
+                    (value) => ({
+                        kind: 'ready' as const,
+                        value,
+                    }),
+                ),
                 waitForCapture.then((result) => ({
                     kind: 'terminal' as const,
                     result,
                 })),
             ]);
-            if (installStage.kind === 'terminal') {
-                return installStage.result;
+            if (readinessStage.kind === 'terminal') {
+                return readinessStage.result;
             }
-            const installResult: unknown = installStage.value;
-            if (PlayerCaptionCapture.isInstallFailure(installResult)) {
-                PlayerCaptionCapture.log('bridge-install-failed', {
+            const readyResult: unknown = readinessStage.value;
+            if (PlayerCaptionCapture.isBridgeUnavailable(readyResult)) {
+                PlayerCaptionCapture.log('bridge-readiness-failed', {
                     videoId: input.videoId,
-                    error: installResult.error,
+                    error: readyResult.error,
                 });
                 return PlayerCaptionCapture.resolveFailure({
                     reason: CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed,
-                    message: installResult.error,
-                    diagnostics: { stage: 'installing' },
+                    message: readyResult.error,
+                    diagnostics: { stage: 'confirming-bridge' },
                 });
             }
-            PlayerCaptionCapture.log('bridge-installed', {
+            PlayerCaptionCapture.log('bridge-ready', {
                 videoId: input.videoId,
             });
             const activationStage = await Promise.race([
@@ -419,7 +554,6 @@ export class PlayerCaptionCapture {
                 PlayerCaptionCapture.activeSession = null;
             }
             PlayerCaptionCapture.clearActiveWaitForSession(session);
-            PlayerCaptionCapture.cleanupStarted = false;
         }
     }
 
@@ -477,16 +611,58 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Installs the page bridge once per content-script lifetime.
+     * Confirms the declarative page bridge once per content-script lifetime.
      *
-     * @returns Runtime response from the background install handler.
+     * @returns Local MAIN-bridge acknowledgement or bounded failure.
      */
-    private static getOrInstallBridge(): Promise<unknown> {
-        PlayerCaptionCapture.bridgeInstallPromise ??=
-            browser.runtime.sendMessage({
-                type: TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE,
-            });
-        return PlayerCaptionCapture.bridgeInstallPromise;
+    private static getOrConfirmBridge(): Promise<unknown> {
+        if (PlayerCaptionCapture.bridgeReadyPromise !== null) {
+            return PlayerCaptionCapture.bridgeReadyPromise;
+        }
+        const probe = Promise.resolve()
+            .then(() => CaptionPageBridgeClient.probe())
+            .catch(() => BRIDGE_UNAVAILABLE_RESULT);
+        const trackedProbe: Promise<unknown> = probe.then((result) => {
+            const normalizedResult = PlayerCaptionCapture.isBridgeReady(result)
+                ? result
+                : PlayerCaptionCapture.normalizeBridgeUnavailable(result);
+            if (
+                !PlayerCaptionCapture.isBridgeReady(normalizedResult) &&
+                PlayerCaptionCapture.bridgeReadyPromise === trackedProbe
+            ) {
+                PlayerCaptionCapture.bridgeReadyPromise = null;
+            }
+            return normalizedResult;
+        });
+        PlayerCaptionCapture.bridgeReadyPromise = trackedProbe;
+        return PlayerCaptionCapture.bridgeReadyPromise;
+    }
+
+    /**
+     * Accepts only the explicit acknowledgement emitted by the Probe command.
+     *
+     * @param result Untrusted local command result.
+     * @returns Whether readiness may be cached for the document lifetime.
+     */
+    private static isBridgeReady(result: unknown): boolean {
+        return (
+            result !== null &&
+            typeof result === 'object' &&
+            Reflect.get(result, 'ok') === true
+        );
+    }
+
+    /**
+     * Preserves a safe explicit failure while normalizing malformed or
+     * rejected probes without exposing runtime error text.
+     *
+     * @param result Untrusted local probe result.
+     * @returns Safe bridge-unavailable result for capture control flow.
+     */
+    private static normalizeBridgeUnavailable(result: unknown): unknown {
+        return PlayerCaptionCapture.isBridgeUnavailable(result)
+            ? result
+            : BRIDGE_UNAVAILABLE_RESULT;
     }
 
     /**
@@ -762,7 +938,8 @@ export class PlayerCaptionCapture {
             });
             const result =
                 await PlayerCaptionCapture.runBridgeCommand(
-                    'activate-captions',
+                    CAPTION_PAGE_BRIDGE_COMMAND.Activate,
+                    signal,
                 );
             if (
                 signal.aborted ||
@@ -893,25 +1070,26 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Sends a bridge command through the background's MAIN-world scripting API.
+     * Sends lifecycle commands over the document-local bridge channel.
      *
      * @param command Page bridge command name.
+     * @param signal Optional owner cancellation for activation.
      * @returns Bridge command result, or a bounded failure.
      */
     private static async runBridgeCommand(
         command: BridgeCommandName,
+        signal?: AbortSignal,
     ): Promise<unknown> {
-        const messageType =
-            command === 'activate-captions'
-                ? TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE
-                : TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE;
         try {
-            return await browser.runtime.sendMessage({ type: messageType });
-        } catch (error) {
+            if (command === CAPTION_PAGE_BRIDGE_COMMAND.Activate) {
+                return await CaptionPageBridgeClient.activate(signal);
+            }
+            return await CaptionPageBridgeClient.deactivate(signal);
+        } catch {
             return {
                 ok: false,
                 reason: CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed,
-                error: String(error),
+                error: BRIDGE_UNAVAILABLE_ERROR,
             };
         }
     }
@@ -941,12 +1119,12 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Detects background bridge-install failures without trusting extra fields.
+     * Detects local bridge-unavailable failures without trusting extra fields.
      *
-     * @param result Runtime message response.
-     * @returns Whether install failed with a message.
+     * @param result Local command response.
+     * @returns Whether bridge readiness failed with a safe message.
      */
-    private static isInstallFailure(
+    private static isBridgeUnavailable(
         result: unknown,
     ): result is { ok: false; error: string } {
         if (result === null || typeof result !== 'object') {
@@ -1051,17 +1229,39 @@ export class PlayerCaptionCapture {
      *
      * @returns Resolves after cleanup command is posted.
      */
-    private static async cleanupActiveSession(): Promise<void> {
-        if (PlayerCaptionCapture.cleanupStarted) {
-            return;
+    private static cleanupActiveSession(): Promise<void> {
+        if (PlayerCaptionCapture.cleanupPromise !== null) {
+            return PlayerCaptionCapture.cleanupPromise;
         }
+        const operation = PlayerCaptionCapture.runCleanupCommand();
+        const trackedOperation: Promise<void> = operation.finally(() => {
+            if (PlayerCaptionCapture.cleanupPromise === trackedOperation) {
+                PlayerCaptionCapture.cleanupPromise = null;
+            }
+        });
+        PlayerCaptionCapture.cleanupPromise = trackedOperation;
+        return trackedOperation;
+    }
+
+    /**
+     * Uses a fresh signal because route cancellation must not suppress caption
+     * restoration.
+     *
+     * @returns Resolves after a bounded local Deactivate acknowledgement.
+     */
+    private static async runCleanupCommand(): Promise<void> {
         PlayerCaptionCapture.log('cleanup-start', {
             videoId: PlayerCaptionCapture.activeSession?.videoId ?? null,
         });
-        PlayerCaptionCapture.cleanupStarted = true;
+        const cleanupController = new AbortController();
+        const cleanupTimeoutId = globalThis.setTimeout(() => {
+            cleanupController.abort();
+        }, CAPTION_PAGE_BRIDGE_COMMAND_TIMEOUT_MS);
         const result = await PlayerCaptionCapture.runBridgeCommand(
-            'deactivate-captions',
+            CAPTION_PAGE_BRIDGE_COMMAND.Deactivate,
+            cleanupController.signal,
         );
+        globalThis.clearTimeout(cleanupTimeoutId);
         const failure = PlayerCaptionCapture.getBridgeFailure(result);
         if (failure === null) {
             PlayerCaptionCapture.log('cleanup-finished', {
@@ -1087,7 +1287,10 @@ export class PlayerCaptionCapture {
         if (details === null) {
             return;
         }
-        PlayerCaptionCapture.log('page:' + details.stage, details);
+        // The event name already carries the page stage, so it is not
+        // repeated inside the inline fields.
+        const { stage: pageStage, ...fields } = details;
+        PlayerCaptionCapture.log(`page:${pageStage}`, fields);
     }
 
     /**
@@ -1316,6 +1519,6 @@ export class PlayerCaptionCapture {
         if (!CAPTION_CAPTURE_VERBOSE_LOGS) {
             return;
         }
-        contentLog.info('caption-capture', { ...details, stage });
+        contentLog.info('caption-capture', ...formatLogStage(stage, details));
     }
 }

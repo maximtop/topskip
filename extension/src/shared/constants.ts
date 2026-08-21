@@ -9,6 +9,12 @@ export {
 import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
 import { PROVIDER_ID } from '@/shared/providers';
 
+export {
+    YOUTUBE_ORIGIN as YOUTUBE_BASE_URL,
+    YOUTUBE_WATCH_PATH as YOUTUBE_WATCH_URL_PATH,
+    YOUTUBE_WATCH_VIDEO_ID_PARAM,
+} from '@/shared/watch-route';
+
 /**
  * Start of auto-skip window (seconds).
  */
@@ -126,20 +132,6 @@ export const CAPTION_CAPTURE_VERBOSE_LOGS =
  */
 export const PREFS_PORT_NAME = 'topskip:prefs';
 
-// ───────────────────────────────────────────── YouTube URLs ──────────────
-
-/**
- * Canonical YouTube origin (no trailing slash).
- * Derived patterns (e.g. match patterns) should build from this value to keep
- * it single-source-of-truth.
- */
-export const YOUTUBE_BASE_URL = 'https://www.youtube.com';
-
-/**
- * Path segment for standard YouTube watch pages (not Shorts).
- */
-export const YOUTUBE_WATCH_URL_PATH = '/watch';
-
 // ─────────────────────────────────────────── Unit conversions ─────────────
 
 /**
@@ -171,13 +163,6 @@ export const LOG_PREFIX_CAPTIONS = '[TopSkip captions]';
 export const LOG_PREFIX_CONTENT = '[TopSkip content]';
 
 // ──────────────────────────────────────────── HTTP ────────────────────────
-
-// ──────────────────────────────────────────── YouTube ─────────────────────
-
-/**
- * Query parameter name for the YouTube watch video ID.
- */
-export const YOUTUBE_WATCH_VIDEO_ID_PARAM = 'v';
 
 // ──────────────────────────────────────── Debug / Dev ─────────────────────
 

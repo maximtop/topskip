@@ -331,6 +331,38 @@
         "message": "Der Schlüssel ist gültig.",
         "description": "Success message shown after a provider API key test passes."
     },
+    "options_connection_host_access_required_badge": {
+        "message": "Zugriff erforderlich",
+        "description": "Badge shown when the provider host permission is missing."
+    },
+    "options_connection_host_access_granted_badge": {
+        "message": "Zugriff gewährt",
+        "description": "Badge shown when the provider host permission is granted."
+    },
+    "options_connection_host_access_description": {
+        "message": "%provider% benötigt nur für private BYOK-Anfragen Zugriff auf %host%.",
+        "description": "Explanation of provider host access. %provider% and %host% are replaced with the provider and host names."
+    },
+    "options_connection_host_access_allow_button": {
+        "message": "Zugriff erlauben",
+        "description": "Button that requests optional host access for one provider."
+    },
+    "options_connection_host_access_denied": {
+        "message": "Der Zugriff wurde nicht erlaubt. Ihre Einstellungen wurden nicht geändert.",
+        "description": "Safe message after the user denies an optional host request."
+    },
+    "options_connection_host_access_request_failed": {
+        "message": "Der Zugriff konnte nicht angefordert werden. Versuchen Sie es erneut über diese Schaltfläche.",
+        "description": "Safe message when Chrome cannot complete an optional host request."
+    },
+    "options_connection_host_access_required_for_test": {
+        "message": "Erlauben Sie den Anbieterzugriff, bevor Sie diese Verbindung testen.",
+        "description": "Guidance after a connection test finds provider access missing."
+    },
+    "options_connection_test_failed": {
+        "message": "Verbindungstest fehlgeschlagen. Prüfen Sie den API-Schlüssel und versuchen Sie es erneut.",
+        "description": "Safe fallback after an invalid or unavailable connection test."
+    },
     "options_analysis_mode_heading": {
         "message": "Analysemodus",
         "description": "Heading for the analysis route selector in extension settings."

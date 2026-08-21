@@ -2,6 +2,7 @@ import * as v from 'valibot';
 
 import { captionSegmentSchema } from '@topskip/common/caption-types';
 import {
+    analysisModeSchema,
     type AnalysisMode,
     userPreferencesSchema,
     type UserPreferences,
@@ -18,8 +19,14 @@ import {
     type ServerAnalysisFailureCode,
 } from '@topskip/common/server-analysis-contract';
 import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
-import type { ProviderId } from '@/shared/providers';
+import { PROVIDER_ID, type ProviderId } from '@/shared/providers';
 import type { PROVIDER_AVAILABILITY } from './chrome-prompt-api';
+import type {
+    ConnectionProviderId,
+    ProviderHostAccessStatus,
+} from './provider-host-permissions';
+
+export type { ConnectionProviderId } from './provider-host-permissions';
 
 /**
  * Runtime message `type` strings (popup/content → background; background →
@@ -38,16 +45,10 @@ export const TOPSKIP_MESSAGE = {
     TEST_CONNECTION_KEY: 'TOPSKIP_TEST_CONNECTION_KEY',
     PREFS_UPDATED: 'TOPSKIP_PREFS_UPDATED',
     /**
-     * Watch content script fetched captions and forwards them for service worker
-     * logging.
+     * Watch content forwards validated captions to the background-owned
+     * analysis pipeline.
      */
     CAPTIONS_FROM_CONTENT: 'TOPSKIP_CAPTIONS_FROM_CONTENT',
-    /**
-     * Installs a MAIN-world page bridge for player-mediated caption capture.
-     */
-    INSTALL_CAPTION_CAPTURE: 'TOPSKIP_INSTALL_CAPTION_CAPTURE',
-    ACTIVATE_CAPTION_CAPTURE: 'TOPSKIP_ACTIVATE_CAPTION_CAPTURE',
-    DEACTIVATE_CAPTION_CAPTURE: 'TOPSKIP_DEACTIVATE_CAPTION_CAPTURE',
     GET_OPENROUTER_CONFIG: 'TOPSKIP_GET_OPENROUTER_CONFIG',
     SET_OPENROUTER_CONFIG: 'TOPSKIP_SET_OPENROUTER_CONFIG',
     ADD_OPENROUTER_CUSTOM_MODEL: 'TOPSKIP_ADD_OPENROUTER_CUSTOM_MODEL',
@@ -65,9 +66,13 @@ export const TOPSKIP_MESSAGE = {
     GET_CHROME_PROMPT_API_STATUS: 'TOPSKIP_GET_CHROME_PROMPT_API_STATUS',
     TRIGGER_CHROME_MODEL_DOWNLOAD: 'TOPSKIP_TRIGGER_CHROME_MODEL_DOWNLOAD',
     /**
-     * Background probe used to avoid reinjecting an already-live watch script.
+     * Worker-start wake that lets a live watch script resume pending delivery.
      */
     CONTENT_SCRIPT_READY: 'TOPSKIP_CONTENT_SCRIPT_READY',
+    /**
+     * Background asks the live isolated bundle to prove current route ownership.
+     */
+    CONTENT_ROUTE_STATUS: 'TOPSKIP_CONTENT_ROUTE_STATUS',
     /**
      * Content script forwards a log line to the background
      * service worker console for easier debugging.
@@ -76,8 +81,7 @@ export const TOPSKIP_MESSAGE = {
 } as const;
 
 /**
- * Versioned readiness handshake prevents a cold worker from replacing the
- * current content bundle after a transient probe failure.
+ * Versioned readiness rejects stale bundles; replacement requires page reload.
  */
 export const CONTENT_SCRIPT_PROTOCOL_VERSION = 1;
 
@@ -92,6 +96,9 @@ export const SERVER_ANALYSIS_INTERRUPTION_REASON = {
 
 /**
  * Bounded caption acquisition failure reasons safe to surface in diagnostics.
+ * The retained `BridgeInstallFailed` wire literal means that the declarative
+ * MAIN bridge is unavailable or unresponsive; runtime installation no longer
+ * exists.
  */
 export const CAPTION_CAPTURE_FAILURE_REASON = {
     PlayerNotReady: 'player-not-ready',
@@ -505,7 +512,7 @@ export type PreflightByokSetupResponse =
 
 /**
  * Typed readiness acknowledgement lets background distinguish the current
- * content protocol from an invalidated or older injected bundle.
+ * content protocol from an invalidated or older content bundle.
  */
 export const contentScriptReadyResponseSchema = v.strictObject({
     ok: v.literal(true),
@@ -518,6 +525,40 @@ export const contentScriptReadyResponseSchema = v.strictObject({
  */
 export type ContentScriptReadyResponse = v.InferOutput<
     typeof contentScriptReadyResponseSchema
+>;
+
+/**
+ * Strict route probe prevents background from trusting stale asynchronous work.
+ */
+export const contentRouteStatusRequestSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS),
+});
+
+/**
+ * Live content-owned route proof replaces privileged reads of `Tab.url`.
+ */
+export const contentRouteStatusResponseSchema = v.strictObject({
+    ok: v.literal(true),
+    protocolVersion: v.literal(CONTENT_SCRIPT_PROTOCOL_VERSION),
+    extensionVersion: extensionVersionSchema,
+    videoId: v.nullable(youtubeVideoIdSchema),
+    enabled: v.boolean(),
+    analysisMode: v.nullable(analysisModeSchema),
+    serverSessionId: v.nullable(serverAnalysisSessionIdSchema),
+});
+
+/**
+ * Request used only between background and the isolated watch bundle.
+ */
+export type ContentRouteStatusRequest = v.InferOutput<
+    typeof contentRouteStatusRequestSchema
+>;
+
+/**
+ * Current content route identity returned to background ownership checks.
+ */
+export type ContentRouteStatusResponse = v.InferOutput<
+    typeof contentRouteStatusResponseSchema
 >;
 
 /**
@@ -686,11 +727,6 @@ export type DetectionModelMessage = {
     availability: ProviderAvailabilityMessage;
 };
 
-/**
- * Providers that expose API-key connection entries.
- */
-export type ConnectionProviderId = 'openrouter' | 'openai';
-
 export const CONNECTION_STATUS = {
     Missing: 'missing',
     Saved: 'saved',
@@ -711,6 +747,7 @@ export type ConnectionEntryMessage = {
     requiredForActiveModel: boolean;
     apiKeyMasked: string | null;
     status: ConnectionStatus;
+    hostAccessStatus: ProviderHostAccessStatus;
 };
 
 /**
@@ -741,12 +778,78 @@ export type SaveConnectionKeyResponse =
     | { ok: false; error: string };
 
 /**
+ * Extension-only connection failures remain separate from provider errors.
+ */
+export const PROVIDER_CONNECTION_FAILURE_CODE = {
+    HostAccessRequired: 'host_access_required',
+} as const;
+
+/**
+ * A revoked optional grant tells options to restore an explicit access action.
+ */
+export type ProviderHostAccessRequiredFailure = {
+    ok: false;
+    code: typeof PROVIDER_CONNECTION_FAILURE_CODE.HostAccessRequired;
+    providerId: ConnectionProviderId;
+};
+
+/**
  * Result of validating a draft or saved provider connection key.
  */
 export type TestConnectionKeyResponse =
     | { ok: true; valid: true }
     | { ok: true; valid: false; error: string }
-    | { ok: false; error: string; retryable?: boolean };
+    | { ok: false; error: string; retryable?: boolean }
+    | ProviderHostAccessRequiredFailure;
+
+/**
+ * Connection provider validation excludes non-network built-in providers.
+ */
+const connectionProviderIdSchema = v.union([
+    v.literal(PROVIDER_ID.OpenRouter),
+    v.literal(PROVIDER_ID.OpenAI),
+]);
+
+/**
+ * Strict response parsing prevents provider or runtime text from bypassing UI
+ * classification through unrecognized fields.
+ */
+const testConnectionKeyResponseSchema = v.union([
+    v.strictObject({
+        ok: v.literal(true),
+        valid: v.literal(true),
+    }),
+    v.strictObject({
+        ok: v.literal(true),
+        valid: v.literal(false),
+        error: v.string(),
+    }),
+    v.strictObject({
+        ok: v.literal(false),
+        error: v.string(),
+        retryable: v.optional(v.boolean()),
+    }),
+    v.strictObject({
+        ok: v.literal(false),
+        code: v.literal(
+            PROVIDER_CONNECTION_FAILURE_CODE.HostAccessRequired,
+        ),
+        providerId: connectionProviderIdSchema,
+    }),
+]);
+
+/**
+ * Narrows an untrusted runtime reply before options may classify it.
+ *
+ * @param value - Unknown response returned through runtime messaging.
+ * @returns Parsed documented response, or `null` for malformed data.
+ */
+export function parseTestConnectionKeyResponse(
+    value: unknown,
+): TestConnectionKeyResponse | null {
+    const parsed = v.safeParse(testConnectionKeyResponseSchema, value);
+    return parsed.success ? parsed.output : null;
+}
 
 /**
  * Log level for content-to-background log forwarding.
@@ -758,6 +861,7 @@ export type ContentLogLevel = 'info' | 'warn' | 'error';
  */
 export type TopSkipRuntimeMessage =
     | { type: typeof TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY }
+    | { type: typeof TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS }
     | { type: typeof TOPSKIP_MESSAGE.GET_PREFS }
     | { type: typeof TOPSKIP_MESSAGE.SET_PREFS; enabled: boolean }
     | {
@@ -790,9 +894,6 @@ export type TopSkipRuntimeMessage =
           type: typeof TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT;
           payload: CaptionsFromContentPayload;
       }
-    | { type: typeof TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE }
-    | { type: typeof TOPSKIP_MESSAGE.ACTIVATE_CAPTION_CAPTURE }
-    | { type: typeof TOPSKIP_MESSAGE.DEACTIVATE_CAPTION_CAPTURE }
     | { type: typeof TOPSKIP_MESSAGE.GET_OPENROUTER_CONFIG }
     | {
           type: typeof TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG;

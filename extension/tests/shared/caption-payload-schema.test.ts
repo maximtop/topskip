@@ -132,15 +132,22 @@ describe('captionsFromContentPayloadSchema', () => {
     });
 });
 
-describe('TOPSKIP_MESSAGE', () => {
-    it('has a runtime message for installing caption capture', () => {
-        expect(TOPSKIP_MESSAGE.INSTALL_CAPTION_CAPTURE).toBe(
-            'TOPSKIP_INSTALL_CAPTION_CAPTURE',
-        );
-    });
-});
-
 describe('captionsFromContentRuntimeMessageSchema', () => {
+    it('keeps caption delivery without worker scripting commands', () => {
+        expect(TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT).toBe(
+            'TOPSKIP_CAPTIONS_FROM_CONTENT',
+        );
+        expect(
+            Reflect.get(TOPSKIP_MESSAGE, 'INSTALL_CAPTION_CAPTURE'),
+        ).toBeUndefined();
+        expect(
+            Reflect.get(TOPSKIP_MESSAGE, 'ACTIVATE_CAPTION_CAPTURE'),
+        ).toBeUndefined();
+        expect(
+            Reflect.get(TOPSKIP_MESSAGE, 'DEACTIVATE_CAPTION_CAPTURE'),
+        ).toBeUndefined();
+    });
+
     it('accepts a full runtime message', () => {
         const r = v.safeParse(captionsFromContentRuntimeMessageSchema, {
             type: TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT,

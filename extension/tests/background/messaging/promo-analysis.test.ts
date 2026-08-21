@@ -14,8 +14,10 @@ import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
 const browserMocks = vi.hoisted(() => ({
     runtimeOnMessage: vi.fn(),
     runtimeSendMessage: vi.fn(() => Promise.resolve()),
+    permissionsContains: vi.fn(),
     storageLocalGet: vi.fn(),
     storageLocalSet: vi.fn(),
+    tabsSendMessage: vi.fn(() => Promise.resolve()),
 }));
 
 vi.mock('@/shared/browser', () => ({
@@ -24,11 +26,15 @@ vi.mock('@/shared/browser', () => ({
             onMessage: { addListener: browserMocks.runtimeOnMessage },
             sendMessage: browserMocks.runtimeSendMessage,
         },
+        permissions: { contains: browserMocks.permissionsContains },
         storage: {
             local: {
                 get: browserMocks.storageLocalGet,
                 set: browserMocks.storageLocalSet,
             },
+        },
+        tabs: {
+            sendMessage: browserMocks.tabsSendMessage,
         },
     },
 }));
@@ -99,9 +105,34 @@ vi.mock('@/background/providers/default-registry', () => ({
     defaultRegistry: { get: registryMocks.get },
 }));
 
+const providerBoundaryMocks = vi.hoisted(() => ({
+    openRouterLoad: vi.fn(),
+    openAiLoad: vi.fn(),
+    callOpenRouterChat: vi.fn(),
+    callOpenAiResponse: vi.fn(),
+}));
+
+vi.mock('@/background/storage/openrouter-storage', () => ({
+    OpenRouterStorage: { load: providerBoundaryMocks.openRouterLoad },
+}));
+
+vi.mock('@/background/storage/openai-storage', () => ({
+    OpenAiStorage: { load: providerBoundaryMocks.openAiLoad },
+}));
+
+vi.mock('@/background/openrouter/openrouter-client', () => ({
+    callOpenRouterChat: providerBoundaryMocks.callOpenRouterChat,
+}));
+
+vi.mock('@/background/openai/openai-client', () => ({
+    callOpenAiResponse: providerBoundaryMocks.callOpenAiResponse,
+}));
+
 // ── Imports (after mocks) ──
 
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { OpenAiAdapter } from '@/background/providers/openai-adapter';
+import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
 
 // ── Test fixtures ──
 
@@ -174,10 +205,22 @@ function resetMocks(): void {
 describe('PromoAnalysis — adapter routing', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        browserMocks.tabsSendMessage.mockReset().mockResolvedValue(undefined);
+        browserMocks.permissionsContains.mockReset().mockResolvedValue(true);
+        detectionStoreMocks.set.mockReset().mockResolvedValue(undefined);
         resetMocks();
         registryMocks.get.mockReturnValue(mockAdapter);
         prefsMocks.ready.mockResolvedValue(undefined);
         prefsMocks.save.mockResolvedValue(undefined);
+        providerBoundaryMocks.openRouterLoad.mockResolvedValue({
+            apiKey: 'sk-openrouter',
+            model: 'provider/model',
+            customModels: [],
+        });
+        providerBoundaryMocks.openAiLoad.mockResolvedValue({
+            apiKey: 'sk-openai',
+            model: 'gpt-5.2',
+        });
         const loadFn = prefsMocks.load;
         loadFn.mockReturnValue({
             enabled: true,
@@ -223,6 +266,233 @@ describe('PromoAnalysis — adapter routing', () => {
 
             PromoAnalysis.abortForTab(7);
             expect(signals[1]?.aborted).toBe(true);
+        });
+
+        it('rejects old same-video completion after a BYOK route is re-enabled', async () => {
+            let resolveOld: (result: AnalyzeTranscriptResult) => void =
+                () => undefined;
+            let resolveReplacement: (result: AnalyzeTranscriptResult) => void =
+                () => undefined;
+            const oldResult = new Promise<AnalyzeTranscriptResult>(
+                (resolve) => {
+                    resolveOld = resolve;
+                },
+            );
+            const replacementResult = new Promise<AnalyzeTranscriptResult>(
+                (resolve) => {
+                    resolveReplacement = resolve;
+                },
+            );
+            const analyze = vi
+                .fn<MockAnalyzeFn>()
+                .mockImplementationOnce(() => oldResult)
+                .mockImplementationOnce(() => replacementResult);
+            registryMocks.get.mockReturnValue(
+                makeAdapter({ analyzeTranscript: analyze }),
+            );
+
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('sameVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(analyze).toHaveBeenCalledTimes(1);
+            });
+
+            PromoAnalysis.abortAll();
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('sameVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(analyze).toHaveBeenCalledTimes(2);
+            });
+
+            resolveOld({
+                ok: true,
+                hasPromo: true,
+                blocks: [{ startSec: 0, endSec: 1 }],
+                providerMeta: {
+                    id: 'openrouter',
+                    model: 'old-route',
+                },
+                rawAssistant: '{"hasPromo":true}',
+            });
+            await new Promise<void>((resolve) => {
+                globalThis.setTimeout(resolve, 0);
+            });
+            expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
+
+            resolveReplacement({
+                ok: true,
+                hasPromo: true,
+                blocks: [{ startSec: 0, endSec: 2 }],
+                providerMeta: {
+                    id: 'openrouter',
+                    model: 'replacement-route',
+                },
+                rawAssistant: '{"hasPromo":true}',
+            });
+            await vi.waitFor(() => {
+                expect(browserMocks.tabsSendMessage).toHaveBeenCalledOnce();
+            });
+            expect(browserMocks.tabsSendMessage).toHaveBeenCalledWith(
+                7,
+                expect.objectContaining({
+                    videoId: 'sameVideo',
+                    promoBlocks: [{ startSec: 0, endSec: 2 }],
+                }),
+            );
+        });
+
+        it('does not let an aborted prefs read reclaim a replacement run', async () => {
+            let resolveOldPrefs: (prefs: unknown) => void = () => undefined;
+            let resolveReplacement: (result: AnalyzeTranscriptResult) => void =
+                () => undefined;
+            const oldPrefs = new Promise<unknown>((resolve) => {
+                resolveOldPrefs = resolve;
+            });
+            const replacementResult = new Promise<AnalyzeTranscriptResult>(
+                (resolve) => {
+                    resolveReplacement = resolve;
+                },
+            );
+            prefsMocks.load
+                .mockImplementationOnce(() => oldPrefs)
+                .mockResolvedValue({
+                    enabled: true,
+                    providerId: 'openrouter',
+                    analysisMode: 'byok',
+                });
+            const analyze = vi
+                .fn<MockAnalyzeFn>()
+                .mockImplementationOnce(() => replacementResult)
+                .mockResolvedValue({
+                    ok: true,
+                    hasPromo: false,
+                    providerMeta: {
+                        id: 'openrouter',
+                        model: 'stale-route',
+                    },
+                    rawAssistant: '{"hasPromo":false}',
+                });
+            registryMocks.get.mockReturnValue(
+                makeAdapter({ analyzeTranscript: analyze }),
+            );
+
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('sameVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(prefsMocks.load).toHaveBeenCalledTimes(1);
+            });
+
+            PromoAnalysis.abortAll();
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('sameVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(analyze).toHaveBeenCalledOnce();
+            });
+
+            resolveOldPrefs({
+                enabled: true,
+                providerId: 'openrouter',
+                analysisMode: 'byok',
+            });
+            await new Promise<void>((resolve) => {
+                globalThis.setTimeout(resolve, 0);
+            });
+            expect(analyze).toHaveBeenCalledOnce();
+
+            resolveReplacement({
+                ok: true,
+                hasPromo: true,
+                blocks: [{ startSec: 0, endSec: 2 }],
+                providerMeta: {
+                    id: 'openrouter',
+                    model: 'replacement-route',
+                },
+                rawAssistant: '{"hasPromo":true}',
+            });
+            await vi.waitFor(() => {
+                expect(browserMocks.tabsSendMessage).toHaveBeenCalledOnce();
+            });
+        });
+
+        it('does not publish stale status after an aborted tab delivery settles', async () => {
+            let resolveOldDelivery: () => void = () => undefined;
+            const oldDelivery = new Promise<void>((resolve) => {
+                resolveOldDelivery = resolve;
+            });
+            const analyze = vi
+                .fn<MockAnalyzeFn>()
+                .mockResolvedValueOnce({
+                    ok: true,
+                    hasPromo: true,
+                    blocks: [{ startSec: 0, endSec: 1 }],
+                    providerMeta: {
+                        id: 'openrouter',
+                        model: 'old-route',
+                    },
+                    rawAssistant: '{"hasPromo":true}',
+                })
+                .mockResolvedValueOnce({
+                    ok: true,
+                    hasPromo: true,
+                    blocks: [{ startSec: 0, endSec: 2 }],
+                    providerMeta: {
+                        id: 'openrouter',
+                        model: 'replacement-route',
+                    },
+                    rawAssistant: '{"hasPromo":true}',
+                });
+            registryMocks.get.mockReturnValue(
+                makeAdapter({ analyzeTranscript: analyze }),
+            );
+            browserMocks.tabsSendMessage
+                .mockImplementationOnce(() => oldDelivery)
+                .mockResolvedValueOnce(undefined);
+
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('sameVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(browserMocks.tabsSendMessage).toHaveBeenCalledOnce();
+            });
+
+            PromoAnalysis.abortAll();
+            PromoAnalysis.onCaptionsReady(
+                baseSender(7),
+                basePayload('sameVideo'),
+            );
+            await vi.waitFor(() => {
+                expect(browserMocks.tabsSendMessage).toHaveBeenCalledTimes(2);
+            });
+            await vi.waitFor(() => {
+                expect(detectionStoreMocks.set).toHaveBeenCalledWith(
+                    7,
+                    expect.objectContaining({
+                        status: PROMO_DETECTION_STATUS.Detected,
+                        promoBlocks: [{ startSec: 0, endSec: 2 }],
+                    }),
+                );
+            });
+
+            resolveOldDelivery();
+            await new Promise<void>((resolve) => {
+                globalThis.setTimeout(resolve, 0);
+            });
+            expect(detectionStoreMocks.set).not.toHaveBeenCalledWith(
+                7,
+                expect.objectContaining({
+                    status: PROMO_DETECTION_STATUS.Detected,
+                    promoBlocks: [{ startSec: 0, endSec: 1 }],
+                }),
+            );
         });
 
         it('resolves adapter from registry and calls analyzeTranscript', () => {
@@ -358,6 +628,135 @@ describe('PromoAnalysis — adapter routing', () => {
                     source: PROMO_DETECTION_SOURCE.LocalProvider,
                 });
             });
+        });
+
+        it.each([
+            {
+                providerId: 'openrouter',
+                createAdapter: () => new OpenRouterAdapter(),
+                providerClient: providerBoundaryMocks.callOpenRouterChat,
+            },
+            {
+                providerId: 'openai',
+                createAdapter: () => new OpenAiAdapter(),
+                providerClient: providerBoundaryMocks.callOpenAiResponse,
+            },
+        ])(
+            'publishes setup-required without a $providerId fetch or server fallback',
+            async ({ providerId, createAdapter, providerClient }) => {
+                prefsMocks.load.mockResolvedValue({
+                    enabled: true,
+                    providerId,
+                    analysisMode: 'byok',
+                });
+                browserMocks.permissionsContains.mockResolvedValue(false);
+                registryMocks.get.mockReturnValue(createAdapter());
+
+                PromoAnalysis.onCaptionsReady(
+                    baseSender(),
+                    basePayload(`missing-${providerId}-access`),
+                );
+
+                await vi.waitFor(() => {
+                    expect(detectionStoreMocks.set).toHaveBeenCalledWith(42, {
+                        videoId: `missing-${providerId}-access`,
+                        status: PROMO_DETECTION_STATUS.NotConfigured,
+                        source: PROMO_DETECTION_SOURCE.LocalProvider,
+                    });
+                });
+                expect(providerClient).not.toHaveBeenCalled();
+                expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
+                expect(browserMocks.runtimeSendMessage).not.toHaveBeenCalled();
+            },
+        );
+
+        it('stops all remaining chunks on a typed host-access failure', async () => {
+            const analyze = vi.fn<MockAnalyzeFn>().mockResolvedValue({
+                ok: false,
+                failureCode: 'host_access_required',
+                error: 'Provider host access is required',
+            });
+            registryMocks.get.mockReturnValue(
+                makeAdapter({
+                    maxTranscriptChars: vi.fn().mockResolvedValue(20),
+                    analyzeTranscript: analyze,
+                }),
+            );
+            const payload: Payload = {
+                ...basePayload('revoked-access'),
+                segments: [
+                    { text: 'segment alpha', startSec: 0, durationSec: 1 },
+                    { text: 'segment beta', startSec: 60, durationSec: 1 },
+                    { text: 'segment gamma', startSec: 120, durationSec: 1 },
+                ],
+            };
+
+            PromoAnalysis.onCaptionsReady(baseSender(), payload);
+
+            await vi.waitFor(() => {
+                expect(detectionStoreMocks.set).toHaveBeenCalledWith(42, {
+                    videoId: 'revoked-access',
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
+                    source: PROMO_DETECTION_SOURCE.LocalProvider,
+                });
+            });
+            expect(analyze).toHaveBeenCalledOnce();
+            expect(detectionStoreMocks.set).toHaveBeenCalledTimes(2);
+            expect(detectionStoreMocks.set).not.toHaveBeenCalledWith(
+                42,
+                expect.objectContaining({
+                    status: PROMO_DETECTION_STATUS.Error,
+                    error: 'All transcript chunks failed',
+                }),
+            );
+            expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
+            expect(browserMocks.runtimeSendMessage).not.toHaveBeenCalled();
+        });
+
+        it('stops split retries when access disappears before a retry fetch', async () => {
+            const analyze = vi
+                .fn<MockAnalyzeFn>()
+                .mockResolvedValueOnce({
+                    ok: false,
+                    error: 'Transcript is too large',
+                    tooLarge: true,
+                })
+                .mockResolvedValueOnce({
+                    ok: false,
+                    failureCode: 'host_access_required',
+                    error: 'Provider host access is required',
+                });
+            registryMocks.get.mockReturnValue(
+                makeAdapter({ analyzeTranscript: analyze }),
+            );
+            const payload: Payload = {
+                ...basePayload('revoked-split-access'),
+                segments: [
+                    { text: 'first line', startSec: 0, durationSec: 1 },
+                    { text: 'second line', startSec: 60, durationSec: 1 },
+                ],
+            };
+
+            PromoAnalysis.onCaptionsReady(baseSender(), payload);
+
+            await vi.waitFor(() => {
+                expect(detectionStoreMocks.set).toHaveBeenCalledWith(42, {
+                    videoId: 'revoked-split-access',
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
+                    source: PROMO_DETECTION_SOURCE.LocalProvider,
+                });
+            });
+            expect(analyze).toHaveBeenCalledTimes(2);
+            expect(detectionStoreMocks.set).toHaveBeenCalledTimes(2);
+            expect(detectionStoreMocks.set).not.toHaveBeenCalledWith(
+                42,
+                expect.objectContaining({
+                    status: PROMO_DETECTION_STATUS.Error,
+                    error: 'All transcript chunks failed',
+                }),
+            );
+            expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
+            expect(browserMocks.runtimeSendMessage).not.toHaveBeenCalled();
         });
 
         it('re-checks persisted mode before resolving the provider', async () => {

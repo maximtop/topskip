@@ -16,6 +16,10 @@ import type {
 } from '@/shared/messages';
 import { CONNECTION_STATUS } from '@/shared/messages';
 import { translator } from '@/shared/i18n/translator';
+import {
+    PROVIDER_HOST_ACCESS_STATUS,
+    PROVIDER_HOST_PERMISSION,
+} from '@/shared/provider-host-permissions';
 
 /**
  * Last visible validation state for a cloud provider key test.
@@ -23,8 +27,72 @@ import { translator } from '@/shared/i18n/translator';
 export type ConnectionTestState =
     | { kind: 'idle' }
     | { kind: 'valid' }
-    | { kind: 'invalid'; error: string }
-    | { kind: 'error'; error: string };
+    | { kind: 'invalid' }
+    | { kind: 'key_required' }
+    | { kind: 'access_denied' }
+    | { kind: 'access_request_failed' }
+    | { kind: 'host_access_required' }
+    | { kind: 'error' };
+
+/**
+ * Safe state-to-copy mapping prevents runtime and provider error text from
+ * entering the rendered options page.
+ *
+ * @param state - Last classified test or access outcome.
+ * @returns Localized feedback, or `null` while idle.
+ */
+function getConnectionFeedback(
+    state: ConnectionTestState | undefined,
+): { message: string; color: string } | null {
+    switch (state?.kind) {
+        case 'valid':
+            return {
+                message: translator.getMessage(
+                    'options_connection_key_valid',
+                ),
+                color: 'green',
+            };
+        case 'key_required':
+            return {
+                message: translator.getMessage(
+                    'options_connection_key_missing',
+                ),
+                color: 'red',
+            };
+        case 'access_denied':
+            return {
+                message: translator.getMessage(
+                    'options_connection_host_access_denied',
+                ),
+                color: 'red',
+            };
+        case 'access_request_failed':
+            return {
+                message: translator.getMessage(
+                    'options_connection_host_access_request_failed',
+                ),
+                color: 'red',
+            };
+        case 'host_access_required':
+            return {
+                message: translator.getMessage(
+                    'options_connection_host_access_required_for_test',
+                ),
+                color: 'red',
+            };
+        case 'invalid':
+        case 'error':
+            return {
+                message: translator.getMessage(
+                    'options_connection_test_failed',
+                ),
+                color: 'red',
+            };
+        case 'idle':
+        case undefined:
+            return null;
+    }
+}
 
 /**
  * Connection rows, draft keys, and actions for the API key section.
@@ -37,6 +105,7 @@ type ConnectionsPanelProps = {
     onDraftChange(providerId: ConnectionProviderId, value: string): void;
     onSave(providerId: ConnectionProviderId): void;
     onTest(providerId: ConnectionProviderId): void;
+    onGrantHostAccess(providerId: ConnectionProviderId): void;
 };
 
 /**
@@ -61,7 +130,13 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                 </Stack>
                 {props.connections.map((connection) => {
                     const testState = props.testStates[connection.providerId];
+                    const testFeedback = getConnectionFeedback(testState);
                     const busy = props.busyProviderId === connection.providerId;
+                    const hostPermission =
+                        PROVIDER_HOST_PERMISSION[connection.providerId];
+                    const hasHostAccess =
+                        connection.hostAccessStatus ===
+                        PROVIDER_HOST_ACCESS_STATUS.Granted;
                     return (
                         <Paper
                             key={connection.providerId}
@@ -147,19 +222,51 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                                         )}
                                     </Button>
                                 </Group>
-                                {testState?.kind === 'valid' ? (
-                                    <Text size="xs" c="green">
-                                        {translator.getMessage(
-                                            'options_connection_key_valid',
-                                        )}
+                                <Group justify="space-between" gap="sm">
+                                    <Stack gap={2}>
+                                        <Badge
+                                            color={hasHostAccess ? 'green' : 'gray'}
+                                            variant="light"
+                                        >
+                                            {hasHostAccess
+                                                ? translator.getMessage(
+                                                        'options_connection_host_access_granted_badge',
+                                                    )
+                                                : translator.getMessage(
+                                                        'options_connection_host_access_required_badge',
+                                                    )}
+                                        </Badge>
+                                        <Text size="xs" c="dimmed">
+                                            {translator.getMessage(
+                                                'options_connection_host_access_description',
+                                                {
+                                                    provider:
+                                                        connection.providerLabel,
+                                                    host: hostPermission.hostLabel,
+                                                },
+                                            )}
+                                        </Text>
+                                    </Stack>
+                                    {!hasHostAccess ? (
+                                        <Button
+                                            variant="light"
+                                            onClick={() => {
+                                                props.onGrantHostAccess(
+                                                    connection.providerId,
+                                                );
+                                            }}
+                                        >
+                                            {translator.getMessage(
+                                                'options_connection_host_access_allow_button',
+                                            )}
+                                        </Button>
+                                    ) : null}
+                                </Group>
+                                {testFeedback === null ? null : (
+                                    <Text size="xs" c={testFeedback.color}>
+                                        {testFeedback.message}
                                     </Text>
-                                ) : null}
-                                {testState?.kind === 'invalid' ||
-                                testState?.kind === 'error' ? (
-                                            <Text size="xs" c="red">
-                                                {testState.error}
-                                            </Text>
-                                        ) : null}
+                                )}
                             </Stack>
                         </Paper>
                     );

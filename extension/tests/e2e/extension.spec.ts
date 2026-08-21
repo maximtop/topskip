@@ -19,6 +19,17 @@ import {
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
     TOPSKIP_CAPABILITIES_HEADER_NAME,
 } from '@topskip/common/server-analysis-contract';
+import {
+    CAPTION_PAGE_BRIDGE_COMMAND,
+    CAPTION_PAGE_BRIDGE_EVENT,
+    CAPTION_PAGE_BRIDGE_KIND,
+    CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION,
+    CAPTION_PAGE_BRIDGE_SOURCE,
+} from '../../src/content/captions/caption-page-bridge-contract';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+} from '../../src/shared/messages';
 
 import {
     expectNoCollectedErrors,
@@ -65,6 +76,172 @@ const RUNTIME_MESSAGE_GATE_RELEASE_KEY =
     '__topskipE2eReleaseRuntimeMessageGate';
 const RUNTIME_MESSAGE_GATE_HELD_STATE = 'held';
 const RUNTIME_MESSAGE_GATE_RELEASED_STATE = 'released';
+const OPTIONAL_PROVIDER_ORIGINS = [
+    'https://openrouter.ai/*',
+    'https://api.openai.com/*',
+] as const;
+
+type GrantedExtensionPermissions = {
+    permissions: string[];
+    origins: string[];
+};
+
+/**
+ * Reads the browser-owned grant snapshot from an extension document.
+ *
+ * @param extensionPage - Popup or options page with extension API access.
+ * @returns Sorted required and optional grants currently held by TopSkip.
+ */
+async function readGrantedExtensionPermissions(
+    extensionPage: Page,
+): Promise<GrantedExtensionPermissions> {
+    return extensionPage.evaluate(async () => {
+        const chromeApi = Reflect.get(globalThis, 'chrome');
+        if (typeof chromeApi !== 'object' || chromeApi === null) {
+            throw new Error('Missing chrome API');
+        }
+        const permissionsApi = Reflect.get(chromeApi, 'permissions');
+        if (typeof permissionsApi !== 'object' || permissionsApi === null) {
+            throw new Error('Missing chrome.permissions API');
+        }
+        const getAll = Reflect.get(permissionsApi, 'getAll');
+        if (typeof getAll !== 'function') {
+            throw new Error('Missing chrome.permissions.getAll API');
+        }
+        const pendingResult: unknown = Reflect.apply(
+            getAll,
+            permissionsApi,
+            [],
+        );
+        const result: unknown = await Promise.resolve(pendingResult);
+        if (typeof result !== 'object' || result === null) {
+            throw new Error('Invalid extension grant snapshot');
+        }
+        const rawPermissions: unknown = Reflect.get(result, 'permissions');
+        const rawOrigins: unknown = Reflect.get(result, 'origins');
+        if (!Array.isArray(rawPermissions) || !Array.isArray(rawOrigins)) {
+            throw new Error('Incomplete extension grant snapshot');
+        }
+        const permissions = rawPermissions.filter(
+            (value): value is string => typeof value === 'string',
+        );
+        const origins = rawOrigins.filter(
+            (value): value is string => typeof value === 'string',
+        );
+        return {
+            permissions: permissions.sort(),
+            origins: origins.sort(),
+        };
+    });
+}
+
+/**
+ * Proves the declarative MAIN bundle answers the document-local protocol.
+ *
+ * @param page - Fresh fixture document receiving both manifest entries.
+ * @returns Parsed command-result envelope emitted by the MAIN bridge.
+ */
+async function probeDeclarativeCaptionBridge(page: Page): Promise<unknown> {
+    return page.evaluate(
+        async (contract) =>
+            new Promise<unknown>((resolve, reject) => {
+                const requestId = 'e2e-declarative-main-probe';
+                const timeoutId = globalThis.setTimeout(() => {
+                    document.removeEventListener(
+                        contract.resultEvent,
+                        onResult,
+                    );
+                    reject(new Error('Timed out waiting for MAIN bridge'));
+                }, contract.timeoutMs);
+                const onResult = (event: Event): void => {
+                    if (!(event instanceof CustomEvent)) {
+                        return;
+                    }
+                    const detail: unknown = event.detail;
+                    if (typeof detail !== 'string') {
+                        return;
+                    }
+                    const parsed: unknown = JSON.parse(detail) as unknown;
+                    if (
+                        typeof parsed !== 'object' ||
+                        parsed === null ||
+                        Reflect.get(parsed, 'requestId') !== requestId
+                    ) {
+                        return;
+                    }
+                    globalThis.clearTimeout(timeoutId);
+                    document.removeEventListener(
+                        contract.resultEvent,
+                        onResult,
+                    );
+                    resolve(parsed);
+                };
+                document.addEventListener(contract.resultEvent, onResult);
+                document.dispatchEvent(
+                    new CustomEvent(contract.commandEvent, {
+                        detail: JSON.stringify({
+                            source: contract.isolatedSource,
+                            kind: contract.commandKind,
+                            protocolVersion: contract.protocolVersion,
+                            requestId,
+                            command: contract.probeCommand,
+                        }),
+                    }),
+                );
+            }),
+        {
+            commandEvent: CAPTION_PAGE_BRIDGE_EVENT.Command,
+            resultEvent: CAPTION_PAGE_BRIDGE_EVENT.CommandResult,
+            isolatedSource: CAPTION_PAGE_BRIDGE_SOURCE.Isolated,
+            commandKind: CAPTION_PAGE_BRIDGE_KIND.Command,
+            protocolVersion: CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION,
+            probeCommand: CAPTION_PAGE_BRIDGE_COMMAND.Probe,
+            timeoutMs: 5_000,
+        },
+    );
+}
+
+/**
+ * Sends the worker's route probe to the active fixture tab without reading its URL.
+ *
+ * @param extensionPage - Extension document allowed to call Tabs messaging.
+ * @returns Current ISOLATED route-status response.
+ */
+async function readActiveContentRouteStatus(
+    extensionPage: Page,
+): Promise<unknown> {
+    return extensionPage.evaluate(async (messageType) => {
+        const chromeApi = Reflect.get(globalThis, 'chrome');
+        if (typeof chromeApi !== 'object' || chromeApi === null) {
+            throw new Error('Missing chrome API');
+        }
+        const tabs = Reflect.get(chromeApi, 'tabs');
+        if (typeof tabs !== 'object' || tabs === null) {
+            throw new Error('Missing chrome.tabs API');
+        }
+        const query = Reflect.get(tabs, 'query');
+        const sendMessage = Reflect.get(tabs, 'sendMessage');
+        if (typeof query !== 'function' || typeof sendMessage !== 'function') {
+            throw new Error('Missing chrome.tabs messaging API');
+        }
+        const pendingTabs: unknown = Reflect.apply(query, tabs, [
+            { active: true, currentWindow: true },
+        ]);
+        const activeTabs: unknown = await Promise.resolve(pendingTabs);
+        if (!Array.isArray(activeTabs) || activeTabs.length !== 1) {
+            throw new Error('Missing active fixture tab');
+        }
+        const tabId: unknown = Reflect.get(activeTabs[0], 'id');
+        if (typeof tabId !== 'number') {
+            throw new Error('Active fixture tab has no id');
+        }
+        const pendingStatus: unknown = Reflect.apply(sendMessage, tabs, [
+            tabId,
+            { type: messageType },
+        ]);
+        return Promise.resolve(pendingStatus);
+    }, TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS);
+}
 
 /**
  * Serves the public bootstrap endpoints shared by every server-mode fixture.
@@ -567,13 +744,27 @@ test.describe('TopSkip extension', () => {
         try {
             trackServiceWorkerConsoleErrors(context, errors);
             const extensionId = await getExtensionId(context);
+            const grantPage = await context.newPage();
+            await grantPage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            const grantsBeforePopup =
+                await readGrantedExtensionPermissions(grantPage);
 
             const popupPage = await openPopupAndWaitForUi(
                 context,
                 extensionId,
                 errors,
             );
+            const grantsAfterPopup =
+                await readGrantedExtensionPermissions(popupPage);
+            expect(grantsAfterPopup).toEqual(grantsBeforePopup);
+            for (const providerOrigin of OPTIONAL_PROVIDER_ORIGINS) {
+                expect(grantsAfterPopup.origins).not.toContain(providerOrigin);
+            }
             await popupPage.close();
+            await grantPage.close();
 
             expectNoCollectedErrors(errors);
         } finally {
@@ -917,6 +1108,15 @@ test.describe('TopSkip extension', () => {
             const page = await context.newPage();
             trackPageErrors(page, 'fixture-ready', errors);
             await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+            await expect(
+                probeDeclarativeCaptionBridge(page),
+            ).resolves.toMatchObject({
+                source: CAPTION_PAGE_BRIDGE_SOURCE.Main,
+                kind: CAPTION_PAGE_BRIDGE_KIND.CommandResult,
+                protocolVersion: CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION,
+                requestId: 'e2e-declarative-main-probe',
+                result: { ok: true },
+            });
             await Promise.race([
                 requestSeen,
                 new Promise<never>((_resolve, reject) => {
@@ -931,6 +1131,24 @@ test.describe('TopSkip extension', () => {
                     );
                 }),
             ]);
+            const routeProbePage = await context.newPage();
+            await routeProbePage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            await page.bringToFront();
+            await expect(
+                readActiveContentRouteStatus(routeProbePage),
+            ).resolves.toMatchObject({
+                ok: true,
+                protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                extensionVersion: '0.1.0',
+                videoId: E2E_VIDEO_ID,
+                enabled: true,
+                analysisMode: 'server',
+                serverSessionId: expect.any(String),
+            });
+            await routeProbePage.close();
 
             await page.evaluate(async () => {
                 const video = document.querySelector('video');
@@ -1834,7 +2052,34 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('popup toggle disables skip', async () => {
+    test('disabled-at-load stays inert and re-enable starts one route', async () => {
+        let analysisRequestCount = 0;
+        const backend = createServer((req, res) => {
+            if (handlePublicApiBootstrap(req, res)) {
+                return;
+            }
+            if (req.method === 'POST' && req.url === '/v1/analysis') {
+                expectAuthenticatedServerRequest(req);
+                analysisRequestCount += 1;
+                req.resume();
+                res.writeHead(200, { 'content-type': 'application/json' });
+                res.end(
+                    JSON.stringify({
+                        status: 'no_promo',
+                        ...E2E_TRANSCRIPT_IDENTITY,
+                        sourceResultId:
+                            'result-e2eFixture1-toggle-server-v7',
+                        freshness: { expiresAtMs: 4_102_444_800_000 },
+                    }),
+                );
+                return;
+            }
+            res.writeHead(404);
+            res.end();
+        });
+        await new Promise<void>((resolve) => {
+            backend.listen(8787, '127.0.0.1', () => resolve());
+        });
         const errors: string[] = [];
         const context = await chromium.launchPersistentContext(
             '',
@@ -1861,6 +2106,24 @@ test.describe('TopSkip extension', () => {
             trackPageErrors(page, 'fixture', errors);
             await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
             await page.waitForSelector('video');
+            await page.waitForTimeout(1_000);
+            expect(analysisRequestCount).toBe(0);
+
+            const enablePopup = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+                page,
+            );
+            await enablePopup
+                .getByRole('switch', { name: /enable/i })
+                .click({ force: true, timeout: 30_000 });
+            await enablePopup.close();
+            await expect
+                .poll(() => analysisRequestCount, { timeout: 15_000 })
+                .toBe(1);
+            await page.waitForTimeout(1_000);
+            expect(analysisRequestCount).toBe(1);
 
             await page.evaluate(async () => {
                 const video = document.querySelector(
@@ -1906,6 +2169,9 @@ test.describe('TopSkip extension', () => {
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();
+            await new Promise<void>((resolve) => {
+                backend.close(() => resolve());
+            });
         }
     });
 

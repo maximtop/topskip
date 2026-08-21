@@ -12,14 +12,15 @@ import {
 } from '@rspack/core';
 
 import {
+    BUILD_MODE_ENV_VAR,
     INCLUDE_CHROME_BUILTIN_PROVIDER,
     TopSkipBuild,
-    getExtensionManifestName,
     getServerAnalysisBaseUrl,
-    getServerAnalysisManifestMatch,
+    resolveTopSkipBuild,
     shouldEnableCaptionCaptureVerboseLogs,
     type TopSkipBuildMode,
 } from './build-modes.ts';
+import { composeExtensionManifest } from './manifest-profile.ts';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -27,69 +28,18 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // the gitignored root `.env`; CI exports it instead.
 loadDotEnv({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
 
-/** Local Playwright fixture origin (injected for `TOPSKIP_BUILD=dev` only). */
-const DEV_E2E_MATCH = 'http://127.0.0.1:4173/*';
-
 /**
- * Reads `TOPSKIP_BUILD`: `dev` (default) includes the localhost E2E fixture;
- * every profile sends Server-mode analysis to the public backend.
- *
- * @returns Normalized build mode
- */
-function getTopSkipBuild(): TopSkipBuildMode {
-    const raw = process.env.TOPSKIP_BUILD;
-    if (raw === TopSkipBuild.Beta || raw === TopSkipBuild.Release) {
-        return raw;
-    }
-    return TopSkipBuild.Dev;
-}
-
-/**
- * Applies the profile name, backend permission, and dev-only fixture access.
- *
- * @param manifest - Parsed MV3 manifest mutated for the selected profile.
- * @param build - Active TopSkip build mode
- */
-function applyBuildProfileToManifest(
-    manifest: {
-        name: string;
-        host_permissions?: string[];
-        content_scripts?: Array<{ matches: string[] }>;
-    },
-    build: TopSkipBuildMode,
-): void {
-    manifest.name = getExtensionManifestName(build);
-    const hostPermissions = manifest.host_permissions;
-    if (!hostPermissions) {
-        return;
-    }
-    const serverMatch = getServerAnalysisManifestMatch(build);
-    if (!hostPermissions.includes(serverMatch)) {
-        hostPermissions.push(serverMatch);
-    }
-    if (build !== TopSkipBuild.Dev) {
-        return;
-    }
-    if (!hostPermissions.includes(DEV_E2E_MATCH)) {
-        hostPermissions.push(DEV_E2E_MATCH);
-    }
-    const firstContentScript = manifest.content_scripts?.[0];
-    if (
-        firstContentScript &&
-        !firstContentScript.matches.includes(DEV_E2E_MATCH)
-    ) {
-        firstContentScript.matches.push(DEV_E2E_MATCH);
-    }
-}
-
-/**
- * Emits `manifest.json` from `src/manifest.json` with optional dev-only
- * localhost matches.
+ * Emits `manifest.json` through the same exact profile boundary used by
+ * packaging validation.
  *
  * @param build - Resolved `TOPSKIP_BUILD` value
+ * @param serverOrigin - Explicit validated backend origin.
  * @returns Rspack plugin
  */
-function topSkipManifestPlugin(build: TopSkipBuildMode): RspackPluginInstance {
+function topSkipManifestPlugin(
+    build: TopSkipBuildMode,
+    serverOrigin: string,
+): RspackPluginInstance {
     return {
         name: 'TopSkipManifestPlugin',
         apply(compiler: Compiler) {
@@ -108,12 +58,13 @@ function topSkipManifestPlugin(build: TopSkipBuildMode): RspackPluginInstance {
                             );
                             compilation.fileDependencies.add(manifestPath);
                             const raw = fs.readFileSync(manifestPath, 'utf8');
-                            const manifest = JSON.parse(raw) as {
-                                name: string;
-                                host_permissions?: string[];
-                                content_scripts?: Array<{ matches: string[] }>;
-                            };
-                            applyBuildProfileToManifest(manifest, build);
+                            const source = JSON.parse(raw) as unknown;
+                            const manifest = composeExtensionManifest(
+                                source,
+                                build,
+                                serverOrigin,
+                                new Date(),
+                            );
                             const json = `${JSON.stringify(manifest, null, 2)}\n`;
                             compilation.emitAsset(
                                 'manifest.json',
@@ -127,7 +78,10 @@ function topSkipManifestPlugin(build: TopSkipBuildMode): RspackPluginInstance {
     };
 }
 
-const topSkipBuildMode = getTopSkipBuild();
+const topSkipBuildMode = resolveTopSkipBuild(
+    process.env[BUILD_MODE_ENV_VAR],
+);
+const topSkipServerOrigin = getServerAnalysisBaseUrl(topSkipBuildMode);
 
 export default defineConfig({
     mode: topSkipBuildMode === TopSkipBuild.Dev ? 'development' : 'production',
@@ -189,13 +143,13 @@ export default defineConfig({
                 topSkipBuildMode === TopSkipBuild.Dev,
             ),
             __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(
-                getServerAnalysisBaseUrl(topSkipBuildMode),
+                topSkipServerOrigin,
             ),
             __TOPSKIP_INCLUDE_CHROME_BUILTIN__: JSON.stringify(
                 INCLUDE_CHROME_BUILTIN_PROVIDER,
             ),
         }),
-        topSkipManifestPlugin(topSkipBuildMode),
+        topSkipManifestPlugin(topSkipBuildMode, topSkipServerOrigin),
         new rspack.HtmlRspackPlugin({
             template: './src/popup/index.html',
             filename: 'popup.html',

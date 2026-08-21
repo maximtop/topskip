@@ -2,8 +2,11 @@ import { callOpenAiResponse } from '@/background/openai/openai-client';
 import { parseLlmPromoResponse } from '@/background/openrouter/parse-llm-promo-response';
 import { PROMO_DETECTION_SYSTEM_PROMPT } from '@/background/openrouter/promo-detection-system-prompt';
 import { OpenAiStorage } from '@/background/storage/openai-storage';
+import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import {
+    PROVIDER_ANALYSIS_FAILURE_CODE,
     PROVIDER_AVAILABILITY,
+    PROVIDER_HOST_ACCESS_REQUIRED_ERROR,
     PROVIDER_ID,
     type AnalyzeTranscriptParams,
     type AnalyzeTranscriptResult,
@@ -35,20 +38,24 @@ export class OpenAiAdapter implements LlmProviderAdapter {
     }
 
     /**
-     * Checks whether OpenAI key and selected model exist in background storage.
+     * Checks OpenAI configuration and its independent optional host grant.
      *
      * @returns Current provider availability.
      */
     async availability(): Promise<ProviderAvailability> {
         const config = await OpenAiStorage.load();
-        if (config.apiKey.length > 0 && config.model.length > 0) {
-            return PROVIDER_AVAILABILITY.AVAILABLE;
+        if (config.apiKey.length === 0 || config.model.length === 0) {
+            return PROVIDER_AVAILABILITY.UNAVAILABLE;
         }
-        return PROVIDER_AVAILABILITY.UNAVAILABLE;
+        const hasHostAccess = await ProviderHostAccess.isGranted(this.id);
+        return hasHostAccess
+            ? PROVIDER_AVAILABILITY.AVAILABLE
+            : PROVIDER_AVAILABILITY.UNAVAILABLE;
     }
 
     /**
-     * Sends transcript to OpenAI and parses the standard promo JSON response.
+     * Rechecks the optional grant immediately before the OpenAI request and
+     * parses the standard promo JSON response.
      *
      * @param params - Transcript and context.
      * @returns Detection result or error.
@@ -59,6 +66,16 @@ export class OpenAiAdapter implements LlmProviderAdapter {
         const config = await OpenAiStorage.load();
         if (config.apiKey.length === 0 || config.model.length === 0) {
             return { ok: false, error: 'OpenAI is not configured' };
+        }
+
+        const hasHostAccess = await ProviderHostAccess.isGranted(this.id);
+        if (!hasHostAccess) {
+            return {
+                ok: false,
+                failureCode:
+                    PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired,
+                error: PROVIDER_HOST_ACCESS_REQUIRED_ERROR,
+            };
         }
 
         const llm = await callOpenAiResponse({

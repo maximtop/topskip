@@ -27,7 +27,10 @@ import { PROVIDER_ID } from '@/shared/providers';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import { defaultRegistry } from '@/background/providers/default-registry';
 import type { ProviderRegistry } from '@/background/providers/provider-registry';
-import type { AnalyzeTranscriptResult } from '@/background/providers/llm-provider-adapter';
+import {
+    PROVIDER_ANALYSIS_FAILURE_CODE,
+    type AnalyzeTranscriptResult,
+} from '@/background/providers/llm-provider-adapter';
 import {
     BLOCK_MERGE_GAP_SEC,
     CHUNK_BLOCK_TOLERANCE_SEC,
@@ -163,6 +166,23 @@ export class PromoAnalysis {
     }
 
     /**
+     * Separates a revoked optional grant from ordinary provider failures so
+     * the run returns to setup-required without consuming remaining chunks.
+     *
+     * @param result - Provider result inspected before generic error handling.
+     * @returns Whether the provider host grant must be restored explicitly.
+     */
+    private static requiresProviderHostAccess(
+        result: AnalyzeTranscriptResult,
+    ): boolean {
+        return (
+            !result.ok &&
+            result.failureCode ===
+                PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired
+        );
+    }
+
+    /**
      * Replaces the registry used for caption-triggered promo analysis.
      *
      * @param registry - Provider registry used for subsequent analysis runs
@@ -183,6 +203,34 @@ export class PromoAnalysis {
         }
         inflight.abort.abort();
         PromoAnalysis.inflight.delete(tabId);
+    }
+
+    /**
+     * Invalidates every tab-owned provider run before a global preference
+     * transition can make an old same-video result look current again.
+     */
+    static abortAll(): void {
+        for (const tabId of [...PromoAnalysis.inflight.keys()]) {
+            PromoAnalysis.abortForTab(tabId);
+        }
+    }
+
+    /**
+     * Couples abort state with map identity so an old async continuation cannot
+     * reclaim a tab after a same-video replacement has installed its owner.
+     *
+     * @param tabId - Tab whose provider run is being checked.
+     * @param abort - Controller captured by the async continuation.
+     * @returns Whether the continuation still owns the live provider route.
+     */
+    private static isCurrentRun(
+        tabId: number,
+        abort: AbortController,
+    ): boolean {
+        return (
+            !abort.signal.aborted &&
+            PromoAnalysis.inflight.get(tabId)?.abort === abort
+        );
     }
 
     /**
@@ -242,19 +290,27 @@ export class PromoAnalysis {
 
         const runStartedAt = performance.now();
 
-        const setStatus = (
+        const setStatus = async (
             state: Omit<LocalDetectionState, 'source'>,
         ): Promise<void> => {
-            return PromoDetectionStore.set(tabId, {
+            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                return;
+            }
+            await PromoDetectionStore.set(tabId, {
                 ...state,
                 source: PROMO_DETECTION_SOURCE.LocalProvider,
             });
         };
 
         try {
-            const prefs = await PrefsSyncStorage.ready().then(() =>
-                PrefsSyncStorage.load(),
-            );
+            await PrefsSyncStorage.ready();
+            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                return;
+            }
+            const prefs = await PrefsSyncStorage.load();
+            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                return;
+            }
             if (!prefs.enabled || prefs.analysisMode !== ANALYSIS_MODE.Byok) {
                 return;
             }
@@ -276,6 +332,9 @@ export class PromoAnalysis {
             }
 
             const avail = await adapter.availability();
+            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                return;
+            }
             if (avail === PROVIDER_AVAILABILITY.UNAVAILABLE) {
                 await setStatus({
                     videoId,
@@ -300,8 +359,14 @@ export class PromoAnalysis {
                 videoId,
                 status: PROMO_DETECTION_STATUS.Analyzing,
             });
+            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                return;
+            }
 
             const budget = await adapter.maxTranscriptChars();
+            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                return;
+            }
             if (budget <= 0) {
                 await setStatus({
                     videoId,
@@ -356,6 +421,24 @@ export class PromoAnalysis {
             let anyPartial = plan.partialCoverage || merged.truncated;
             let lastRawAssistant: string | null = null;
             const chunkCount = plan.chunks.length;
+            let providerHostAccessRequired = false;
+
+            const stopForMissingProviderHostAccess = async (
+                result: AnalyzeTranscriptResult,
+            ): Promise<boolean> => {
+                if (!PromoAnalysis.requiresProviderHostAccess(result)) {
+                    return false;
+                }
+                if (providerHostAccessRequired) {
+                    return true;
+                }
+                providerHostAccessRequired = true;
+                await setStatus({
+                    videoId,
+                    status: PROMO_DETECTION_STATUS.NotConfigured,
+                });
+                return true;
+            };
 
             const processSlice = async (
                 chunkText: string,
@@ -363,7 +446,7 @@ export class PromoAnalysis {
                 chunkCountInner: number,
                 retryLabel: string | undefined,
             ): Promise<void> => {
-                if (PromoAnalysis.inflight.get(tabId)?.abort !== abort) {
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
                 const { startSec: cStart, endSec: cEnd } =
@@ -373,11 +456,14 @@ export class PromoAnalysis {
                     ...baseParams,
                     transcript: chunkText,
                 });
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                    return;
+                }
                 const latencyMs = performance.now() - t0;
                 totalAdapterCalls = totalAdapterCalls + 1;
                 totalAdapterLatencyMs = totalAdapterLatencyMs + latencyMs;
 
-                const aborted = abort.signal.aborted;
+                const aborted = !PromoAnalysis.isCurrentRun(tabId, abort);
                 if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
                     if (result.ok) {
                         lastRawAssistant = result.rawAssistant;
@@ -416,6 +502,13 @@ export class PromoAnalysis {
                 }
 
                 if (aborted) {
+                    return;
+                }
+
+                if (await stopForMissingProviderHostAccess(result)) {
+                    return;
+                }
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
 
@@ -458,6 +551,9 @@ export class PromoAnalysis {
                 } catch {
                     // tab closed
                 }
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                    return;
+                }
 
                 await setStatus({
                     videoId,
@@ -472,11 +568,7 @@ export class PromoAnalysis {
                 if (chunk === undefined) {
                     continue;
                 }
-                if (PromoAnalysis.inflight.get(tabId)?.abort !== abort) {
-                    return;
-                }
-
-                if (abort.signal.aborted) {
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
 
@@ -485,6 +577,9 @@ export class PromoAnalysis {
                     ...baseParams,
                     transcript: chunk.text,
                 });
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                    return;
+                }
                 const firstLatency = performance.now() - t0;
                 totalAdapterCalls = totalAdapterCalls + 1;
                 totalAdapterLatencyMs = totalAdapterLatencyMs + firstLatency;
@@ -525,7 +620,10 @@ export class PromoAnalysis {
                     });
                 }
 
-                if (abort.signal.aborted) {
+                if (await stopForMissingProviderHostAccess(first)) {
+                    return;
+                }
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
 
@@ -549,10 +647,19 @@ export class PromoAnalysis {
                     }
                     const [aText, bText] = halves;
                     await processSlice(aText, i, chunkCount, 'retry-split-a');
-                    if (PromoAnalysis.inflight.get(tabId)?.abort !== abort) {
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
+                    }
+                    if (providerHostAccessRequired) {
                         return;
                     }
                     await processSlice(bText, i, chunkCount, 'retry-split-b');
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
+                    }
+                    if (providerHostAccessRequired) {
+                        return;
+                    }
                     continue;
                 }
 
@@ -592,6 +699,9 @@ export class PromoAnalysis {
                 } catch {
                     // tab closed
                 }
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                    return;
+                }
 
                 await setStatus({
                     videoId,
@@ -601,7 +711,7 @@ export class PromoAnalysis {
                 });
             }
 
-            if (PromoAnalysis.inflight.get(tabId)?.abort !== abort) {
+            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                 return;
             }
 
@@ -625,6 +735,9 @@ export class PromoAnalysis {
                     error: 'All transcript chunks failed',
                     partialCoverage: anyPartial,
                 });
+                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                    return;
+                }
                 if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
                     LogPromoAnalysis.logAnalysisBundle(
                         buildPromoAnalysisLogBundle({
@@ -757,7 +870,10 @@ export class PromoAnalysis {
                 partialCoverage: anyPartial,
             });
         } catch (e) {
-            if (e instanceof DOMException && e.name === 'AbortError') {
+            if (
+                !PromoAnalysis.isCurrentRun(tabId, abort) ||
+                (e instanceof DOMException && e.name === 'AbortError')
+            ) {
                 return;
             }
             const msg = e instanceof Error ? e.message : String(e);

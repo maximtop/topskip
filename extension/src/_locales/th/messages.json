@@ -331,6 +331,38 @@
         "message": "คีย์ถูกต้อง",
         "description": "Success message shown after a provider API key test passes."
     },
+    "options_connection_host_access_required_badge": {
+        "message": "ต้องให้สิทธิ์เข้าถึง",
+        "description": "Badge shown when the provider host permission is missing."
+    },
+    "options_connection_host_access_granted_badge": {
+        "message": "ให้สิทธิ์เข้าถึงแล้ว",
+        "description": "Badge shown when the provider host permission is granted."
+    },
+    "options_connection_host_access_description": {
+        "message": "%provider% ต้องเข้าถึง %host% เฉพาะสำหรับคำขอ BYOK แบบส่วนตัวเท่านั้น",
+        "description": "Explanation of provider host access. %provider% and %host% are replaced with the provider and host names."
+    },
+    "options_connection_host_access_allow_button": {
+        "message": "อนุญาตการเข้าถึง",
+        "description": "Button that requests optional host access for one provider."
+    },
+    "options_connection_host_access_denied": {
+        "message": "ไม่ได้รับอนุญาตให้เข้าถึง การตั้งค่าของคุณไม่มีการเปลี่ยนแปลง",
+        "description": "Safe message after the user denies an optional host request."
+    },
+    "options_connection_host_access_request_failed": {
+        "message": "ขอสิทธิ์เข้าถึงไม่ได้ โปรดลองอีกครั้งจากปุ่มนี้",
+        "description": "Safe message when Chrome cannot complete an optional host request."
+    },
+    "options_connection_host_access_required_for_test": {
+        "message": "อนุญาตให้ผู้ให้บริการเข้าถึงก่อนทดสอบการเชื่อมต่อนี้",
+        "description": "Guidance after a connection test finds provider access missing."
+    },
+    "options_connection_test_failed": {
+        "message": "ทดสอบการเชื่อมต่อไม่สำเร็จ โปรดตรวจสอบคีย์ API แล้วลองอีกครั้ง",
+        "description": "Safe fallback after an invalid or unavailable connection test."
+    },
     "options_analysis_mode_heading": {
         "message": "โหมดการวิเคราะห์",
         "description": "Heading for the analysis route selector in extension settings."

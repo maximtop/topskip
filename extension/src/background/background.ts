@@ -1,4 +1,4 @@
-import { ContentScriptsRegistration } from '@/background/lifecycle/content-scripts-registration';
+import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
@@ -7,6 +7,7 @@ import { defaultRegistry } from '@/background/providers/default-registry';
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import browser from '@/shared/browser';
+import { getExtensionBuildLabel } from '@/shared/extension-build';
 import { i18n } from '@/shared/i18n/i18n';
 
 /**
@@ -22,8 +23,12 @@ export class Background {
      */
     static init(): void {
         const storageAccess = BackgroundStorageAccess.ready();
+        registerRuntimeMessages(defaultRegistry);
         PrefsPortHub.register();
-        console.info('[TopSkip] Service worker started');
+        console.info(
+            '[TopSkip] Service worker started',
+            getExtensionBuildLabel(),
+        );
         void i18n.init();
         void PromoDetectionStore.ready();
         browser.tabs.onRemoved.addListener((tabId) => {
@@ -31,11 +36,10 @@ export class Background {
         });
         void storageAccess
             .then(() => PrefsSyncStorage.ready())
-            .then(() => ContentScriptsRegistration.syncFromPrefs())
             .catch(() => {
                 console.error('[TopSkip] Background storage is unavailable.');
             });
-        registerRuntimeMessages(defaultRegistry);
+        void ContentScriptWakeup.notifyExistingTabs();
     }
 
     /**

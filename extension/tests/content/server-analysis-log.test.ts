@@ -27,7 +27,7 @@ describe('ContentServerAnalysisLog', () => {
         expect(contentLogMocks.info).toHaveBeenCalledWith(
             '[TopSkip server-analysis]',
             'runtime-request-sent',
-            { videoId: 'dQw4w9WgXcQ' },
+            'videoId=dQw4w9WgXcQ',
         );
     });
 });

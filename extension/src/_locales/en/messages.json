@@ -331,6 +331,38 @@
         "message": "Key is valid.",
         "description": "Success message shown after a provider API key test passes."
     },
+    "options_connection_host_access_required_badge": {
+        "message": "Access required",
+        "description": "Badge shown when the provider host permission is missing."
+    },
+    "options_connection_host_access_granted_badge": {
+        "message": "Access granted",
+        "description": "Badge shown when the provider host permission is granted."
+    },
+    "options_connection_host_access_description": {
+        "message": "%provider% needs access to %host% only for Private BYOK requests.",
+        "description": "Explanation of provider host access. %provider% and %host% are replaced with the provider and host names."
+    },
+    "options_connection_host_access_allow_button": {
+        "message": "Allow access",
+        "description": "Button that requests optional host access for one provider."
+    },
+    "options_connection_host_access_denied": {
+        "message": "Access was not allowed. Your settings were not changed.",
+        "description": "Safe message after the user denies an optional host request."
+    },
+    "options_connection_host_access_request_failed": {
+        "message": "Could not request access. Try again from this button.",
+        "description": "Safe message when Chrome cannot complete an optional host request."
+    },
+    "options_connection_host_access_required_for_test": {
+        "message": "Allow provider access before testing this connection.",
+        "description": "Guidance after a connection test finds provider access missing."
+    },
+    "options_connection_test_failed": {
+        "message": "Connection test failed. Check the API key and try again.",
+        "description": "Safe fallback after an invalid or unavailable connection test."
+    },
     "options_analysis_mode_heading": {
         "message": "Analysis mode",
         "description": "Heading for the analysis route selector in extension settings."

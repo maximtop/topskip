@@ -94,6 +94,21 @@ export class CaptionPageBridgeClient {
     }
 
     /**
+     * Retires the MAIN bridge entirely once this ISOLATED context has been
+     * orphaned by an extension reload/update, so the page keeps no
+     * `fetch`/XHR wrappers from a bundle that can no longer use them.
+     *
+     * @param signal Optional cleanup cancellation.
+     * @returns Opaque bridge result or a bounded bridge-unavailable failure.
+     */
+    static teardown(signal?: AbortSignal): Promise<unknown> {
+        return CaptionPageBridgeClient.sendCommand(
+            CAPTION_PAGE_BRIDGE_COMMAND.Teardown,
+            signal,
+        );
+    }
+
+    /**
      * Releases the shared result listener and safely settles every orphaned
      * caller during route teardown.
      */

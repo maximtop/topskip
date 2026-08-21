@@ -163,6 +163,14 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
   reloading already-open YouTube tabs. Worker sleep/restart does not while the
   content context is alive: startup readiness only wakes content-owned pending
   delivery and never injects a replacement.
+- **Orphan self-teardown**: An install/update/reload severs the runtime of
+  content scripts in already-open tabs without replacing them. The ISOLATED
+  bundle polls `browser.runtime.id` (**`ExtensionContextWatch`**) and, once
+  it is gone, runs the `YoutubeWatch` dispose and sends the MAIN bridge the
+  `teardown` command so `fetch`/XHR are restored and its listeners drop. This
+  is permission-free hygiene only — it does not restore skipping; the tab
+  still needs a reload. Send `teardown` only on that path, never from the
+  replacement dispose (a newer MAIN bridge would be killed instead).
 - **Dormant static bridge**: MAIN fetch/XHR wrappers must delegate unchanged
   outside a bounded active capture. Missing prefs and disabled prefs keep
   ISOLATED inert: no player binding, seek, caption read, analysis, or provider

@@ -80,6 +80,12 @@ const OPTIONAL_PROVIDER_ORIGINS = [
     'https://openrouter.ai/*',
     'https://api.openai.com/*',
 ] as const;
+const CAPTION_PAGE_BRIDGE_INSTALL_FLAG = '__topskipCaptionCaptureInstalled';
+const CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
+// Several orphan-poll ticks: a live context must never be torn down.
+const ORPHAN_FALSE_POSITIVE_WINDOW_MS = 3_500;
+// Orphan poll cadence plus the bounded bridge command timeout, with slack.
+const ORPHAN_TEARDOWN_TIMEOUT_MS = 15_000;
 
 type GrantedExtensionPermissions = {
     permissions: string[];
@@ -199,6 +205,96 @@ async function probeDeclarativeCaptionBridge(page: Page): Promise<unknown> {
             timeoutMs: 5_000,
         },
     );
+}
+
+/**
+ * Observable MAIN-world footprint of the declarative caption bridge.
+ */
+type PageBridgeInstallState = {
+    installed: boolean;
+    fetchNative: boolean;
+    xhrOpenNative: boolean;
+    xhrSendNative: boolean;
+};
+
+/**
+ * Reads whether the MAIN bridge still shadows the page's fetch/XHR.
+ *
+ * Native functions stringify with `[native code]`; the bridge wrappers are
+ * ordinary closures, so the page can tell the two apart without the test
+ * having to reach into either extension world.
+ *
+ * @param page - Fixture document receiving both manifest entries.
+ * @returns Install flag plus whether each patched API is native again.
+ */
+async function readPageBridgeInstallState(
+    page: Page,
+): Promise<PageBridgeInstallState> {
+    return page.evaluate((flags) => {
+        const isNative = (value: unknown): boolean =>
+            typeof value === 'function' &&
+            Function.prototype.toString
+                .call(value)
+                .includes('[native code]');
+        return {
+            installed: Reflect.get(globalThis, flags.installFlag) === true,
+            fetchNative: isNative(Reflect.get(globalThis, 'fetch')),
+            xhrOpenNative: isNative(
+                Reflect.get(XMLHttpRequest.prototype, 'open'),
+            ),
+            xhrSendNative: isNative(
+                Reflect.get(XMLHttpRequest.prototype, 'send'),
+            ),
+        };
+    }, { installFlag: CAPTION_PAGE_BRIDGE_INSTALL_FLAG });
+}
+
+/**
+ * Checks whether a retired bridge left its global teardown hook behind.
+ *
+ * @param page - Fixture document receiving both manifest entries.
+ * @returns Whether the MAIN teardown hook is still exposed on the page.
+ */
+async function readPageBridgeTeardownFlagPresent(page: Page): Promise<boolean> {
+    return page.evaluate(
+        (flag) => typeof Reflect.get(globalThis, flag) === 'function',
+        CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG,
+    );
+}
+
+/**
+ * Reloads the extension from inside its own service worker, exactly as a
+ * Web Store update or a manual chrome://extensions Reload would, which orphans
+ * every content script already running in open tabs.
+ *
+ * @param context - Persistent context hosting the unpacked extension.
+ * @returns Resolves once the reload was requested; the old worker may already
+ *   be gone, so a rejected evaluate is treated as success.
+ */
+async function reloadExtension(context: BrowserContext): Promise<void> {
+    const worker =
+        context.serviceWorkers().find((w) => w.url().includes('background')) ??
+        (await context.waitForEvent('serviceworker', {
+            predicate: (w) => w.url().includes('background'),
+            timeout: 30_000,
+        }));
+    await worker
+        .evaluate(() => {
+            const chromeApi = Reflect.get(globalThis, 'chrome');
+            if (typeof chromeApi !== 'object' || chromeApi === null) {
+                throw new Error('Missing chrome API');
+            }
+            const runtime = Reflect.get(chromeApi, 'runtime');
+            if (typeof runtime !== 'object' || runtime === null) {
+                throw new Error('Missing chrome.runtime API');
+            }
+            const reload = Reflect.get(runtime, 'reload');
+            if (typeof reload !== 'function') {
+                throw new Error('Missing chrome.runtime.reload API');
+            }
+            Reflect.apply(reload, runtime, []);
+        })
+        .catch(() => undefined);
 }
 
 /**
@@ -834,6 +930,63 @@ test.describe('TopSkip extension', () => {
             await expect(
                 popupPage.getByText(/Value 'provider' for 'placeholder'/),
             ).toHaveCount(0);
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('extension reload makes orphaned content scripts tear themselves down', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            await getExtensionId(context);
+            const page = await context.newPage();
+            trackPageErrors(page, 'orphan-fixture', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+
+            // Both declarative bundles are live: the MAIN bridge answers and
+            // its dormant wrappers shadow the native page APIs.
+            await probeDeclarativeCaptionBridge(page);
+            const installedState = {
+                installed: true,
+                fetchNative: false,
+                xhrOpenNative: false,
+                xhrSendNative: false,
+            };
+            expect(await readPageBridgeInstallState(page)).toEqual(
+                installedState,
+            );
+
+            // A healthy context must not be mistaken for an orphan: give the
+            // poll several ticks before reloading.
+            await page.waitForTimeout(ORPHAN_FALSE_POSITIVE_WINDOW_MS);
+            expect(await readPageBridgeInstallState(page)).toEqual(
+                installedState,
+            );
+
+            await reloadExtension(context);
+
+            // The orphaned ISOLATED bundle notices its severed runtime, tears
+            // down, and retires the MAIN bridge: native fetch/XHR are back and
+            // no bridge flag remains, all without reloading the page.
+            await expect
+                .poll(() => readPageBridgeInstallState(page), {
+                    timeout: ORPHAN_TEARDOWN_TIMEOUT_MS,
+                })
+                .toEqual({
+                    installed: false,
+                    fetchNative: true,
+                    xhrOpenNative: true,
+                    xhrSendNative: true,
+                });
+            expect(await readPageBridgeTeardownFlagPresent(page)).toBe(false);
+
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();

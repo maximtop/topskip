@@ -306,6 +306,25 @@ export class PlayerCaptionCapture {
     }
 
     /**
+     * Retires the document's MAIN bridge after this ISOLATED context lost its
+     * extension runtime. Local capture state is disposed first so the bridge
+     * restores caption UI before its wrappers go, and the result listener is
+     * released afterwards because nothing in this document will command the
+     * bridge again.
+     *
+     * @returns Resolves after the bridge acknowledged or the bounded command
+     *   timeout elapsed.
+     */
+    static async teardownPageBridge(): Promise<void> {
+        await PlayerCaptionCapture.dispose();
+        try {
+            await CaptionPageBridgeClient.teardown();
+        } finally {
+            CaptionPageBridgeClient.dispose();
+        }
+    }
+
+    /**
      * Confirms the document-start MAIN bridge while its wrappers remain
      * dormant until an owned capture begins.
      */

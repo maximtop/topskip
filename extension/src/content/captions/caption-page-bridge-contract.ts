@@ -16,11 +16,17 @@ export const CAPTION_PAGE_BRIDGE_SOURCE = {
 
 /**
  * The page bridge exposes only lifecycle commands and never accepts payloads.
+ *
+ * `Teardown` retires the whole bridge (restores `fetch`/XHR and drops the
+ * command listener) and is only sent by an ISOLATED context whose extension
+ * runtime was invalidated. It grants the page nothing new: the MAIN teardown
+ * hook is already reachable from page code through the bridge's global flag.
  */
 export const CAPTION_PAGE_BRIDGE_COMMAND = {
     Probe: 'probe',
     Activate: 'activate-captions',
     Deactivate: 'deactivate-captions',
+    Teardown: 'teardown',
 } as const;
 
 /**
@@ -96,6 +102,7 @@ const commandSchema = v.picklist([
     CAPTION_PAGE_BRIDGE_COMMAND.Probe,
     CAPTION_PAGE_BRIDGE_COMMAND.Activate,
     CAPTION_PAGE_BRIDGE_COMMAND.Deactivate,
+    CAPTION_PAGE_BRIDGE_COMMAND.Teardown,
 ] as const);
 
 const commandRequestSchema = v.strictObject({

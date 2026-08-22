@@ -113,11 +113,13 @@ source maps).
 After code changes, run a fresh `make build` and click **Reload** on the
 extension card. Installing, updating, or manually reloading the extension
 invalidates content contexts in already-open documents, so reload those
-YouTube tabs as well. The orphaned scripts notice the severed runtime within
-about a second and neutralize themselves (video listeners and timers released,
-the MAIN bridge's `fetch`/XHR wrappers restored), but nothing re-injects a
-working bundle until the tab reloads. Service-worker sleep/restart alone does
-not require a tab reload while the existing content context is still alive.
+YouTube tabs as well, or simply open the TopSkip popup on them. The orphaned
+scripts notice the severed runtime within about a second and neutralize
+themselves (video listeners and timers released, the MAIN bridge's `fetch`/XHR
+wrappers restored); opening the popup on such a tab then re-injects the current
+bundles through `scripting` + `activeTab`, so skipping resumes without a page
+reload. Service-worker sleep/restart alone does not require either while the
+existing content context is still alive.
 
 ### 4. Watch mode (optional)
 
@@ -254,7 +256,8 @@ The emitted permission boundary is deliberately small:
 
 | Capability | Manifest field | Access |
 | --- | --- | --- |
-| Extension state | `permissions` | Required `storage` only |
+| Extension state | `permissions` | Required `storage` |
+| Popup re-attach | `permissions` | Required `scripting` + `activeTab`; injection only into the tab the popup was opened on |
 | TopSkip Server | `host_permissions` | Configured backend only |
 | Private BYOK | `optional_host_permissions` | OpenRouter and OpenAI, granted independently |
 | Watch integration | `content_scripts.matches` | YouTube; dev also includes the E2E fixture |
@@ -279,11 +282,11 @@ those services directly.
 
 Chrome 111 is the minimum supported version because both content bundles are
 declarative: the MAIN caption bridge and the ISOLATED owner run at
-`document_start`, with MAIN first. Removing `scripting` also removes the old
-persisted dynamic registration and reinjection path. Installation, update, or
-manual extension **Reload** can invalidate the existing document's bundle, so
-an already-open YouTube tab must be reloaded. New documents receive the current
-static bundles automatically.
+`document_start`, with MAIN first. There is no persisted dynamic registration.
+Installation, update, or manual extension **Reload** invalidates the existing
+document's bundle; new documents receive the current static bundles
+automatically, while an already-open YouTube tab is re-attached by the popup
+(below) or by a page reload.
 
 A normal MV3 worker sleep/restart is different. The live content context keeps
 its analysis session, and a bounded readiness wake from the new worker only
@@ -298,7 +301,19 @@ down: the ISOLATED bundle polls `browser.runtime.id`, and once it is gone it
 disposes the watch orchestration and sends the MAIN bridge a `teardown`
 command, which restores native `fetch`/XHR and drops the bridge's command
 listener and global hook. This keeps a stale bundle from lingering on the page
-but does not restore skipping — only a page reload installs the new bundles.
+but does not by itself restore skipping.
+
+Opening the popup does. It is the user gesture that grants `activeTab` for the
+frontmost tab, which makes that tab's URL visible and programmatic injection
+allowed there without a required YouTube host. The popup sends
+`REATTACH_CONTENT_SCRIPT`; the background probes the tab with
+`CONTENT_SCRIPT_READY` and, only when no current bundle answers and the URL is
+a declarative content origin, injects `caption-page-bridge.js` (MAIN) and then
+`content.js` (ISOLATED) with `scripting.executeScript` — the same files and
+order as the manifest. It refuses to inject when the URL is hidden or
+off-origin, waits briefly for an orphaned bridge to finish its self-teardown
+(otherwise the orphan's `teardown` would retire the fresh bridge), coalesces
+concurrent requests per tab, and is the only programmatic injection path.
 
 Until valid enabled preferences have hydrated, and whenever TopSkip is
 disabled, the static ISOLATED context is inert: no video binding, seek, caption

@@ -53,6 +53,7 @@ import {
     MIN_PROMO_BLOCK_WIDTH_SEC,
 } from '@/popup/constants';
 import { requestDetectionStatusWithTimeout } from '@/popup/detection-status-request';
+import { requestContentScriptReattachWithTimeout } from '@/popup/content-script-reattach-request';
 import {
     ANALYSIS_MODE,
     PERCENT_SCALE,
@@ -977,6 +978,15 @@ export const PopupApp = observer(function PopupApp() {
             store.disconnectPort();
         };
     }, [store]);
+
+    useEffect(() => {
+        // Opening the popup is the user gesture that grants `activeTab`, so
+        // this is the moment to re-attach the watch bundles into a tab that an
+        // install/update/reload orphaned. The background decides whether the
+        // tab needs it; a resulting detection change reaches this popup through
+        // the PROMO_DETECTION_UPDATED push, so the reply is not consumed here.
+        void requestContentScriptReattachWithTimeout().catch(() => undefined);
+    }, []);
 
     useEffect(() => {
         let cancelled = false;

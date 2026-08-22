@@ -75,7 +75,7 @@ function validManifest(
         name: getExtensionManifestName(build),
         version: '0.1.0',
         minimum_chrome_version: '111',
-        permissions: ['storage'],
+        permissions: ['storage', 'scripting', 'activeTab'],
         optional_permissions: [],
         host_permissions: [`${serverOrigin}/*`],
         optional_host_permissions: [
@@ -119,10 +119,12 @@ describe('validateExtensionManifest', () => {
 
     it.each([
         ['required tabs', (value: ManifestFixture) => value.permissions.push('tabs')],
-        ['required scripting', (value: ManifestFixture) => value.permissions.push('scripting')],
         ['duplicate API permission', (value: ManifestFixture) => value.permissions.push('storage')],
         ['optional tabs', (value: ManifestFixture) => value.optional_permissions.push('tabs')],
+        ['optional scripting', (value: ManifestFixture) => value.optional_permissions.push('scripting')],
         ['missing storage', (value: ManifestFixture) => value.permissions.splice(0)],
+        ['missing scripting', (value: ManifestFixture) => { value.permissions = ['storage', 'activeTab']; }],
+        ['missing activeTab', (value: ManifestFixture) => { value.permissions = ['storage', 'scripting']; }],
         ['required OpenRouter', (value: ManifestFixture) => value.host_permissions.push('https://openrouter.ai/*')],
         ['missing optional OpenAI', (value: ManifestFixture) => value.optional_host_permissions.pop()],
         ['duplicate host', (value: ManifestFixture) => value.optional_host_permissions.push('https://openrouter.ai/*')],

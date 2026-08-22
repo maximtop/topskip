@@ -83,11 +83,16 @@ automatic fallback.
 
 ## Extension permissions and Private BYOK
 
-TopSkip installs with one required extension API permission: **`storage`**.
-Its only required host permission is the configured TopSkip backend used by
-Server mode. YouTube access appears as two declarative content-script matches,
-not as a separate required host permission. Development builds add only the
-`http://127.0.0.1:4173/*` E2E fixture match; beta and release builds do not.
+TopSkip installs with three required extension API permissions: **`storage`**
+for background-owned state, plus **`scripting`** and **`activeTab`** so that
+opening the popup can re-attach the YouTube bundles into a tab that was already
+open when the extension was installed, updated, or reloaded. None of the three
+adds an install-time warning, and `activeTab` limits that injection to the tab
+the popup was opened on. Its only required host permission is the configured
+TopSkip backend used by Server mode. YouTube access appears as two declarative
+content-script matches, not as a separate required host permission. Development
+builds add only the `http://127.0.0.1:4173/*` E2E fixture match; beta and
+release builds do not.
 
 OpenRouter (`https://openrouter.ai/*`) and OpenAI
 (`https://api.openai.com/*`) are optional host permissions. TopSkip asks for

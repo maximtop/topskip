@@ -78,6 +78,11 @@ export const TOPSKIP_MESSAGE = {
      * service worker console for easier debugging.
      */
     CONTENT_LOG: 'TOPSKIP_CONTENT_LOG',
+    /**
+     * Popup asks the background to re-inject the watch bundles into the active
+     * tab when an install/update/reload left it without a live content context.
+     */
+    REATTACH_CONTENT_SCRIPT: 'TOPSKIP_REATTACH_CONTENT_SCRIPT',
 } as const;
 
 /**
@@ -384,6 +389,49 @@ export type GetDetectionStatusResponse =
           state: PromoDetectionStatePayload | null;
       }
     | { ok: false; error: string };
+
+/**
+ * Why a popup-driven re-attach did or did not inject the watch bundles.
+ *
+ * `UrlUnavailable` means Chrome hid the active tab's URL (no `activeTab`
+ * grant for it), so the background refuses to inject blind; `UnsupportedPage`
+ * means the URL is visible but outside the declarative content-script origins.
+ */
+export const CONTENT_SCRIPT_REATTACH_OUTCOME = {
+    NoActiveTab: 'no_active_tab',
+    UrlUnavailable: 'url_unavailable',
+    UnsupportedPage: 'unsupported_page',
+    AlreadyAttached: 'already_attached',
+    Reattached: 'reattached',
+} as const;
+
+/**
+ * Outcome reported for one re-attach request.
+ */
+export type ContentScriptReattachOutcome =
+    (typeof CONTENT_SCRIPT_REATTACH_OUTCOME)[keyof typeof CONTENT_SCRIPT_REATTACH_OUTCOME];
+
+/**
+ * Popup response describing what the background did for the active tab.
+ */
+export const reattachContentScriptResponseSchema = v.variant('ok', [
+    v.strictObject({
+        ok: v.literal(true),
+        tabId: v.nullable(v.number()),
+        outcome: v.picklist(Object.values(CONTENT_SCRIPT_REATTACH_OUTCOME)),
+    }),
+    v.strictObject({
+        ok: v.literal(false),
+        error: v.string(),
+    }),
+]);
+
+/**
+ * Re-attach outcome returned to the popup.
+ */
+export type ReattachContentScriptResponse = v.InferOutput<
+    typeof reattachContentScriptResponseSchema
+>;
 
 /**
  * Tab-scoped detection push sent over the extension-global runtime channel.
@@ -914,6 +962,7 @@ export type TopSkipRuntimeMessage =
           apiKey: string;
       }
     | { type: typeof TOPSKIP_MESSAGE.GET_DETECTION_STATUS }
+    | { type: typeof TOPSKIP_MESSAGE.REATTACH_CONTENT_SCRIPT }
     | {
           type: typeof TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP;
           payload: PreflightByokSetupPayload;
@@ -1107,6 +1156,13 @@ export const validateOpenRouterModelMessageSchema = v.object({
  */
 export const getDetectionStatusMessageSchema = v.object({
     type: v.literal(TOPSKIP_MESSAGE.GET_DETECTION_STATUS),
+});
+
+/**
+ * Valibot schema for {@link TOPSKIP_MESSAGE.REATTACH_CONTENT_SCRIPT}.
+ */
+export const reattachContentScriptMessageSchema = v.object({
+    type: v.literal(TOPSKIP_MESSAGE.REATTACH_CONTENT_SCRIPT),
 });
 
 /**

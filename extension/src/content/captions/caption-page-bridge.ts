@@ -8,9 +8,13 @@ import {
     type CaptionPageBridgeCommand,
     parseCaptionPageBridgeCommandRequest,
 } from '@/content/captions/caption-page-bridge-contract';
+import {
+    CAPTION_PAGE_BRIDGE_INSTALL_FLAG,
+    CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG,
+} from '@/shared/caption-page-bridge-flags';
 
-const INSTALL_FLAG = '__topskipCaptionCaptureInstalled';
-const TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
+const INSTALL_FLAG = CAPTION_PAGE_BRIDGE_INSTALL_FLAG;
+const TEARDOWN_FLAG = CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG;
 const TIMEDTEXT_PATH = '/api/timedtext';
 const PLAYER_NOT_READY_REASON = 'player-not-ready';
 const ACTIVATION_UNAVAILABLE_REASON = 'activation-unavailable';

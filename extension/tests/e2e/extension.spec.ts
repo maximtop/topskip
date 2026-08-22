@@ -86,6 +86,10 @@ const CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
 const ORPHAN_FALSE_POSITIVE_WINDOW_MS = 3_500;
 // Orphan poll cadence plus the bounded bridge command timeout, with slack.
 const ORPHAN_TEARDOWN_TIMEOUT_MS = 15_000;
+// Popup-open probe plus the background's bounded settle wait, with slack.
+const POPUP_REATTACH_TIMEOUT_MS = 15_000;
+// Page global holding the bridge generation a spec fingerprinted.
+const PAGE_BRIDGE_IDENTITY_MARKER_KEY = '__topskipE2eBridgeIdentity';
 
 type GrantedExtensionPermissions = {
     permissions: string[];
@@ -247,6 +251,54 @@ async function readPageBridgeInstallState(
             ),
         };
     }, { installFlag: CAPTION_PAGE_BRIDGE_INSTALL_FLAG });
+}
+
+/**
+ * Records the current MAIN bridge's teardown hook on the page.
+ *
+ * Each bridge generation publishes its own teardown closure, so the identity
+ * of that function is the page-visible fingerprint of one installation.
+ *
+ * @param page - Fixture document whose current bridge should be fingerprinted.
+ * @returns Resolves once the reference is stored on the page.
+ */
+async function markPageBridgeIdentity(page: Page): Promise<void> {
+    await page.evaluate(
+        (flags) => {
+            Reflect.set(
+                globalThis,
+                flags.markerKey,
+                Reflect.get(globalThis, flags.teardownFlag),
+            );
+        },
+        {
+            markerKey: PAGE_BRIDGE_IDENTITY_MARKER_KEY,
+            teardownFlag: CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG,
+        },
+    );
+}
+
+/**
+ * Reports whether the bridge recorded by `markPageBridgeIdentity` is still the
+ * one installed on the page.
+ *
+ * @param page - Fixture document previously fingerprinted.
+ * @returns Whether no newer bridge generation replaced the recorded one.
+ */
+async function isPageBridgeIdentityUnchanged(page: Page): Promise<boolean> {
+    return page.evaluate(
+        (flags) => {
+            const marked: unknown = Reflect.get(globalThis, flags.markerKey);
+            return (
+                typeof marked === 'function' &&
+                Reflect.get(globalThis, flags.teardownFlag) === marked
+            );
+        },
+        {
+            markerKey: PAGE_BRIDGE_IDENTITY_MARKER_KEY,
+            teardownFlag: CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG,
+        },
+    );
 }
 
 /**
@@ -987,6 +1039,56 @@ test.describe('TopSkip extension', () => {
                 });
             expect(await readPageBridgeTeardownFlagPresent(page)).toBe(false);
 
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('opening the popup leaves a live content context untouched', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const page = await context.newPage();
+            trackPageErrors(page, 'reattach-live-fixture', errors);
+            await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+            await probeDeclarativeCaptionBridge(page);
+            await markPageBridgeIdentity(page);
+
+            // Popup start asks the background to re-attach; a tab whose
+            // declarative bundles are alive must answer the readiness probe and
+            // be left alone, or the user would lose the running analysis
+            // session every time they open the popup.
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+                page,
+            );
+            await expect
+                .poll(() => readActiveContentRouteStatus(popupPage), {
+                    timeout: POPUP_REATTACH_TIMEOUT_MS,
+                })
+                .toMatchObject({ ok: true, videoId: E2E_VIDEO_ID });
+
+            // A second MAIN bridge would replace the page's teardown hook and
+            // rewrap fetch/XHR, so a stable hook identity proves no injection.
+            expect(await isPageBridgeIdentityUnchanged(page)).toBe(true);
+            expect(await readPageBridgeInstallState(page)).toEqual({
+                installed: true,
+                fetchNative: false,
+                xhrOpenNative: false,
+                xhrSendNative: false,
+            });
+            await probeDeclarativeCaptionBridge(page);
+
+            await popupPage.close();
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();

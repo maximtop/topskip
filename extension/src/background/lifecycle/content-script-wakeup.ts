@@ -15,7 +15,7 @@ const CONTENT_SCRIPT_WAKE_ATTEMPTS = 2;
 /**
  * One unresponsive tab cannot delay service-worker startup indefinitely.
  */
-const CONTENT_SCRIPT_WAKE_TIMEOUT_MS = 150;
+export const CONTENT_SCRIPT_WAKE_TIMEOUT_MS = 150;
 
 /**
  * Short yield lets a newly restored content context register its listener.
@@ -73,7 +73,7 @@ export class ContentScriptWakeup {
             attempt < CONTENT_SCRIPT_WAKE_ATTEMPTS;
             attempt += 1
         ) {
-            if (await ContentScriptWakeup.notifyTabOnce(tabId)) {
+            if (await ContentScriptWakeup.probeTab(tabId)) {
                 return true;
             }
             const hasAnotherAttempt =
@@ -86,18 +86,26 @@ export class ContentScriptWakeup {
     }
 
     /**
-     * Accepts acknowledgements only from this exact protocol and bundle.
+     * Accepts acknowledgements only from this exact protocol and bundle, so an
+     * orphaned context from a previous install (which Chrome cannot even
+     * deliver to) and a stale bundle both read as "not live".
      *
      * @param tabId - Tab receiving the readiness notification.
+     * @param timeoutMs - Bound for this single attempt; startup wakes use a
+     * tight bound, while a user-driven re-attach can afford to wait longer
+     * before deciding the tab needs a fresh bundle.
      * @returns Whether this single bounded attempt was acknowledged.
      */
-    private static async notifyTabOnce(tabId: number): Promise<boolean> {
+    static async probeTab(
+        tabId: number,
+        timeoutMs: number = CONTENT_SCRIPT_WAKE_TIMEOUT_MS,
+    ): Promise<boolean> {
         let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
         try {
             const timeout = new Promise<null>((resolve) => {
                 timeoutId = globalThis.setTimeout(
                     () => resolve(null),
-                    CONTENT_SCRIPT_WAKE_TIMEOUT_MS,
+                    timeoutMs,
                 );
             });
             const response: unknown = await Promise.race([

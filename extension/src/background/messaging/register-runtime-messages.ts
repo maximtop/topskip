@@ -3,6 +3,7 @@ import * as v from 'valibot';
 
 import browser from '@/shared/browser';
 
+import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
 import {
     ContentLogMessages,
     PromoDetectionRuntimeMessages,
@@ -151,6 +152,14 @@ async function dispatchRuntimeMessage(
             );
         case TOPSKIP_MESSAGE.GET_DETECTION_STATUS:
             return PromoDetectionRuntimeMessages.handleGet();
+        case TOPSKIP_MESSAGE.REATTACH_CONTENT_SCRIPT:
+            // Only extension pages (no `sender.tab`) may trigger injection: a
+            // content document must never be able to request bundles for the
+            // tab the user happens to have in front.
+            if (sender.tab !== undefined) {
+                return undefined;
+            }
+            return ContentScriptReattach.handleRequest();
         case TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS:
             return PromoDetectionRuntimeMessages.handleDevSet(
                 msg.state,

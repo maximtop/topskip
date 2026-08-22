@@ -89,20 +89,22 @@ Run release commands from the repository root. Rspack writes
     ```
 
 5. Upload `topskip-extension.zip` in the [Chrome Web Store Developer Dashboard](https://chrome.google.com/webstore/devconsole).
-6. After install/update, tell testers to reload YouTube tabs that were already
-   open. Worker sleep/restart alone needs no tab reload while the content
-   context remains live; the readiness wake resumes delivery but never injects
-   a replacement bundle.
+6. After install/update, tell testers that YouTube tabs which were already
+   open recover as soon as they open the TopSkip popup on them (the popup
+   re-attaches the bundles via `scripting` + `activeTab`); a page reload also
+   works. Worker sleep/restart alone needs neither while the content context
+   remains live; the readiness wake resumes delivery but never injects a
+   replacement bundle.
 
 ## Pre-submit checklist
 
 - [ ] **Manifest V3** — `manifest_version` is `3`
 - [ ] **Browser floor** — `minimum_chrome_version` is `111`
-- [ ] **API permissions** — `permissions` contains exactly `storage`; `tabs` and `scripting` are absent
+- [ ] **API permissions** — `permissions` contains exactly `storage`, `scripting`, and `activeTab`; `tabs` is absent
 - [ ] **Required hosts** — `host_permissions` contains exactly the TopSkip backend from `TOPSKIP_SERVER_ORIGIN`; YouTube and provider hosts are absent
 - [ ] **Optional hosts** — `optional_host_permissions` contains exactly OpenRouter (`https://openrouter.ai/*`) and OpenAI (`https://api.openai.com/*`)
 - [ ] **Static site access** — both content-script entries match YouTube only, run at `document_start`, and declare MAIN before ISOLATED; `http://127.0.0.1:4173/*` is absent
-- [ ] **Privacy** — Describe background-owned storage, Server caption upload, optional per-provider grants, Private BYOK isolation, and declarative YouTube access
+- [ ] **Privacy** — Describe background-owned storage, Server caption upload, optional per-provider grants, Private BYOK isolation, declarative YouTube access, and that `scripting` + `activeTab` are used only to re-inject the YouTube bundles into the tab the popup was opened on
 - [ ] **Icons** — Verify `extension/src/public/icons/topskip.svg` and generated PNG sizes are copied into `extension/dist/` and referenced by `manifest.json`
 - [ ] **Version** — Bump `"version"` in `extension/src/manifest.json` for each submission (it is emitted into `extension/dist/`)
 

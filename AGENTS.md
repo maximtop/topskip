@@ -44,7 +44,7 @@ local-only** — it is not published to GitHub, so a fresh clone will not have i
 | **CI**                 | `.github/workflows/ci.yml` — **`pnpm install --frozen-lockfile`** → **lint** → **build** → deployment asset tests → **test** → **test:coverage** → Playwright Chromium → **`pnpm run test:e2e`**                                                                                                                             |
 | **Project type**       | pnpm workspace: `backend`, `common`, and `extension`                                                                                                                                                                                                                                                                         |
 | **Performance goals**  | N/A beyond product spec (informal UX: skip soon after crossing 30s)                                                                                                                                                                                                                                                          |
-| **Constraints**        | Required API permission is only `storage`; required host is only the configured backend; OpenRouter/OpenAI are optional hosts; YouTube is declarative site access; loopback matches are dev-only — see `extension/DEPLOYMENT.md`                                                                                         |
+| **Constraints**        | Required API permissions are exactly `storage`, `scripting`, and `activeTab`; required host is only the configured backend; OpenRouter/OpenAI are optional hosts; YouTube is declarative site access; loopback matches are dev-only — see `extension/DEPLOYMENT.md`                                                     |
 
 ## Project structure
 
@@ -158,18 +158,28 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
   missing/revoked access must stop locally and never fall back to Server mode.
 - **Static content lifecycle**: The MAIN bridge and ISOLATED content owner are
   declarative `document_start` scripts, with MAIN first. Chrome 111 is the
-  minimum. Do not restore dynamic registration, runtime injection, or the
-  `scripting` permission. Install/update/manual extension reload may require
-  reloading already-open YouTube tabs. Worker sleep/restart does not while the
-  content context is alive: startup readiness only wakes content-owned pending
-  delivery and never injects a replacement.
+  minimum. Do not restore dynamic registration (`scripting.registerContentScripts`)
+  or a required YouTube host. Worker sleep/restart never needs a tab reload
+  while the content context is alive: startup readiness only wakes
+  content-owned pending delivery and never injects a replacement.
+- **Popup re-attach (`scripting` + `activeTab`)**: Install/update/manual
+  reload leaves already-open YouTube tabs without a live content context.
+  Opening the popup is the user gesture that grants `activeTab` for that one
+  tab; the popup sends **`REATTACH_CONTENT_SCRIPT`** and the background
+  (**`ContentScriptReattach`**) probes the tab with `CONTENT_SCRIPT_READY`,
+  and only when no current bundle answers and the now-visible `Tab.url` is a
+  declarative content origin does it `scripting.executeScript` the MAIN
+  bridge and then `content.js`, the same files and order as the manifest. It
+  never injects when the URL is hidden (no grant) or off-origin, waits for an
+  orphaned bridge to finish its self-teardown first, and is the only
+  programmatic injection allowed — keep it popup-driven, not automatic.
 - **Orphan self-teardown**: An install/update/reload severs the runtime of
   content scripts in already-open tabs without replacing them. The ISOLATED
   bundle polls `browser.runtime.id` (**`ExtensionContextWatch`**) and, once
   it is gone, runs the `YoutubeWatch` dispose and sends the MAIN bridge the
-  `teardown` command so `fetch`/XHR are restored and its listeners drop. This
-  is permission-free hygiene only — it does not restore skipping; the tab
-  still needs a reload. Send `teardown` only on that path, never from the
+  `teardown` command so `fetch`/XHR are restored and its listeners drop. It
+  does not restore skipping by itself; the popup re-attach above (or a tab
+  reload) does. Send `teardown` only on that path, never from the
   replacement dispose (a newer MAIN bridge would be killed instead).
 - **Dormant static bridge**: MAIN fetch/XHR wrappers must delegate unchanged
   outside a bounded active capture. Missing prefs and disabled prefs keep
@@ -183,9 +193,10 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
   loopback literal never ships; build-time code reads `DEV_E2E_FIXTURE_ORIGIN`
   from `extension/build-modes.ts`. CI greps release artifacts for
   `127.0.0.1:(8787|4173)`.
-- **Manifest policy**: Emitted manifests have exactly `storage` as required API
-  permission, the configured backend as the only required host, and OpenRouter
-  plus OpenAI as optional hosts. Dev additionally permits only the exact
+- **Manifest policy**: Emitted manifests have exactly `storage`, `scripting`,
+  and `activeTab` as required API permissions (`REQUIRED_API_PERMISSIONS` in
+  `extension/manifest-profile.ts`), the configured backend as the only
+  required host, and OpenRouter plus OpenAI as optional hosts. Dev additionally permits only the exact
   loopback backend `http://127.0.0.1:8787` and fixture match; beta/release require
   public-looking HTTPS DNS. The build policy performs no DNS lookup, so it does
   not prove where a syntactically accepted hostname resolves. Dev and beta

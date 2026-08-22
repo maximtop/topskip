@@ -16,6 +16,20 @@ import {
     OPTIONAL_PROVIDER_HOST_PERMISSIONS,
     PROVIDER_HOST_PERMISSION,
 } from './src/shared/provider-host-permissions.ts';
+import { CONTENT_SCRIPT_BUNDLE } from './src/shared/content-script-bundles.ts';
+
+/**
+ * Required API permissions. `storage` holds background-owned state;
+ * `scripting` plus `activeTab` let the popup re-attach the two watch bundles
+ * into a YouTube tab that an install/update/reload orphaned. Neither adds an
+ * install-time warning, and `activeTab` scopes programmatic injection to the
+ * tab the user invoked the popup on, so no required YouTube host is needed.
+ */
+export const REQUIRED_API_PERMISSIONS = [
+    'storage',
+    'scripting',
+    'activeTab',
+] as const;
 
 /**
  * First Chrome release supporting declarative MAIN-world content scripts.
@@ -151,14 +165,14 @@ export function composeExtensionManifest(
         name: getExtensionManifestName(build),
         ...(versionName === undefined ? {} : { version_name: versionName }),
         minimum_chrome_version: TOPSKIP_MINIMUM_CHROME_VERSION,
-        permissions: ['storage'],
+        permissions: [...REQUIRED_API_PERMISSIONS],
         optional_permissions: [],
         host_permissions: [`${canonicalServerOrigin}/*`],
         optional_host_permissions: [...OPTIONAL_PROVIDER_HOST_PERMISSIONS],
         content_scripts: [
             {
                 matches: [...matches],
-                js: ['caption-page-bridge.js'],
+                js: [CONTENT_SCRIPT_BUNDLE.MainBridge],
                 run_at: 'document_start',
                 world: 'MAIN',
                 all_frames: false,
@@ -167,7 +181,7 @@ export function composeExtensionManifest(
             },
             {
                 matches: [...matches],
-                js: ['content.js'],
+                js: [CONTENT_SCRIPT_BUNDLE.IsolatedWatch],
                 run_at: 'document_start',
                 world: 'ISOLATED',
                 all_frames: false,

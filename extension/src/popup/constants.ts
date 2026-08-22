@@ -19,6 +19,13 @@ export const POPUP_DETECTION_REQUEST_TIMEOUT_MS = 5_000;
 export const POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS = 5_000;
 
 /**
+ * Bounds the popup-open re-attach so a lost reply cannot leave the request
+ * pending for the popup's lifetime; covers the background's probe plus its
+ * bounded wait for an orphaned bundle to finish tearing down.
+ */
+export const POPUP_REATTACH_REQUEST_TIMEOUT_MS = 8_000;
+
+/**
  * Minimum visible width (seconds) for a promo block bar in the popup UI.
  */
 export const MIN_PROMO_BLOCK_WIDTH_SEC = 4;

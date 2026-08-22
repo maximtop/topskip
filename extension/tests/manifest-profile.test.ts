@@ -53,7 +53,11 @@ describe('composeExtensionManifest', () => {
         );
 
         expect(manifest.name).toBe('__MSG_name__');
-        expect(manifest.permissions).toEqual(['storage']);
+        expect(manifest.permissions).toEqual([
+            'storage',
+            'scripting',
+            'activeTab',
+        ]);
         expect(manifest.optional_permissions).toEqual([]);
         expect(manifest.minimum_chrome_version).toBe(
             TOPSKIP_MINIMUM_CHROME_VERSION,

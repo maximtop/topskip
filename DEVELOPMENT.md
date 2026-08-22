@@ -113,8 +113,11 @@ source maps).
 After code changes, run a fresh `make build` and click **Reload** on the
 extension card. Installing, updating, or manually reloading the extension
 invalidates content contexts in already-open documents, so reload those
-YouTube tabs as well. Service-worker sleep/restart alone does not require a tab
-reload while the existing content context is still alive.
+YouTube tabs as well. The orphaned scripts notice the severed runtime within
+about a second and neutralize themselves (video listeners and timers released,
+the MAIN bridge's `fetch`/XHR wrappers restored), but nothing re-injects a
+working bundle until the tab reloads. Service-worker sleep/restart alone does
+not require a tab reload while the existing content context is still alive.
 
 ### 4. Watch mode (optional)
 
@@ -289,6 +292,13 @@ The bridge's document-lifetime fetch/XHR wrappers delegate unchanged while
 dormant and clone/read timedtext bodies only during a bounded active capture.
 Duplicate/replacement hooks remain a defensive guard if two static bundle
 generations briefly coexist.
+
+An orphaned context (runtime severed by install/update/reload) tears itself
+down: the ISOLATED bundle polls `browser.runtime.id`, and once it is gone it
+disposes the watch orchestration and sends the MAIN bridge a `teardown`
+command, which restores native `fetch`/XHR and drops the bridge's command
+listener and global hook. This keeps a stale bundle from lingering on the page
+but does not restore skipping — only a page reload installs the new bundles.
 
 Until valid enabled preferences have hydrated, and whenever TopSkip is
 disabled, the static ISOLATED context is inert: no video binding, seek, caption

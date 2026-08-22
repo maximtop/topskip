@@ -6,12 +6,14 @@ const {
     mockDisposeBridge,
     mockProbeBridge,
     mockSendMessage,
+    mockTeardownBridge,
 } = vi.hoisted(() => ({
     mockActivateBridge: vi.fn(),
     mockDeactivateBridge: vi.fn(),
     mockDisposeBridge: vi.fn(),
     mockProbeBridge: vi.fn(),
     mockSendMessage: vi.fn(),
+    mockTeardownBridge: vi.fn(),
 }));
 
 vi.mock('@/content/captions/caption-page-bridge-client', () => ({
@@ -20,6 +22,7 @@ vi.mock('@/content/captions/caption-page-bridge-client', () => ({
         deactivate: mockDeactivateBridge,
         dispose: mockDisposeBridge,
         probe: mockProbeBridge,
+        teardown: mockTeardownBridge,
     },
 }));
 
@@ -241,9 +244,11 @@ describe('PlayerCaptionCapture', () => {
         mockDeactivateBridge.mockReset();
         mockDisposeBridge.mockReset();
         mockProbeBridge.mockReset();
+        mockTeardownBridge.mockReset();
         mockActivateBridge.mockResolvedValue({ ok: true });
         mockDeactivateBridge.mockResolvedValue({ ok: true });
         mockProbeBridge.mockResolvedValue({ ok: true });
+        mockTeardownBridge.mockResolvedValue({ ok: true });
         mockSendMessage.mockReset();
         mockSendMessage.mockResolvedValue({ ok: true });
         vi.useFakeTimers();
@@ -713,6 +718,40 @@ describe('PlayerCaptionCapture', () => {
         await disposeRun;
         await expect(run).resolves.toEqual({ status: 'cancelled' });
         expect(mockDisposeBridge).toHaveBeenCalledOnce();
+    });
+
+    it('deactivates an active capture before retiring the orphaned page bridge', async () => {
+        const routeController = new AbortController();
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'orphan-video',
+            signal: routeController.signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+
+        await WatchCaptions.teardownPageBridge();
+
+        await expect(run).resolves.toEqual({ status: 'cancelled' });
+        expect(mockDeactivateBridge).toHaveBeenCalledOnce();
+        expect(mockTeardownBridge).toHaveBeenCalledOnce();
+        expect(mockDisposeBridge).toHaveBeenCalled();
+        expect(mockDeactivateBridge.mock.invocationCallOrder[0]).toBeLessThan(
+            mockTeardownBridge.mock.invocationCallOrder[0],
+        );
+        expect(mockTeardownBridge.mock.invocationCallOrder[0]).toBeLessThan(
+            mockDisposeBridge.mock.invocationCallOrder.at(-1) ?? 0,
+        );
+    });
+
+    it('still releases the bridge client when the teardown command rejects', async () => {
+        mockTeardownBridge.mockRejectedValueOnce(new Error('bridge gone'));
+
+        await expect(
+            PlayerCaptionCapture.teardownPageBridge(),
+        ).rejects.toThrow('bridge gone');
+
+        expect(mockTeardownBridge).toHaveBeenCalledOnce();
+        expect(mockDisposeBridge).toHaveBeenCalled();
     });
 
     it('cancels late delivery and lets the same video acquire new ownership', async () => {

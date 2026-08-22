@@ -640,6 +640,13 @@ const installCaptionPageBridge = (): void => {
         [CAPTION_PAGE_BRIDGE_COMMAND.Probe]: () => ({ ok: true }),
         [CAPTION_PAGE_BRIDGE_COMMAND.Activate]: activateCaptions,
         [CAPTION_PAGE_BRIDGE_COMMAND.Deactivate]: deactivateCaptions,
+        // The acknowledgement still goes out because `onCommand` only checks
+        // `tornDown` before dispatching a handler, so an orphaned ISOLATED
+        // caller learns the wrappers are gone instead of waiting for timeout.
+        [CAPTION_PAGE_BRIDGE_COMMAND.Teardown]: () => {
+            teardown();
+            return { ok: true };
+        },
     } satisfies Record<CaptionPageBridgeCommand, () => unknown>;
 
     const onCommand = (event: Event): void => {

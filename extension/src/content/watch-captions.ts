@@ -28,6 +28,18 @@ export class WatchCaptions {
     }
 
     /**
+     * Retires the MAIN bridge of an orphaned document. Unlike
+     * `preparePageBridge`, this is not gated on the fixture host: the
+     * declarative bridge is installed wherever the content scripts match, so
+     * its wrappers must be restored there too.
+     *
+     * @returns Resolves after the bounded bridge teardown settles.
+     */
+    static teardownPageBridge(): Promise<void> {
+        return PlayerCaptionCapture.teardownPageBridge();
+    }
+
+    /**
      * Confirms passive page hooks before player caption requests begin.
      */
     static preparePageBridge(): void {

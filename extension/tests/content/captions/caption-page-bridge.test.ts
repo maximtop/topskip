@@ -11,6 +11,7 @@ import {
     parseCaptionPageBridgeCommandResult,
 } from '@/content/captions/caption-page-bridge-contract';
 
+const INSTALL_FLAG = '__topskipCaptionCaptureInstalled';
 const TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
 const TIMEDTEXT_URL =
     'https://www.youtube.com/api/timedtext?v=video-1&lang=en&fmt=json3';
@@ -516,6 +517,32 @@ describe('caption page bridge', () => {
         expect(Reflect.get(XMLHttpRequest.prototype, 'send')).toBe(
             harness.originalXhrSend,
         );
+        expect(harness.commandResults).toHaveLength(resultCount);
+    });
+
+    it('retires itself and acknowledges the teardown command', async () => {
+        const harness = installHarness();
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+        expect(harness.button.getAttribute('aria-pressed')).toBe('true');
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Teardown, 'orphan-teardown');
+
+        expect(readLastCommandResult(harness)).toEqual({ ok: true });
+        expect(harness.button.getAttribute('aria-pressed')).toBe('false');
+        expect(document.getElementById(HIDE_STYLE_ID)).toBeNull();
+        expect(Reflect.get(window, 'fetch')).toBe(harness.originalFetch);
+        expect(Reflect.get(XMLHttpRequest.prototype, 'open')).toBe(
+            harness.originalXhrOpen,
+        );
+        expect(Reflect.get(XMLHttpRequest.prototype, 'send')).toBe(
+            harness.originalXhrSend,
+        );
+        expect(Reflect.get(globalThis, INSTALL_FLAG)).toBe(false);
+        expect(Reflect.get(globalThis, TEARDOWN_FLAG)).toBeUndefined();
+
+        const resultCount = harness.commandResults.length;
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Probe, 'after-orphan-teardown');
         expect(harness.commandResults).toHaveLength(resultCount);
     });
 

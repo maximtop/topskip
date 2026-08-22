@@ -79,6 +79,7 @@ describe('CaptionPageBridgeClient', () => {
         ['probe', CAPTION_PAGE_BRIDGE_COMMAND.Probe],
         ['activate', CAPTION_PAGE_BRIDGE_COMMAND.Activate],
         ['deactivate', CAPTION_PAGE_BRIDGE_COMMAND.Deactivate],
+        ['teardown', CAPTION_PAGE_BRIDGE_COMMAND.Teardown],
     ] as const)(
         'dispatches %s as JSON and accepts a synchronous result',
         async (method, expectedCommand) => {

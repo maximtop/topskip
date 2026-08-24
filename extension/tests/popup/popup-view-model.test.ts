@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import {
     chooseMonotonicDetectionSnapshot,
 } from '@/popup/detection-transport-state';
-import { buildPopupViewModel } from '@/popup/PopupApp';
+import { buildPopupViewModel, isGetDetectionOk } from '@/popup/PopupApp';
 import { ANALYSIS_MODE } from '@/shared/constants';
 import type { PromoDetectionStatePayload } from '@/shared/messages';
 
@@ -137,6 +137,7 @@ vi.mock('@/shared/browser', () => ({
                         popup_byok_setup_body:
                             'Analysis stays with your configured provider and is not shared with TopSkip.',
                         popup_open_settings: 'Open settings',
+                        popup_debug_logging_on: 'Debug logging on',
                     };
                     let message = messages[key] ?? key;
                     for (const [name, value] of Object.entries(
@@ -169,6 +170,7 @@ describe('buildPopupViewModel', () => {
         providerDisplayName: 'OpenRouter',
         modelDisplayName: 'google/gemini-2.0-flash',
         chromeModelAvailability: null,
+        debugLoggingEnabled: null,
     };
 
     it('idle state includes provider label', () => {
@@ -804,5 +806,53 @@ describe('buildPopupViewModel', () => {
         });
 
         expect(vm.statusBody).toBe('1:32–2:05');
+    });
+
+    it('shows the debug logging label only when the switch is known to be on', () => {
+        expect(
+            buildPopupViewModel({ ...baseArgs, debugLoggingEnabled: true })
+                .debugLoggingLabel,
+        ).toBe('Debug logging on');
+        expect(
+            buildPopupViewModel({ ...baseArgs, debugLoggingEnabled: false })
+                .debugLoggingLabel,
+        ).toBeNull();
+        expect(
+            buildPopupViewModel({ ...baseArgs, debugLoggingEnabled: null })
+                .debugLoggingLabel,
+        ).toBeNull();
+    });
+
+    it('keeps the debug logging label while detection status is stale', () => {
+        const vm = buildPopupViewModel({
+            ...baseArgs,
+            detectionStale: true,
+            debugLoggingEnabled: true,
+        });
+        expect(vm.debugLoggingLabel).toBe('Debug logging on');
+        expect(vm.activityLabel).toBe('Status update delayed');
+    });
+});
+
+describe('isGetDetectionOk', () => {
+    it('requires the debug logging flag on a successful reply', () => {
+        expect(isGetDetectionOk({ ok: true, tabId: 1, state: null })).toBe(false);
+        expect(
+            isGetDetectionOk({
+                ok: true,
+                tabId: 1,
+                state: null,
+                debugLoggingEnabled: false,
+            }),
+        ).toBe(true);
+        expect(
+            isGetDetectionOk({
+                ok: true,
+                tabId: null,
+                state: null,
+                debugLoggingEnabled: true,
+            }),
+        ).toBe(true);
+        expect(isGetDetectionOk({ ok: false, error: 'x' })).toBe(false);
     });
 });

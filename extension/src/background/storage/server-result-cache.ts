@@ -1,7 +1,10 @@
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
-import { STORAGE_KEY_SERVER_RESULT_CACHE } from '@/shared/constants';
+import {
+    STORAGE_KEY_SERVER_RESULT_CACHE,
+    STORAGE_KEY_SERVER_RESULT_CACHE_INDEX,
+} from '@/shared/constants';
 import {
     noPromoResponseSchema,
     normalizedCaptionLanguageCodeSchema,
@@ -16,6 +19,12 @@ import {
 
 const MAX_ALGORITHM_VERSION_LENGTH = 64;
 const MAX_OPAQUE_ID_LENGTH = 160;
+
+/**
+ * Keys of every cached row; lets cleanup read only its own rows instead of
+ * scanning all of `storage.local` (which would load the debug log).
+ */
+const cacheIndexSchema = v.array(v.string());
 
 const finiteEpochMsSchema = v.pipe(
     v.number(),
@@ -103,7 +112,8 @@ export class ServerResultCacheStorage {
     }
 
     /**
-     * Best-effort repair keeps cache corruption from blocking server fallback.
+     * Best-effort repair keeps cache corruption from blocking server fallback;
+     * the index forgets the row as well.
      *
      * @param key - Storage row to remove.
      * @returns Promise resolved after the repair attempt.
@@ -111,6 +121,14 @@ export class ServerResultCacheStorage {
     private static async removeInvalidEntry(key: string): Promise<void> {
         try {
             await browser.storage.local.remove(key);
+            const keys = await ServerResultCacheStorage.readIndexKeys();
+            if (keys !== null && keys.includes(key)) {
+                await browser.storage.local.set({
+                    [STORAGE_KEY_SERVER_RESULT_CACHE_INDEX]: keys.filter(
+                        (candidate) => candidate !== key,
+                    ),
+                });
+            }
         } catch {
             // Cache repair is opportunistic; the backend remains authoritative.
         }
@@ -118,6 +136,8 @@ export class ServerResultCacheStorage {
 
     /**
      * Drops rows from obsolete server algorithms after a validated observation.
+     * Reads only the indexed rows; the one-time full scan happens only while
+     * no index exists yet (installs that predate it).
      *
      * @param activeAlgorithmVersion - Server-owned algorithm currently observed.
      * @returns Promise resolved after best-effort cleanup.
@@ -125,36 +145,96 @@ export class ServerResultCacheStorage {
     static async removeOtherAlgorithmVersions(
         activeAlgorithmVersion: string,
     ): Promise<void> {
+        let keys: string[];
         let stored: Record<string, unknown>;
+        let migrated = false;
         try {
-            stored = await browser.storage.local.get(null);
+            const indexed = await ServerResultCacheStorage.readIndexKeys();
+            if (indexed === null) {
+                ({ keys, stored } = await ServerResultCacheStorage.scanCacheRows());
+                migrated = true;
+            } else {
+                keys = indexed;
+                stored =
+                    keys.length === 0
+                        ? {}
+                        : await browser.storage.local.get(keys);
+            }
         } catch {
             return;
         }
 
-        const prefix = `${STORAGE_KEY_SERVER_RESULT_CACHE}:`;
-        const obsoleteKeys: string[] = [];
-        for (const [key, raw] of Object.entries(stored)) {
-            if (!key.startsWith(prefix)) {
-                continue;
-            }
-            const parsed = v.safeParse(serverResultCacheEntrySchema, raw);
-            if (
+        const obsoleteKeys = keys.filter((key) => {
+            const parsed = v.safeParse(
+                serverResultCacheEntrySchema,
+                Reflect.get(stored, key),
+            );
+            return (
                 !parsed.success ||
                 parsed.output.algorithmVersion !== activeAlgorithmVersion
-            ) {
-                obsoleteKeys.push(key);
-            }
-        }
-
-        if (obsoleteKeys.length === 0) {
+            );
+        });
+        if (obsoleteKeys.length === 0 && !migrated) {
             return;
         }
         try {
-            await browser.storage.local.remove(obsoleteKeys);
+            if (obsoleteKeys.length > 0) {
+                await browser.storage.local.remove(obsoleteKeys);
+            }
+            const obsolete = new Set(obsoleteKeys);
+            await browser.storage.local.set({
+                [STORAGE_KEY_SERVER_RESULT_CACHE_INDEX]: keys.filter(
+                    (key) => !obsolete.has(key),
+                ),
+            });
         } catch {
             // Exact keyed reads remain safe when opportunistic cleanup fails.
         }
+    }
+
+    /**
+     * Reads the cache index.
+     *
+     * @returns Indexed keys, or `null` when absent or malformed.
+     */
+    private static async readIndexKeys(): Promise<string[] | null> {
+        const result: unknown = await browser.storage.local.get(
+            STORAGE_KEY_SERVER_RESULT_CACHE_INDEX,
+        );
+        if (result === null || typeof result !== 'object') {
+            return null;
+        }
+        const parsed = v.safeParse(
+            cacheIndexSchema,
+            Reflect.get(result, STORAGE_KEY_SERVER_RESULT_CACHE_INDEX),
+        );
+        return parsed.success ? parsed.output : null;
+    }
+
+    /**
+     * One-time migration for installs without an index: the only remaining
+     * full scan, which rebuilds the key list from the cache prefix.
+     *
+     * @returns Cache keys and the rows read for them.
+     */
+    private static async scanCacheRows(): Promise<{
+        keys: string[];
+        stored: Record<string, unknown>;
+    }> {
+        const all: unknown = await browser.storage.local.get(null);
+        if (all === null || typeof all !== 'object') {
+            return { keys: [], stored: {} };
+        }
+        const prefix = `${STORAGE_KEY_SERVER_RESULT_CACHE}:`;
+        const stored: Record<string, unknown> = {};
+        const keys: string[] = [];
+        for (const [key, value] of Object.entries(all)) {
+            if (key.startsWith(prefix)) {
+                keys.push(key);
+                stored[key] = value;
+            }
+        }
+        return { keys, stored };
     }
 
     /**
@@ -228,8 +308,15 @@ export class ServerResultCacheStorage {
                 : {}),
             storedAtMs: nowMs,
         });
+        const key = ServerResultCacheStorage.keyFor(entry);
+        const indexed = await ServerResultCacheStorage.readIndexKeys();
+        const keys =
+            indexed ?? (await ServerResultCacheStorage.scanCacheRows()).keys;
         await browser.storage.local.set({
-            [ServerResultCacheStorage.keyFor(entry)]: entry,
+            [key]: entry,
+            [STORAGE_KEY_SERVER_RESULT_CACHE_INDEX]: keys.includes(key)
+                ? keys
+                : [...keys, key],
         });
     }
 

@@ -1,9 +1,11 @@
 import * as v from 'valibot';
 
+import { DebugLog } from '@/background/debug-log/debug-log';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
 import { ServerInstallationStorage } from '@/background/storage/server-installation-storage';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
     SERVER_ANALYSIS_FAILURE_CODE,
@@ -115,6 +117,7 @@ export class ServerAnalysisClient {
             operation: ServerOperation;
             videoId?: string;
             jobId?: string;
+            tabId?: number;
             path: string;
             init: RequestInit;
         },
@@ -133,6 +136,13 @@ export class ServerAnalysisClient {
                 jobId: input.jobId,
                 attempt,
             });
+            if (input.operation !== 'poll') {
+                DebugLog.record(
+                    DEBUG_LOG_EVENT.HttpStart,
+                    { operation: input.operation, attempt },
+                    { tab: input.tabId, video: input.videoId, job: input.jobId },
+                );
+            }
             let response: Response;
             try {
                 response = await fetch(
@@ -153,6 +163,18 @@ export class ServerAnalysisClient {
                     elapsedMs: Date.now() - startedAtMs,
                     attempt,
                 });
+                DebugLog.record(
+                    DEBUG_LOG_EVENT.HttpError,
+                    {
+                        operation: input.operation,
+                        code: controller.signal.aborted
+                            ? 'timeout'
+                            : 'request-failed',
+                        elapsedMs: Date.now() - startedAtMs,
+                        attempt,
+                    },
+                    { tab: input.tabId, video: input.videoId, job: input.jobId },
+                );
                 return null;
             }
 
@@ -170,6 +192,20 @@ export class ServerAnalysisClient {
                         elapsedMs: Date.now() - startedAtMs,
                         attempt,
                     });
+                    DebugLog.record(
+                        DEBUG_LOG_EVENT.HttpError,
+                        {
+                            operation: input.operation,
+                            code: 'timeout',
+                            elapsedMs: Date.now() - startedAtMs,
+                            attempt,
+                        },
+                        {
+                            tab: input.tabId,
+                            video: input.videoId,
+                            job: input.jobId,
+                        },
+                    );
                     return null;
                 }
                 throw ServerAnalysisClient.invalidResponseError();
@@ -182,6 +218,18 @@ export class ServerAnalysisClient {
                 elapsedMs: Date.now() - startedAtMs,
                 attempt,
             });
+            if (input.operation !== 'poll') {
+                DebugLog.record(
+                    DEBUG_LOG_EVENT.HttpResponse,
+                    {
+                        operation: input.operation,
+                        status: response.status,
+                        elapsedMs: Date.now() - startedAtMs,
+                        attempt,
+                    },
+                    { tab: input.tabId, video: input.videoId, job: input.jobId },
+                );
+            }
             return { ok: response.ok, json };
         } finally {
             clearTimeout(timeoutId);
@@ -199,6 +247,7 @@ export class ServerAnalysisClient {
         operation: ServerOperation;
         videoId?: string;
         jobId?: string;
+        tabId?: number;
         path: string;
         init: RequestInit;
     }): Promise<BackendJsonResult> {
@@ -458,6 +507,7 @@ export class ServerAnalysisClient {
             operation: 'analysis' | 'poll';
             videoId?: string;
             jobId?: string;
+            tabId?: number;
             path: string;
             method: 'GET' | 'POST';
             body?: string;
@@ -478,6 +528,7 @@ export class ServerAnalysisClient {
             operation: input.operation,
             videoId: input.videoId,
             jobId: input.jobId,
+            tabId: input.tabId,
             path: input.path,
             init: {
                 method: input.method,
@@ -500,6 +551,7 @@ export class ServerAnalysisClient {
                 operation: input.operation,
                 videoId: input.videoId,
                 jobId: input.jobId,
+                tabId: input.tabId,
                 path: input.path,
                 init: {
                     method: input.method,
@@ -551,6 +603,7 @@ export class ServerAnalysisClient {
         extensionVersion: string;
         languageCode: string;
         segments: readonly CaptionSegment[];
+        tabId?: number;
     }): Promise<ServerAnalysisResponse> {
         const canonical = CaptionTranscriptCanonicalizer.canonicalize(input);
         if (!canonical.ok) {
@@ -583,6 +636,7 @@ export class ServerAnalysisClient {
         const response = await ServerAnalysisClient.requestAuthenticated({
             operation: 'analysis',
             videoId: input.videoId,
+            tabId: input.tabId,
             path: '/v1/analysis',
             method: 'POST',
             body,
@@ -603,10 +657,12 @@ export class ServerAnalysisClient {
     static async requestJobStatus(input: {
         jobId: string;
         identity: ServerTranscriptIdentity;
+        tabId?: number;
     }): Promise<ServerAnalysisResponse> {
         const response = await ServerAnalysisClient.requestAuthenticated({
             operation: 'poll',
             jobId: input.jobId,
+            tabId: input.tabId,
             path: `/v1/analysis/jobs/${encodeURIComponent(input.jobId)}`,
             method: 'GET',
         });

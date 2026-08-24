@@ -35,7 +35,10 @@ and architecture**, see [AGENTS.md](./AGENTS.md). For a short **overview**, see
     - [Manual caption-capture smoke test](#manual-caption-capture-smoke-test)
     - [Developer: player-mediated caption capture](#developer-player-mediated-caption-capture)
     - [End-to-end (Playwright)](#end-to-end-playwright)
-- [Debug logging (cross-context)](#debug-logging-cross-context)
+- [Debug logging (user-facing)](#debug-logging-user-facing)
+    - [Four-step script](#four-step-script)
+    - [Manual checks](#manual-checks)
+- [Dev log server (cross-context console)](#dev-log-server-cross-context-console)
     - [Files](#files)
     - [Usage](#usage)
     - [Why not `console.log`?](#why-not-consolelog)
@@ -258,6 +261,7 @@ The emitted permission boundary is deliberately small:
 | --- | --- | --- |
 | Extension state | `permissions` | Required `storage` |
 | Popup re-attach | `permissions` | Required `scripting` + `activeTab`; injection only into the tab the popup was opened on |
+| Debug log | `permissions` | Required `unlimitedStorage`; lifts the 10 MB `storage.local` quota so the 5 MiB debug-log ring buffer never starves prefs/cache writes; no install warning, granted silently on update |
 | TopSkip Server | `host_permissions` | Configured backend only |
 | Private BYOK | `optional_host_permissions` | OpenRouter and OpenAI, granted independently |
 | Watch integration | `content_scripts.matches` | YouTube; dev also includes the E2E fixture |
@@ -330,6 +334,14 @@ are forwarded to the background, so open **`chrome://extensions` → TopSkip →
 the complete extension-side route, cache, HTTP, polling, and delivery flow.
 The terminal running `make extension` only reports compilation; it does not
 display extension runtime logs.
+
+The same structured stages feed the user-facing **Debug logging** switch
+(Options → Diagnostics, see [Debug logging (user-facing)](#debug-logging-user-facing)):
+one diagnostics path emits each stage once and routes it to the console (dev
+builds only, prefixed `[TopSkip debug]`) and to the local debug log (any
+profile, only while the switch is on). Beta/release consoles are quiet by
+default — only `[TopSkip] Service worker started <build>` and `warn`/`error`
+lines with stable codes.
 
 The terminal running `make server` shows the corresponding backend HTTP,
 validation, cache/join, queue, model, and terminal-analysis stages. The retained
@@ -684,7 +696,108 @@ bash scripts/generate-e2e-fixture-video.sh
 
 ---
 
-## Debug logging (cross-context)
+## Debug logging (user-facing)
+
+TopSkip ships an optional **Debug logging** switch in **Options → Diagnostics**
+(deep link `options.html#diagnostics`). It is off by default in beta/release and
+on by default in dev builds; a persisted choice always wins over the profile
+default. While it is on, the background keeps allow-listed diagnostics (route
+decisions, caption-capture stages, HTTP status/latency, one polling summary per
+job, skip decisions, BYOK metadata, worker lifecycle) in a `storage.local` ring
+buffer up to 5 MiB (oldest entries replaced). The log is user-initiated and
+local-only: it includes YouTube video IDs and says so in the UI and export
+header; it excludes transcripts and secrets (no captions, prompts, model
+output, API keys, installation tokens, cookies, URLs, or raw responses);
+incognito windows are not logged. Turning the switch off keeps the log; it is
+kept until Debug logging is turned on again (turning it on discards the stored
+log and starts a new one). Nothing is uploaded — the user copies or downloads
+the bundle and attaches it to a GitHub issue themselves. The required
+`unlimitedStorage` permission backs the ring buffer; it adds no install
+warning, so an update that introduces it is granted silently.
+
+Dev builds mirror the same events to the service-worker console
+(`[TopSkip debug] <event> key=value …`); beta/release consoles stay quiet
+except the startup line and stable-coded `warn`/`error`.
+
+### Four-step script
+
+1. **Enable** — open Options → Diagnostics, read the notice, switch **Debug
+   logging** on. The status line shows "Debug logging on since …" with live
+   event, size, evicted and dropped counters.
+2. **Reproduce** — go to the YouTube video that misbehaves and reproduce the
+   problem (the worker may sleep and wake meanwhile; events keep appending).
+3. **Copy** — return to Options → Diagnostics, glance at the **Recent log**
+   preview, press **Copy log** (or **Download log** for a
+   `topskip-debug-log-<YYYYMMDDTHHMMSSZ>.txt` file whose name equals the
+   `exportedAt` header of that bundle).
+4. **Attach** — paste or attach the text to the GitHub issue or support
+   message. Review it first: it lists the video IDs watched while logging.
+
+### Manual checks
+
+Playwright cannot restart the worker, reload the extension, or open incognito
+with the extension loaded (`chrome.runtime.reload()` kills the unpacked
+extension in a persistent context), so these stay manual — tick them in the PR
+body:
+
+- **Quit/reopen Chrome** with the switch on → the next lifetime logs
+  `worker-started` followed by exactly one `browser-restarted` marker (plus
+  `extension-restarted` only if an update was staged meanwhile).
+- **Same-version reload under release flags** — `pnpm run release`, load
+  `extension/dist/` unpacked, switch on, click **Reload** on the extension card
+  → one `extension-restarted previousBuild=<label> newBuild=<label>` marker
+  even though both labels are equal; no `browser-restarted`.
+- **Disable/re-enable** on `chrome://extensions` → one
+  `runtime-restarted cause=session-state-lost` marker before the first
+  non-lifecycle event; no browser/extension marker.
+- **Update/reload → popup re-attach** — reload the extension with a YouTube tab
+  open, then open the popup on that tab → the log shows the `reattach` outcome
+  and the `wakeup-probe` `readyTabs`/`unavailableTabs` counts that explain the
+  gap.
+- **Update from a build without `unlimitedStorage`** — install a build from
+  before this change, then update to the current build (Extension Update
+  Testing Tool or a packed `.crx`) → no permission warning, the extension stays
+  enabled, enabling Debug logging works; `extension-restarted` carries
+  `previousBuild=unknown` unless a label was persisted.
+- **Policy-blocked downloads** — with the enterprise `DownloadRestrictions`
+  policy set (or by cancelling the "Save as" dialog), press **Download log** →
+  the UI reports only "Download started"; **Copy log** remains the primary
+  path.
+- **Incognito** — allow the extension in incognito, run a Server-mode analysis
+  and a skip in an incognito YouTube tab → the bundle contains no event with
+  that tab's id or video ID, the Diagnostics counters show a non-zero incognito
+  dropped count, the export header does not name incognito, and a concurrent
+  normal tab is logged unaffected.
+- **Worker sleep** — with the switch on, wait for the service worker to show
+  "Inactive" on `chrome://extensions`, then interact with YouTube → events from
+  the new lifetime append after a `worker-started` marker and nothing persisted
+  earlier is lost.
+- **Live caption capture** — on a real `/watch?v=…` page with captions, the
+  bundle shows `capture-scheduled`, `capture-activation`, `capture-stage`
+  (ISOLATED and MAIN stages) and `capture-succeeded`; the E2E fixture host
+  disables capture (`extension/src/content/watch-captions.ts`), so this is
+  manual only.
+- **Capture failure (SC-003)** — open a watch page without captions (or block
+  the timedtext request) → the bundle shows the `capture-*` stages, exactly one
+  `capture-failed reason=<stable reason>` and the session's terminal event
+  (`analysis-interrupted` / `terminal-event`) for that video.
+- **Server failure (SC-003)** — with Server mode and a failing or unreachable
+  backend → the bundle shows `http-response status=<code> elapsedMs= attempt=`
+  (or the final `poll-summary terminal=true`), `terminal-event failureCode=…`
+  with `sup=support-…` in the line head when the backend issued one, and the
+  delivery outcome (`blocks-delivered` or `delivery-skipped reason=…`).
+- **Missed skip (SC-003)** — scrub across a known promo block without it being
+  skipped → the bundle shows `blocks-received blocks=…` timings, `seek-summary`
+  lines and one
+  `skip-suppressed reason=<already-fired|not-crossed|seek-guard|seeking|no-duration>`
+  for the crossed block.
+
+After any Playwright run, `pnpm run build` repoints `extension/dist/` at the
+configured origin before reloading the unpacked extension in Chrome.
+
+---
+
+## Dev log server (cross-context console)
 
 Chrome extension contexts (service worker, content scripts, popup, options)
 each have their own DevTools console, making it hard to follow a

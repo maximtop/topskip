@@ -58,4 +58,23 @@ describe('openai client', () => {
         });
         expect(result).toEqual({ ok: true, rawContent: '{"hasPromo":false}' });
     });
+
+    it('adds status and kind to an HTTP failure', async () => {
+        fetchMock.mockResolvedValue({
+            ok: false,
+            status: 500,
+            text: () => Promise.resolve('server oops'),
+        });
+        const r = await callOpenAiResponse({
+            apiKey: 'sk',
+            model: 'gpt-5.2',
+            instructions: 's',
+            input: 'i',
+        });
+        expect(r.ok).toBe(false);
+        if (!r.ok) {
+            expect(r.status).toBe(500);
+            expect(r.kind).toBe('http');
+        }
+    });
 });

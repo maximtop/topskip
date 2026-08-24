@@ -76,6 +76,40 @@ describe('OpenAiAdapter', () => {
         });
     });
 
+    it('surfaces the client status and kind on an HTTP failure', async () => {
+        loadMock.mockResolvedValue({ apiKey: 'sk-test', model: 'gpt-5.2' });
+        callOpenAiResponseMock.mockResolvedValue({
+            ok: false,
+            error: 'OpenAI HTTP 429: rate',
+            status: 429,
+            kind: 'http',
+        });
+
+        const result = await new OpenAiAdapter().analyzeTranscript({
+            transcript: 'hello',
+            videoId: 'v',
+            languageCode: 'en',
+        });
+
+        expect(result).toMatchObject({ ok: false, status: 429, kind: 'http' });
+    });
+
+    it('tags a parse failure with kind parse and a null status', async () => {
+        loadMock.mockResolvedValue({ apiKey: 'sk-test', model: 'gpt-5.2' });
+        callOpenAiResponseMock.mockResolvedValue({
+            ok: true,
+            rawContent: 'not json at all',
+        });
+
+        const result = await new OpenAiAdapter().analyzeTranscript({
+            transcript: 'hello',
+            videoId: 'v',
+            languageCode: 'en',
+        });
+
+        expect(result).toMatchObject({ ok: false, status: null, kind: 'parse' });
+    });
+
     it('rechecks access immediately before fetch after preflight revocation', async () => {
         loadMock.mockResolvedValue({ apiKey: 'sk-test', model: 'gpt-5.2' });
         providerHostAccessIsGrantedMock

@@ -4,6 +4,8 @@ const mocks = vi.hoisted(() => ({
     tabsQuery: vi.fn(),
     detectionReady: vi.fn(),
     detectionGet: vi.fn(),
+    debugLogReady: vi.fn().mockResolvedValue(undefined),
+    debugLogIsEnabled: vi.fn(() => false),
 }));
 
 // Prevent webextension-polyfill from throwing in Node; ContentLogMessages does
@@ -19,6 +21,13 @@ vi.mock('@/background/promo-detection-store', () => ({
     PromoDetectionStore: {
         ready: mocks.detectionReady,
         get: mocks.detectionGet,
+    },
+}));
+
+vi.mock('@/background/debug-log/debug-log-store', () => ({
+    DebugLogStore: {
+        ready: mocks.debugLogReady,
+        isEnabled: mocks.debugLogIsEnabled,
     },
 }));
 
@@ -84,11 +93,7 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.detectionGet.mockReturnValue(state);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            {
-                ok: true,
-                tabId: 82,
-                state,
-            },
+            { ok: true, tabId: 82, state, debugLoggingEnabled: false },
         );
         expect(mocks.detectionGet).toHaveBeenCalledWith(82);
     });
@@ -97,11 +102,7 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.tabsQuery.mockResolvedValue([]);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            {
-                ok: true,
-                tabId: null,
-                state: null,
-            },
+            { ok: true, tabId: null, state: null, debugLoggingEnabled: false },
         );
         expect(mocks.detectionGet).not.toHaveBeenCalled();
     });
@@ -117,12 +118,18 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         );
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            {
-                ok: true,
-                tabId: 82,
-                state: states.get(82),
-            },
+            { ok: true, tabId: 82, state: states.get(82), debugLoggingEnabled: false },
         );
         expect(mocks.detectionGet).not.toHaveBeenCalledWith(41);
+    });
+
+    it('reports the debug-log switch state for the popup indicator', async () => {
+        mocks.tabsQuery.mockResolvedValue([]);
+        mocks.debugLogIsEnabled.mockReturnValue(true);
+
+        await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
+            { ok: true, tabId: null, state: null, debugLoggingEnabled: true },
+        );
+        expect(mocks.debugLogReady).toHaveBeenCalled();
     });
 });

@@ -139,4 +139,19 @@ describe('caption page bridge contract', () => {
     ])('rejects a command result with %s', (_name, value) => {
         expect(parseCaptionPageBridgeCommandResult(value)).toBeNull();
     });
+
+    it('keeps the payload-less command contract at protocol 1 and rejects a logging flag', () => {
+        expect(CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION).toBe(1);
+        expect(Object.values(CAPTION_PAGE_BRIDGE_COMMAND).sort()).toEqual([
+            'activate-captions',
+            'deactivate-captions',
+            'probe',
+            'teardown',
+        ]);
+        expect(
+            parseCaptionPageBridgeCommandRequest(
+                encode({ ...VALID_REQUEST, debugLogEnabled: true }),
+            ),
+        ).toBeNull();
+    });
 });

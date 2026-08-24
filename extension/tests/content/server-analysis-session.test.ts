@@ -307,3 +307,86 @@ describe('ServerAnalysisSession', () => {
         expect(session.getPendingTerminalEvent()).toBeNull();
     });
 });
+
+describe('ServerAnalysisSession poll summary', () => {
+    const identity = {
+        videoId: 'dQw4w9WgXcQ',
+        languageCode: 'en',
+        transcriptHash: TRANSCRIPT_HASH,
+        algorithmVersion: 'server-v6',
+    };
+
+    function createPinnedSession(): ServerAnalysisSession {
+        const session = ServerAnalysisSession.create(
+            'dQw4w9WgXcQ',
+            () => SESSION_ID,
+        );
+        session.acceptCaptions(CAPTIONS);
+        expect(session.pinProcessing('job-1', identity, 1_000)).not.toBeNull();
+        return session;
+    }
+
+    it('has no summary before a job is pinned', () => {
+        const session = ServerAnalysisSession.create(
+            'dQw4w9WgXcQ',
+            () => SESSION_ID,
+        );
+        expect(session.getPollSummary(5_000)).toBeNull();
+    });
+
+    it('accumulates acks and transport retries for the pinned job', () => {
+        const session = createPinnedSession();
+        expect(session.getPollSummary(1_000)).toEqual({
+            job: 'job-1',
+            polls: 0,
+            retries: 0,
+            totalMs: 0,
+            lastStatus: 'processing',
+        });
+
+        session.recordPollStatus('processing', false);
+        session.recordPollStatus('failed', true);
+        session.recordPollStatus('failed', true);
+        session.recordPollStatus('ready', false);
+
+        expect(session.getPollSummary(4_000)).toEqual({
+            job: 'job-1',
+            polls: 2,
+            retries: 2,
+            totalMs: 3_000,
+            lastStatus: 'ready',
+        });
+    });
+
+    it('keeps counters when the same job is pinned again and resets for a new job', () => {
+        const session = createPinnedSession();
+        session.recordPollStatus('processing', false);
+        expect(session.pinProcessing('job-1', identity, 2_000)).not.toBeNull();
+        expect(session.getPollSummary(2_000)).toMatchObject({
+            job: 'job-1',
+            polls: 1,
+            totalMs: 1_000,
+        });
+
+        expect(session.takeExactResubmission()).not.toBeNull();
+        expect(session.getPollSummary(3_000)).toBeNull();
+        expect(session.pinProcessing('job-2', identity, 3_000)).not.toBeNull();
+        expect(session.getPollSummary(3_500)).toEqual({
+            job: 'job-2',
+            polls: 0,
+            retries: 0,
+            totalMs: 500,
+            lastStatus: 'processing',
+        });
+    });
+
+    it('drops the summary on completion and cancellation', () => {
+        const completed = createPinnedSession();
+        completed.complete();
+        expect(completed.getPollSummary(2_000)).toBeNull();
+
+        const cancelled = createPinnedSession();
+        cancelled.cancel();
+        expect(cancelled.getPollSummary(2_000)).toBeNull();
+    });
+});

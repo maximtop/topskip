@@ -202,7 +202,11 @@ const installCaptionPageBridge = (): void => {
         message: Omit<PageBridgeDiagnosticMessage, 'source' | 'kind'>,
         generation?: number,
     ): void => {
-        if (!VERBOSE_CAPTURE_LOGS) {
+        // Generation-bound stages always post (the ISOLATED side applies the
+        // switch, allow-list, caps and rate limit — the switch is never sent
+        // here); stages outside a capture generation stay dev-only so the
+        // bridge is observably dormant whenever no capture is active.
+        if (generation === undefined && !VERBOSE_CAPTURE_LOGS) {
             return;
         }
         postPageBridgeMessage(
@@ -523,16 +527,20 @@ const installCaptionPageBridge = (): void => {
             };
         }
         const wasOn = restoreSnapshot?.wasOn ?? null;
-        postPageDiagnostic({
-            stage: 'activation-finished',
-            ok: true,
-            wasOn,
-            userIntervened,
-            buttonPressed: button?.getAttribute('aria-pressed') ?? null,
-            hideStylePresent: document.getElementById(HIDE_STYLE_ID) !== null,
-            hasTracks,
-            actions,
-        });
+        postPageDiagnostic(
+            {
+                stage: 'activation-finished',
+                ok: true,
+                wasOn,
+                userIntervened,
+                buttonPressed: button?.getAttribute('aria-pressed') ?? null,
+                hideStylePresent:
+                    document.getElementById(HIDE_STYLE_ID) !== null,
+                hasTracks,
+                actions,
+            },
+            generation,
+        );
         return { ok: true, wasOn, userIntervened, hasTracks, actions };
     };
 

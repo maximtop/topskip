@@ -1,7 +1,9 @@
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import {
     createServer,
     type IncomingMessage,
+    type Server,
     type ServerResponse,
 } from 'node:http';
 import { fileURLToPath } from 'node:url';
@@ -28,12 +30,31 @@ import {
 } from '../../src/content/captions/caption-page-bridge-contract';
 import {
     CONTENT_SCRIPT_PROTOCOL_VERSION,
+    DEV_DEBUG_LOG_SEED_STATE,
     TOPSKIP_MESSAGE,
 } from '../../src/shared/messages';
+import {
+    BYTES_PER_KIB,
+    STORAGE_KEY_DEBUG_LOG_PREFIX,
+} from '../../src/shared/constants';
+import {
+    DEBUG_LOG_CAP_BYTES,
+    DEBUG_LOG_PERSISTED_OVERHEAD_BYTES,
+} from '../../src/shared/debug-log-constants';
+import { DEBUG_LOG_EVENT } from '../../src/shared/debug-log-events';
+import { buildDebugLogFileName } from '../../src/shared/debug-log-format';
+import { E2E_BACKEND_ORIGIN } from './global-setup';
 
 import {
+    captureIssueReportUrl,
+    clearCapturedClipboardText,
     expectNoCollectedErrors,
+    installClipboardCapture,
+    openOptionsDiagnostics,
     openPopupAndWaitForUi,
+    readCapturedClipboardText,
+    readDebugLogStorageBytes,
+    seedDebugLog,
     trackPageErrors,
     trackServiceWorkerConsoleErrors,
     waitForPopupUi,
@@ -90,6 +111,65 @@ const ORPHAN_TEARDOWN_TIMEOUT_MS = 15_000;
 const POPUP_REATTACH_TIMEOUT_MS = 15_000;
 // Page global holding the bridge generation a spec fingerprinted.
 const PAGE_BRIDGE_IDENTITY_MARKER_KEY = '__topskipE2eBridgeIdentity';
+// English strings of the Diagnostics section and popup indicator; the E2E
+// profile runs with the English locale.
+const DEBUG_LOG_SWITCH_LABEL = 'Debug logging';
+const DEBUG_LOG_ON_PATTERN = /^Debug logging on since /u;
+const DEBUG_LOG_OFF_PATTERN = /^Debug logging off — /u;
+const POPUP_DEBUG_LOGGING_TEXT = 'Debug logging on';
+// Bounds Diagnostics/popup status expectations; covers two 5 s status polls.
+const DEBUG_LOG_UI_TIMEOUT_MS = 10_000;
+const DEBUG_LOG_COPY_LABEL = 'Copy log';
+const DEBUG_LOG_DOWNLOAD_LABEL = 'Download log';
+const DEBUG_LOG_COPIED_TEXT = 'Log copied to the clipboard';
+const DEBUG_LOG_COPY_FAILED_TEXT =
+    'Could not copy the log — try again or use Download log';
+const DEBUG_LOG_EXPORT_FAILED_TEXT = 'Could not read the log — try again';
+const DEBUG_LOG_DOWNLOAD_STARTED_TEXT = 'Download started';
+const DEBUG_LOG_OFF_STORED_PATTERN =
+    /^Debug logging off — [1-9]\d* events stored, /u;
+const DEBUG_LOG_EVICTED_COUNTER_PATTERN = /^Evicted: [1-9]\d*/u;
+const DEBUG_LOG_PREVIEW_TRUNCATED_PATTERN = /^Showing the last /u;
+const DEBUG_LOG_ISSUE_HINT_PREFIX =
+    'If you enabled Debug logging in Options → Diagnostics';
+// Event lines start with the background-assigned UTC timestamp; the header
+// block precedes the first such line.
+const ISO_TIMESTAMP_LENGTH = 24;
+const ISO_TIMESTAMP_PATTERN =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const DEBUG_LOG_EVENT_LINE_PATTERN =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z /u;
+// Header keys written by DebugLogExport.buildBundle.
+const DEBUG_LOG_HEADER_EXPORTED_AT = 'exportedAt';
+const DEBUG_LOG_HEADER_EVENTS = 'events';
+const DEBUG_LOG_HEADER_EVICTED = 'evicted';
+const DEBUG_LOG_HEADER_OLDEST_RETAINED = 'oldestRetained';
+const DEBUG_LOG_FILE_NAME_PATTERN = /^topskip-debug-log-\d{8}T\d{6}Z\.txt$/u;
+// Content flush delay + store debounce + slack before a snapshot is read.
+const DEBUG_LOG_SETTLE_MS = 1_500;
+// Long enough for a released (late) bundle reply to reach the page.
+const DEBUG_LOG_LATE_REPLY_WAIT_MS = 500;
+// Block delivery settles shortly after the ready poll (see the polling test).
+const BLOCK_DELIVERY_SETTLE_MS = 300;
+// Processing polls before the mocked job turns ready.
+const POLLING_BACKEND_PROCESSING_POLLS = 2;
+// Fixture loads after a near-cap seed; each adds several events.
+const FIXTURE_VISITS_PAST_CAP = 2;
+const DEBUG_LOG_OFF_EMPTY_TEXT = 'Debug logging off — no log stored';
+// Seeded preview content for the overflow/axe checks: many lines, each wider
+// than the 360 px column.
+const DEBUG_LOG_OVERFLOW_SEED_BYTES = 64 * BYTES_PER_KIB;
+// SC-005: one fresh Server-mode analysis (polls + one skip) stays under this
+// many events; the switch is cycled off→on right before the flow, so the log
+// holds nothing else. This E2E is the full-flow check at
+// POLLING_BACKEND_PROCESSING_POLLS (2) polls; the 10-poll cadence of SC-005
+// is covered by Task D5's interim-summary unit test (12 polls, ≤ 40 events).
+const DEBUG_LOG_FRESH_ANALYSIS_MAX_EVENTS = 40;
+const E2E_POLLING_JOB_ID = 'local-e2eFixture1-server-v7';
+const E2E_RESULT_FRESHNESS_EXPIRES_AT_MS = 4_102_444_800_000;
+const E2E_BACKEND_URL = new URL(E2E_BACKEND_ORIGIN);
+const E2E_BACKEND_HOST_SENTINEL = E2E_BACKEND_URL.host;
+const JSON_RESPONSE_HEADERS = { 'content-type': 'application/json' } as const;
 
 type GrantedExtensionPermissions = {
     permissions: string[];
@@ -879,6 +959,446 @@ async function seedFreshLocalServerCache(
     );
 }
 
+/**
+ * Waits until the Diagnostics section left its loading state.
+ *
+ * @param optionsPage - Options page showing the Diagnostics section.
+ * @returns Promise resolving once the switch accepts input.
+ */
+async function expectDiagnosticsReady(optionsPage: Page): Promise<void> {
+    await expect(
+        optionsPage.getByRole('switch', { name: DEBUG_LOG_SWITCH_LABEL }),
+    ).toBeEnabled({ timeout: DEBUG_LOG_UI_TIMEOUT_MS });
+}
+
+/**
+ * Drives the Debug logging switch to a state and waits for the status line,
+ * so later steps observe background state rather than optimistic UI.
+ *
+ * @param optionsPage - Options page showing the Diagnostics section.
+ * @param enabled - Desired switch state.
+ * @returns Promise resolving once the background confirmed the state.
+ */
+async function setDebugLoggingSwitch(
+    optionsPage: Page,
+    enabled: boolean,
+): Promise<void> {
+    const debugSwitch = optionsPage.getByRole('switch', {
+        name: DEBUG_LOG_SWITCH_LABEL,
+    });
+    await expectDiagnosticsReady(optionsPage);
+    if ((await debugSwitch.isChecked()) !== enabled) {
+        // Mantine hides the native input; force like the popup switch tests.
+        await debugSwitch.click({ force: true });
+    }
+    const status = optionsPage.getByTestId('options-debug-log-status');
+    if (enabled) {
+        await expect(debugSwitch).toBeChecked({
+            timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+        });
+        await expect(status).toHaveText(DEBUG_LOG_ON_PATTERN, {
+            timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+        });
+        return;
+    }
+    await expect(debugSwitch).not.toBeChecked({
+        timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+    });
+    await expect(status).toHaveText(DEBUG_LOG_OFF_PATTERN, {
+        timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+    });
+}
+
+type DebugLogBundle = {
+    header: string[];
+    events: string[];
+};
+
+/**
+ * Splits an exported bundle into the header block and its event lines.
+ *
+ * @param text - Bundle text as copied or downloaded.
+ * @returns Header lines and event lines.
+ */
+function splitDebugLogBundle(text: string): DebugLogBundle {
+    const lines = text.split('\n');
+    const firstEvent = lines.findIndex((line) =>
+        DEBUG_LOG_EVENT_LINE_PATTERN.test(line),
+    );
+    return {
+        header: firstEvent === -1 ? lines : lines.slice(0, firstEvent),
+        events: lines.filter((line) => DEBUG_LOG_EVENT_LINE_PATTERN.test(line)),
+    };
+}
+
+/**
+ * Reads one `key=value` pair from the header block.
+ *
+ * @param header - Header lines of a bundle.
+ * @param key - Header key without the `=`.
+ * @returns The value or `null` when the key is absent.
+ */
+function readBundleHeaderValue(
+    header: readonly string[],
+    key: string,
+): string | null {
+    const pattern = new RegExp(`(?:^|\\s)${key}=(\\S+)`, 'u');
+    for (const line of header) {
+        const value = pattern.exec(line)?.[1];
+        if (value !== undefined) {
+            return value;
+        }
+    }
+    return null;
+}
+
+/**
+ * Reads a header value that must be present.
+ *
+ * @param header - Header lines of a bundle.
+ * @param key - Header key without the `=`.
+ * @returns The value.
+ */
+function requireBundleHeaderValue(
+    header: readonly string[],
+    key: string,
+): string {
+    const value = readBundleHeaderValue(header, key);
+    if (value === null) {
+        throw new Error(`Bundle header lacks ${key}=`);
+    }
+    return value;
+}
+
+/**
+ * Removes the snapshot-timestamp header line so two exports of an unchanged
+ * log can be compared byte for byte.
+ *
+ * @param text - Bundle text.
+ * @returns The text without the `exportedAt` line.
+ */
+function stripExportedAtLine(text: string): string {
+    const pattern = new RegExp(
+        `(?:^|\\s)${DEBUG_LOG_HEADER_EXPORTED_AT}=`,
+        'u',
+    );
+    return text
+        .split('\n')
+        .filter((line) => !pattern.test(line))
+        .join('\n');
+}
+
+/**
+ * Orders by the timestamp prefix; append order interleaves batched content
+ * events with background events, the timestamps restore the logical order.
+ *
+ * @param left - Event line.
+ * @param right - Event line.
+ * @returns Sort order of the two lines.
+ */
+function compareTimestampPrefix(left: string, right: string): number {
+    const leftTs = left.slice(0, ISO_TIMESTAMP_LENGTH);
+    const rightTs = right.slice(0, ISO_TIMESTAMP_LENGTH);
+    if (leftTs < rightTs) {
+        return -1;
+    }
+    if (leftTs > rightTs) {
+        return 1;
+    }
+    return 0;
+}
+
+/**
+ * Sorts event lines by timestamp (stable for equal timestamps).
+ *
+ * @param events - Event lines in append order.
+ * @returns Event lines in timestamp order.
+ */
+function sortEventLinesByTimestamp(events: readonly string[]): string[] {
+    return [...events].sort(compareTimestampPrefix);
+}
+
+/**
+ * Matches the event-name token of a formatted line.
+ *
+ * @param eventName - Event name from the allow-list.
+ * @returns Regex matching a whitespace-delimited event token.
+ */
+function eventLinePattern(eventName: string): RegExp {
+    return new RegExp(`\\s${eventName}(?:\\s|$)`, 'u');
+}
+
+/**
+ * Finds the first line carrying an event (and required `key=value` fields)
+ * after a given index.
+ *
+ * @param events - Event lines.
+ * @param eventName - Event name from the allow-list.
+ * @param requiredFields - Substrings each matching line must contain.
+ * @param after - Only consider lines after this index.
+ * @returns Matching index or -1.
+ */
+function findEventLineIndex(
+    events: readonly string[],
+    eventName: string,
+    requiredFields: readonly string[] = [],
+    after = -1,
+): number {
+    const pattern = eventLinePattern(eventName);
+    return events.findIndex(
+        (line, index) =>
+            index > after &&
+            pattern.test(line) &&
+            requiredFields.every((field) => line.includes(field)),
+    );
+}
+
+/**
+ * Asserts that the listed events appear in this order (each after the
+ * previous match).
+ *
+ * @param events - Event lines, already in timestamp order.
+ * @param steps - Event name followed by required field substrings.
+ */
+function expectEventsInOrder(
+    events: readonly string[],
+    steps: ReadonlyArray<readonly [string, ...string[]]>,
+): void {
+    let previous = -1;
+    for (const [eventName, ...fields] of steps) {
+        const index = findEventLineIndex(events, eventName, fields, previous);
+        expect(
+            index,
+            `missing ${eventName} ${fields.join(' ')} after line ${previous}`,
+        ).toBeGreaterThan(previous);
+        previous = index;
+    }
+}
+
+type PollingBackend = {
+    server: Server;
+    readyPollSeen: Promise<void>;
+};
+
+/**
+ * Serves one processing job that turns ready after a fixed number of polls so
+ * the content session emits a terminal polling summary; bootstrap routes are
+ * shared with the other fixture backends.
+ *
+ * @param processingPolls - Polls answered `processing` before `ready`.
+ * @returns Listening server and a promise for the ready poll.
+ */
+async function startPollingBackend(
+    processingPolls: number,
+): Promise<PollingBackend> {
+    let polls = 0;
+    let resolveReadyPollSeen: () => void = () => {};
+    const readyPollSeen = new Promise<void>((resolve) => {
+        resolveReadyPollSeen = resolve;
+    });
+    const processingResponse = {
+        status: 'processing',
+        ...E2E_TRANSCRIPT_IDENTITY,
+        jobId: E2E_POLLING_JOB_ID,
+        pollAfterSec: 1,
+    };
+    const readyResponse = {
+        status: 'ready',
+        ...E2E_TRANSCRIPT_IDENTITY,
+        source: 'server_cache',
+        sourceResultId: 'result-e2eFixture1-server-v7',
+        freshness: { expiresAtMs: E2E_RESULT_FRESHNESS_EXPIRES_AT_MS },
+        promoBlocks: [
+            { startSec: 4, endSec: 24, confidence: 'high' },
+            { startSec: 35, endSec: 45, confidence: 'medium' },
+        ],
+    };
+    const server = createServer((req, res) => {
+        if (handlePublicApiBootstrap(req, res)) {
+            return;
+        }
+        if (req.method === 'POST' && req.url === '/v1/analysis') {
+            expectAuthenticatedServerRequest(req);
+            req.resume();
+            req.on('end', () => {
+                res.writeHead(202, JSON_RESPONSE_HEADERS);
+                res.end(JSON.stringify(processingResponse));
+            });
+            return;
+        }
+        if (
+            req.method === 'GET' &&
+            req.url === `/v1/analysis/jobs/${E2E_POLLING_JOB_ID}`
+        ) {
+            expectAuthenticatedServerRequest(req);
+            polls += 1;
+            if (polls <= processingPolls) {
+                res.writeHead(202, JSON_RESPONSE_HEADERS);
+                res.end(JSON.stringify(processingResponse));
+                return;
+            }
+            res.writeHead(200, JSON_RESPONSE_HEADERS);
+            res.end(JSON.stringify(readyResponse));
+            resolveReadyPollSeen();
+            return;
+        }
+        res.writeHead(404);
+        res.end();
+    });
+    await new Promise<void>((resolve) => {
+        server.listen(
+            Number(E2E_BACKEND_URL.port),
+            E2E_BACKEND_URL.hostname,
+            () => resolve(),
+        );
+    });
+    return { server, readyPollSeen };
+}
+
+/**
+ * Closes a fixture backend and waits for the port to free up.
+ *
+ * @param server - Listening fixture backend.
+ * @returns Promise resolving after close.
+ */
+async function closeBackend(server: Server): Promise<void> {
+    await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+    });
+}
+
+/**
+ * Loads the fixture in Server mode, waits for the ready poll, then plays from
+ * just before the second promo block so exactly one skip decision is logged.
+ *
+ * @param context - Persistent context hosting the unpacked extension.
+ * @param errors - Collector for console/page errors.
+ * @param backend - Polling backend started for this flow.
+ * @returns The fixture page (still open).
+ */
+async function runServerPollingFlow(
+    context: BrowserContext,
+    errors: string[],
+    backend: PollingBackend,
+): Promise<Page> {
+    const page = await context.newPage();
+    trackPageErrors(page, 'fixture-debug-log', errors);
+    await page.goto('/video.html', { waitUntil: 'domcontentloaded' });
+    await backend.readyPollSeen;
+    await page.waitForTimeout(BLOCK_DELIVERY_SETTLE_MS);
+    await page.evaluate(async () => {
+        const video = document.querySelector('video');
+        if (!(video instanceof HTMLVideoElement)) {
+            throw new Error('Missing fixture video.');
+        }
+        await new Promise<void>((resolve, reject) => {
+            if (video.readyState >= 1) {
+                resolve();
+                return;
+            }
+            video.addEventListener('loadedmetadata', () => resolve(), {
+                once: true,
+            });
+            video.addEventListener(
+                'error',
+                () => reject(new Error('video error')),
+                { once: true },
+            );
+        });
+        video.muted = true;
+        video.playbackRate = 1;
+        video.currentTime = 34.5;
+        void video.play();
+    });
+    await expect
+        .poll(
+            async () =>
+                page.evaluate(() => {
+                    const video = document.querySelector('video');
+                    return video instanceof HTMLVideoElement
+                        ? video.currentTime
+                        : -1;
+                }),
+            { timeout: 8_000 },
+        )
+        .toBeGreaterThan(44);
+    // Let the content client flush its batch and the store persist it.
+    await page.waitForTimeout(DEBUG_LOG_SETTLE_MS);
+    return page;
+}
+
+/**
+ * Presses Copy log and returns the text the stubbed clipboard received.
+ *
+ * @param optionsPage - Options page prepared with the capturing clipboard.
+ * @returns Bundle text.
+ */
+async function copyDebugLog(optionsPage: Page): Promise<string> {
+    await clearCapturedClipboardText(optionsPage);
+    await optionsPage
+        .getByRole('button', { name: DEBUG_LOG_COPY_LABEL })
+        .click();
+    await expect
+        .poll(() => readCapturedClipboardText(optionsPage), {
+            timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+        })
+        .not.toBeNull();
+    await expect(
+        optionsPage.getByTestId('options-debug-log-feedback'),
+    ).toHaveText(DEBUG_LOG_COPIED_TEXT, { timeout: DEBUG_LOG_UI_TIMEOUT_MS });
+    const text = await readCapturedClipboardText(optionsPage);
+    if (text === null) {
+        throw new Error('Copy log wrote nothing to the clipboard stub.');
+    }
+    return text;
+}
+
+type DownloadedDebugLog = {
+    fileName: string;
+    text: string;
+};
+
+/**
+ * Presses Download log and reads the offered file before the context closes
+ * (Playwright deletes downloads with the context).
+ *
+ * @param optionsPage - Options page showing the Diagnostics section.
+ * @returns Suggested file name and file text.
+ */
+async function downloadDebugLog(optionsPage: Page): Promise<DownloadedDebugLog> {
+    const downloadPromise = optionsPage.waitForEvent('download');
+    await optionsPage
+        .getByRole('button', { name: DEBUG_LOG_DOWNLOAD_LABEL })
+        .click();
+    const download = await downloadPromise;
+    await expect(
+        optionsPage.getByTestId('options-debug-log-feedback'),
+    ).toHaveText(DEBUG_LOG_DOWNLOAD_STARTED_TEXT, {
+        timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+    });
+    const text = await fs.readFile(await download.path(), 'utf8');
+    return { fileName: download.suggestedFilename(), text };
+}
+
+/**
+ * Runs the repository's standard axe audit (WCAG 2.x A/AA, color-contrast
+ * excluded as in the existing audits) and fails with the violations listed.
+ *
+ * @param page - Page to audit in its current state.
+ * @param label - Label for the failure message.
+ * @returns Promise resolving when the audit found no violations.
+ */
+async function expectNoAxeViolations(page: Page, label: string): Promise<void> {
+    const results = await new AxeBuilder({ page })
+        .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa'])
+        .disableRules(['color-contrast'])
+        .analyze();
+    expect(
+        results.violations,
+        `${label} axe violations:\n${JSON.stringify(results.violations, null, 2)}`,
+    ).toEqual([]);
+}
+
 test.describe('TopSkip extension', () => {
     test.setTimeout(120_000);
 
@@ -908,6 +1428,12 @@ test.describe('TopSkip extension', () => {
             const grantsAfterPopup =
                 await readGrantedExtensionPermissions(popupPage);
             expect(grantsAfterPopup).toEqual(grantsBeforePopup);
+            expect(grantsAfterPopup.permissions).toEqual([
+                'activeTab',
+                'scripting',
+                'storage',
+                'unlimitedStorage',
+            ]);
             for (const providerOrigin of OPTIONAL_PROVIDER_ORIGINS) {
                 expect(grantsAfterPopup.origins).not.toContain(providerOrigin);
             }
@@ -2539,6 +3065,9 @@ test.describe('TopSkip extension', () => {
                 page.getByRole('button', { name: 'Shortcuts' }),
             ).toBeVisible();
             await expect(
+                page.getByRole('button', { name: 'Diagnostics' }),
+            ).toBeVisible();
+            await expect(
                 page.getByRole('button', { name: 'About' }),
             ).toBeVisible();
             await page.getByRole('button', { name: 'About' }).click();
@@ -2573,6 +3102,18 @@ test.describe('TopSkip extension', () => {
             const page = await context.newPage();
             trackPageErrors(page, 'options', errors);
 
+            await page.goto(`chrome-extension://${extensionId}/options.html`, {
+                waitUntil: 'domcontentloaded',
+            });
+            await page.getByTestId('options-shell').waitFor({ state: 'visible' });
+            // A stored log renders the monospace preview, the widest
+            // Diagnostics content; the sidebar click avoids a hash-only
+            // navigation (the page reads the hash on load only).
+            await seedDebugLog(page, {
+                state: DEV_DEBUG_LOG_SEED_STATE.OffStored,
+                approxBytes: DEBUG_LOG_OVERFLOW_SEED_BYTES,
+            });
+
             for (const width of [360, 768, 1024]) {
                 await page.setViewportSize({ width, height: 900 });
                 await page.goto(
@@ -2582,15 +3123,31 @@ test.describe('TopSkip extension', () => {
                 await page
                     .getByTestId('options-shell')
                     .waitFor({ state: 'visible' });
-                const hasOverflow = await page.evaluate(() => {
+                const generalOverflow = await page.evaluate(() => {
                     return (
                         document.documentElement.scrollWidth >
                         document.documentElement.clientWidth
                     );
                 });
-                expect(hasOverflow, `horizontal overflow at ${width}px`).toBe(
-                    false,
-                );
+                expect(
+                    generalOverflow,
+                    `horizontal overflow at ${width}px`,
+                ).toBe(false);
+
+                await page.getByRole('button', { name: 'Diagnostics' }).click();
+                await page
+                    .getByTestId('options-debug-log-preview')
+                    .waitFor({ state: 'visible', timeout: DEBUG_LOG_UI_TIMEOUT_MS });
+                const diagnosticsOverflow = await page.evaluate(() => {
+                    return (
+                        document.documentElement.scrollWidth >
+                        document.documentElement.clientWidth
+                    );
+                });
+                expect(
+                    diagnosticsOverflow,
+                    `horizontal overflow at ${width}px (Diagnostics)`,
+                ).toBe(false);
             }
 
             expectNoCollectedErrors(errors);
@@ -2670,6 +3227,10 @@ test.describe('TopSkip extension', () => {
                 extensionId,
                 errors,
             );
+            // Dev default is on: the audited popup includes the indicator.
+            await expect(
+                popupPage.getByTestId('popup-debug-logging-indicator'),
+            ).toBeVisible({ timeout: DEBUG_LOG_UI_TIMEOUT_MS });
             // color-contrast is disabled: known issues with Mantine's
             // teal-on-light-teal button and dimmed summary text. Fixing
             // these requires design-level decisions (tracked separately).
@@ -2729,11 +3290,649 @@ test.describe('TopSkip extension', () => {
                 'Private BYOK options axe violations:\n' +
                     JSON.stringify(byokOptionsResults.violations, null, 2),
             ).toEqual([]);
+
+            // --- Options page: Diagnostics in on, off-stored, off-empty ---
+            await optionsPage
+                .getByRole('button', { name: 'Diagnostics' })
+                .click();
+            await optionsPage
+                .getByTestId('options-diagnostics-section')
+                .waitFor({ state: 'visible' });
+            await setDebugLoggingSwitch(optionsPage, true);
+            await expectNoAxeViolations(optionsPage, 'Diagnostics (on)');
+            await setDebugLoggingSwitch(optionsPage, false);
+            await expectNoAxeViolations(optionsPage, 'Diagnostics (off, stored)');
+            await seedDebugLog(optionsPage, {
+                state: DEV_DEBUG_LOG_SEED_STATE.OffEmpty,
+            });
+            // The status poll (≤ 5 s) picks the seeded state up without reload.
+            await expect(
+                optionsPage.getByTestId('options-debug-log-status'),
+            ).toHaveText(DEBUG_LOG_OFF_EMPTY_TEXT, {
+                timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+            });
+            await expect(
+                optionsPage.getByRole('button', { name: DEBUG_LOG_COPY_LABEL }),
+            ).toBeDisabled();
+            await expectNoAxeViolations(optionsPage, 'Diagnostics (off, empty)');
             await optionsPage.close();
 
             expectNoCollectedErrors(errors);
         } finally {
             await context.close();
+        }
+    });
+
+    test('popup shows the debug logging indicator only while enabled', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const optionsPage = await openOptionsDiagnostics(
+                context,
+                extensionId,
+                errors,
+            );
+            await setDebugLoggingSwitch(optionsPage, true);
+
+            const popupOn = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            await popupOn.setViewportSize({ width: 340, height: 700 });
+            const indicator = popupOn.getByTestId(
+                'popup-debug-logging-indicator',
+            );
+            await expect(indicator).toBeVisible({
+                timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+            });
+            await expect(indicator).toHaveText(POPUP_DEBUG_LOGGING_TEXT);
+            await expect(
+                popupOn.getByRole('button', { name: /open options/i }),
+            ).toHaveCount(0);
+            await expect(popupOn.getByText(/version/i)).toHaveCount(0);
+            await expect(popupOn.getByTestId('popup-footer')).toHaveCount(0);
+            const horizontalOverflow = await popupOn.evaluate(() => {
+                return (
+                    document.documentElement.scrollWidth >
+                    document.documentElement.clientWidth
+                );
+            });
+            expect(horizontalOverflow).toBe(false);
+            await popupOn.close();
+
+            await setDebugLoggingSwitch(optionsPage, false);
+            // The deep link reads the hash on load only; it must not flip the
+            // switch.
+            const deepLinkPage = await openOptionsDiagnostics(
+                context,
+                extensionId,
+                errors,
+            );
+            await expectDiagnosticsReady(deepLinkPage);
+            await expect(
+                deepLinkPage.getByRole('switch', {
+                    name: DEBUG_LOG_SWITCH_LABEL,
+                }),
+            ).not.toBeChecked();
+            await deepLinkPage.close();
+
+            const popupOff = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+            );
+            // Wait for a known status so "absent" means "off", not "unknown".
+            await expect(
+                popupOff.getByTestId('popup-detection-loading'),
+            ).toHaveCount(0, { timeout: DEBUG_LOG_UI_TIMEOUT_MS });
+            await expect(
+                popupOff.getByTestId('popup-debug-logging-indicator'),
+            ).toHaveCount(0);
+            await popupOff.close();
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('debug logging records a server-mode fixture flow and exports it', async () => {
+        const backend = await startPollingBackend(
+            POLLING_BACKEND_PROCESSING_POLLS,
+        );
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const optionsPage = await openOptionsDiagnostics(
+                context,
+                extensionId,
+                errors,
+                (page) => installClipboardCapture(page, 'capture'),
+            );
+            // Dev builds start with the switch on; off → on proves that "on"
+            // starts a fresh log, so the flow below is the whole log.
+            await setDebugLoggingSwitch(optionsPage, false);
+            await setDebugLoggingSwitch(optionsPage, true);
+
+            const fixturePage = await runServerPollingFlow(
+                context,
+                errors,
+                backend,
+            );
+            await optionsPage.bringToFront();
+
+            const copied = await copyDebugLog(optionsPage);
+            const bundle = splitDebugLogBundle(copied);
+            expect(bundle.header.length).toBeGreaterThan(0);
+            expect(
+                requireBundleHeaderValue(
+                    bundle.header,
+                    DEBUG_LOG_HEADER_EXPORTED_AT,
+                ),
+            ).toMatch(ISO_TIMESTAMP_PATTERN);
+            expect(
+                Number(
+                    requireBundleHeaderValue(
+                        bundle.header,
+                        DEBUG_LOG_HEADER_EVENTS,
+                    ),
+                ),
+            ).toBe(bundle.events.length);
+
+            const ordered = sortEventLinesByTimestamp(bundle.events);
+            expect(ordered[0] ?? '').toMatch(
+                eventLinePattern(DEBUG_LOG_EVENT.LoggingEnabled),
+            );
+            expectEventsInOrder(ordered, [
+                [DEBUG_LOG_EVENT.RouteDecision, `v=${E2E_VIDEO_ID}`],
+                [DEBUG_LOG_EVENT.AnalysisRequested],
+                [DEBUG_LOG_EVENT.HttpStart, 'operation=analysis'],
+                [
+                    DEBUG_LOG_EVENT.HttpResponse,
+                    'operation=analysis',
+                    'status=202',
+                ],
+                [DEBUG_LOG_EVENT.PollSummary, 'terminal=true'],
+                [DEBUG_LOG_EVENT.SkipApplied, `v=${E2E_VIDEO_ID}`],
+            ]);
+            // The background records blocks-delivered only after the content
+            // ack round-trip (plus a route re-check and store write), so the
+            // back-dated content blocks-received line legitimately sorts a few
+            // milliseconds BEFORE it; assert two timestamp-safe chains instead
+            // of one delivered→received chain.
+            expectEventsInOrder(ordered, [
+                [
+                    DEBUG_LOG_EVENT.HttpResponse,
+                    'operation=analysis',
+                    'status=202',
+                ],
+                [DEBUG_LOG_EVENT.BlocksDelivered],
+            ]);
+            expectEventsInOrder(ordered, [
+                [
+                    DEBUG_LOG_EVENT.HttpResponse,
+                    'operation=analysis',
+                    'status=202',
+                ],
+                [DEBUG_LOG_EVENT.BlocksReceived],
+                [DEBUG_LOG_EVENT.SkipApplied, 'block=', 'toSec='],
+            ]);
+            // SC-005: bounded volume for a fresh analysis with polls + one skip.
+            expect(bundle.events.length).toBeLessThanOrEqual(
+                DEBUG_LOG_FRESH_ANALYSIS_MAX_EVENTS,
+            );
+            // SC-003 (Server success checklist): route-decision,
+            // analysis-requested, http-start/http-response, one terminal
+            // poll-summary, blocks-delivered, blocks-received, skip-applied are
+            // all asserted in order above. The missed-skip checklist
+            // (skip-suppressed once per block/reason, seek-summary) is covered
+            // by Task D3's unit tests; the Server-failure checklist
+            // (terminal-event with failureCode + support id, poll-summary
+            // terminal=true) by Task C2's and Task D5's unit tests — no E2E
+            // fixture drives a real backend failure.
+            const terminalSummaries = ordered.filter(
+                (line) =>
+                    eventLinePattern(DEBUG_LOG_EVENT.PollSummary).test(line) &&
+                    line.includes('terminal=true'),
+            );
+            expect(terminalSummaries).toHaveLength(1);
+            const polls = /polls=(\d+)/u.exec(terminalSummaries[0] ?? '')?.[1];
+            expect(Number(polls)).toBeGreaterThanOrEqual(
+                POLLING_BACKEND_PROCESSING_POLLS + 1,
+            );
+            const pollHttpLines = ordered.filter(
+                (line) =>
+                    line.includes('operation=poll') &&
+                    (eventLinePattern(DEBUG_LOG_EVENT.HttpStart).test(line) ||
+                        eventLinePattern(DEBUG_LOG_EVENT.HttpResponse).test(
+                            line,
+                        )),
+            );
+            expect(pollHttpLines).toEqual([]);
+            const skipIndex = findEventLineIndex(
+                ordered,
+                DEBUG_LOG_EVENT.SkipApplied,
+            );
+            // Tab attribution token (`t<id>`) on a content-sourced line.
+            expect(ordered[skipIndex] ?? '').toMatch(/\st\d+\s/u);
+
+            // Off keeps the log; Copy and Download export the same snapshot
+            // apart from the exportedAt header, and the file name is that
+            // header's timestamp.
+            await setDebugLoggingSwitch(optionsPage, false);
+            await expect(
+                optionsPage.getByTestId('options-debug-log-status'),
+            ).toHaveText(DEBUG_LOG_OFF_STORED_PATTERN);
+            await expect(
+                optionsPage.getByRole('button', { name: DEBUG_LOG_COPY_LABEL }),
+            ).toBeEnabled();
+            const copiedWhileOff = await copyDebugLog(optionsPage);
+            const offBundle = splitDebugLogBundle(copiedWhileOff);
+            expect(offBundle.events.length).toBeGreaterThanOrEqual(
+                bundle.events.length,
+            );
+            expect(offBundle.events.at(-1) ?? '').toMatch(
+                eventLinePattern(DEBUG_LOG_EVENT.LoggingDisabled),
+            );
+            const downloaded = await downloadDebugLog(optionsPage);
+            expect(downloaded.fileName).toMatch(DEBUG_LOG_FILE_NAME_PATTERN);
+            const downloadedExportedAt = requireBundleHeaderValue(
+                splitDebugLogBundle(downloaded.text).header,
+                DEBUG_LOG_HEADER_EXPORTED_AT,
+            );
+            expect(downloadedExportedAt).toMatch(ISO_TIMESTAMP_PATTERN);
+            expect(downloaded.fileName).toBe(
+                buildDebugLogFileName(new Date(downloadedExportedAt)),
+            );
+            expect(stripExportedAtLine(downloaded.text)).toBe(
+                stripExportedAtLine(copiedWhileOff),
+            );
+
+            // On discards the stored log and starts a fresh one.
+            await setDebugLoggingSwitch(optionsPage, true);
+            const fresh = splitDebugLogBundle(await copyDebugLog(optionsPage));
+            expect(fresh.events.length).toBeLessThan(bundle.events.length);
+            expect(fresh.events[0] ?? '').toMatch(
+                eventLinePattern(DEBUG_LOG_EVENT.LoggingEnabled),
+            );
+            expect(
+                findEventLineIndex(fresh.events, DEBUG_LOG_EVENT.SkipApplied),
+            ).toBe(-1);
+
+            await fixturePage.close();
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await closeBackend(backend.server);
+        }
+    });
+
+    test('debug log copy falls back to download when the clipboard is refused', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+
+            // Run 1: the clipboard write is refused like a denied permission.
+            const rejectingPage = await openOptionsDiagnostics(
+                context,
+                extensionId,
+                errors,
+                (page) => installClipboardCapture(page, 'reject'),
+            );
+            await expectDiagnosticsReady(rejectingPage);
+            await rejectingPage
+                .getByRole('button', { name: DEBUG_LOG_COPY_LABEL })
+                .click();
+            await expect(
+                rejectingPage.getByTestId('options-debug-log-feedback'),
+            ).toHaveText(DEBUG_LOG_COPY_FAILED_TEXT, {
+                timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+            });
+            const downloaded = await downloadDebugLog(rejectingPage);
+            expect(downloaded.fileName).toMatch(DEBUG_LOG_FILE_NAME_PATTERN);
+            expect(
+                splitDebugLogBundle(downloaded.text).events.length,
+            ).toBeGreaterThan(0);
+            await rejectingPage.close();
+
+            // Run 2: the bundle read is held past the Options timeout.
+            const delayedPage = await openOptionsDiagnostics(
+                context,
+                extensionId,
+                errors,
+                async (page) => {
+                    await installClipboardCapture(page, 'capture');
+                    await installRuntimeMessageGate(
+                        page,
+                        TOPSKIP_MESSAGE.GET_DEBUG_LOG_BUNDLE,
+                    );
+                },
+            );
+            await expectDiagnosticsReady(delayedPage);
+            await delayedPage
+                .getByRole('button', { name: DEBUG_LOG_COPY_LABEL })
+                .click();
+            await waitForHeldRuntimeMessage(delayedPage);
+            await expect(
+                delayedPage.getByTestId('options-debug-log-feedback'),
+            ).toHaveText(DEBUG_LOG_EXPORT_FAILED_TEXT, {
+                timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+            });
+            await releaseHeldRuntimeMessage(delayedPage);
+            await delayedPage.waitForTimeout(DEBUG_LOG_LATE_REPLY_WAIT_MS);
+            // The late reply must not be exported silently.
+            expect(await readCapturedClipboardText(delayedPage)).toBeNull();
+            // A fresh click reads a fresh snapshot.
+            const copied = await copyDebugLog(delayedPage);
+            expect(splitDebugLogBundle(copied).events.length).toBeGreaterThan(
+                0,
+            );
+            await delayedPage.close();
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('popup debug logging indicator is hidden while status is unknown', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const popupPage = await context.newPage();
+            trackPageErrors(popupPage, 'popup-debug-logging-gate', errors);
+            await installRuntimeMessageGate(
+                popupPage,
+                GET_DETECTION_STATUS_MESSAGE_TYPE,
+            );
+            await popupPage.goto(
+                `chrome-extension://${extensionId}/popup.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            await waitForPopupUi(popupPage);
+            await waitForHeldRuntimeMessage(popupPage);
+            await expect(
+                popupPage.getByTestId('popup-detection-loading'),
+            ).toBeVisible();
+            await expect(
+                popupPage.getByTestId('popup-debug-logging-indicator'),
+            ).toHaveCount(0);
+
+            await releaseHeldRuntimeMessage(popupPage);
+            // Dev builds default the switch on, so the released status
+            // carries `debugLoggingEnabled: true`.
+            const indicator = popupPage.getByTestId(
+                'popup-debug-logging-indicator',
+            );
+            await expect(indicator).toBeVisible({
+                timeout: DEBUG_LOG_UI_TIMEOUT_MS,
+            });
+            await expect(indicator).toHaveText(POPUP_DEBUG_LOGGING_TEXT);
+            await popupPage.close();
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('issue report body hints at the debug log only when a log exists', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const setupPage = await context.newPage();
+            trackPageErrors(setupPage, 'options-issue-hint', errors);
+            await setupPage.goto(
+                `chrome-extension://${extensionId}/options.html`,
+                { waitUntil: 'domcontentloaded' },
+            );
+            await setupPage
+                .getByTestId('options-shell')
+                .waitFor({ state: 'visible' });
+            await seedPopupState(setupPage, {
+                videoId: E2E_VIDEO_ID,
+                sessionId: '00000000-0000-4000-8000-000000000031',
+                status: 'error',
+                source: 'server',
+                serverFailure: {
+                    code: 'internal_error',
+                    supportId: 'support-e2e-debug-log',
+                    apiVersion: E2E_SERVER_API_VERSION,
+                    extensionVersion: '0.1.0',
+                },
+            });
+            const popupPage = await openPopupAndWaitForUi(
+                context,
+                extensionId,
+                errors,
+                setupPage,
+            );
+            await expect(
+                popupPage.getByRole('button', { name: 'Report on GitHub' }),
+            ).toBeVisible({ timeout: DEBUG_LOG_UI_TIMEOUT_MS });
+
+            // Dev builds start with the switch on, so a log exists.
+            const withLogUrl = await captureIssueReportUrl(
+                context,
+                popupPage,
+                setupPage,
+            );
+            const bodyWithLog =
+                new URL(withLogUrl).searchParams.get('body') ?? '';
+            expect(bodyWithLog).toContain(DEBUG_LOG_ISSUE_HINT_PREFIX);
+            expect(bodyWithLog).toContain('Support ID: support-e2e-debug-log');
+            expect(bodyWithLog).not.toContain(E2E_VIDEO_ID);
+            // The log itself never rides in the URL.
+            expect(withLogUrl).not.toMatch(/worker-started|logging-enabled/u);
+
+            await seedDebugLog(setupPage, {
+                state: DEV_DEBUG_LOG_SEED_STATE.OffEmpty,
+            });
+            const withoutLogUrl = await captureIssueReportUrl(
+                context,
+                popupPage,
+                setupPage,
+            );
+            const bodyWithoutLog =
+                new URL(withoutLogUrl).searchParams.get('body') ?? '';
+            expect(bodyWithoutLog).not.toContain('Debug logging');
+            expect(bodyWithoutLog).not.toContain(E2E_VIDEO_ID);
+            // B14's `buildUrl` appends exactly one line (FR-039), no blank.
+            expect(bodyWithLog.split('\n')).toHaveLength(
+                bodyWithoutLog.split('\n').length + 1,
+            );
+            await popupPage.close();
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('debug log ring buffer evicts at the cap and bounds the preview', async () => {
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const optionsPage = await openOptionsDiagnostics(
+                context,
+                extensionId,
+                errors,
+                (page) => installClipboardCapture(page, 'capture'),
+            );
+            await expectDiagnosticsReady(optionsPage);
+            await seedDebugLog(optionsPage, {
+                state: DEV_DEBUG_LOG_SEED_STATE.On,
+                approxBytes: DEBUG_LOG_CAP_BYTES,
+            });
+
+            const fixturePage = await context.newPage();
+            trackPageErrors(fixturePage, 'fixture-debug-log-cap', errors);
+            for (let visit = 0; visit < FIXTURE_VISITS_PAST_CAP; visit += 1) {
+                await fixturePage.goto('/video.html', {
+                    waitUntil: 'domcontentloaded',
+                });
+                await fixturePage.waitForTimeout(DEBUG_LOG_SETTLE_MS);
+            }
+            await fixturePage.close();
+            await optionsPage.bringToFront();
+
+            const persistedBytes = await readDebugLogStorageBytes(
+                context,
+                STORAGE_KEY_DEBUG_LOG_PREFIX,
+            );
+            expect(persistedBytes).toBeGreaterThan(0);
+            expect(persistedBytes).toBeLessThanOrEqual(
+                DEBUG_LOG_CAP_BYTES + DEBUG_LOG_PERSISTED_OVERHEAD_BYTES,
+            );
+
+            const section = optionsPage.getByTestId(
+                'options-diagnostics-section',
+            );
+            await expect(
+                section.getByText(DEBUG_LOG_EVICTED_COUNTER_PATTERN),
+            ).toBeVisible({ timeout: DEBUG_LOG_UI_TIMEOUT_MS });
+            await expect(
+                section.getByText(DEBUG_LOG_PREVIEW_TRUNCATED_PATTERN),
+            ).toBeVisible({ timeout: DEBUG_LOG_UI_TIMEOUT_MS });
+            const preview = optionsPage.getByTestId('options-debug-log-preview');
+            await expect(preview).toBeVisible();
+            const previewScrolls = await preview.evaluate(
+                (element) => element.scrollHeight > element.clientHeight,
+            );
+            expect(previewScrolls).toBe(true);
+
+            const bundle = splitDebugLogBundle(await copyDebugLog(optionsPage));
+            expect(
+                Number(
+                    requireBundleHeaderValue(
+                        bundle.header,
+                        DEBUG_LOG_HEADER_EVICTED,
+                    ),
+                ),
+            ).toBeGreaterThan(0);
+            expect(
+                requireBundleHeaderValue(
+                    bundle.header,
+                    DEBUG_LOG_HEADER_OLDEST_RETAINED,
+                ),
+            ).toMatch(ISO_TIMESTAMP_PATTERN);
+            expect(
+                Number(
+                    requireBundleHeaderValue(
+                        bundle.header,
+                        DEBUG_LOG_HEADER_EVENTS,
+                    ),
+                ),
+            ).toBe(bundle.events.length);
+
+            for (const width of [360, 768, 1024]) {
+                await optionsPage.setViewportSize({ width, height: 900 });
+                const hasOverflow = await optionsPage.evaluate(() => {
+                    return (
+                        document.documentElement.scrollWidth >
+                        document.documentElement.clientWidth
+                    );
+                });
+                expect(
+                    hasOverflow,
+                    `horizontal overflow at ${width}px with a capped log`,
+                ).toBe(false);
+            }
+            await optionsPage.close();
+
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+        }
+    });
+
+    test('exported debug log contains no fixture caption text, backend origin, or parameter values', async () => {
+        const backend = await startPollingBackend(
+            POLLING_BACKEND_PROCESSING_POLLS,
+        );
+        const errors: string[] = [];
+        const context = await chromium.launchPersistentContext(
+            '',
+            extensionContextOptions(),
+        );
+
+        try {
+            trackServiceWorkerConsoleErrors(context, errors);
+            const extensionId = await getExtensionId(context);
+            const optionsPage = await openOptionsDiagnostics(
+                context,
+                extensionId,
+                errors,
+                (page) => installClipboardCapture(page, 'capture'),
+            );
+            await setDebugLoggingSwitch(optionsPage, true);
+            const fixturePage = await runServerPollingFlow(
+                context,
+                errors,
+                backend,
+            );
+            await optionsPage.bringToFront();
+
+            const copied = await copyDebugLog(optionsPage);
+            const bundle = splitDebugLogBundle(copied);
+            // The flow ran and the bundle legitimately names the video id …
+            expect(copied).toContain(`v=${E2E_VIDEO_ID}`);
+            expect(
+                findEventLineIndex(bundle.events, DEBUG_LOG_EVENT.SkipApplied),
+            ).toBeGreaterThan(-1);
+            // … but none of the free-form inputs that passed through it.
+            expect(copied).not.toContain(E2E_CAPTION_SEGMENTS[0].text);
+            expect(copied).not.toContain(E2E_BACKEND_HOST_SENTINEL);
+            expect(copied).not.toContain(E2E_INSTALLATION_TOKEN);
+            expect(copied).not.toContain(E2E_TRANSCRIPT_HASH);
+            expect(copied).not.toMatch(/https?:\/\//u);
+            expect(copied).not.toMatch(/[?&][A-Za-z_]+=/u);
+            for (const match of copied.matchAll(/urlParams=(\S*)/gu)) {
+                expect(match[1] ?? '').not.toContain('=');
+            }
+
+            await fixturePage.close();
+            expectNoCollectedErrors(errors);
+        } finally {
+            await context.close();
+            await closeBackend(backend.server);
         }
     });
 });

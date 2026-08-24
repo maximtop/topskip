@@ -11,6 +11,12 @@ const logMocks = vi.hoisted(() => ({
     warn: vi.fn(),
 }));
 
+const debugLogMocks = vi.hoisted(() => ({
+    record: vi.fn(),
+    noteTab: vi.fn(),
+    isIncognitoSync: vi.fn((): boolean | null => null),
+}));
+
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: { getManifest: browserMocks.getManifest },
@@ -25,7 +31,19 @@ vi.mock('@/background/server-analysis-log', () => ({
     BackgroundServerAnalysisLog: logMocks,
 }));
 
+vi.mock('@/background/debug-log/debug-log', () => ({
+    DebugLog: { record: debugLogMocks.record },
+}));
+
+vi.mock('@/background/debug-log/tab-attribution-registry', () => ({
+    TabAttributionRegistry: {
+        noteTab: debugLogMocks.noteTab,
+        isIncognitoSync: debugLogMocks.isIncognitoSync,
+    },
+}));
+
 import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     CONTENT_SCRIPT_PROTOCOL_VERSION,
     TOPSKIP_MESSAGE,
@@ -130,5 +148,69 @@ describe('ContentScriptWakeup.notifyExistingTabs', () => {
             'content-script-wakeup-query-failed',
             { reason: 'tabs-query-failed' },
         );
+    });
+
+    it('notes only acknowledging tabs and logs content-ready for each of them', async () => {
+        browserMocks.query.mockResolvedValue([
+            { id: 41, incognito: false },
+            { id: 42, incognito: true },
+            { id: 43, incognito: false },
+        ]);
+        browserMocks.sendMessage.mockImplementation((tabId: number) =>
+            tabId === 43
+                ? Promise.reject(new Error('gone'))
+                : Promise.resolve(CURRENT_ACK),
+        );
+
+        const pending = ContentScriptWakeup.notifyExistingTabs();
+        await vi.advanceTimersByTimeAsync(50);
+        await pending;
+
+        expect(debugLogMocks.noteTab).toHaveBeenCalledTimes(2);
+        expect(debugLogMocks.noteTab).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 41, incognito: false }),
+        );
+        expect(debugLogMocks.noteTab).toHaveBeenCalledWith(
+            expect.objectContaining({ id: 42, incognito: true }),
+        );
+        expect(debugLogMocks.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.ContentReady,
+            { protocol: CONTENT_SCRIPT_PROTOCOL_VERSION, extensionVersion: '0.1.0' },
+            { tab: 41 },
+        );
+        expect(debugLogMocks.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.ContentReady,
+            { protocol: CONTENT_SCRIPT_PROTOCOL_VERSION, extensionVersion: '0.1.0' },
+            { tab: 42 },
+        );
+        expect(debugLogMocks.record).toHaveBeenLastCalledWith(
+            DEBUG_LOG_EVENT.WakeupProbe,
+            { readyTabs: 2, unavailableTabs: 1 },
+        );
+    });
+
+    it('logs the aggregate probe result even when nobody answers', async () => {
+        browserMocks.query.mockResolvedValue([{ id: 41 }]);
+        browserMocks.sendMessage.mockRejectedValue(new Error('gone'));
+
+        const pending = ContentScriptWakeup.notifyExistingTabs();
+        await vi.advanceTimersByTimeAsync(50);
+        await pending;
+
+        expect(debugLogMocks.noteTab).not.toHaveBeenCalled();
+        expect(debugLogMocks.record).toHaveBeenCalledTimes(1);
+        expect(debugLogMocks.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.WakeupProbe,
+            { readyTabs: 0, unavailableTabs: 1 },
+        );
+    });
+
+    it('logs nothing when the tab query fails', async () => {
+        browserMocks.query.mockRejectedValue(new Error('tabs unavailable'));
+
+        await ContentScriptWakeup.notifyExistingTabs();
+
+        expect(debugLogMocks.record).not.toHaveBeenCalled();
+        expect(debugLogMocks.noteTab).not.toHaveBeenCalled();
     });
 });

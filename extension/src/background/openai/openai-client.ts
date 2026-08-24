@@ -23,7 +23,13 @@ export type CallOpenAiResponseParams = {
  */
 export type CallOpenAiResponseResult =
     | { ok: true; rawContent: string }
-    | { ok: false; error: string; retryable?: boolean };
+    | {
+          ok: false;
+          error: string;
+          retryable?: boolean;
+          status: number | null;
+          kind: 'http' | 'network' | 'timeout' | 'parse' | 'aborted';
+      };
 
 /**
  * Result of checking whether an OpenAI key can access the models endpoint.
@@ -123,6 +129,8 @@ export async function callOpenAiResponse(
                 ok: false,
                 error: `OpenAI HTTP ${response.status}: ${body}`,
                 retryable: isRetryableStatus(response.status),
+                status: response.status,
+                kind: 'http',
             };
         }
         const data = (await response.json()) as unknown;
@@ -131,11 +139,22 @@ export async function callOpenAiResponse(
             return {
                 ok: false,
                 error: 'OpenAI response did not include output text',
+                status: response.status,
+                kind: 'parse',
             };
         }
         return { ok: true, rawContent };
     } catch (e) {
-        return { ok: false, error: getErrorMessage(e), retryable: true };
+        const aborted =
+            params.signal?.aborted === true ||
+            (e instanceof DOMException && e.name === 'AbortError');
+        return {
+            ok: false,
+            error: getErrorMessage(e),
+            retryable: true,
+            status: null,
+            kind: aborted ? 'aborted' : 'network',
+        };
     }
 }
 

@@ -92,6 +92,8 @@ export class OpenAiAdapter implements LlmProviderAdapter {
                 tooLarge: /context|length|token|maximum|too large/i.test(
                     llm.error,
                 ),
+                status: llm.status,
+                kind: llm.kind,
             };
         }
 
@@ -104,6 +106,8 @@ export class OpenAiAdapter implements LlmProviderAdapter {
                 ok: false,
                 error: parsed.error,
                 rawAssistant: llm.rawContent,
+                status: null,
+                kind: 'parse',
             };
         }
 

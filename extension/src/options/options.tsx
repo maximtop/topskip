@@ -66,7 +66,10 @@ import {
 } from '@/options/provider-host-access-actions';
 import { ProviderHostAccessRequest } from '@/options/provider-host-access-request';
 import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
+import { OPTIONS_SECTION_HASH_PREFIX } from '@/options/constants';
+import { DiagnosticsSection } from '@/options/DiagnosticsSection';
 import {
+    ActivityIcon,
     HomeIcon,
     InfoIcon,
     KeyboardIcon,
@@ -108,15 +111,54 @@ export type OptionsSectionId =
     | 'detection'
     | 'appearance'
     | 'shortcuts'
+    | 'diagnostics'
     | 'about';
 
-const OPTIONS_SECTIONS: { id: OptionsSectionId; label: string }[] = [
-    { id: 'general', label: 'General' },
-    { id: 'detection', label: 'Detection' },
-    { id: 'appearance', label: 'Appearance' },
-    { id: 'shortcuts', label: 'Shortcuts' },
-    { id: 'about', label: 'About' },
+/**
+ * Sidebar order. Label keys stay literal so `pnpm locales info --unused`
+ * still recognises them as used.
+ */
+const OPTIONS_SECTIONS: { id: OptionsSectionId; labelKey: string }[] = [
+    { id: 'general', labelKey: 'options_section_general' },
+    { id: 'detection', labelKey: 'options_section_detection' },
+    { id: 'appearance', labelKey: 'options_section_appearance' },
+    { id: 'shortcuts', labelKey: 'options_section_shortcuts' },
+    { id: 'diagnostics', labelKey: 'options_section_diagnostics' },
+    { id: 'about', labelKey: 'options_section_about' },
 ];
+
+const DEFAULT_OPTIONS_SECTION: OptionsSectionId = 'general';
+const DEFAULT_OPTIONS_SECTION_LABEL_KEY = 'options_section_general';
+
+/**
+ * One localized label per section, shared by the sidebar and section titles.
+ *
+ * @param sectionId - Section to label.
+ * @returns Localized section label.
+ */
+export function getOptionsSectionLabel(sectionId: OptionsSectionId): string {
+    const section = OPTIONS_SECTIONS.find((entry) => entry.id === sectionId);
+    return translator.getMessage(
+        section?.labelKey ?? DEFAULT_OPTIONS_SECTION_LABEL_KEY,
+    );
+}
+
+/**
+ * Resolves `options.html#<section>` so a section can be opened directly
+ * without changing any setting; unknown hashes fall back to the default.
+ *
+ * @param hash - `window.location.hash` (with or without the `#`).
+ * @returns Matching section id, or `null` when the hash names none.
+ */
+export function parseOptionsSectionHash(
+    hash: string,
+): OptionsSectionId | null {
+    const id = hash.startsWith(OPTIONS_SECTION_HASH_PREFIX)
+        ? hash.slice(OPTIONS_SECTION_HASH_PREFIX.length)
+        : hash;
+    const section = OPTIONS_SECTIONS.find((entry) => entry.id === id);
+    return section?.id ?? null;
+}
 
 const OPTIONS_BLUE = '#2563eb';
 const OPTIONS_BLUE_SOFT = '#eff6ff';
@@ -155,6 +197,8 @@ function OptionsSectionIcon(props: {
             return <PaletteIcon size={16} color={color} />;
         case 'shortcuts':
             return <KeyboardIcon size={16} color={color} />;
+        case 'diagnostics':
+            return <ActivityIcon size={16} color={color} />;
         case 'about':
             return <InfoIcon size={16} color={color} />;
     }
@@ -178,7 +222,11 @@ export function OptionsSidebar(props: {
                     TopSkip
                 </Text>
             </Group>
-            <Stack gap={4} component="nav" aria-label="Settings sections">
+            <Stack
+                gap={4}
+                component="nav"
+                aria-label={translator.getMessage('options_sidebar_nav_aria')}
+            >
                 {OPTIONS_SECTIONS.map((section) => {
                     const active = section.id === props.activeSection;
                     return (
@@ -207,7 +255,7 @@ export function OptionsSidebar(props: {
                                 },
                             }}
                         >
-                            {section.label}
+                            {getOptionsSectionLabel(section.id)}
                         </Button>
                     );
                 })}
@@ -224,16 +272,16 @@ export function OptionsSidebar(props: {
  * @returns Placeholder settings content.
  */
 export function PlaceholderSettingsSection(props: {
-    sectionId: Exclude<OptionsSectionId, 'general' | 'about'>;
+    sectionId: Exclude<OptionsSectionId, 'general' | 'diagnostics' | 'about'>;
 }): ReactElement {
-    const title =
-        OPTIONS_SECTIONS.find((section) => section.id === props.sectionId)
-            ?.label ?? 'Settings';
+    const title = getOptionsSectionLabel(props.sectionId);
     return (
         <Stack gap="md" maw={640} data-testid="options-placeholder-section">
             <Title order={2}>{title}</Title>
             <Alert color="slate" role="status">
-                {`${title} settings are visible for navigation preview, but not configurable yet.`}
+                {translator.getMessage('options_placeholder_notice', {
+                    section: title,
+                })}
             </Alert>
         </Stack>
     );
@@ -251,15 +299,16 @@ export function AboutSettingsSection(props: {
     return (
         <Stack gap="md" maw={640} data-testid="options-about-section">
             <Stack gap={4}>
-                <Title order={2}>About TopSkip</Title>
+                <Title order={2}>
+                    {translator.getMessage('options_about_heading')}
+                </Title>
                 <Text size="sm" c={OPTIONS_MUTED}>
-                    Automatically skip detected sponsor and promo segments on
-                    YouTube.
+                    {translator.getMessage('options_about_description')}
                 </Text>
             </Stack>
             <Group gap="sm" wrap="nowrap">
                 <Text size="sm" fw={700} c={OPTIONS_TEXT}>
-                    Version
+                    {translator.getMessage('options_about_version_label')}
                 </Text>
                 <Text size="sm" c={OPTIONS_MUTED}>
                     {`v${props.extensionVersion}`}
@@ -631,8 +680,12 @@ function OptionsApp(): ReactElement {
     const [addBusy, setAddBusy] = useState(false);
     const [removeBusySlug, setRemoveBusySlug] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [activeSection, setActiveSection] =
-        useState<OptionsSectionId>('general');
+    const [activeSection, setActiveSection] = useState<OptionsSectionId>(
+        // Read once on load; the page never writes the hash back.
+        () =>
+            parseOptionsSectionHash(window.location.hash) ??
+            DEFAULT_OPTIONS_SECTION,
+    );
 
     const missingConnectionProviderId = useMemo(() => {
         const activeModel = models.find((model) => model.id === activeModelId);
@@ -1086,11 +1139,14 @@ function OptionsApp(): ReactElement {
                         <Stack gap="md">
                             <Stack gap={4}>
                                 <Title order={1} size="h3" c={OPTIONS_TEXT}>
-                                    TopSkip Settings
+                                    {translator.getMessage(
+                                        'options_general_heading',
+                                    )}
                                 </Title>
                                 <Text size="xs" c={OPTIONS_MUTED}>
-                                    Configure how TopSkip detects and skips
-                                    promo segments on YouTube.
+                                    {translator.getMessage(
+                                        'options_general_description',
+                                    )}
                                 </Text>
                             </Stack>
 
@@ -1153,6 +1209,8 @@ function OptionsApp(): ReactElement {
                                 </>
                             ) : null}
                         </Stack>
+                    ) : activeSection === 'diagnostics' ? (
+                        <DiagnosticsSection />
                     ) : activeSection === 'about' ? (
                         <AboutSettingsSection
                             extensionVersion={extensionVersion}

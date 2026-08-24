@@ -53,6 +53,42 @@ import {
     PROMO_DETECTION_STATUS,
     type PromoBlock,
 } from '@topskip/common/promo-types';
+import { DebugLog } from '@/background/debug-log/debug-log';
+import {
+    DEBUG_LOG_EVENT,
+    formatPromoBlockTimings,
+} from '@/shared/debug-log-events';
+import { toDebugLogModelName } from '@/shared/detection-models';
+
+/**
+ * Stable code logged for an unexpected BYOK analysis exception (never the
+ * free-form provider error, which can embed a response body).
+ */
+const PROMO_ANALYSIS_FAILED_CODE = 'promo-analysis-failed';
+
+/**
+ * Model stand-in written before any adapter call has reported a model name.
+ */
+const BYOK_MODEL_UNKNOWN = 'unknown';
+
+/**
+ * Stable BYOK outcome kinds written to the debug log; never provider
+ * text. `byok-run-ended` uses `Success` for both no-promo and promo results
+ * (`parsedBlocks` distinguishes them).
+ */
+const BYOK_OUTCOME = {
+    Success: 'success',
+    TooLarge: 'too-large',
+    ParseError: 'parse-error',
+    AdapterError: 'adapter-error',
+    Aborted: 'aborted',
+    HostAccessRequired: 'host-access-required',
+} as const;
+
+/**
+ * `host-access-check` outcome when the optional host grant is present.
+ */
+const HOST_ACCESS_GRANTED_OUTCOME = 'granted';
 
 /**
  * Orchestrates LLM analysis after captions arrive; static API only.
@@ -183,6 +219,77 @@ export class PromoAnalysis {
     }
 
     /**
+     * Maps one adapter result to a stable outcome kind for `byok-chunk`:
+     * never the free-form provider error (it never reads `error` or
+     * `rawAssistant`, which can embed provider response text).
+     *
+     * @param result - Adapter result of the chunk call.
+     * @param aborted - Whether the run was superseded while the call was in flight.
+     * @returns Stable outcome token.
+     */
+    private static byokChunkOutcomeForLog(
+        result: AnalyzeTranscriptResult,
+        aborted: boolean,
+    ): string {
+        if (aborted) {
+            return BYOK_OUTCOME.Aborted;
+        }
+        if (result.ok) {
+            return BYOK_OUTCOME.Success;
+        }
+        if (
+            result.failureCode === PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired
+        ) {
+            return BYOK_OUTCOME.HostAccessRequired;
+        }
+        if (result.tooLarge === true) {
+            return BYOK_OUTCOME.TooLarge;
+        }
+        if (result.kind === 'parse') {
+            return BYOK_OUTCOME.ParseError;
+        }
+        if (result.kind === 'aborted') {
+            return BYOK_OUTCOME.Aborted;
+        }
+        return BYOK_OUTCOME.AdapterError;
+    }
+
+    /**
+     * Records the terminal BYOK metadata summary (no prompt/assistant text).
+     *
+     * @param input - Terminal run counters and stable outcome.
+     */
+    private static recordByokRunEnded(input: {
+        tabId: number;
+        videoId: string;
+        provider: string;
+        model: string;
+        chunks: number;
+        parsedBlocks: number;
+        coverage: number;
+        uncovered: number;
+        blocks: PromoBlock[];
+        totalLatencyMs: number;
+        outcome: string;
+    }): void {
+        DebugLog.record(
+            DEBUG_LOG_EVENT.ByokRunEnded,
+            {
+                provider: input.provider,
+                model: input.model,
+                chunks: input.chunks,
+                parsedBlocks: input.parsedBlocks,
+                coverage: input.coverage,
+                uncovered: input.uncovered,
+                blocks: formatPromoBlockTimings(input.blocks),
+                totalLatencyMs: Math.round(input.totalLatencyMs),
+                outcome: input.outcome,
+            },
+            { tab: input.tabId, video: input.videoId },
+        );
+    }
+
+    /**
      * Replaces the registry used for caption-triggered promo analysis.
      *
      * @param registry - Provider registry used for subsequent analysis runs
@@ -290,6 +397,10 @@ export class PromoAnalysis {
 
         const runStartedAt = performance.now();
 
+        // `let` widens the literal type to `string`.
+        let runProvider = BYOK_MODEL_UNKNOWN;
+        let runModel = BYOK_MODEL_UNKNOWN;
+
         const setStatus = async (
             state: Omit<LocalDetectionState, 'source'>,
         ): Promise<void> => {
@@ -316,6 +427,12 @@ export class PromoAnalysis {
             }
 
             const providerId = prefs.providerId;
+            runProvider = providerId;
+            DebugLog.record(
+                DEBUG_LOG_EVENT.ByokRunStarted,
+                { provider: providerId },
+                { tab: tabId, video: videoId },
+            );
             PromoAnalysis.inflight.set(tabId, {
                 videoId,
                 abort,
@@ -376,6 +493,12 @@ export class PromoAnalysis {
                 return;
             }
 
+            DebugLog.record(
+                DEBUG_LOG_EVENT.HostAccessCheck,
+                { provider: providerId, outcome: HOST_ACCESS_GRANTED_OUTCOME },
+                { tab: tabId, video: videoId },
+            );
+
             const plan = ChunkPlanner.buildChunkPlan(
                 listTimedLinesFromMergedTranscript(merged.text),
                 {
@@ -421,6 +544,53 @@ export class PromoAnalysis {
             let anyPartial = plan.partialCoverage || merged.truncated;
             let lastRawAssistant: string | null = null;
             const chunkCount = plan.chunks.length;
+
+            const recordChunk = (input: {
+                result: AnalyzeTranscriptResult;
+                aborted: boolean;
+                chunkIndex: number;
+                startSec: number;
+                endSec: number;
+                chars: number;
+                latencyMs: number;
+            }): void => {
+                if (input.result.ok) {
+                    runModel = toDebugLogModelName(
+                        providerId,
+                        input.result.providerMeta.model,
+                    );
+                }
+                let parsedBlocks: number | undefined;
+                if (input.result.ok) {
+                    parsedBlocks = input.result.hasPromo
+                        ? input.result.blocks.length
+                        : 0;
+                }
+                const status: number | null | undefined = input.result.ok
+                    ? undefined
+                    : input.result.status;
+                DebugLog.record(
+                    DEBUG_LOG_EVENT.ByokChunk,
+                    {
+                        provider: providerId,
+                        model: runModel,
+                        chunk: input.chunkIndex,
+                        chunks: chunkCount,
+                        startSec: input.startSec,
+                        endSec: input.endSec,
+                        chars: input.chars,
+                        latencyMs: Math.round(input.latencyMs),
+                        outcome: PromoAnalysis.byokChunkOutcomeForLog(
+                            input.result,
+                            input.aborted,
+                        ),
+                        parsedBlocks,
+                        status: status ?? undefined,
+                    },
+                    { tab: tabId, video: videoId },
+                );
+            };
+
             let providerHostAccessRequired = false;
 
             const stopForMissingProviderHostAccess = async (
@@ -433,6 +603,14 @@ export class PromoAnalysis {
                     return true;
                 }
                 providerHostAccessRequired = true;
+                DebugLog.record(
+                    DEBUG_LOG_EVENT.HostAccessCheck,
+                    {
+                        provider: providerId,
+                        outcome: BYOK_OUTCOME.HostAccessRequired,
+                    },
+                    { tab: tabId, video: videoId },
+                );
                 await setStatus({
                     videoId,
                     status: PROMO_DETECTION_STATUS.NotConfigured,
@@ -462,6 +640,16 @@ export class PromoAnalysis {
                 const latencyMs = performance.now() - t0;
                 totalAdapterCalls = totalAdapterCalls + 1;
                 totalAdapterLatencyMs = totalAdapterLatencyMs + latencyMs;
+
+                recordChunk({
+                    result,
+                    aborted: !PromoAnalysis.isCurrentRun(tabId, abort),
+                    chunkIndex,
+                    startSec: cStart,
+                    endSec: cEnd,
+                    chars: chunkText.length,
+                    latencyMs,
+                });
 
                 const aborted = !PromoAnalysis.isCurrentRun(tabId, abort);
                 if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
@@ -584,6 +772,16 @@ export class PromoAnalysis {
                 totalAdapterCalls = totalAdapterCalls + 1;
                 totalAdapterLatencyMs = totalAdapterLatencyMs + firstLatency;
 
+                recordChunk({
+                    result: first,
+                    aborted: !PromoAnalysis.isCurrentRun(tabId, abort),
+                    chunkIndex: i,
+                    startSec: chunk.startSec,
+                    endSec: chunk.endSec,
+                    chars: chunk.text.length,
+                    latencyMs: firstLatency,
+                });
+
                 if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
                     if (first.ok) {
                         lastRawAssistant = first.rawAssistant;
@@ -639,10 +837,12 @@ export class PromoAnalysis {
                             endSec: chunk.endSec,
                             kind: 'irreducible_line',
                         });
-                        console.warn(
-                            '[TopSkip] irreducible_chunk: single line exceeds budget',
-                            { chunkIndex: i },
-                        );
+                        if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                            console.warn(
+                                '[TopSkip] irreducible_chunk: single line exceeds budget',
+                                { chunkIndex: i },
+                            );
+                        }
                         continue;
                     }
                     const [aText, bText] = halves;
@@ -773,10 +973,36 @@ export class PromoAnalysis {
                         }),
                     );
                 }
+                PromoAnalysis.recordByokRunEnded({
+                    tabId,
+                    videoId,
+                    provider: providerId,
+                    model: runModel,
+                    chunks: plan.chunks.length,
+                    parsedBlocks: 0,
+                    coverage: plan.coverageFraction,
+                    uncovered: uncoveredRanges.length,
+                    blocks: [],
+                    totalLatencyMs: totalAdapterLatencyMs,
+                    outcome: BYOK_OUTCOME.AdapterError,
+                });
                 return;
             }
 
             if (mergedBlocks.length === 0) {
+                PromoAnalysis.recordByokRunEnded({
+                    tabId,
+                    videoId,
+                    provider: providerId,
+                    model: runModel,
+                    chunks: plan.chunks.length,
+                    parsedBlocks: 0,
+                    coverage: plan.coverageFraction,
+                    uncovered: uncoveredRanges.length,
+                    blocks: [],
+                    totalLatencyMs: totalAdapterLatencyMs,
+                    outcome: BYOK_OUTCOME.Success,
+                });
                 if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
                     LogPromoAnalysis.logAnalysisBundle(
                         buildPromoAnalysisLogBundle({
@@ -863,6 +1089,19 @@ export class PromoAnalysis {
                     }),
                 );
             }
+            PromoAnalysis.recordByokRunEnded({
+                tabId,
+                videoId,
+                provider: providerId,
+                model: runModel,
+                chunks: plan.chunks.length,
+                parsedBlocks: mergedBlocks.length,
+                coverage: plan.coverageFraction,
+                uncovered: uncoveredRanges.length,
+                blocks: mergedBlocks,
+                totalLatencyMs: totalAdapterLatencyMs,
+                outcome: BYOK_OUTCOME.Success,
+            });
             await setStatus({
                 videoId,
                 status: PROMO_DETECTION_STATUS.Detected,
@@ -877,7 +1116,23 @@ export class PromoAnalysis {
                 return;
             }
             const msg = e instanceof Error ? e.message : String(e);
-            console.error('[TopSkip] Promo analysis failed', msg);
+            if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                console.error('[TopSkip] Promo analysis failed', msg);
+            } else {
+                console.error(
+                    '[TopSkip] Promo analysis failed',
+                    PROMO_ANALYSIS_FAILED_CODE,
+                );
+            }
+            DebugLog.record(
+                DEBUG_LOG_EVENT.ByokRunEnded,
+                {
+                    provider: runProvider,
+                    model: runModel,
+                    outcome: BYOK_OUTCOME.AdapterError,
+                },
+                { tab: tabId, video: videoId },
+            );
             await setStatus({
                 videoId,
                 status: PROMO_DETECTION_STATUS.Error,

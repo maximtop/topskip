@@ -25,8 +25,10 @@ import {
     getDetectionRefreshDelay,
     getDetectionPushAction,
     isDetectionReadCurrent,
+    isDetectionTransportKnown,
     type DetectionTransportState,
 } from '@/popup/detection-transport-state';
+import { DebugLoggingIndicator } from '@/popup/DebugLoggingIndicator';
 import { getErrorMessage } from '@/shared/error';
 import browser from '@/shared/browser';
 import {
@@ -152,12 +154,13 @@ const POPUP_TONE_STYLES: Record<
 };
 
 /**
- * Type guard for successful GET_DETECTION_STATUS responses.
+ * Type guard for successful GET_DETECTION_STATUS responses. The debug-logging
+ * flag is mandatory so the popup indicator never renders from a default.
  *
  * @param res - Untyped runtime response
  * @returns Whether the payload is a successful detection status response
  */
-function isGetDetectionOk(
+export function isGetDetectionOk(
     res: unknown,
 ): res is Extract<GetDetectionStatusResponse, { ok: true }> {
     if (typeof res !== 'object' || res === null) {
@@ -167,7 +170,8 @@ function isGetDetectionOk(
     return (
         Reflect.get(res, 'ok') === true &&
         (tabId === null || typeof tabId === 'number') &&
-        'state' in res
+        'state' in res &&
+        typeof Reflect.get(res, 'debugLoggingEnabled') === 'boolean'
     );
 }
 
@@ -240,14 +244,17 @@ type PopupStatusViewModel = {
 };
 
 /**
- * Fully resolved popup state with the selected route shown independently.
+ * Fully resolved popup state with the selected route shown independently and
+ * the debug-logging indicator text (`null` when nothing should render).
  */
 type PopupViewModel = PopupStatusViewModel & {
     modeLabel: string;
+    debugLoggingLabel: string | null;
 };
 
 /**
  * Inputs needed to derive popup mode and detection status copy.
+ * `debugLoggingEnabled` is `null` while the background status is unknown.
  */
 type PopupViewModelArgs = {
     enabled: boolean;
@@ -260,6 +267,7 @@ type PopupViewModelArgs = {
     providerDisplayName: string;
     modelDisplayName: string;
     chromeModelAvailability: ProviderAvailabilityMessage | null;
+    debugLoggingEnabled: boolean | null;
 };
 
 /**
@@ -848,6 +856,10 @@ export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
                 ? 'popup_analysis_mode_byok'
                 : 'popup_analysis_mode_server',
         ),
+        debugLoggingLabel:
+            args.debugLoggingEnabled === true
+                ? translator.getMessage('popup_debug_logging_on')
+                : null,
     };
 }
 
@@ -945,6 +957,11 @@ export const PopupApp = observer(function PopupApp() {
     const [prefsError, setPrefsError] = useState<string | null>(null);
     const [detectionTransport, setDetectionTransport] =
         useState<DetectionTransportState>(INITIAL_DETECTION_TRANSPORT_STATE);
+    // Last switch state read from the background; left untouched on failed
+    // reads so a stale popup keeps the last known value.
+    const [debugLoggingEnabled, setDebugLoggingEnabled] = useState<
+        boolean | null
+    >(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -1049,6 +1066,7 @@ export const PopupApp = observer(function PopupApp() {
                         return;
                     }
                     activeTabId = res.tabId;
+                    setDebugLoggingEnabled(res.debugLoggingEnabled);
                     setDetectionTransport((current) =>
                         applyDetectionTransportSuccess(
                             current,
@@ -1147,6 +1165,9 @@ export const PopupApp = observer(function PopupApp() {
         providerDisplayName: store.providerDisplayName,
         modelDisplayName: store.modelDisplayName,
         chromeModelAvailability: store.chromeModelAvailability,
+        debugLoggingEnabled: isDetectionTransportKnown(detectionTransport)
+            ? debugLoggingEnabled
+            : null,
     });
 
     const detectedBlocks =
@@ -1226,6 +1247,8 @@ export const PopupApp = observer(function PopupApp() {
                         {view.modeLabel}
                     </Badge>
                 </Group>
+
+                <DebugLoggingIndicator label={view.debugLoggingLabel} />
 
                 <Group
                     gap="sm"

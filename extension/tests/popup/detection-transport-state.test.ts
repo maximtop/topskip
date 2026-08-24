@@ -8,6 +8,7 @@ import {
     getDetectionRefreshDelay,
     getDetectionPushAction,
     isDetectionReadCurrent,
+    isDetectionTransportKnown,
 } from '@/popup/detection-transport-state';
 import {
     POPUP_DETECTION_HEALTHY_RECONCILE_MS,
@@ -220,5 +221,29 @@ describe('detection transport state', () => {
             activeTabId: null,
             snapshot: null,
         });
+    });
+});
+
+describe('isDetectionTransportKnown', () => {
+    it('is known only after a successful read, including while stale', () => {
+        expect(isDetectionTransportKnown(INITIAL_DETECTION_TRANSPORT_STATE)).toBe(
+            false,
+        );
+        const unavailable = applyDetectionTransportFailure(
+            INITIAL_DETECTION_TRANSPORT_STATE,
+            'worker unavailable',
+        );
+        expect(isDetectionTransportKnown(unavailable)).toBe(false);
+        const available = applyDetectionTransportSuccess(
+            INITIAL_DETECTION_TRANSPORT_STATE,
+            ACTIVE_TAB_ID,
+            null,
+        );
+        expect(isDetectionTransportKnown(available)).toBe(true);
+        expect(
+            isDetectionTransportKnown(
+                applyDetectionTransportFailure(available, 'worker unavailable'),
+            ),
+        ).toBe(true);
     });
 });

@@ -284,11 +284,6 @@ export class ChromePromptApiAdapter implements LlmProviderAdapter {
                 };
             }
 
-            console.log(
-                '[TopSkip] ChromePromptApiAdapter raw response:',
-                rawContent,
-            );
-
             const parsed = parseLlmPromoResponse(
                 rawContent,
                 params.durationSec,

@@ -1,3 +1,4 @@
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import browser from '@/shared/browser';
 import { getErrorMessage } from '@/shared/error';
@@ -40,23 +41,27 @@ export class ContentLogMessages {
  */
 export class PromoDetectionRuntimeMessages {
     /**
-     * Reads `PromoDetectionStore` for the frontmost tab in the current window.
+     * Reads `PromoDetectionStore` for the frontmost tab in the current window
+     * and the debug-log switch state for the popup indicator; this poll is
+     * never logged as an event.
      *
-     * @returns Detection snapshot for the active tab
+     * @returns Detection snapshot for the active tab plus the switch state
      */
     static async handleGet(): Promise<GetDetectionStatusResponse> {
         try {
             await PromoDetectionStore.ready();
+            await DebugLogStore.ready();
+            const debugLoggingEnabled = DebugLogStore.isEnabled();
             const tabs = await browser.tabs.query({
                 active: true,
                 currentWindow: true,
             });
             const tabId = tabs[0]?.id;
             if (tabId === undefined) {
-                return { ok: true, tabId: null, state: null };
+                return { ok: true, tabId: null, state: null, debugLoggingEnabled };
             }
             const state = PromoDetectionStore.get(tabId);
-            return { ok: true, tabId, state };
+            return { ok: true, tabId, state, debugLoggingEnabled };
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
         }

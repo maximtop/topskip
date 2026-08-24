@@ -65,6 +65,48 @@ export const STORAGE_KEY_SERVER_CONFIG_REFRESH_ATTEMPT =
     'topskip:server-config-refresh-attempt';
 
 /**
+ * Background-only index of result-cache record keys so cache cleanup reads
+ * its own rows instead of scanning every key in `storage.local` (and never
+ * loads debug-log segments).
+ */
+export const STORAGE_KEY_SERVER_RESULT_CACHE_INDEX =
+    'topskip:server-result-cache:index';
+
+/**
+ * Common prefix of every debug-log key in `browser.storage.local`; disjoint
+ * from the result-cache prefix so cache cleanup never loads log segments.
+ */
+export const STORAGE_KEY_DEBUG_LOG_PREFIX = 'topskip:debug-log:';
+
+/**
+ * Debug-log switch record: switch state plus the last-known build label.
+ */
+export const STORAGE_KEY_DEBUG_LOG_SWITCH = `${STORAGE_KEY_DEBUG_LOG_PREFIX}switch`;
+
+/**
+ * Debug-log index record: counters, timestamps, segment list and revision.
+ */
+export const STORAGE_KEY_DEBUG_LOG_INDEX = `${STORAGE_KEY_DEBUG_LOG_PREFIX}index`;
+
+/**
+ * Prefix of the per-segment debug-log keys; the numeric segment id follows.
+ */
+export const STORAGE_KEY_DEBUG_LOG_SEGMENT_PREFIX =
+    `${STORAGE_KEY_DEBUG_LOG_PREFIX}segment:`;
+
+/**
+ * `browser.storage.session` marker proving a previous worker of this browser
+ * session already ran (distinguishes a worker wake from a session-state
+ * loss).
+ */
+export const SESSION_STORAGE_KEY_DEBUG_LOG_WORKER = 'topskipDebugLogWorker';
+
+/**
+ * `browser.storage.session` mirror of the per-tab attribution state.
+ */
+export const SESSION_STORAGE_KEY_DEBUG_LOG_TABS = 'topskipDebugLogTabs';
+
+/**
  * Max characters for merged caption transcript sent to OpenRouter (tail
  * truncated deterministically).
  */
@@ -144,6 +186,16 @@ export const SECONDS_PER_MINUTE = 60;
  */
 export const PERCENT_SCALE = 100;
 
+/**
+ * Bytes per kibibyte — the binary unit used for storage accounting and UI.
+ */
+export const BYTES_PER_KIB = 1024;
+
+/**
+ * Bytes per mebibyte.
+ */
+export const BYTES_PER_MIB = 1024 * BYTES_PER_KIB;
+
 // ──────────────────────────────────────────── Logging ─────────────────────
 
 /**
@@ -163,6 +215,19 @@ export const LOG_PREFIX_CAPTIONS = '[TopSkip captions]';
 export const LOG_PREFIX_CONTENT = '[TopSkip content]';
 
 // ──────────────────────────────────────────── HTTP ────────────────────────
+
+/**
+ * MIME type of the plain-text debug-log download.
+ */
+export const MIME_TEXT_PLAIN_UTF8 = 'text/plain;charset=utf-8';
+
+// ────────────────────────────────────────── Messaging ─────────────────────
+
+/**
+ * `frameId` Chrome assigns to a tab's top-level document; content senders
+ * from sub-frames carry positive ids and are never trusted.
+ */
+export const TOP_FRAME_ID = 0;
 
 // ──────────────────────────────────────── Debug / Dev ─────────────────────
 

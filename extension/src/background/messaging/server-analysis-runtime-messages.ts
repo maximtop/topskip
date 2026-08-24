@@ -1,6 +1,7 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 import * as v from 'valibot';
 
+import { DebugLog } from '@/background/debug-log/debug-log';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { ServerAnalysisConfiguration } from '@/background/server-analysis-configuration';
 import { ServerAnalysisClient } from '@/background/server-analysis-client';
@@ -9,7 +10,11 @@ import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/backg
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { ServerResultCacheStorage } from '@/background/storage/server-result-cache';
 import browser from '@/shared/browser';
-import { ANALYSIS_MODE } from '@/shared/constants';
+import { ANALYSIS_MODE, TOP_FRAME_ID } from '@/shared/constants';
+import {
+    DEBUG_LOG_EVENT,
+    formatPromoBlockTimings,
+} from '@/shared/debug-log-events';
 import {
     contentRouteStatusResponseSchema,
     PROMO_DETECTION_SOURCE,
@@ -48,7 +53,6 @@ import {
     classifyServerFailure,
 } from '@/shared/server-analysis-failure';
 
-const TOP_FRAME_ID = 0;
 const LOCAL_SESSION_FAILURE_CODE = {
     [SERVER_ANALYSIS_SESSION_EVENT.CaptionsUnavailable]:
         SERVER_ANALYSIS_FAILURE_CODE.CaptionsUnavailable,
@@ -151,6 +155,16 @@ export class ServerAnalysisRuntimeMessages {
         ) {
             return false;
         }
+        DebugLog.record(
+            DEBUG_LOG_EVENT.TerminalEvent,
+            { failureCode: input.failure.code },
+            {
+                tab: input.tabId,
+                video: input.videoId,
+                session: input.sessionId,
+                support: input.failure.supportId,
+            },
+        );
         await PromoDetectionStore.set(input.tabId, {
             videoId: input.videoId,
             sessionId: input.sessionId,
@@ -190,6 +204,15 @@ export class ServerAnalysisRuntimeMessages {
                 videoId: input.videoId,
                 reason: 'stale-tab',
             });
+            DebugLog.record(
+                DEBUG_LOG_EVENT.DeliverySkipped,
+                { reason: 'stale-tab' },
+                {
+                    tab: input.tabId,
+                    video: input.videoId,
+                    session: input.sessionId,
+                },
+            );
             return false;
         }
         const message = {
@@ -235,6 +258,27 @@ export class ServerAnalysisRuntimeMessages {
             blockCount: input.promoBlocks.length,
             source: input.source,
         });
+        DebugLog.record(
+            DEBUG_LOG_EVENT.CacheDecision,
+            { decision: input.source },
+            {
+                tab: input.tabId,
+                video: input.videoId,
+                session: input.sessionId,
+            },
+        );
+        DebugLog.record(
+            DEBUG_LOG_EVENT.BlocksDelivered,
+            {
+                count: input.promoBlocks.length,
+                blocks: formatPromoBlockTimings(input.promoBlocks),
+            },
+            {
+                tab: input.tabId,
+                video: input.videoId,
+                session: input.sessionId,
+            },
+        );
         return true;
     }
 
@@ -673,6 +717,7 @@ export class ServerAnalysisRuntimeMessages {
                 extensionVersion: browser.runtime.getManifest().version,
                 languageCode: payload.languageCode,
                 segments: payload.segments,
+                tabId,
             });
             return await ServerAnalysisRuntimeMessages.applyServerResponse({
                 tabId,
@@ -734,6 +779,7 @@ export class ServerAnalysisRuntimeMessages {
             const response = await ServerAnalysisClient.requestJobStatus({
                 jobId: payload.jobId,
                 identity: payload.identity,
+                tabId,
             });
             if (
                 response.status === 'error' &&

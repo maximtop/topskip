@@ -148,3 +148,56 @@ export function resolveDetectionModel(
         null
     );
 }
+
+/**
+ * Stand-in written to diagnostics for a model id that is not a built-in
+ * preset: custom or fine-tuned slugs can embed organisation names.
+ */
+export const DEBUG_LOG_CUSTOM_MODEL_ID = 'custom';
+
+/**
+ * Whether a model id is one of the built-in presets of the given provider.
+ *
+ * @param providerId - Provider the model is configured for.
+ * @param modelId - Provider-prefixed model id.
+ * @returns `true` only for a shipped preset of that provider.
+ */
+export function isPresetModelId(providerId: string, modelId: string): boolean {
+    return getBuiltinDetectionModels().some(
+        (model) => model.providerId === providerId && model.id === modelId,
+    );
+}
+
+/**
+ * Model id as it may appear in the debug log: verbatim for presets, the
+ * custom stand-in for everything else.
+ *
+ * @param providerId - Provider the model is configured for.
+ * @param modelId - Provider-prefixed model id.
+ * @returns Loggable model id.
+ */
+export function toDebugLogModelId(providerId: string, modelId: string): string {
+    return isPresetModelId(providerId, modelId)
+        ? modelId
+        : DEBUG_LOG_CUSTOM_MODEL_ID;
+}
+
+/**
+ * Provider-native model name as it may appear in the debug log: verbatim for
+ * a shipped preset of that provider, the custom stand-in otherwise (custom or
+ * fine-tuned names can embed an organisation name).
+ *
+ * @param providerId - Provider that produced the model name.
+ * @param modelName - Provider-native model name (not the prefixed id).
+ * @returns Loggable model name.
+ */
+export function toDebugLogModelName(
+    providerId: string,
+    modelName: string,
+): string {
+    const preset = getBuiltinDetectionModels().some(
+        (model) =>
+            model.providerId === providerId && model.modelName === modelName,
+    );
+    return preset ? modelName : DEBUG_LOG_CUSTOM_MODEL_ID;
+}

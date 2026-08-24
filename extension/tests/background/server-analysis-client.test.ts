@@ -10,12 +10,17 @@ vi.mock('@/background/storage/server-installation-storage', () => ({
     ServerInstallationStorage: installationMocks,
 }));
 
+const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
+
+vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
+
 import {
     ServerAnalysisClient,
     ServerAnalysisClientError,
 } from '@/background/server-analysis-client';
 import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 
 /**
  * Endpoint under the configured backend origin.
@@ -785,6 +790,88 @@ describe('ServerAnalysisClient', () => {
             failure: { code: 'invalid_server_response' },
         });
         expect(fetchMock).toHaveBeenCalledTimes(2);
+    });
+
+    describe('ServerAnalysisClient debug-log routing', () => {
+        // Hoisted so the any-typed matcher never sits in a property
+        // position (no-unsafe-assignment).
+        const ANY_NUMBER: unknown = expect.any(Number);
+
+        beforeEach(() => {
+            debugLogMock.record.mockReset();
+        });
+
+        it('records http-start/http-response for analysis with tab attribution', async () => {
+            fetchMock.mockResolvedValueOnce(
+                new Response(JSON.stringify(PROCESSING_RESPONSE), {
+                    status: 202,
+                }),
+            );
+
+            await ServerAnalysisClient.requestAnalysis({
+                ...ANALYSIS_INPUT,
+                tabId: 77,
+            });
+
+            expect(debugLogMock.record).toHaveBeenCalledWith(
+                DEBUG_LOG_EVENT.HttpStart,
+                { operation: 'analysis', attempt: 1 },
+                { tab: 77, video: 'dQw4w9WgXcQ' },
+            );
+            expect(debugLogMock.record).toHaveBeenCalledWith(
+                DEBUG_LOG_EVENT.HttpResponse,
+                {
+                    operation: 'analysis',
+                    status: 202,
+                    elapsedMs: ANY_NUMBER,
+                    attempt: 1,
+                },
+                { tab: 77, video: 'dQw4w9WgXcQ' },
+            );
+        });
+
+        it('never records http-start/http-response for poll operations', async () => {
+            fetchMock.mockResolvedValueOnce(
+                new Response(JSON.stringify({ ...PROCESSING_RESPONSE }), {
+                    status: 200,
+                }),
+            );
+
+            await ServerAnalysisClient.requestJobStatus({
+                jobId: 'job-server-v6',
+                identity: IDENTITY,
+                tabId: 77,
+            });
+
+            const events = debugLogMock.record.mock.calls.map(
+                // Explicit unknown return keeps the any-typed mock call
+                // tuple from tripping no-unsafe-return.
+                (call): unknown => call[0],
+            );
+            expect(events).not.toContain(DEBUG_LOG_EVENT.HttpStart);
+            expect(events).not.toContain(DEBUG_LOG_EVENT.HttpResponse);
+        });
+
+        it('records http-error for a poll transport failure with the job id', async () => {
+            fetchMock.mockRejectedValue(new TypeError('network down'));
+
+            await expect(
+                ServerAnalysisClient.requestJobStatus({
+                    jobId: 'job-x',
+                    identity: IDENTITY,
+                    tabId: 5,
+                }),
+            ).rejects.toBeInstanceOf(ServerAnalysisClientError);
+
+            expect(debugLogMock.record).toHaveBeenCalledWith(
+                DEBUG_LOG_EVENT.HttpError,
+                expect.objectContaining({
+                    operation: 'poll',
+                    code: 'request-failed',
+                }),
+                { tab: 5, job: 'job-x' },
+            );
+        });
     });
 
     it('retries when the response body stalls until the request timeout', async () => {

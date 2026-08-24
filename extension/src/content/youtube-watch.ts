@@ -2,8 +2,10 @@ import * as v from 'valibot';
 
 import {
     evaluatePromoBlocksSkip,
+    explainSuppressedPromoSkip,
     promoBlockStartKey,
     resetFiredIndicesOnBackwardSeek,
+    type PromoBlocksSkipInput,
 } from '@/content/promo-skip-logic';
 import {
     E2E_HOST,
@@ -21,14 +23,24 @@ import {
     ServerAnalysisSession,
     type ServerAnalysisInterruptionReason,
     type ServerAnalysisPendingOperation,
+    type ServerAnalysisPollSummary,
     type ServerAnalysisTerminalEvent,
 } from '@/content/server-analysis-session';
-import { contentLog } from '@/content/content-log';
+import {
+    DEBUG_LOG_SEEK_KIND,
+    DebugLogClient,
+    type DebugLogEventIds,
+} from '@/content/debug-log-client';
+import {
+    DEBUG_LOG_EVENT,
+    formatPromoBlockTimings,
+    roundLogSeconds,
+} from '@/shared/debug-log-events';
+import { DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS } from '@/shared/debug-log-constants';
 import { ContentServerAnalysisLog } from '@/content/server-analysis-log';
 import { WatchCaptions } from '@/content/watch-captions';
 import browser from '@/shared/browser';
 import { getExtensionBuildLabel } from '@/shared/extension-build';
-import { formatLogFields } from '@/shared/log-fields';
 import {
     ANALYSIS_MODE,
     MS_PER_SECOND,
@@ -104,6 +116,10 @@ const CONTENT_RUNTIME_OUTCOME_STATUS = {
 } as const;
 const SERVER_ANALYSIS_DEADLINE_TIMER_REASON = 'analysis-deadline';
 const SERVER_ANALYSIS_FAILED_ACK_LOG_STATUS = 'failed';
+/**
+ * Polling stops for the old job when the server asks for an exact resubmit.
+ */
+const SERVER_ANALYSIS_RESUBMIT_POLL_REASON = 'resubmit';
 
 /**
  * Stable capture-owner reasons keep route cleanup diagnostics comparable.
@@ -113,6 +129,53 @@ const WATCH_CAPTION_CANCEL_REASON = {
     Disabled: 'disabled',
     Navigation: 'navigation',
 } as const;
+
+/**
+ * Why a preferences snapshot arrived; `prefs-received` carries only this fact
+ * because enabled/mode values are recorded by the background `prefs-saved`.
+ */
+const PREFS_RECEIVED_REASON = {
+    Bootstrap: 'bootstrap',
+    Broadcast: 'broadcast',
+} as const;
+
+/**
+ * Listener that cleared fired keys, recorded on `fired-reset`.
+ */
+const FIRED_RESET_REASON = {
+    TimeUpdate: 'timeupdate',
+    Seeked: 'seeked',
+} as const;
+
+/**
+ * Bounded tokens for content-lifecycle events.
+ */
+const CONTENT_LIFECYCLE_TOKEN = {
+    Enabled: 'enabled',
+    Disabled: 'disabled',
+    Bound: 'bound',
+    ElementReplaced: 'element-replaced',
+    NoRoute: 'none',
+} as const;
+
+/**
+ * A `timeupdate` gap larger than this did not come from playback (element
+ * swap, MSE repositioning) and is worth one coalesced `seek-summary`.
+ */
+const TIMEUPDATE_JUMP_THRESHOLD_SEC = 2;
+
+/**
+ * Reads the discriminant of an opaque runtime message without trusting any
+ * other field.
+ *
+ * @param message - Value delivered by `runtime.onMessage`.
+ * @returns The `type` field, or `undefined` for non-objects.
+ */
+function readRuntimeMessageType(message: unknown): unknown {
+    return message !== null && typeof message === 'object'
+        ? Reflect.get(message, 'type')
+        : undefined;
+}
 
 /**
  * Safe retry reasons keep diagnostics free of rejected runtime details.
@@ -195,12 +258,27 @@ export function resolveAnalysisModeForCurrentVideo(
 }
 
 /**
- * Rejects late Server blocks after navigation or a same-video session replacement.
- *
- * @param input - Current route identity and the delivered block-message identity.
- * @returns Whether playback may accept the blocks.
+ * Stable causes for refusing delivered promo blocks. Diagnostics only; the
+ * boolean gate derives from this function so the two can never disagree.
  */
-export function shouldAcceptPromoBlocksForActiveRoute(input: {
+export const PROMO_BLOCKS_REJECTION_CAUSE = {
+    Disabled: 'disabled',
+    VideoMismatch: 'video-mismatch',
+    RouteMismatch: 'route-mismatch',
+    SessionMismatch: 'session-mismatch',
+    DuplicateTerminal: 'duplicate-terminal',
+} as const;
+
+/**
+ * Rejection cause literal union.
+ */
+export type PromoBlocksRejectionCause =
+    (typeof PROMO_BLOCKS_REJECTION_CAUSE)[keyof typeof PROMO_BLOCKS_REJECTION_CAUSE];
+
+/**
+ * Route identity compared against the delivered block-message identity.
+ */
+export type PromoBlocksAcceptanceInput = {
     currentVideoId: string | null;
     messageVideoId: string;
     source: PromoDetectionSource;
@@ -208,18 +286,51 @@ export function shouldAcceptPromoBlocksForActiveRoute(input: {
     analysisMode: AnalysisMode | null;
     activeSessionId: string | null;
     messageSessionId?: string;
-}): boolean {
-    if (!input.enabled || input.messageVideoId !== input.currentVideoId) {
-        return false;
+};
+
+/**
+ * Explains why delivered blocks must be refused for the active route, or
+ * `null` when they are acceptable.
+ *
+ * @param input - Current route identity and the delivered block-message identity.
+ * @returns Stable cause, or `null` when playback may accept the blocks.
+ */
+export function explainPromoBlocksRejection(
+    input: PromoBlocksAcceptanceInput,
+): PromoBlocksRejectionCause | null {
+    if (!input.enabled) {
+        return PROMO_BLOCKS_REJECTION_CAUSE.Disabled;
+    }
+    if (input.messageVideoId !== input.currentVideoId) {
+        return PROMO_BLOCKS_REJECTION_CAUSE.VideoMismatch;
     }
     if (input.source === PROMO_DETECTION_SOURCE.LocalProvider) {
-        return input.analysisMode === ANALYSIS_MODE.Byok;
+        return input.analysisMode === ANALYSIS_MODE.Byok
+            ? null
+            : PROMO_BLOCKS_REJECTION_CAUSE.RouteMismatch;
     }
-    return (
-        input.analysisMode === ANALYSIS_MODE.Server &&
-        input.activeSessionId !== null &&
-        input.messageSessionId === input.activeSessionId
-    );
+    if (input.analysisMode !== ANALYSIS_MODE.Server) {
+        return PROMO_BLOCKS_REJECTION_CAUSE.RouteMismatch;
+    }
+    if (
+        input.activeSessionId === null ||
+        input.messageSessionId !== input.activeSessionId
+    ) {
+        return PROMO_BLOCKS_REJECTION_CAUSE.SessionMismatch;
+    }
+    return null;
+}
+
+/**
+ * Rejects late Server blocks after navigation or a same-video session replacement.
+ *
+ * @param input - Current route identity and the delivered block-message identity.
+ * @returns Whether playback may accept the blocks.
+ */
+export function shouldAcceptPromoBlocksForActiveRoute(
+    input: PromoBlocksAcceptanceInput,
+): boolean {
+    return explainPromoBlocksRejection(input) === null;
 }
 
 /**
@@ -350,12 +461,32 @@ export class YoutubeWatch {
     private static firedPromoBlockStartKeys = new Set<number>();
 
     /**
+     * Last `block:reason` pair logged as `skip-suppressed`; the playback hook
+     * stays silent while that situation is unchanged so ordinary ticks send
+     * nothing.
+     */
+    private static lastSkipSuppressionKey: string | null = null;
+
+    /**
      * Current page’s watch `v` query param (or e2e fixture id).
      *
      * @returns The video id from the URL, or `null`.
      */
     private static getWatchVideoId(): string | null {
         return getWatchVideoIdFromSearch(location.hostname, location.search);
+    }
+
+    /**
+     * Common identity for content events: the bound video and, in Server
+     * mode, the analysis session that owns the current route.
+     *
+     * @returns Ids with `undefined` for unknown values.
+     */
+    private static debugLogIds(): DebugLogEventIds {
+        return {
+            video: YoutubeWatch.currentVideoId ?? undefined,
+            session: YoutubeWatch.serverAnalysisSession?.sessionId,
+        };
     }
 
     /**
@@ -371,7 +502,7 @@ export class YoutubeWatch {
             ? YoutubeWatch.getWatchVideoId()
             : null;
         const routeIsSynchronized = videoId === YoutubeWatch.currentVideoId;
-        return {
+        const status: ContentRouteStatusResponse = {
             ok: true,
             protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
             extensionVersion: browser.runtime.getManifest().version,
@@ -384,6 +515,21 @@ export class YoutubeWatch {
                 ? YoutubeWatch.serverAnalysisSession?.sessionId ?? null
                 : null,
         };
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.RouteStatus,
+            {
+                route: status.analysisMode ?? CONTENT_LIFECYCLE_TOKEN.NoRoute,
+                outcome: status.enabled
+                    ? CONTENT_LIFECYCLE_TOKEN.Enabled
+                    : CONTENT_LIFECYCLE_TOKEN.Disabled,
+                protocol: CONTENT_SCRIPT_PROTOCOL_VERSION,
+            },
+            {
+                video: status.videoId ?? undefined,
+                session: status.serverSessionId ?? undefined,
+            },
+        );
+        return status;
     }
 
     /**
@@ -521,48 +667,48 @@ export class YoutubeWatch {
         const prev = YoutubeWatch.lastTime;
 
         if (YoutubeWatch.promoBlocks.length > 0) {
-            // Log significant jumps that didn't come through
-            // seeking/seeked (video element swap or MSE).
+            // A gap that did not come through seeking/seeked (element swap,
+            // MSE repositioning) is recorded as a coalesced jump; the client
+            // queues it without touching the runtime on this stack.
             const delta = currentTime - prev;
-            if (Math.abs(delta) > 2) {
-                contentLog.info(
-                    'timeupdate jump',
-                    prev.toFixed(2),
-                    '→',
-                    currentTime.toFixed(2),
-                    'seeking=',
-                    YoutubeWatch.isSeeking,
+            if (Math.abs(delta) > TIMEUPDATE_JUMP_THRESHOLD_SEC) {
+                DebugLogClient.logSeek(
+                    DEBUG_LOG_SEEK_KIND.Jump,
+                    { fromSec: prev, toSec: currentTime },
+                    YoutubeWatch.debugLogIds(),
                 );
             }
 
+            const firedBefore = YoutubeWatch.firedPromoBlockStartKeys.size;
             resetFiredIndicesOnBackwardSeek({
                 currentTime,
                 prevTime: prev,
                 blocks: YoutubeWatch.promoBlocks,
                 firedStartKeys: YoutubeWatch.firedPromoBlockStartKeys,
             });
+            YoutubeWatch.logFiredReset(firedBefore, FIRED_RESET_REASON.TimeUpdate);
 
-            const decision = evaluatePromoBlocksSkip({
+            const skipInput: PromoBlocksSkipInput = {
                 prevTime: prev,
                 currentTime,
                 duration,
                 isSeeking: YoutubeWatch.isSeeking,
                 firedStartKeys: YoutubeWatch.firedPromoBlockStartKeys,
                 blocks: YoutubeWatch.promoBlocks,
-            });
+            };
+            const decision = evaluatePromoBlocksSkip(skipInput);
             if (decision.action === 'skip') {
-                contentLog.info(
-                    'SKIP block',
-                    decision.blockIndex,
-                    'at',
-                    currentTime.toFixed(2),
-                    '→',
-                    decision.targetTime.toFixed(2),
-                    'prev=',
-                    prev.toFixed(2),
-                    'fired=',
-                    JSON.stringify([...YoutubeWatch.firedPromoBlockStartKeys]),
+                DebugLogClient.log(
+                    DEBUG_LOG_EVENT.SkipApplied,
+                    {
+                        block: decision.blockIndex,
+                        fromSec: roundLogSeconds(currentTime),
+                        toSec: roundLogSeconds(decision.targetTime),
+                        deltaSec: roundLogSeconds(delta),
+                    },
+                    YoutubeWatch.debugLogIds(),
                 );
+                YoutubeWatch.lastSkipSuppressionKey = null;
                 const blk = YoutubeWatch.promoBlocks[decision.blockIndex];
                 if (blk !== undefined) {
                     YoutubeWatch.firedPromoBlockStartKeys.add(
@@ -571,12 +717,61 @@ export class YoutubeWatch {
                 }
                 YoutubeWatch.applyPromoSeek(video, decision.targetTime);
             } else {
+                YoutubeWatch.logSkipSuppressed(skipInput);
                 YoutubeWatch.lastTime = currentTime;
             }
             return;
         }
 
         YoutubeWatch.lastTime = currentTime;
+    }
+
+    /**
+     * Logs a suppressed skip once per `(block, reason)` pair while it
+     * persists, so the `timeupdate` hook costs one string compare on
+     * ordinary ticks and sends nothing while the situation is unchanged.
+     *
+     * @param input - Playback state already evaluated without a skip.
+     */
+    private static logSkipSuppressed(input: PromoBlocksSkipInput): void {
+        const suppression = explainSuppressedPromoSkip(input);
+        if (suppression === null) {
+            YoutubeWatch.lastSkipSuppressionKey = null;
+            return;
+        }
+        const key = `${suppression.blockIndex}:${suppression.reason}`;
+        if (key === YoutubeWatch.lastSkipSuppressionKey) {
+            return;
+        }
+        YoutubeWatch.lastSkipSuppressionKey = key;
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.SkipSuppressed,
+            {
+                block: suppression.blockIndex,
+                reason: suppression.reason,
+                fromSec: roundLogSeconds(input.prevTime),
+                toSec: roundLogSeconds(input.currentTime),
+            },
+            YoutubeWatch.debugLogIds(),
+        );
+    }
+
+    /**
+     * Logs a fired-key reset only when a backward move actually cleared keys.
+     *
+     * @param sizeBefore - Fired-key count before the reset ran.
+     * @param reason - Listener that performed the reset.
+     */
+    private static logFiredReset(sizeBefore: number, reason: string): void {
+        const cleared = sizeBefore - YoutubeWatch.firedPromoBlockStartKeys.size;
+        if (cleared <= 0) {
+            return;
+        }
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.FiredReset,
+            { count: cleared, reason },
+            YoutubeWatch.debugLogIds(),
+        );
     }
 
     /**
@@ -592,48 +787,38 @@ export class YoutubeWatch {
         YoutubeWatch.boundVideo = video;
         YoutubeWatch.isSeeking = false;
         YoutubeWatch.lastTime = video.currentTime;
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.VideoBound,
+            { outcome: CONTENT_LIFECYCLE_TOKEN.Bound },
+            YoutubeWatch.debugLogIds(),
+        );
 
         const onSeeking = (): void => {
             YoutubeWatch.isSeeking = true;
-            if (YoutubeWatch.promoBlocks.length > 0) {
-                contentLog.info(
-                    'seeking started at',
-                    video.currentTime.toFixed(2),
-                    'lastTime=',
-                    YoutubeWatch.lastTime.toFixed(2),
-                );
-            }
         };
         const onSeeked = (): void => {
             YoutubeWatch.isSeeking = false;
-            if (
-                YoutubeWatch.promoBlocks.length > 0 &&
-                video.currentTime < YoutubeWatch.lastTime
-            ) {
-                contentLog.info(
-                    'backward seeked:',
-                    YoutubeWatch.lastTime.toFixed(2),
-                    '→',
-                    video.currentTime.toFixed(2),
-                    'fired=',
-                    JSON.stringify([...YoutubeWatch.firedPromoBlockStartKeys]),
-                );
-                resetFiredIndicesOnBackwardSeek({
-                    currentTime: video.currentTime,
-                    prevTime: YoutubeWatch.lastTime,
-                    blocks: YoutubeWatch.promoBlocks,
-                    firedStartKeys: YoutubeWatch.firedPromoBlockStartKeys,
-                });
-                contentLog.info(
-                    'after reset fired=',
-                    JSON.stringify([...YoutubeWatch.firedPromoBlockStartKeys]),
-                );
-            } else if (YoutubeWatch.promoBlocks.length > 0) {
-                contentLog.info(
-                    'forward seeked:',
-                    YoutubeWatch.lastTime.toFixed(2),
-                    '→',
-                    video.currentTime.toFixed(2),
+            if (YoutubeWatch.promoBlocks.length > 0) {
+                const fromSec = YoutubeWatch.lastTime;
+                const toSec = video.currentTime;
+                if (toSec < fromSec) {
+                    const firedBefore =
+                        YoutubeWatch.firedPromoBlockStartKeys.size;
+                    resetFiredIndicesOnBackwardSeek({
+                        currentTime: toSec,
+                        prevTime: fromSec,
+                        blocks: YoutubeWatch.promoBlocks,
+                        firedStartKeys: YoutubeWatch.firedPromoBlockStartKeys,
+                    });
+                    YoutubeWatch.logFiredReset(
+                        firedBefore,
+                        FIRED_RESET_REASON.Seeked,
+                    );
+                }
+                DebugLogClient.logSeek(
+                    DEBUG_LOG_SEEK_KIND.Seek,
+                    { fromSec, toSec },
+                    YoutubeWatch.debugLogIds(),
                 );
             }
             YoutubeWatch.lastTime = video.currentTime;
@@ -687,6 +872,7 @@ export class YoutubeWatch {
         YoutubeWatch.lastTime = 0;
         YoutubeWatch.promoBlocks = [];
         YoutubeWatch.firedPromoBlockStartKeys.clear();
+        YoutubeWatch.lastSkipSuppressionKey = null;
     }
 
     /**
@@ -713,6 +899,7 @@ export class YoutubeWatch {
         YoutubeWatch.isSeeking = false;
         YoutubeWatch.promoBlocks = [];
         YoutubeWatch.firedPromoBlockStartKeys.clear();
+        YoutubeWatch.lastSkipSuppressionKey = null;
     }
 
     /**
@@ -777,6 +964,15 @@ export class YoutubeWatch {
         reason: string,
         session: ServerAnalysisSession | null,
     ): void {
+        if (session !== null) {
+            // Every terminal and cancelled route passes through here before
+            // `complete()`/`cancel()` release the job, so the final per-job
+            // summary is complete and emitted exactly once.
+            YoutubeWatch.logPollSummary(session, session.getPollSummary(), {
+                terminal: true,
+                reason,
+            });
+        }
         YoutubeWatch.clearServerAnalysisPolling(reason);
         YoutubeWatch.clearServerAnalysisRetry(reason);
         YoutubeWatch.clearServerAnalysisDeadline();
@@ -813,6 +1009,31 @@ export class YoutubeWatch {
         ) {
             YoutubeWatch.terminalEventDeliveryOwner = null;
         }
+    }
+
+    /**
+     * Emits the content-owned polling summary. The background keeps no
+     * per-job polling memory, so this is the only place `polls`/`retries`
+     * are known; the final summary uses the polling-stopped reason.
+     *
+     * @param session - Session owning the job.
+     * @param summary - Snapshot taken before the job was released.
+     * @param outcome - Final (with reason) or interim marker.
+     */
+    private static logPollSummary(
+        session: ServerAnalysisSession,
+        summary: ServerAnalysisPollSummary | null,
+        outcome: { terminal: true; reason: string } | { terminal: false },
+    ): void {
+        if (summary === null) {
+            return;
+        }
+        const { job, ...counters } = summary;
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.PollSummary,
+            { ...counters, ...outcome },
+            { video: session.getVideoId(), session: session.sessionId, job },
+        );
     }
 
     /**
@@ -888,6 +1109,11 @@ export class YoutubeWatch {
         session: ServerAnalysisSession,
         reason: ServerAnalysisInterruptionReason,
     ): void {
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.AnalysisInterrupted,
+            { reason },
+            { video: session.getVideoId(), session: session.sessionId },
+        );
         YoutubeWatch.completeServerAnalysisSessionWithEvent(
             session,
             {
@@ -1138,6 +1364,9 @@ export class YoutubeWatch {
             );
             return;
         }
+        if (retry.operation.kind === SERVER_ANALYSIS_OPERATION_KIND.Poll) {
+            session.recordPollStatus(SERVER_ANALYSIS_FAILED_ACK_LOG_STATUS, true);
+        }
 
         YoutubeWatch.clearServerAnalysisRetry('retry-replaced');
         ContentServerAnalysisLog.warn('runtime-operation-retry-scheduled', {
@@ -1298,16 +1527,34 @@ export class YoutubeWatch {
             return;
         }
 
+        const ackStatus = response.ok
+            ? response.status
+            : SERVER_ANALYSIS_FAILED_ACK_LOG_STATUS;
         ContentServerAnalysisLog.info('runtime-ack', {
             videoId,
-            status: response.ok
-                ? response.status
-                : SERVER_ANALYSIS_FAILED_ACK_LOG_STATUS,
+            status: ackStatus,
             jobId:
                 response.ok && response.status === 'processing'
                     ? response.jobId
                     : undefined,
         });
+        // The pending operation is still the poll that produced this ack:
+        // `pinProcessing`/`takeExactResubmission` replace it further below.
+        const isPollAck =
+            session.getPendingOperation()?.kind ===
+            SERVER_ANALYSIS_OPERATION_KIND.Poll;
+        if (isPollAck) {
+            session.recordPollStatus(ackStatus, false);
+            const interim = session.getPollSummary();
+            if (
+                interim !== null &&
+                interim.polls % DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS === 0
+            ) {
+                YoutubeWatch.logPollSummary(session, interim, {
+                    terminal: false,
+                });
+            }
+        }
 
         if (!response.ok) {
             YoutubeWatch.completeServerAnalysisSession(
@@ -1360,6 +1607,9 @@ export class YoutubeWatch {
                 );
                 return;
             }
+            // Snapshot first: a successful take releases the old job, and a
+            // failed take leaves it for the interruption path to summarize.
+            const resubmittedJob = session.getPollSummary();
             const request = session.takeExactResubmission();
             if (request === null) {
                 YoutubeWatch.interruptServerAnalysisSession(
@@ -1368,7 +1618,13 @@ export class YoutubeWatch {
                 );
                 return;
             }
-            YoutubeWatch.clearServerAnalysisPolling('resubmit');
+            YoutubeWatch.logPollSummary(session, resubmittedJob, {
+                terminal: true,
+                reason: SERVER_ANALYSIS_RESUBMIT_POLL_REASON,
+            });
+            YoutubeWatch.clearServerAnalysisPolling(
+                SERVER_ANALYSIS_RESUBMIT_POLL_REASON,
+            );
             const operation = session.getPendingOperation();
             if (operation !== null) {
                 void YoutubeWatch.executeServerAnalysisOperation(
@@ -1784,6 +2040,11 @@ export class YoutubeWatch {
         YoutubeWatch.clearTerminalEventDelivery('new-session', null);
         const session = ServerAnalysisSession.create(videoId);
         YoutubeWatch.serverAnalysisSession = session;
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.AnalysisRequested,
+            { route: ANALYSIS_MODE.Server },
+            { video: videoId, session: session.sessionId },
+        );
         YoutubeWatch.scheduleServerAnalysisDeadline(session);
         void YoutubeWatch.captureAndRequestServerAnalysis(
             session,
@@ -1817,6 +2078,14 @@ export class YoutubeWatch {
         }
         YoutubeWatch.serverAnalysisRouteLogKey = key;
         ContentServerAnalysisLog.info('route-decision', input);
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.RouteDecision,
+            {
+                route: input.analysisMode ?? CONTENT_LIFECYCLE_TOKEN.NoRoute,
+                decision: input.outcome,
+            },
+            { video: input.videoId ?? undefined },
+        );
     }
 
     /**
@@ -1876,7 +2145,17 @@ export class YoutubeWatch {
 
         const isVideoElementSwap =
             !isNewVideo && YoutubeWatch.boundVideo !== video;
+        // A deferred first bind (prefs arrived after the initial sync pass)
+        // has no previous element, so it must not read as a player swap.
+        const hadBoundVideo = YoutubeWatch.boundVideo !== null;
         YoutubeWatch.bindVideo(video);
+        if (isVideoElementSwap && hadBoundVideo) {
+            DebugLogClient.log(
+                DEBUG_LOG_EVENT.VideoSwapped,
+                { reason: CONTENT_LIFECYCLE_TOKEN.ElementReplaced },
+                YoutubeWatch.debugLogIds(),
+            );
+        }
 
         YoutubeWatch.analysisModeForCurrentVideo =
             resolveAnalysisModeForCurrentVideo(
@@ -1937,7 +2216,6 @@ export class YoutubeWatch {
         }
 
         if (isVideoElementSwap) {
-            contentLog.info('video element swap detected, rebinding');
             WatchCaptions.scheduleForVideoId(vid, 'video-element-ready');
         }
     }
@@ -1963,6 +2241,21 @@ export class YoutubeWatch {
             Reflect.get(response, 'prefs'),
         );
         return parsed.success ? parsed.output : null;
+    }
+
+    /**
+     * Reads the logging switch carried by the GET_PREFS reply. A missing or
+     * malformed flag reads as off so a mismatched background can never turn
+     * logging on by accident.
+     *
+     * @param response - Opaque GET_PREFS acknowledgement.
+     * @returns Whether debug logging is on.
+     */
+    private static parseDebugLogEnabled(response: unknown): boolean {
+        if (response === null || typeof response !== 'object') {
+            return false;
+        }
+        return Reflect.get(response, 'debugLogEnabled') === true;
     }
 
     /**
@@ -2099,11 +2392,21 @@ export class YoutubeWatch {
                         );
                         return;
                     }
+                    // The switch must be known before the first route
+                    // decision so nothing below is dropped as "state unknown".
+                    DebugLogClient.applyState(
+                        YoutubeWatch.parseDebugLogEnabled(response),
+                    );
                     YoutubeWatch.prefs = prefs;
                     ContentServerAnalysisLog.info('prefs-loaded', {
                         enabled: prefs.enabled,
                         analysisMode: prefs.analysisMode,
                     });
+                    DebugLogClient.log(
+                        DEBUG_LOG_EVENT.PrefsReceived,
+                        { reason: PREFS_RECEIVED_REASON.Bootstrap },
+                        YoutubeWatch.debugLogIds(),
+                    );
                     YoutubeWatch.syncVideoBinding();
                 },
                 () => {
@@ -2132,6 +2435,27 @@ export class YoutubeWatch {
     }
 
     /**
+     * Logs one refused delivery with its stable cause.
+     *
+     * @param cause - Why the blocks were refused.
+     * @param count - Delivered block count.
+     * @param videoId - Video id named by the message.
+     * @param sessionId - Session id named by the message, when any.
+     */
+    private static logBlocksRejected(
+        cause: PromoBlocksRejectionCause,
+        count: number,
+        videoId: string,
+        sessionId: string | undefined,
+    ): void {
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.BlocksRejected,
+            { cause, count },
+            { video: videoId, session: sessionId },
+        );
+    }
+
+    /**
      * Applies promo blocks delivered from the background for the active video.
      *
      * @param message Runtime message payload
@@ -2142,42 +2466,50 @@ export class YoutubeWatch {
             return;
         }
         const { videoId, promoBlocks } = m;
-        if (
-            !shouldAcceptPromoBlocksForActiveRoute({
-                currentVideoId: YoutubeWatch.currentVideoId,
-                messageVideoId: videoId,
-                source: m.source,
-                enabled: YoutubeWatch.prefs?.enabled === true,
-                analysisMode: YoutubeWatch.analysisModeForCurrentVideo,
-                activeSessionId:
-                    YoutubeWatch.serverAnalysisSession?.sessionId ?? null,
-                ...('sessionId' in m ? { messageSessionId: m.sessionId } : {}),
-            })
-        ) {
-            contentLog.warn(
-                'PROMO_BLOCKS_DETECTED: videoId mismatch',
-                formatLogFields({
-                    msg: videoId,
-                    current: YoutubeWatch.currentVideoId,
-                }),
+        const messageSessionId = 'sessionId' in m ? m.sessionId : undefined;
+        const rejectionCause = explainPromoBlocksRejection({
+            currentVideoId: YoutubeWatch.currentVideoId,
+            messageVideoId: videoId,
+            source: m.source,
+            enabled: YoutubeWatch.prefs?.enabled === true,
+            analysisMode: YoutubeWatch.analysisModeForCurrentVideo,
+            activeSessionId:
+                YoutubeWatch.serverAnalysisSession?.sessionId ?? null,
+            ...(messageSessionId !== undefined ? { messageSessionId } : {}),
+        });
+        if (rejectionCause !== null) {
+            YoutubeWatch.logBlocksRejected(
+                rejectionCause,
+                promoBlocks.length,
+                videoId,
+                messageSessionId,
             );
             return;
         }
         if (m.source !== PROMO_DETECTION_SOURCE.LocalProvider) {
             const session = YoutubeWatch.serverAnalysisSession;
             if (session === null || !session.acceptTerminalDelivery()) {
+                YoutubeWatch.logBlocksRejected(
+                    PROMO_BLOCKS_REJECTION_CAUSE.DuplicateTerminal,
+                    promoBlocks.length,
+                    videoId,
+                    messageSessionId,
+                );
                 return;
             }
         }
-        contentLog.info(
-            'blocks received',
-            promoBlocks.length,
-            'blocks for',
-            videoId,
-            JSON.stringify(promoBlocks),
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.BlocksReceived,
+            {
+                count: promoBlocks.length,
+                blocks: formatPromoBlockTimings(promoBlocks),
+                reason: m.source,
+            },
+            YoutubeWatch.debugLogIds(),
         );
         YoutubeWatch.promoBlocks = promoBlocks;
         YoutubeWatch.firedPromoBlockStartKeys.clear();
+        YoutubeWatch.lastSkipSuppressionKey = null;
     }
 
     /**
@@ -2193,6 +2525,11 @@ export class YoutubeWatch {
         YoutubeWatch.invalidatePrefsLoading();
         const previousPrefs = YoutubeWatch.prefs;
         YoutubeWatch.prefs = m.prefs;
+        DebugLogClient.log(
+            DEBUG_LOG_EVENT.PrefsReceived,
+            { reason: PREFS_RECEIVED_REASON.Broadcast },
+            YoutubeWatch.debugLogIds(),
+        );
         if (!m.prefs.enabled) {
             YoutubeWatch.deactivateDisabledRoute();
             YoutubeWatch.syncVideoBinding();
@@ -2216,8 +2553,26 @@ export class YoutubeWatch {
             YoutubeWatch.isSeeking = false;
             YoutubeWatch.promoBlocks = [];
             YoutubeWatch.firedPromoBlockStartKeys.clear();
+            YoutubeWatch.lastSkipSuppressionKey = null;
         }
         YoutubeWatch.syncVideoBinding();
+    }
+
+    /**
+     * Applies the background's logging on/off push. Only collector state
+     * changes: logging never binds the player, wakes the bridge, or starts a
+     * capture by itself.
+     *
+     * @param message - Runtime message already matched by type.
+     */
+    private static onDebugLogStateUpdatedMessage(message: unknown): void {
+        if (message === null || typeof message !== 'object') {
+            return;
+        }
+        const enabled: unknown = Reflect.get(message, 'enabled');
+        if (typeof enabled === 'boolean') {
+            DebugLogClient.applyState(enabled);
+        }
     }
 
     /**
@@ -2236,31 +2591,31 @@ export class YoutubeWatch {
         // treats a plain object as "no reply", and the background gates
         // Server analysis and wake accounting on these two replies.
         const onRuntimeMessage = (message: unknown): unknown => {
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS
-            ) {
-                return Promise.resolve(YoutubeWatch.getContentRouteStatus());
+            switch (readRuntimeMessageType(message)) {
+                case TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS:
+                    return Promise.resolve(
+                        YoutubeWatch.getContentRouteStatus(),
+                    );
+                case TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY: {
+                    YoutubeWatch.resumePendingTerminalEventDelivery();
+                    const ack: ContentScriptReadyResponse = {
+                        ok: true,
+                        protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                        extensionVersion:
+                            browser.runtime.getManifest().version,
+                    };
+                    return Promise.resolve(ack);
+                }
+                case TOPSKIP_MESSAGE.DEBUG_LOG_STATE_UPDATED:
+                    // Acknowledged with a Promise so the broadcaster's
+                    // `tabs.sendMessage` settles cleanly on every tab.
+                    YoutubeWatch.onDebugLogStateUpdatedMessage(message);
+                    return Promise.resolve({ ok: true });
+                default:
+                    YoutubeWatch.onPrefsUpdatedMessage(message);
+                    YoutubeWatch.onPromoBlocksMessage(message);
+                    return undefined;
             }
-            if (
-                message !== null &&
-                typeof message === 'object' &&
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY
-            ) {
-                YoutubeWatch.resumePendingTerminalEventDelivery();
-                const ack: ContentScriptReadyResponse = {
-                    ok: true,
-                    protocolVersion: CONTENT_SCRIPT_PROTOCOL_VERSION,
-                    extensionVersion: browser.runtime.getManifest().version,
-                };
-                return Promise.resolve(ack);
-            }
-            YoutubeWatch.onPrefsUpdatedMessage(message);
-            YoutubeWatch.onPromoBlocksMessage(message);
-            return undefined;
         };
         browser.runtime.onMessage.addListener(onRuntimeMessage);
 
@@ -2278,6 +2633,9 @@ export class YoutubeWatch {
         }, VIDEO_BINDING_POLL_INTERVAL_MS);
 
         return (): void => {
+            // Queued events leave before the context is replaced; the runtime
+            // is still alive on this path (unlike the orphan teardown).
+            void DebugLogClient.flushNow();
             YoutubeWatch.stopPrefsLoading();
             globalThis.clearInterval(pollIntervalId);
             window.removeEventListener('popstate', onNav);
@@ -2290,6 +2648,7 @@ export class YoutubeWatch {
             YoutubeWatch.cancelServerAnalysisSession('content-replaced');
             YoutubeWatch.unbindVideo();
             WatchCaptions.dispose();
+            DebugLogClient.dispose();
         };
     }
 }

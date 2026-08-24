@@ -8,6 +8,18 @@ import {
     type UserPreferences,
 } from '@/shared/constants';
 import {
+    DEBUG_LOG_APPEND_MAX_EVENTS,
+    DEBUG_LOG_CAP_BYTES,
+    DEBUG_LOG_MAX_FIELD_KEY_LENGTH,
+    DEBUG_LOG_MAX_FIELD_STRING_LENGTH,
+} from '@/shared/debug-log-constants';
+import {
+    DEBUG_LOG_DROP_REASON,
+    JOB_ID_PATTERN,
+    debugLogEventNameSchema,
+    type DebugLogDropReason,
+} from '@/shared/debug-log-events';
+import {
     PROMO_DETECTION_STATUS,
     type PromoBlock,
     type PromoDetectionStatus,
@@ -65,6 +77,34 @@ export const TOPSKIP_MESSAGE = {
     DEV_SET_DETECTION_STATUS: 'TOPSKIP_DEV_SET_DETECTION_STATUS',
     GET_CHROME_PROMPT_API_STATUS: 'TOPSKIP_GET_CHROME_PROMPT_API_STATUS',
     TRIGGER_CHROME_MODEL_DOWNLOAD: 'TOPSKIP_TRIGGER_CHROME_MODEL_DOWNLOAD',
+    /**
+     * Content → background: bounded batch of allow-listed debug events.
+     */
+    DEBUG_LOG_APPEND: 'TOPSKIP_DEBUG_LOG_APPEND',
+    /**
+     * Options/popup → background: switch state and store counters.
+     */
+    GET_DEBUG_LOG_STATUS: 'TOPSKIP_GET_DEBUG_LOG_STATUS',
+    /**
+     * Options → background: bounded tail of the stored log for the preview.
+     */
+    GET_DEBUG_LOG_PREVIEW: 'TOPSKIP_GET_DEBUG_LOG_PREVIEW',
+    /**
+     * Options → background: full plain-text bundle for Copy/Download.
+     */
+    GET_DEBUG_LOG_BUNDLE: 'TOPSKIP_GET_DEBUG_LOG_BUNDLE',
+    /**
+     * Options → background: turn the Debug logging switch on or off.
+     */
+    SET_DEBUG_LOGGING: 'TOPSKIP_SET_DEBUG_LOGGING',
+    /**
+     * Background → content tabs and extension pages: the switch changed.
+     */
+    DEBUG_LOG_STATE_UPDATED: 'TOPSKIP_DEBUG_LOG_STATE_UPDATED',
+    /**
+     * Dev-only: seed the store into a known state for E2E.
+     */
+    DEV_SEED_DEBUG_LOG: 'TOPSKIP_DEV_SEED_DEBUG_LOG',
     /**
      * Worker-start wake that lets a live watch script resume pending delivery.
      */
@@ -387,6 +427,10 @@ export type GetDetectionStatusResponse =
           ok: true;
           tabId: number | null;
           state: PromoDetectionStatePayload | null;
+          /**
+           * Whether the Debug logging switch is currently on (popup indicator).
+           */
+          debugLoggingEnabled: boolean;
       }
     | { ok: false; error: string };
 
@@ -1011,6 +1055,19 @@ export type TopSkipRuntimeMessage =
           type: typeof TOPSKIP_MESSAGE.CONTENT_LOG;
           level: ContentLogLevel;
           args: unknown[];
+      }
+    | {
+          type: typeof TOPSKIP_MESSAGE.DEBUG_LOG_APPEND;
+          payload: DebugLogAppendPayload;
+      }
+    | { type: typeof TOPSKIP_MESSAGE.GET_DEBUG_LOG_STATUS }
+    | { type: typeof TOPSKIP_MESSAGE.GET_DEBUG_LOG_PREVIEW }
+    | { type: typeof TOPSKIP_MESSAGE.GET_DEBUG_LOG_BUNDLE }
+    | { type: typeof TOPSKIP_MESSAGE.SET_DEBUG_LOGGING; enabled: boolean }
+    | DebugLogStateUpdatedMessage
+    | {
+          type: typeof TOPSKIP_MESSAGE.DEV_SEED_DEBUG_LOG;
+          payload: DevSeedDebugLogPayload;
       };
 
 /**
@@ -1042,7 +1099,15 @@ export function pickMessage<K extends TopSkipRuntimeMessage['type']>(
  * Response from reading stored user preferences.
  */
 export type GetPrefsResponse =
-    | { ok: true; prefs: UserPreferences }
+    | {
+          ok: true;
+          prefs: UserPreferences;
+          /**
+           * Whether the Debug logging switch is on; sibling of `prefs`, never
+           * part of the preferences schema.
+           */
+          debugLogEnabled: boolean;
+      }
     | { ok: false; error: string };
 
 /**
@@ -1243,3 +1308,306 @@ export const promoBlocksDetectedMessageSchema = v.union([
 export type PromoBlocksDetectedMessage = v.InferOutput<
     typeof promoBlocksDetectedMessageSchema
 >;
+
+// ───────────────────────────────────────── Debug logging ──────────────────
+
+/**
+ * Refusal for control/read messages from non-extension senders and for
+ * append messages from extension pages.
+ */
+export const UNTRUSTED_SENDER_ERROR = 'Untrusted sender.';
+
+/**
+ * Refusal returned by the seeding hook in beta/release builds.
+ */
+export const DEV_SEED_DISABLED_ERROR = 'Dev debug log seeding is disabled.';
+
+/**
+ * Non-negative integer counter (drop counts, event counts, byte sizes).
+ */
+const nonNegativeIntegerSchema = v.pipe(v.number(), v.integer(), v.minValue(0));
+
+/**
+ * Bounded scalar a content event field may carry on the wire.
+ */
+const debugLogFieldValueSchema = v.union([
+    v.pipe(v.string(), v.maxLength(DEBUG_LOG_MAX_FIELD_STRING_LENGTH)),
+    v.pipe(v.number(), v.finite()),
+    v.boolean(),
+    v.null(),
+]);
+
+/**
+ * Backend job id as logged: an opaque URL-safe token (`job-<uuid>` or a
+ * fixture token), never free text.
+ */
+const debugLogJobIdSchema = v.pipe(v.string(), v.regex(JOB_ID_PATTERN));
+
+/**
+ * One content-originated event. Timestamps, tab id, source and sequence are
+ * assigned by the background; `ageMs` lets it back-date batched events so
+ * they keep their relative order.
+ */
+export const debugLogContentEventSchema = v.strictObject({
+    event: debugLogEventNameSchema,
+    ageMs: nonNegativeIntegerSchema,
+    video: v.optional(youtubeVideoIdSchema),
+    session: v.optional(serverAnalysisSessionIdSchema),
+    job: v.optional(debugLogJobIdSchema),
+    fields: v.record(
+        v.pipe(v.string(), v.maxLength(DEBUG_LOG_MAX_FIELD_KEY_LENGTH)),
+        debugLogFieldValueSchema,
+    ),
+});
+
+/**
+ * Validated content event.
+ */
+export type DebugLogContentEvent = v.InferOutput<
+    typeof debugLogContentEventSchema
+>;
+
+/**
+ * Bounded batch plus the client's drop counters since its last batch.
+ */
+export const debugLogAppendPayloadSchema = v.strictObject({
+    events: v.pipe(
+        v.array(debugLogContentEventSchema),
+        v.maxLength(DEBUG_LOG_APPEND_MAX_EVENTS),
+    ),
+    dropped: v.optional(
+        v.strictObject({
+            [DEBUG_LOG_DROP_REASON.Coalesced]: nonNegativeIntegerSchema,
+            [DEBUG_LOG_DROP_REASON.Ceiling]: nonNegativeIntegerSchema,
+            [DEBUG_LOG_DROP_REASON.Unreachable]: nonNegativeIntegerSchema,
+        }),
+    ),
+});
+
+/**
+ * Validated append payload.
+ */
+export type DebugLogAppendPayload = v.InferOutput<
+    typeof debugLogAppendPayloadSchema
+>;
+
+/**
+ * Strict runtime envelope for {@link TOPSKIP_MESSAGE.DEBUG_LOG_APPEND}.
+ */
+export const debugLogAppendRuntimeMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.DEBUG_LOG_APPEND),
+    payload: debugLogAppendPayloadSchema,
+});
+
+/**
+ * Reply to an append: the current switch state so the client can stop
+ * batching once logging is off.
+ */
+export type DebugLogAppendResponse =
+    | { ok: true; enabled: boolean }
+    | { ok: false; error: string };
+
+/**
+ * Dropped-event counters by reason.
+ */
+export type DebugLogDroppedCounters = Record<DebugLogDropReason, number>;
+
+/**
+ * Switch state and store counters shared by Options, popup and the export
+ * header; `revision` changes on every persisted mutation so the preview is
+ * re-read only when needed.
+ */
+export const debugLogStatusPayloadSchema = v.strictObject({
+    enabled: v.boolean(),
+    hasLog: v.boolean(),
+    enabledAtMs: v.nullable(v.number()),
+    disabledAtMs: v.nullable(v.number()),
+    eventCount: nonNegativeIntegerSchema,
+    sizeBytes: nonNegativeIntegerSchema,
+    capBytes: nonNegativeIntegerSchema,
+    evictedCount: nonNegativeIntegerSchema,
+    oldestRetainedMs: v.nullable(v.number()),
+    dropped: v.strictObject({
+        [DEBUG_LOG_DROP_REASON.Incognito]: nonNegativeIntegerSchema,
+        [DEBUG_LOG_DROP_REASON.Coalesced]: nonNegativeIntegerSchema,
+        [DEBUG_LOG_DROP_REASON.Ceiling]: nonNegativeIntegerSchema,
+        [DEBUG_LOG_DROP_REASON.Unreachable]: nonNegativeIntegerSchema,
+        [DEBUG_LOG_DROP_REASON.Lost]: nonNegativeIntegerSchema,
+    }),
+    revision: nonNegativeIntegerSchema,
+});
+
+/**
+ * Validated status payload.
+ */
+export type DebugLogStatusPayload = v.InferOutput<
+    typeof debugLogStatusPayloadSchema
+>;
+
+/**
+ * Reply to {@link TOPSKIP_MESSAGE.GET_DEBUG_LOG_STATUS}.
+ */
+export const getDebugLogStatusResponseSchema = v.variant('ok', [
+    v.strictObject({ ok: v.literal(true), status: debugLogStatusPayloadSchema }),
+    v.strictObject({ ok: v.literal(false), error: v.string() }),
+]);
+
+/**
+ * Status reply type.
+ */
+export type GetDebugLogStatusResponse = v.InferOutput<
+    typeof getDebugLogStatusResponseSchema
+>;
+
+/**
+ * Reply to {@link TOPSKIP_MESSAGE.GET_DEBUG_LOG_PREVIEW}: the bounded tail
+ * of the log plus the revision it was read at.
+ */
+export const getDebugLogPreviewResponseSchema = v.variant('ok', [
+    v.strictObject({
+        ok: v.literal(true),
+        text: v.string(),
+        shownBytes: nonNegativeIntegerSchema,
+        totalBytes: nonNegativeIntegerSchema,
+        revision: nonNegativeIntegerSchema,
+    }),
+    v.strictObject({ ok: v.literal(false), error: v.string() }),
+]);
+
+/**
+ * Preview reply type.
+ */
+export type GetDebugLogPreviewResponse = v.InferOutput<
+    typeof getDebugLogPreviewResponseSchema
+>;
+
+/**
+ * Reply to {@link TOPSKIP_MESSAGE.GET_DEBUG_LOG_BUNDLE}: the full plain-text
+ * bundle built from an immutable snapshot and its snapshot instant.
+ */
+export const getDebugLogBundleResponseSchema = v.variant('ok', [
+    v.strictObject({
+        ok: v.literal(true),
+        text: v.string(),
+        exportedAtMs: v.number(),
+    }),
+    v.strictObject({ ok: v.literal(false), error: v.string() }),
+]);
+
+/**
+ * Bundle reply type.
+ */
+export type GetDebugLogBundleResponse = v.InferOutput<
+    typeof getDebugLogBundleResponseSchema
+>;
+
+/**
+ * Reply to {@link TOPSKIP_MESSAGE.SET_DEBUG_LOGGING}.
+ */
+export const setDebugLoggingResponseSchema = v.variant('ok', [
+    v.strictObject({ ok: v.literal(true), status: debugLogStatusPayloadSchema }),
+    v.strictObject({ ok: v.literal(false), error: v.string() }),
+]);
+
+/**
+ * Switch reply type.
+ */
+export type SetDebugLoggingResponse = v.InferOutput<
+    typeof setDebugLoggingResponseSchema
+>;
+
+/**
+ * Minimal on/off push to content tabs and extension pages.
+ */
+export const debugLogStateUpdatedMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.DEBUG_LOG_STATE_UPDATED),
+    enabled: v.boolean(),
+});
+
+/**
+ * Push message type.
+ */
+export type DebugLogStateUpdatedMessage = v.InferOutput<
+    typeof debugLogStateUpdatedMessageSchema
+>;
+
+/**
+ * Type guard for the switch-state push received by content and UI pages.
+ *
+ * @param msg - Unknown value from `runtime.onMessage`.
+ * @returns Whether `msg` is a valid {@link DebugLogStateUpdatedMessage}.
+ */
+export function isDebugLogStateUpdatedMessage(
+    msg: unknown,
+): msg is DebugLogStateUpdatedMessage {
+    return v.safeParse(debugLogStateUpdatedMessageSchema, msg).success;
+}
+
+/**
+ * Store states the dev-only seeding hook can install.
+ */
+export const DEV_DEBUG_LOG_SEED_STATE = {
+    OffEmpty: 'off-empty',
+    OffStored: 'off-stored',
+    On: 'on',
+} as const;
+
+/**
+ * Seed state literal.
+ */
+export type DevDebugLogSeedState =
+    (typeof DEV_DEBUG_LOG_SEED_STATE)[keyof typeof DEV_DEBUG_LOG_SEED_STATE];
+
+/**
+ * Dev-only seeding payload; `approxBytes` fills the store to a near-cap size.
+ */
+export const devSeedDebugLogPayloadSchema = v.strictObject({
+    state: v.picklist(Object.values(DEV_DEBUG_LOG_SEED_STATE)),
+    approxBytes: v.optional(
+        v.pipe(nonNegativeIntegerSchema, v.maxValue(DEBUG_LOG_CAP_BYTES)),
+    ),
+});
+
+/**
+ * Seeding payload type.
+ */
+export type DevSeedDebugLogPayload = v.InferOutput<
+    typeof devSeedDebugLogPayloadSchema
+>;
+
+/**
+ * Strict envelope for {@link TOPSKIP_MESSAGE.DEV_SEED_DEBUG_LOG}.
+ */
+export const devSeedDebugLogRuntimeMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.DEV_SEED_DEBUG_LOG),
+    payload: devSeedDebugLogPayloadSchema,
+});
+
+/**
+ * Valibot schema for {@link TOPSKIP_MESSAGE.GET_DEBUG_LOG_STATUS}.
+ */
+export const getDebugLogStatusMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.GET_DEBUG_LOG_STATUS),
+});
+
+/**
+ * Valibot schema for {@link TOPSKIP_MESSAGE.GET_DEBUG_LOG_PREVIEW}.
+ */
+export const getDebugLogPreviewMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.GET_DEBUG_LOG_PREVIEW),
+});
+
+/**
+ * Valibot schema for {@link TOPSKIP_MESSAGE.GET_DEBUG_LOG_BUNDLE}.
+ */
+export const getDebugLogBundleMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.GET_DEBUG_LOG_BUNDLE),
+});
+
+/**
+ * Valibot schema for {@link TOPSKIP_MESSAGE.SET_DEBUG_LOGGING}.
+ */
+export const setDebugLoggingMessageSchema = v.strictObject({
+    type: v.literal(TOPSKIP_MESSAGE.SET_DEBUG_LOGGING),
+    enabled: v.boolean(),
+});

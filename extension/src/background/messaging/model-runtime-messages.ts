@@ -1,3 +1,4 @@
+import { DebugLog } from '@/background/debug-log/debug-log';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
@@ -14,6 +15,7 @@ import {
 } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     getDetectionModels,
     resolveDetectionModel,
@@ -350,6 +352,9 @@ export class ModelRuntimeMessages {
             const trimmed = apiKey.trim();
             const connection = CONNECTION_PROVIDER_CONFIG_BY_ID[providerId];
             await connection.saveApiKey(trimmed);
+            DebugLog.record(DEBUG_LOG_EVENT.ConnectionKeySaved, {
+                provider: providerId,
+            });
             return {
                 ok: true,
                 apiKeyMasked: connection.maskApiKey(trimmed),

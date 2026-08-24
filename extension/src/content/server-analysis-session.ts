@@ -138,6 +138,35 @@ type ServerAnalysisSessionState =
     (typeof SERVER_ANALYSIS_SESSION_STATE)[keyof typeof SERVER_ANALYSIS_SESSION_STATE];
 
 /**
+ * Only `processing` acknowledgements carry a job id, so a freshly pinned job
+ * starts from that status until its first poll is acknowledged.
+ */
+const PINNED_JOB_INITIAL_STATUS = 'processing';
+
+/**
+ * Poll bookkeeping for the pinned job; the background keeps no per-job
+ * polling memory, so the content session is the only place these are known.
+ */
+type ServerAnalysisPollJob = {
+    jobId: string;
+    startedAtMs: number;
+    polls: number;
+    retries: number;
+    lastStatus: string;
+};
+
+/**
+ * Snapshot for the `poll-summary` event.
+ */
+export type ServerAnalysisPollSummary = {
+    job: string;
+    polls: number;
+    retries: number;
+    totalMs: number;
+    lastStatus: string;
+};
+
+/**
  * Retains one accepted caption payload across polling and MV3 transport recovery.
  */
 export class ServerAnalysisSession {
@@ -180,6 +209,11 @@ export class ServerAnalysisSession {
      * Processing identity is carried by every poll instead of background memory.
      */
     private pollPayload: RefreshServerAnalysisStatusPayload | null = null;
+
+    /**
+     * Poll counters for the currently pinned job; cleared with the job.
+     */
+    private pollJob: ServerAnalysisPollJob | null = null;
 
     /**
      * The current immutable operation is the only operation transport may retry.
@@ -404,11 +438,13 @@ export class ServerAnalysisSession {
      *
      * @param jobId - Opaque backend job identifier.
      * @param identity - Server-authoritative transcript identity from the ack.
+     * @param nowMs - Wall-clock time, injectable for deterministic tests.
      * @returns Validated poll payload, or `null` for mismatched state.
      */
     pinProcessing(
         jobId: string,
         identity: ServerTranscriptIdentity,
+        nowMs = Date.now(),
     ): RefreshServerAnalysisStatusPayload | null {
         if (
             !this.isActive() ||
@@ -429,6 +465,18 @@ export class ServerAnalysisSession {
         }
         this.pollPayload = structuredClone(parsed.output);
         this.setPollOperation(parsed.output);
+        if (this.pollJob?.jobId !== jobId) {
+            // A processing ack for a different job (after an exact
+            // resubmission) starts a fresh summary; re-pinning the same job
+            // on every processing poll keeps its counters.
+            this.pollJob = {
+                jobId,
+                startedAtMs: nowMs,
+                polls: 0,
+                retries: 0,
+                lastStatus: PINNED_JOB_INITIAL_STATUS,
+            };
+        }
         return structuredClone(parsed.output);
     }
 
@@ -494,6 +542,47 @@ export class ServerAnalysisSession {
     }
 
     /**
+     * Records one poll transport outcome for the pinned job. An
+     * acknowledgement (`retried === false`) counts toward `polls` and becomes
+     * `lastStatus`; a transport retry (`retried === true`) counts toward
+     * `retries` and records `status` (`failed`) because the replayed poll
+     * has no parsed status yet.
+     *
+     * @param status - Parsed contract status, or `failed`.
+     * @param retried - Whether this records a transport retry rather than an ack.
+     */
+    recordPollStatus(status: string, retried: boolean): void {
+        if (this.pollJob === null) {
+            return;
+        }
+        this.pollJob.lastStatus = status;
+        if (retried) {
+            this.pollJob.retries += 1;
+            return;
+        }
+        this.pollJob.polls += 1;
+    }
+
+    /**
+     * Diagnostic summary of the pinned job's polling loop.
+     *
+     * @param nowMs - Wall-clock time used for `totalMs`.
+     * @returns Bounded scalar summary, or `null` when no job is pinned.
+     */
+    getPollSummary(nowMs = Date.now()): ServerAnalysisPollSummary | null {
+        if (this.pollJob === null) {
+            return null;
+        }
+        return {
+            job: this.pollJob.jobId,
+            polls: this.pollJob.polls,
+            retries: this.pollJob.retries,
+            totalMs: Math.max(0, nowMs - this.pollJob.startedAtMs),
+            lastStatus: this.pollJob.lastStatus,
+        };
+    }
+
+    /**
      * Releases the retained transcript for one exact recovery submission only.
      *
      * @returns Original validated request once, then `null`.
@@ -508,6 +597,7 @@ export class ServerAnalysisSession {
         }
         this.resubmissionUsed = true;
         this.pollPayload = null;
+        this.pollJob = null;
         this.setRequestOperation(
             SERVER_ANALYSIS_OPERATION_KIND.ExactResubmit,
             this.retainedRequest,
@@ -664,6 +754,7 @@ export class ServerAnalysisSession {
         this.abortController.abort();
         this.retainedRequest = null;
         this.pollPayload = null;
+        this.pollJob = null;
         this.pendingOperation = null;
         return true;
     }
@@ -681,6 +772,7 @@ export class ServerAnalysisSession {
         this.abortController.abort();
         this.retainedRequest = null;
         this.pollPayload = null;
+        this.pollJob = null;
         this.pendingOperation = null;
         this.pendingTerminalEvent = null;
         this.terminalEventDeliveryRetryCount = 0;

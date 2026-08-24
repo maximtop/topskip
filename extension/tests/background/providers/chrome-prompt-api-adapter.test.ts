@@ -366,6 +366,22 @@ describe('ChromePromptApiAdapter', () => {
             expect(result.ok).toBe(false);
         });
 
+        it('does not console.log the raw assistant response under release-like flags', async () => {
+            const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+            const session = makeSession({
+                promptResult: JSON.stringify({ hasPromo: false }),
+            });
+            vi.stubGlobal('LanguageModel', makeLanguageModelGlobal({ session }));
+
+            const result = await new ChromePromptApiAdapter().analyzeTranscript(
+                baseParams,
+            );
+
+            expect(result.ok).toBe(true);
+            expect(log).not.toHaveBeenCalled();
+            log.mockRestore();
+        });
+
         describe('initialPrompts system prompt', () => {
             it('passes the system prompt in initialPrompts to create()', async () => {
                 const session = makeSession({

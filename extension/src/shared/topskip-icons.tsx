@@ -393,3 +393,28 @@ export function PromoBlocksIcon(props: TopSkipIconProps): ReactElement {
         </svg>
     );
 }
+
+/**
+ * Activity (pulse) icon for the Diagnostics section.
+ *
+ * @param props - SVG dimensions and optional stroke color.
+ * @returns Activity icon.
+ */
+export function ActivityIcon(props: TopSkipIconProps): ReactElement {
+    return (
+        <svg
+            xmlns="http://www.w3.org/2000/svg"
+            width={props.size}
+            height={props.size}
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke={props.color ?? 'currentColor'}
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+        >
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2" />
+        </svg>
+    );
+}

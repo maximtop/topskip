@@ -1,3 +1,4 @@
+import { DebugLogClient } from '@/content/debug-log-client';
 import { ExtensionContextWatch } from '@/content/extension-context-watch';
 import { WatchCaptions } from '@/content/watch-captions';
 import { YoutubeWatch } from '@/content/youtube-watch';
@@ -47,6 +48,10 @@ export class Content {
      * @param disposeWatch - Cleanup returned by `YoutubeWatch.init`.
      */
     private static teardownOrphanedContext(disposeWatch: () => void): void {
+        // The runtime is gone: nothing queued can be delivered and a send
+        // would throw, so the collector is disposed before the watch dispose
+        // tries its normal flush.
+        DebugLogClient.dispose();
         disposeWatch();
         // Nothing can report a failure here: the runtime is gone and the
         // document should not see an unhandled rejection from the orphan.

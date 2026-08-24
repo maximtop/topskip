@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import { PROVIDER_ID } from '@/shared/providers';
+
 const prefsLoad = vi.fn();
 const prefsSave = vi.fn();
 const openRouterLoad = vi.fn();
@@ -103,6 +106,10 @@ vi.mock('@/background/permissions/provider-host-access', () => ({
         },
     },
 }));
+
+const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
+
+vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
 
 const { ModelRuntimeMessages } =
     await import('@/background/messaging/model-runtime-messages');
@@ -285,4 +292,33 @@ describe('ModelRuntimeMessages', () => {
             expect(test).not.toHaveBeenCalled();
         },
     );
+
+    it('records connection-key-saved with the provider only (never the key)', async () => {
+        openRouterLoad.mockReturnValue({ apiKey: '', model: 'provider/model', customModels: [] });
+
+        const result = await ModelRuntimeMessages.handleSaveConnectionKey(
+            PROVIDER_ID.OpenRouter,
+            'sk-APIKEY-SENTINEL',
+        );
+
+        expect(result).toEqual({ ok: true, apiKeyMasked: '****r' });
+        expect(debugLogMock.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.ConnectionKeySaved,
+            { provider: PROVIDER_ID.OpenRouter },
+        );
+        expect(JSON.stringify(debugLogMock.record.mock.calls)).not.toContain('sk-APIKEY-SENTINEL');
+    });
+
+    it('does not record connection-key-saved when the save fails', async () => {
+        openRouterLoad.mockReturnValue({ apiKey: '', model: 'provider/model', customModels: [] });
+        openRouterSave.mockRejectedValueOnce(new Error('quota'));
+
+        const result = await ModelRuntimeMessages.handleSaveConnectionKey(
+            PROVIDER_ID.OpenRouter,
+            'sk-APIKEY-SENTINEL',
+        );
+
+        expect(result).toEqual({ ok: false, error: 'quota' });
+        expect(debugLogMock.record).not.toHaveBeenCalled();
+    });
 });

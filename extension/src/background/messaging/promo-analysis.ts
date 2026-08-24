@@ -9,6 +9,7 @@ import {
     type ChunkLogOutcome,
     type PromoUncoveredRange,
 } from '@/background/openrouter/log-promo-analysis';
+import { DevConsole } from '@/background/dev-console';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
 import {
@@ -837,12 +838,10 @@ export class PromoAnalysis {
                             endSec: chunk.endSec,
                             kind: 'irreducible_line',
                         });
-                        if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
-                            console.warn(
-                                '[TopSkip] irreducible_chunk: single line exceeds budget',
-                                { chunkIndex: i },
-                            );
-                        }
+                        DevConsole.warn([
+                            '[TopSkip] irreducible_chunk: single line exceeds budget',
+                            { chunkIndex: i },
+                        ]);
                         continue;
                     }
                     const [aText, bText] = halves;

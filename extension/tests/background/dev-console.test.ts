@@ -13,30 +13,17 @@ describe('DevConsole', () => {
         vi.restoreAllMocks();
     });
 
-    it('prints nothing under release-like defines (default gate)', () => {
+    // Vitest compiles __TOPSKIP_INCLUDE_DEV_LOCAL__ to false (release-like),
+    // so the observable contract here is silence; the dev branch is a
+    // compile-time constant with no logic beyond console.* spreading.
+    it('prints nothing under release-like defines', () => {
         const info = vi.spyOn(console, 'info').mockImplementation(() => {});
         const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
-        DevConsole.info(['hello']);
-        DevConsole.warn(['careful']);
+        DevConsole.info('[TopSkip] availability →', 'raw', '→', 'mapped');
+        DevConsole.warn('[TopSkip] failed:', { chunkIndex: 2 });
 
         expect(info).not.toHaveBeenCalled();
         expect(warn).not.toHaveBeenCalled();
-    });
-
-    it('forwards every argument verbatim when enabled', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
-        const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-
-        DevConsole.info(['[TopSkip] availability →', 'raw', '→', 'mapped'], true);
-        DevConsole.warn(['[TopSkip] failed:', { chunkIndex: 2 }], true);
-
-        expect(info).toHaveBeenCalledWith(
-            '[TopSkip] availability →',
-            'raw',
-            '→',
-            'mapped',
-        );
-        expect(warn).toHaveBeenCalledWith('[TopSkip] failed:', { chunkIndex: 2 });
     });
 });

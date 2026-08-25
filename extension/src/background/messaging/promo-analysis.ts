@@ -838,10 +838,10 @@ export class PromoAnalysis {
                             endSec: chunk.endSec,
                             kind: 'irreducible_line',
                         });
-                        DevConsole.warn([
+                        DevConsole.warn(
                             '[TopSkip] irreducible_chunk: single line exceeds budget',
                             { chunkIndex: i },
-                        ]);
+                        );
                         continue;
                     }
                     const [aText, bText] = halves;

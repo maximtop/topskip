@@ -25,10 +25,7 @@ import {
     type ServerPromoDetectionSource,
     type TopSkipRuntimeMessage,
 } from '@/shared/messages';
-import {
-    getWatchVideoIdFromUrl,
-    isTopSkipContentDocumentUrl,
-} from '@/shared/watch-route';
+import { isTopSkipContentDocumentUrl } from '@/shared/watch-route';
 import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     PROMO_DETECTION_STATUS,
@@ -288,30 +285,24 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
-     * Trusts only top-frame messages from a declaratively matched document.
+     * Trusts this extension's top-frame messages from a declaratively matched
+     * document while leaving mutable route ownership to the live content probe.
      *
      * @param sender - Browser-authenticated runtime sender metadata.
-     * @param videoId - Payload video required for ordinary session traffic.
-     * @param allowNavigatedRoute - Whether SPA cleanup may use the new route.
-     * @returns Trusted source tab id, or `null` without ownership proof.
+     * @returns Trusted source tab id, or `null` without document proof.
      */
     private static trustedSenderTabId(
         sender: Runtime.MessageSender,
-        videoId: string,
-        allowNavigatedRoute: boolean,
     ): number | null {
         const tabId = sender.tab?.id;
         const senderUrl = sender.url;
         if (
+            sender.id !== browser.runtime.id ||
             tabId === undefined ||
             sender.frameId !== TOP_FRAME_ID ||
             senderUrl === undefined ||
             !isTopSkipContentDocumentUrl(senderUrl)
         ) {
-            return null;
-        }
-        const senderVideoId = getWatchVideoIdFromUrl(senderUrl);
-        if (!allowNavigatedRoute && senderVideoId !== videoId) {
             return null;
         }
         return tabId;
@@ -480,8 +471,6 @@ export class ServerAnalysisRuntimeMessages {
         if (payload.event === SERVER_ANALYSIS_SESSION_EVENT.Cancelled) {
             const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
                 sender,
-                payload.videoId,
-                true,
             );
             if (tabId === null) {
                 return { ok: false, error: 'Untrusted sender.' };
@@ -491,8 +480,6 @@ export class ServerAnalysisRuntimeMessages {
         }
         const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
             sender,
-            payload.videoId,
-            false,
         );
         if (tabId === null) {
             return { ok: true };
@@ -573,8 +560,6 @@ export class ServerAnalysisRuntimeMessages {
     ): Promise<RequestServerAnalysisResponse> {
         const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
             sender,
-            payload.videoId,
-            false,
         );
         if (tabId === null) {
             return { ok: true, status: 'inactive' };
@@ -712,8 +697,6 @@ export class ServerAnalysisRuntimeMessages {
     ): Promise<RefreshServerAnalysisStatusResponse> {
         const tabId = ServerAnalysisRuntimeMessages.trustedSenderTabId(
             sender,
-            payload.videoId,
-            false,
         );
         if (tabId === null) {
             return { ok: true, status: 'inactive' };

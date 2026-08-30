@@ -6,6 +6,7 @@ import { CaptionPageBridgeClient } from '@/content/captions/caption-page-bridge-
 import {
     CAPTION_PAGE_BRIDGE_COMMAND,
     CAPTION_PAGE_BRIDGE_COMMAND_TIMEOUT_MS,
+    CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE,
     CAPTION_PAGE_BRIDGE_EVENT,
     CAPTION_PAGE_BRIDGE_SOURCE,
 } from '@/content/captions/caption-page-bridge-contract';
@@ -35,6 +36,10 @@ import {
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 15_000;
 const ACTIVATION_RETRY_DELAY_MS = 250;
+const MAX_EMPTY_BODY_RELOADS = 3;
+const EMPTY_TIMEDTEXT_BODY_STAGE =
+    CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody;
+let emptyBodyReloadCount = 0;
 const PAGE_SOURCE = CAPTION_PAGE_BRIDGE_SOURCE.Main;
 const PAGE_EVENT = CAPTION_PAGE_BRIDGE_EVENT.PageMessage;
 const MAX_RECENT_PAGE_BRIDGE_MESSAGES = 256;
@@ -507,6 +512,7 @@ export class PlayerCaptionCapture {
         );
         PlayerCaptionCapture.activeSession = session;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
+        emptyBodyReloadCount = 0;
         const waitForCapture = PlayerCaptionCapture.waitForCapture(
             session,
             input.signal,
@@ -756,6 +762,7 @@ export class PlayerCaptionCapture {
         if (kind !== 'timedtext-capture') {
             if (kind === 'diagnostic') {
                 PlayerCaptionCapture.logPageDiagnostic(data);
+                PlayerCaptionCapture.reloadAfterEmptyTimedtext(data);
             }
             return;
         }
@@ -1291,6 +1298,33 @@ export class PlayerCaptionCapture {
             reason: failure.reason,
             error: failure.error,
         });
+    }
+
+    /**
+     * Reloads the player caption module after a 200 json3 response with no
+     * body. That empty fetch is premature, not evidence that captions are
+     * missing; a later tracklist or reload can still produce cues.
+     *
+     * @param data Untrusted page bridge diagnostic message.
+     */
+    private static reloadAfterEmptyTimedtext(data: object): void {
+        const stage: unknown = Reflect.get(data, 'stage');
+        if (stage !== EMPTY_TIMEDTEXT_BODY_STAGE) {
+            return;
+        }
+        const session = PlayerCaptionCapture.activeSession;
+        const activeWait = PlayerCaptionCapture.activeWait;
+        if (session === null || activeWait === null) {
+            return;
+        }
+        if (emptyBodyReloadCount >= MAX_EMPTY_BODY_RELOADS) {
+            return;
+        }
+        emptyBodyReloadCount += 1;
+        void PlayerCaptionCapture.activateCaptions(
+            session,
+            activeWait.signal,
+        );
     }
 
     /**

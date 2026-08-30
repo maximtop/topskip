@@ -53,12 +53,16 @@ vi.mock('@/background/promo-detection-store', () => ({
 }));
 
 const browserMocks = vi.hoisted(() => ({
+    runtimeId: 'topskip-test-extension',
     tabsSendMessage: vi.fn(),
 }));
 
 vi.mock('@/shared/browser', () => ({
     default: {
-        runtime: { getManifest: () => ({ version: '0.1.0' }) },
+        runtime: {
+            id: browserMocks.runtimeId,
+            getManifest: () => ({ version: '0.1.0' }),
+        },
         tabs: {
             sendMessage: browserMocks.tabsSendMessage,
         },
@@ -98,6 +102,7 @@ const REQUEST = {
     segments: SEGMENTS,
 };
 const SENDER = {
+    id: browserMocks.runtimeId,
     tab: { id: 42 },
     frameId: 0,
     url: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
@@ -413,25 +418,106 @@ describe('ServerAnalysisRuntimeMessages', () => {
     });
 
     it.each([
+        'https://www.youtube.com/',
+        'https://www.youtube.com/feed/subscriptions',
+        'https://www.youtube.com/watch?v=previousVid',
+    ])('accepts a live session when sender.url is stale at %s', async (url) => {
+        await expect(
+            ServerAnalysisRuntimeMessages.handleSessionEvent(
+                {
+                    event: 'acquisition_started',
+                    sessionId: SESSION_ID,
+                    videoId: VIDEO_ID,
+                },
+                {
+                    id: browserMocks.runtimeId,
+                    tab: { id: 42 },
+                    frameId: 0,
+                    url,
+                } as never,
+            ),
+        ).resolves.toEqual({ ok: true });
+
+        expect(browserMocks.tabsSendMessage).toHaveBeenCalledWith(42, {
+            type: TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS,
+        });
+        expect(detectionMocks.set).toHaveBeenCalledWith(
+            42,
+            expect.objectContaining({
+                videoId: VIDEO_ID,
+                sessionId: SESSION_ID,
+                status: 'analyzing',
+                serverAnalysisPhase: 'caption_acquisition',
+            }),
+        );
+    });
+
+    it('submits captions after a same-origin SPA navigation', async () => {
+        await expect(
+            ServerAnalysisRuntimeMessages.handleRequest(
+                REQUEST,
+                {
+                    id: browserMocks.runtimeId,
+                    tab: { id: 42 },
+                    frameId: 0,
+                    url: 'https://www.youtube.com/feed/subscriptions',
+                } as never,
+            ),
+        ).resolves.toMatchObject({ ok: true, status: 'processing' });
+
+        expect(cacheMocks.loadExact).toHaveBeenCalledOnce();
+        expect(clientMocks.requestAnalysis).toHaveBeenCalledOnce();
+    });
+
+    it.each([
         [
-            'wrong video URL',
+            'foreign extension',
             {
+                id: 'foreign-extension',
                 tab: { id: 42 },
                 frameId: 0,
-                url: 'https://www.youtube.com/watch?v=other-video',
+                url: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
+            },
+        ],
+        [
+            'missing tab',
+            {
+                id: browserMocks.runtimeId,
+                frameId: 0,
+                url: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
             },
         ],
         [
             'subframe',
             {
+                id: browserMocks.runtimeId,
                 tab: { id: 42 },
                 frameId: 2,
                 url: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
             },
         ],
         [
+            'malformed URL',
+            {
+                id: browserMocks.runtimeId,
+                tab: { id: 42 },
+                frameId: 0,
+                url: 'not a URL',
+            },
+        ],
+        [
+            'URL with embedded credentials',
+            {
+                id: browserMocks.runtimeId,
+                tab: { id: 42 },
+                frameId: 0,
+                url: `https://user:password@www.youtube.com/watch?v=${VIDEO_ID}`,
+            },
+        ],
+        [
             'lookalike host',
             {
+                id: browserMocks.runtimeId,
                 tab: { id: 42 },
                 frameId: 0,
                 url: `https://www.youtube.com.example/watch?v=${VIDEO_ID}`,
@@ -445,6 +531,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
             ),
         ).resolves.toEqual({ ok: true, status: 'inactive' });
 
+        expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
         expect(detectionMocks.set).not.toHaveBeenCalled();
         expect(cacheMocks.loadExact).not.toHaveBeenCalled();
         expect(clientMocks.requestAnalysis).not.toHaveBeenCalled();
@@ -540,7 +627,12 @@ describe('ServerAnalysisRuntimeMessages', () => {
         expect(detectionMocks.set).not.toHaveBeenCalled();
     });
 
-    it('ignores a non-cancellation event from the wrong current URL', async () => {
+    it('rejects a session event when the live route owns another video', async () => {
+        browserMocks.tabsSendMessage.mockResolvedValue({
+            ...currentRouteStatus(),
+            videoId: 'next-video',
+        });
+
         await expect(
             ServerAnalysisRuntimeMessages.handleSessionEvent(
                 {
@@ -548,16 +640,14 @@ describe('ServerAnalysisRuntimeMessages', () => {
                     sessionId: SESSION_ID,
                     videoId: VIDEO_ID,
                 },
-                {
-                    tab: { id: 42 },
-                    frameId: 0,
-                    url: 'https://www.youtube.com/watch?v=next-video',
-                } as never,
+                SENDER,
             ),
         ).resolves.toEqual({ ok: true });
 
         expect(detectionMocks.set).not.toHaveBeenCalled();
-        expect(browserMocks.tabsSendMessage).not.toHaveBeenCalled();
+        expect(browserMocks.tabsSendMessage).toHaveBeenCalledWith(42, {
+            type: TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS,
+        });
     });
 
     it('rejects a delayed processing response after SPA navigation', async () => {
@@ -625,7 +715,12 @@ describe('ServerAnalysisRuntimeMessages', () => {
                     sessionId: SESSION_ID,
                     videoId: VIDEO_ID,
                 },
-                { tab: { id: 42 }, frameId: 0, url } as never,
+                {
+                    id: browserMocks.runtimeId,
+                    tab: { id: 42 },
+                    frameId: 0,
+                    url,
+                } as never,
             ),
         ).resolves.toEqual({ ok: true });
 
@@ -642,6 +737,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
                     videoId: VIDEO_ID,
                 },
                 {
+                    id: browserMocks.runtimeId,
                     tab: { id: 42 },
                     frameId: 1,
                     url: 'https://www.youtube.com/feed/subscriptions',

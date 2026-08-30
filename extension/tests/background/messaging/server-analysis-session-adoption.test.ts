@@ -26,6 +26,7 @@ const cacheMocks = vi.hoisted(() => ({
 const browserMocks = vi.hoisted(() => {
     const sessionData: Record<string, unknown> = {};
     return {
+        runtimeId: 'topskip-test-extension',
         runtimeSendMessage: vi.fn(),
         tabsSendMessage: vi.fn(),
         sessionData,
@@ -49,6 +50,7 @@ vi.mock('@/background/storage/server-result-cache', () => ({
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: {
+            id: browserMocks.runtimeId,
             getManifest: () => ({ version: '0.1.0' }),
             sendMessage: browserMocks.runtimeSendMessage,
         },
@@ -92,6 +94,7 @@ const REQUEST = {
     segments: SEGMENTS,
 };
 const SENDER = {
+    id: browserMocks.runtimeId,
     tab: { id: TAB_ID },
     frameId: 0,
     url: `https://www.youtube.com/watch?v=${VIDEO_ID}`,
@@ -215,6 +218,7 @@ describe('Server request session adoption after worker restart', () => {
                     videoId: VIDEO_ID,
                 },
                 {
+                    id: browserMocks.runtimeId,
                     tab: { id: TAB_ID },
                     frameId: 0,
                     url: 'https://www.youtube.com/feed/subscriptions',

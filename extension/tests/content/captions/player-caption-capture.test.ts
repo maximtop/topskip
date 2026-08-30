@@ -447,6 +447,35 @@ describe('PlayerCaptionCapture', () => {
         expect(activationCalls).toBe(2);
     });
 
+    it('reactivates after an empty json3 body while waiting for capture', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        dispatchPageDiagnostic('empty:1');
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+        dispatchTimedtextCapture(
+            'abc',
+            JSON.stringify({
+                events: [
+                    {
+                        tStartMs: 0,
+                        dDurationMs: 1000,
+                        segs: [{ utf8: 'after empty reload' }],
+                    },
+                ],
+            }),
+        );
+        await finishCleanup();
+        await expect(run).resolves.toMatchObject({
+            status: 'ready',
+        });
+    });
+
     it('relays safe page diagnostics to the content log channel', async () => {
         PlayerCaptionCapture.prepareBridgeForPage();
         dispatchPageDiagnostic('bridge:1');

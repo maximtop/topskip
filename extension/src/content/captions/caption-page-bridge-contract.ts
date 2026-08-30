@@ -64,6 +64,14 @@ export const CAPTION_PAGE_BRIDGE_EVENT = {
 } as const;
 
 /**
+ * Diagnostic stages that isolated capture must observe even when verbose
+ * page logs are compiled out.
+ */
+export const CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE = {
+    TimedtextEmptyBody: 'timedtext-empty-body',
+} as const;
+
+/**
  * Commands accepted by the declaratively installed MAIN bridge.
  */
 export type CaptionPageBridgeCommand =

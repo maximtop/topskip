@@ -1,6 +1,7 @@
 import {
     CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS,
     CAPTION_PAGE_BRIDGE_COMMAND,
+    CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE,
     CAPTION_PAGE_BRIDGE_EVENT,
     CAPTION_PAGE_BRIDGE_KIND,
     CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION,
@@ -248,9 +249,11 @@ const installCaptionPageBridge = (): void => {
             return;
         }
         if (body.length === 0) {
-            postPageDiagnostic(
+            postPageBridgeMessage(
                 {
-                    stage: 'timedtext-empty-body',
+                    source: CAPTION_PAGE_BRIDGE_SOURCE.Main,
+                    kind: 'diagnostic',
+                    stage: CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody,
                     transport,
                     status,
                     bodyLength: body.length,

@@ -44,7 +44,7 @@ local-only** — it is not published to GitHub, so a fresh clone will not have i
 | **CI**                 | `.github/workflows/ci.yml` — **`pnpm install --frozen-lockfile`** → **lint** → **build** → deployment asset tests → **test** → **test:coverage** → Playwright Chromium → **`pnpm run test:e2e`**                                                                                                                             |
 | **Project type**       | pnpm workspace: `backend`, `common`, and `extension`                                                                                                                                                                                                                                                                         |
 | **Performance goals**  | N/A beyond product spec (informal UX: skip soon after crossing 30s)                                                                                                                                                                                                                                                          |
-| **Constraints**        | Required API permissions are exactly `storage`, `scripting`, and `activeTab`; required host is only the configured backend; OpenRouter/OpenAI are optional hosts; YouTube is declarative site access; loopback matches are dev-only — see `extension/DEPLOYMENT.md`                                                     |
+| **Constraints**        | Required API permissions are exactly `storage`, `scripting`, `activeTab`, and `unlimitedStorage` (the last only backs the local debug-log ring buffer; none warns at install); required host is only the configured backend; OpenRouter/OpenAI are optional hosts; YouTube is declarative site access; loopback matches are dev-only — see `extension/DEPLOYMENT.md` |
 
 ## Project structure
 
@@ -142,6 +142,7 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
   `CONTENT_SCRIPT_READY`, so those content handlers must return
   `Promise.resolve(...)`.
 - **Promo detection UI push**: **`PromoDetectionStore`** is in-memory in the background; the popup reads it via **`GET_DETECTION_STATUS`** and also polls. After **`PromoDetectionStore.set`**, **`PromoDetectionBroadcast.notify`** sends **`TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED`** with **`runtime.sendMessage`** so an open popup can refresh immediately instead of waiting for the next poll. Content scripts are not the audience for this message (they receive promo blocks on a different channel).
+- **Debug logging**: The user-controlled switch (Options → Diagnostics) and its 5 MiB `storage.local` ring buffer are background-owned (`DebugLogStore` under `extension/src/background/debug-log/`). Background code records through `DebugLog.record`; content contexts only append allow-listed events through `DebugLogClient` → `TOPSKIP_MESSAGE.DEBUG_LOG_APPEND`; control/read messages (`SET_DEBUG_LOGGING`, `GET_DEBUG_LOG_STATUS`, `GET_DEBUG_LOG_PREVIEW`, `GET_DEBUG_LOG_BUNDLE`) are accepted only from extension-origin senders (`RuntimeSenderTrust` — never decided by `sender.tab`, because Options opens in a tab). Each stage is emitted once through the shared diagnostics path and routed to the console in dev builds only; beta/release consoles stay quiet except the startup line and stable-coded `warn`/`error`. The exported bundle includes video IDs and says so; it never includes transcripts, keys, tokens, URLs, or free-form errors, and never leaves the browser by the extension's doing. `unlimitedStorage` exists only so that ring buffer cannot starve prefs/cache writes.
 - **Imports**: Use **`@/...`** inside the extension, **`@topskip/backend/...`**
   inside the backend, and **`@topskip/common/...`** for shared contracts.
 - **Backend HTTP ownership**: The watch content script never calls the TopSkip
@@ -194,9 +195,10 @@ autofixes. `pnpm run lint` runs ESLint, markdownlint, and TypeScript.
   from `extension/build-modes.ts`. CI greps release artifacts for
   `127.0.0.1:(8787|4173)`.
 - **Manifest policy**: Emitted manifests have exactly `storage`, `scripting`,
-  and `activeTab` as required API permissions (`REQUIRED_API_PERMISSIONS` in
-  `extension/manifest-profile.ts`), the configured backend as the only
-  required host, and OpenRouter plus OpenAI as optional hosts. Dev additionally permits only the exact
+  `activeTab`, and `unlimitedStorage` as required API permissions
+  (`REQUIRED_API_PERMISSIONS` in `extension/manifest-profile.ts`; no
+  `downloads`, `tabs`, `alarms`, or `clipboardWrite`), the configured backend
+  as the only required host, and OpenRouter plus OpenAI as optional hosts. Dev additionally permits only the exact
   loopback backend `http://127.0.0.1:8787` and fixture match; beta/release require
   public-looking HTTPS DNS. The build policy performs no DNS lookup, so it does
   not prove where a syntactically accepted hostname resolves. Dev and beta

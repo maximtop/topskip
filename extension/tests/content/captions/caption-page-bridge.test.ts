@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
@@ -11,6 +13,9 @@ import {
     parseCaptionPageBridgeCommandResult,
 } from '@/content/captions/caption-page-bridge-contract';
 
+// `expect.stringMatching` is typed `any`; widening it to `unknown` keeps the
+// expected diagnostic literal free of unsafe-assignment errors.
+const MESSAGE_ID_SHAPE: unknown = expect.stringMatching(/^[^:]+:\d+$/u);
 const INSTALL_FLAG = '__topskipCaptionCaptureInstalled';
 const TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
 const TIMEDTEXT_URL =
@@ -108,6 +113,7 @@ type BridgeHarness = {
     button: TestElement;
     originalFetch: ReturnType<typeof vi.fn>;
     captures: unknown[];
+    diagnostics: unknown[];
     commandResults: unknown[];
     toggleOn: ReturnType<typeof vi.fn>;
     toggleOff: ReturnType<typeof vi.fn>;
@@ -212,13 +218,24 @@ function installHarness(captionsInitiallyOn = false): BridgeHarness {
         postMessage: vi.fn(),
     });
     const captures: unknown[] = [];
+    const diagnostics: unknown[] = [];
     const commandResults: unknown[] = [];
     documentHarness.addEventListener(
         CAPTION_PAGE_BRIDGE_EVENT.PageMessage,
         (event) => {
-            if (event instanceof CustomEvent) {
-                captures.push(JSON.parse(String(event.detail)) as unknown);
+            if (!(event instanceof CustomEvent)) {
+                return;
             }
+            const message = JSON.parse(String(event.detail)) as unknown;
+            const kind: unknown =
+                message !== null && typeof message === 'object'
+                    ? Reflect.get(message, 'kind')
+                    : undefined;
+            if (kind === 'diagnostic') {
+                diagnostics.push(message);
+                return;
+            }
+            captures.push(message);
         },
     );
     documentHarness.addEventListener(
@@ -267,6 +284,7 @@ function installHarness(captionsInitiallyOn = false): BridgeHarness {
         button,
         originalFetch,
         captures,
+        diagnostics,
         commandResults,
         toggleOn,
         toggleOff,
@@ -319,6 +337,14 @@ async function flushCapture(): Promise<void> {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+}
+
+function diagnosticStages(harness: BridgeHarness): unknown[] {
+    return harness.diagnostics.map((message): unknown =>
+        message !== null && typeof message === 'object'
+            ? Reflect.get(message, 'stage')
+            : undefined,
+    );
 }
 
 describe('caption page bridge', () => {
@@ -586,5 +612,78 @@ describe('caption page bridge', () => {
         );
         expect(harness.button.getAttribute('aria-pressed')).toBe('false');
         expect(harness.captures).toEqual([]);
+    });
+
+    it('posts timedtext diagnostics only inside the active generation, without the verbose define', async () => {
+        const harness = installHarness();
+        const dormant = createResponse();
+        const active = createResponse();
+        const afterDeactivate = createResponse();
+        harness.originalFetch
+            .mockResolvedValueOnce(dormant.response)
+            .mockResolvedValueOnce(active.response)
+            .mockResolvedValueOnce(afterDeactivate.response);
+        await installBridge();
+        expect(harness.diagnostics).toEqual([]);
+
+        await window.fetch(TIMEDTEXT_URL);
+        await flushCapture();
+        expect(harness.diagnostics).toEqual([]);
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+        await window.fetch(TIMEDTEXT_URL);
+        await flushCapture();
+        expect(diagnosticStages(harness)).toEqual([
+            'activation-finished',
+            'timedtext-observed',
+            'timedtext-forwarded',
+        ]);
+        for (const message of harness.diagnostics) {
+            expect(message).toMatchObject({
+                source: CAPTION_PAGE_BRIDGE_SOURCE.Main,
+                kind: 'diagnostic',
+                messageId: MESSAGE_ID_SHAPE,
+            });
+            expect(message).not.toHaveProperty('body');
+            expect(JSON.stringify(message)).not.toContain('lang=en');
+        }
+        expect(harness.diagnostics[1]).toMatchObject({
+            transport: 'fetch',
+            status: 200,
+            videoId: 'video-1',
+            languageCode: 'en',
+            urlShape: {
+                pathname: '/api/timedtext',
+                paramNames: ['fmt', 'lang', 'v'],
+                fmt: 'json3',
+                hasPot: false,
+            },
+        });
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate);
+        await window.fetch(TIMEDTEXT_URL);
+        await flushCapture();
+        expect(harness.diagnostics).toHaveLength(3);
+        expect(harness.captures).toHaveLength(1);
+    });
+
+    it('keeps install-time and cleanup diagnostics dev-only', async () => {
+        const harness = installHarness();
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate);
+        await flushCapture();
+
+        expect(harness.diagnostics).toEqual([]);
+    });
+
+    it('never imports the debug-log switch into the MAIN world', () => {
+        const source = readFileSync(
+            new URL(
+                '../../../src/content/captions/caption-page-bridge.ts',
+                import.meta.url,
+            ),
+            'utf8',
+        );
+        expect(source).not.toMatch(/debug-log|DebugLogClient|DEBUG_LOG_/u);
     });
 });

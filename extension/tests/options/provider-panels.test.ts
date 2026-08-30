@@ -5,6 +5,26 @@ import { MantineProvider } from '@mantine/core';
 
 vi.mock('@/shared/browser', () => ({
     default: {
+        i18n: {
+            getMessage: vi.fn((key: string) => {
+                const messages: Record<string, string> = {
+                    options_section_general: 'General',
+                    options_section_detection: 'Detection',
+                    options_section_appearance: 'Appearance',
+                    options_section_shortcuts: 'Shortcuts',
+                    options_section_diagnostics: 'Diagnostics',
+                    options_section_about: 'About',
+                    options_sidebar_nav_aria: 'Settings sections',
+                    options_placeholder_notice:
+                        '%section% settings are visible for navigation preview, but not configurable yet.',
+                    options_about_heading: 'About TopSkip',
+                    options_about_description:
+                        'Automatically skip detected sponsor and promo segments on YouTube.',
+                    options_about_version_label: 'Version',
+                };
+                return messages[key] ?? key;
+            }),
+        },
         runtime: {
             sendMessage: vi.fn(),
             connect: vi.fn(),
@@ -22,6 +42,8 @@ import {
     OptionsSidebar,
     PlaceholderSettingsSection,
     ProviderChoiceCards,
+    getOptionsSectionLabel,
+    parseOptionsSectionHash,
 } from '@/options/options';
 import { topskipTheme } from '@/shared/theme';
 
@@ -132,7 +154,7 @@ describe('provider panels', () => {
 });
 
 describe('OptionsSidebar', () => {
-    it('renders general as active and future sections as visible placeholders', () => {
+    it('renders every section in order with the active one marked', () => {
         const html = renderWithMantine(
             createElement(OptionsSidebar, {
                 activeSection: 'general',
@@ -141,13 +163,37 @@ describe('OptionsSidebar', () => {
         );
 
         expect(html).toContain('TopSkip');
-        expect(html).toContain('General');
-        expect(html).toContain('Detection');
-        expect(html).toContain('Appearance');
-        expect(html).toContain('Shortcuts');
-        expect(html).toContain('About');
+        expect(html).toContain('aria-label="Settings sections"');
+        const order = [
+            'General',
+            'Detection',
+            'Appearance',
+            'Shortcuts',
+            'Diagnostics',
+            'About',
+        ].map((label) => html.indexOf(`>${label}<`));
+        expect(order.every((index) => index >= 0)).toBe(true);
+        expect(order).toEqual([...order].sort((a, b) => a - b));
         expect(html).toContain('aria-current="page"');
         expect(html).not.toContain('Setup guide');
+    });
+});
+
+describe('parseOptionsSectionHash', () => {
+    it('resolves known section hashes and rejects everything else', () => {
+        expect(parseOptionsSectionHash('#diagnostics')).toBe('diagnostics');
+        expect(parseOptionsSectionHash('#about')).toBe('about');
+        expect(parseOptionsSectionHash('diagnostics')).toBe('diagnostics');
+        expect(parseOptionsSectionHash('#nope')).toBeNull();
+        expect(parseOptionsSectionHash('')).toBeNull();
+        expect(parseOptionsSectionHash('#')).toBeNull();
+    });
+});
+
+describe('getOptionsSectionLabel', () => {
+    it('returns the localized label for a section', () => {
+        expect(getOptionsSectionLabel('diagnostics')).toBe('Diagnostics');
+        expect(getOptionsSectionLabel('general')).toBe('General');
     });
 });
 
@@ -160,7 +206,17 @@ describe('PlaceholderSettingsSection', () => {
         );
 
         expect(html).toContain('Detection');
-        expect(html).toContain('not configurable yet');
+        expect(html).toContain(
+            'Detection settings are visible for navigation preview, but not configurable yet.',
+        );
+    });
+
+    it('no longer accepts the Diagnostics section', () => {
+        const props: Parameters<typeof PlaceholderSettingsSection>[0] = {
+            // @ts-expect-error — Diagnostics has a real section now.
+            sectionId: 'diagnostics',
+        };
+        expect(props.sectionId).toBe('diagnostics');
     });
 });
 

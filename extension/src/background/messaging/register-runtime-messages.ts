@@ -3,7 +3,10 @@ import * as v from 'valibot';
 
 import browser from '@/shared/browser';
 
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
+import { DebugLogRuntimeMessages } from '@/background/messaging/debug-log-runtime-messages';
 import {
     ContentLogMessages,
     PromoDetectionRuntimeMessages,
@@ -17,10 +20,14 @@ import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
 import type { ProviderRegistry } from '@/background/providers/provider-registry';
 import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
+import { RuntimeSenderTrust } from '@/background/messaging/runtime-sender-trust';
 import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
 import { ServerAnalysisIssueReport } from '@/background/server-analysis-issue-report';
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    debugLogAppendRuntimeMessageSchema,
     refreshServerAnalysisStatusRuntimeMessageSchema,
     requestServerAnalysisRuntimeMessageSchema,
     serverAnalysisSessionEventRuntimeMessageSchema,
@@ -57,6 +64,24 @@ async function dispatchRuntimeMessage(
     sender: Runtime.MessageSender,
 ): Promise<unknown> {
     await BackgroundStorageAccess.ready();
+    // Per-tab attribution is created from the browser's own sender metadata
+    // on the first content message, never from a content-supplied field.
+    const contentTabId = RuntimeSenderTrust.contentTabId(sender);
+    if (contentTabId !== null) {
+        await TabAttributionRegistry.ready();
+        const firstSeen = TabAttributionRegistry.isIncognitoSync(contentTabId) === null;
+        TabAttributionRegistry.noteSender(sender);
+        if (firstSeen) {
+            DebugLog.record(
+                DEBUG_LOG_EVENT.ContentReady,
+                {
+                    protocol: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                    extensionVersion: browser.runtime.getManifest().version,
+                },
+                { tab: contentTabId },
+            );
+        }
+    }
 
     switch (msg.type) {
         case TOPSKIP_MESSAGE.CONTENT_LOG:
@@ -165,6 +190,26 @@ async function dispatchRuntimeMessage(
                 msg.state,
                 sender.tab?.id,
             );
+        case TOPSKIP_MESSAGE.DEBUG_LOG_APPEND: {
+            const parsed = v.safeParse(debugLogAppendRuntimeMessageSchema, msg);
+            if (!parsed.success) {
+                return { ok: false, error: 'Invalid debug log append.' };
+            }
+            return DebugLogRuntimeMessages.handleAppend(
+                parsed.output.payload,
+                sender,
+            );
+        }
+        case TOPSKIP_MESSAGE.GET_DEBUG_LOG_STATUS:
+            return DebugLogRuntimeMessages.handleGetStatus(sender);
+        case TOPSKIP_MESSAGE.GET_DEBUG_LOG_PREVIEW:
+            return DebugLogRuntimeMessages.handleGetPreview(sender);
+        case TOPSKIP_MESSAGE.GET_DEBUG_LOG_BUNDLE:
+            return DebugLogRuntimeMessages.handleGetBundle(sender);
+        case TOPSKIP_MESSAGE.SET_DEBUG_LOGGING:
+            return DebugLogRuntimeMessages.handleSetEnabled(msg.enabled, sender);
+        case TOPSKIP_MESSAGE.DEV_SEED_DEBUG_LOG:
+            return DebugLogRuntimeMessages.handleDevSeed(msg.payload, sender);
         default:
             return undefined;
     }

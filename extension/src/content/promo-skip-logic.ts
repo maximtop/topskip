@@ -142,3 +142,100 @@ export function resetFiredIndicesOnBackwardSeek(input: ResetFiredInput): void {
         }
     }
 }
+
+/**
+ * Stable reasons why playback reached a promo block without a skip; used
+ * only for diagnostics, never for control flow.
+ */
+export const PROMO_SKIP_SUPPRESSION_REASON = {
+    AlreadyFired: 'already-fired',
+    NotCrossed: 'not-crossed',
+    SeekGuard: 'seek-guard',
+    Seeking: 'seeking',
+    NoDuration: 'no-duration',
+} as const;
+
+/**
+ * Suppression reason literal union.
+ */
+export type PromoSkipSuppressionReason =
+    (typeof PROMO_SKIP_SUPPRESSION_REASON)[keyof typeof PROMO_SKIP_SUPPRESSION_REASON];
+
+/**
+ * Block index plus the reason it did not fire on this time update.
+ */
+export type PromoSkipSuppression = {
+    blockIndex: number;
+    reason: PromoSkipSuppressionReason;
+};
+
+/**
+ * Explains a missed skip for the first block whose start was crossed or whose
+ * span contains `currentTime`; returns `null` when no block is involved (so
+ * the playback hook stays silent on ordinary ticks) or when
+ * {@link evaluatePromoBlocksSkip} would have skipped.
+ *
+ * @param input - Same playback state handed to `evaluatePromoBlocksSkip`.
+ * @returns Suppression for the first relevant block, or `null`.
+ */
+export function explainSuppressedPromoSkip(
+    input: PromoBlocksSkipInput,
+): PromoSkipSuppression | null {
+    const {
+        prevTime,
+        currentTime,
+        duration,
+        isSeeking,
+        firedStartKeys,
+        blocks,
+    } = input;
+    const hasDuration = Number.isFinite(duration) && duration > 0;
+    for (let i = 0; i < blocks.length; i++) {
+        const block = blocks[i];
+        if (block === undefined) {
+            continue;
+        }
+        const start = block.startSec;
+        const end = computePromoBlockTargetTime(
+            block,
+            hasDuration ? duration : Number.POSITIVE_INFINITY,
+        );
+        const crossed = prevTime < start && currentTime >= start;
+        const inside = currentTime >= start && currentTime < end;
+        if (!crossed && !inside) {
+            continue;
+        }
+        if (!hasDuration) {
+            return {
+                blockIndex: i,
+                reason: PROMO_SKIP_SUPPRESSION_REASON.NoDuration,
+            };
+        }
+        if (isSeeking) {
+            return {
+                blockIndex: i,
+                reason: PROMO_SKIP_SUPPRESSION_REASON.Seeking,
+            };
+        }
+        if (firedStartKeys.has(promoBlockStartKey(start))) {
+            return {
+                blockIndex: i,
+                reason: PROMO_SKIP_SUPPRESSION_REASON.AlreadyFired,
+            };
+        }
+        if (!crossed) {
+            return {
+                blockIndex: i,
+                reason: PROMO_SKIP_SUPPRESSION_REASON.NotCrossed,
+            };
+        }
+        if (currentTime - prevTime > MAX_PLAYBACK_DELTA_SEC) {
+            return {
+                blockIndex: i,
+                reason: PROMO_SKIP_SUPPRESSION_REASON.SeekGuard,
+            };
+        }
+        return null;
+    }
+    return null;
+}

@@ -43,11 +43,39 @@ vi.mock('@/shared/constants', async (importOriginal) => {
     };
 });
 
+const { debugLogClientMocks } = vi.hoisted(() => ({
+    debugLogClientMocks: {
+        log: vi.fn<(...args: unknown[]) => void>(),
+        isEnabled: vi.fn((): boolean | null => true),
+    },
+}));
+
+vi.mock('@/content/debug-log-client', () => ({
+    DebugLogClient: debugLogClientMocks,
+}));
+
+const { contentLogInfo } = vi.hoisted(() => ({
+    contentLogInfo: vi.fn<(...args: unknown[]) => void>(),
+}));
+
+// The CONTENT_LOG relay is dev-gated (`__TOPSKIP_INCLUDE_DEV_LOCAL__` is
+// false under vitest), so the exact verbose dev lines are observed at the
+// contentLog module boundary instead of through runtime.sendMessage.
+vi.mock('@/content/content-log', () => ({
+    contentLog: { info: contentLogInfo, warn: vi.fn(), error: vi.fn() },
+}));
+
 import { PlayerCaptionCapture } from '@/content/captions/player-caption-capture';
 import { WatchCaptions } from '@/content/watch-captions';
+import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 const PAGE_EVENT = 'topskip:caption-capture-page';
+
+// `expect.any` is typed `any`; widening it to `unknown` keeps the expected
+// event literals free of unsafe-assignment errors.
+const ANY_NUMBER: unknown = expect.any(Number);
 
 type WindowListener = (event: MessageEvent<unknown>) => void;
 type BridgeTransport = 'window' | 'document';
@@ -173,6 +201,7 @@ function dispatchTimedtextCapture(
 function dispatchPageDiagnostic(
     messageId?: string,
     transport: BridgeTransport = 'window',
+    overrides: Record<string, unknown> = {},
 ): void {
     const data = {
         source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
@@ -190,6 +219,7 @@ function dispatchPageDiagnostic(
             fmt: 'json3',
             hasPot: true,
         },
+        ...overrides,
     };
     if (transport === 'document') {
         document.dispatchEvent(
@@ -217,23 +247,40 @@ function countRuntimeMessages(type: string): number {
 }
 
 function countContentLogStage(stage: string): number {
-    return mockSendMessage.mock.calls.filter((call) => {
-        const message: unknown = Reflect.get(call, '0');
-        if (message === null || typeof message !== 'object') {
-            return false;
-        }
-        if (Reflect.get(message, 'type') !== TOPSKIP_MESSAGE.CONTENT_LOG) {
-            return false;
-        }
-        const args: unknown = Reflect.get(message, 'args');
-        if (!Array.isArray(args)) {
-            return false;
-        }
-        return (
-            Reflect.get(args, '0') === 'caption-capture' &&
-            Reflect.get(args, '1') === stage
-        );
-    }).length;
+    return contentLogInfo.mock.calls.filter(
+        (call) => call[0] === 'caption-capture' && call[1] === stage,
+    ).length;
+}
+
+function debugLogCalls(event: string): unknown[][] {
+    return debugLogClientMocks.log.mock.calls.filter(
+        (call) => call[0] === event,
+    );
+}
+
+function pageStageCalls(): unknown[][] {
+    return debugLogCalls(DEBUG_LOG_EVENT.CaptureStage).filter((call) => {
+        const fields: unknown = call[1];
+        const stage: unknown =
+            fields !== null && typeof fields === 'object'
+                ? Reflect.get(fields, 'stage')
+                : undefined;
+        return typeof stage === 'string' && stage.startsWith('page:');
+    });
+}
+
+/**
+ * Starts an owned capture and waits for activation; the run promise is
+ * wrapped so the async helper does not adopt (and await) it.
+ */
+async function startCapture(videoId: string): Promise<{ run: Promise<unknown> }> {
+    const run = PlayerCaptionCapture.capture({
+        videoId,
+        signal: new AbortController().signal,
+        captureTimeoutMs: 1000,
+    });
+    await acceptActivation();
+    return { run };
 }
 
 describe('PlayerCaptionCapture', () => {
@@ -251,6 +298,10 @@ describe('PlayerCaptionCapture', () => {
         mockTeardownBridge.mockResolvedValue({ ok: true });
         mockSendMessage.mockReset();
         mockSendMessage.mockResolvedValue({ ok: true });
+        contentLogInfo.mockReset();
+        debugLogClientMocks.log.mockReset();
+        debugLogClientMocks.isEnabled.mockReset();
+        debugLogClientMocks.isEnabled.mockReturnValue(true);
         vi.useFakeTimers();
     });
 
@@ -303,12 +354,11 @@ describe('PlayerCaptionCapture', () => {
             const messageType: unknown = Reflect.get(message, 'type');
             return typeof messageType === 'string' ? messageType : null;
         });
-        expect(runtimeTypes.length).toBeGreaterThan(0);
-        expect(
-            runtimeTypes.every(
-                (messageType) => messageType === TOPSKIP_MESSAGE.CONTENT_LOG,
-            ),
-        ).toBe(true);
+        // The dev-gated relay no longer produces runtime traffic, so a
+        // bridge-local capture must send no runtime messages at all; the
+        // verbose dev lines still prove the log path was exercised.
+        expect(runtimeTypes).toEqual([]);
+        expect(contentLogInfo).toHaveBeenCalled();
     });
 
     it('sends a structured timeout failure when no capture arrives', async () => {
@@ -430,18 +480,14 @@ describe('PlayerCaptionCapture', () => {
         PlayerCaptionCapture.prepareBridgeForPage();
         dispatchPageDiagnostic('bridge:1');
         await flushMicrotasks();
-        expect(mockSendMessage).toHaveBeenCalledWith({
-            type: TOPSKIP_MESSAGE.CONTENT_LOG,
-            level: 'info',
-            args: [
-                'caption-capture',
-                'page:timedtext-empty-body',
-                'transport=xhr videoId=abc languageCode=en status=200 ' +
-                    'bodyLength=0 urlShape={"pathname":"/api/timedtext",' +
-                    '"paramNames":["fmt","lang","pot","v"],"fmt":"json3",' +
-                    '"hasPot":true}',
-            ],
-        });
+        expect(contentLogInfo).toHaveBeenCalledWith(
+            'caption-capture',
+            'page:timedtext-empty-body',
+            'transport=xhr videoId=abc languageCode=en status=200 ' +
+                'bodyLength=0 urlShape={"pathname":"/api/timedtext",' +
+                '"paramNames":["fmt","lang","pot","v"],"fmt":"json3",' +
+                '"hasPot":true}',
+        );
     });
 
     it('logs one diagnostic received over both page transports', async () => {
@@ -590,18 +636,14 @@ describe('PlayerCaptionCapture', () => {
         await finishCleanup();
         await run;
 
-        expect(mockSendMessage).toHaveBeenCalledWith({
-            type: TOPSKIP_MESSAGE.CONTENT_LOG,
-            level: 'info',
-            args: [
-                'caption-capture',
-                'activation-accepted',
-                'videoId=abc attempt=1 ok=true wasOn=false ' +
-                    'userIntervened=false hasTracks=2 ' +
-                    'actions=["hide-style-added","loadModule:captions",' +
-                    '"setOption:track","toggleSubtitlesOn"]',
-            ],
-        });
+        expect(contentLogInfo).toHaveBeenCalledWith(
+            'caption-capture',
+            'activation-accepted',
+            'videoId=abc attempt=1 ok=true wasOn=false ' +
+                'userIntervened=false hasTracks=2 ' +
+                'actions=["hide-style-added","loadModule:captions",' +
+                '"setOption:track","toggleSubtitlesOn"]',
+        );
     });
 
     it('sends a structured activation failure when captions are unavailable', async () => {
@@ -1025,5 +1067,238 @@ describe('PlayerCaptionCapture', () => {
                 hostname: '127.0.0.1',
             }),
         ).resolves.toEqual({ status: 'cancelled' });
+    });
+
+    it('records scheduling, activation, capture and cleanup stages in the debug log', async () => {
+        mockActivateBridge.mockResolvedValue({
+            ok: true,
+            wasOn: false,
+            userIntervened: false,
+            hasTracks: 2,
+            actions: ['hide-style-added', 'toggleSubtitlesOn'],
+        });
+        PlayerCaptionCapture.scheduleForVideoId('dQw4w9WgXcQ', 'video-id-change', {
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        await acceptActivation();
+        await acceptActivation();
+        dispatchTimedtextCapture(
+            'dQw4w9WgXcQ',
+            JSON.stringify({
+                events: [{ tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: 'SENTINEL-CAPTION' }] }],
+            }),
+        );
+        await finishCleanup();
+
+        const events = debugLogClientMocks.log.mock.calls.map((call) => [
+            call[0],
+            call[1],
+            call[2],
+        ]);
+        expect(events).toEqual(
+            expect.arrayContaining([
+                [
+                    DEBUG_LOG_EVENT.CaptureScheduled,
+                    { trigger: 'video-id-change' },
+                    { video: 'dQw4w9WgXcQ' },
+                ],
+                [DEBUG_LOG_EVENT.CaptureStage, { stage: 'capture-start' }, { video: 'dQw4w9WgXcQ' }],
+                [DEBUG_LOG_EVENT.CaptureStage, { stage: 'bridge-ready' }, { video: 'dQw4w9WgXcQ' }],
+                [
+                    DEBUG_LOG_EVENT.CaptureActivation,
+                    { ok: true, wasOn: false, userIntervened: false, hasTracks: 2, actions: 2 },
+                    { video: 'dQw4w9WgXcQ' },
+                ],
+                [
+                    DEBUG_LOG_EVENT.CaptureStage,
+                    {
+                        stage: 'capture-event-received',
+                        lang: 'en',
+                        bodyLength: ANY_NUMBER,
+                        contentType: 'application/json; charset=UTF-8',
+                        urlPath: '/api/timedtext',
+                        urlParams: 'fmt,lang,v',
+                        fmt: 'json3',
+                        hasPot: false,
+                    },
+                    { video: 'dQw4w9WgXcQ' },
+                ],
+                [
+                    DEBUG_LOG_EVENT.CaptureSucceeded,
+                    expect.objectContaining({ segments: 1, lang: 'en' }),
+                    { video: 'dQw4w9WgXcQ' },
+                ],
+                [DEBUG_LOG_EVENT.CaptureStage, { stage: 'cleanup-start' }, { video: 'dQw4w9WgXcQ' }],
+                [
+                    DEBUG_LOG_EVENT.CaptureStage,
+                    expect.objectContaining({ stage: 'cleanup-finished', ok: true }),
+                    { video: 'dQw4w9WgXcQ' },
+                ],
+            ]),
+        );
+        expect(JSON.stringify(events)).not.toContain('SENTINEL');
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toHaveLength(0);
+    });
+
+    it('records exactly one capture-failed with the stable reason on timeout', async () => {
+        const run = PlayerCaptionCapture.captureForVideoId('dQw4w9WgXcQ', {
+            captureTimeoutMs: 10,
+        });
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(20);
+        await finishCleanup();
+        await run;
+
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                { reason: 'capture-timeout', stage: 'waiting-capture' },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+        expect(JSON.stringify(debugLogClientMocks.log.mock.calls)).not.toContain(
+            'Caption capture timed out',
+        );
+    });
+
+    it('records one activation failure after retries are exhausted', async () => {
+        mockActivateBridge.mockResolvedValue({
+            ok: false,
+            reason: 'player-not-ready',
+            error: 'SENTINEL player error',
+        });
+        const run = PlayerCaptionCapture.captureForVideoId('dQw4w9WgXcQ', {
+            captureTimeoutMs: 500,
+        });
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(250);
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(250);
+        await finishCleanup();
+        await run;
+
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureActivation)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureActivation,
+                { ok: false, reason: 'player-not-ready' },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                { reason: 'player-not-ready', stage: 'activating' },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+        expect(JSON.stringify(debugLogClientMocks.log.mock.calls)).not.toContain('SENTINEL');
+    });
+
+    it('records a parse failure without the parser message or body', async () => {
+        const { run } = await startCapture('dQw4w9WgXcQ');
+        dispatchTimedtextCapture('dQw4w9WgXcQ', 'SENTINEL-NOT-JSON');
+        await finishCleanup();
+        await run;
+
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                { reason: 'parse-failed', stage: 'parsing' },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+        expect(JSON.stringify(debugLogClientMocks.log.mock.calls)).not.toContain('SENTINEL');
+    });
+
+    it('forwards allow-listed page diagnostics only during an owned capture', async () => {
+        PlayerCaptionCapture.prepareBridgeForPage();
+        dispatchPageDiagnostic('bridge:outside');
+        await flushMicrotasks();
+        expect(pageStageCalls()).toEqual([]);
+        expect(countContentLogStage('page:timedtext-empty-body')).toBe(1);
+
+        const { run } = await startCapture('dQw4w9WgXcQ');
+        dispatchPageDiagnostic('bridge:inside');
+        dispatchPageDiagnostic('bridge:inside', 'document');
+        await flushMicrotasks();
+
+        expect(pageStageCalls()).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureStage,
+                {
+                    stage: 'page:timedtext-empty-body',
+                    transport: 'xhr',
+                    status: 200,
+                    bodyLength: 0,
+                    lang: 'en',
+                    urlPath: '/api/timedtext',
+                    urlParams: 'fmt,lang,pot,v',
+                    fmt: 'json3',
+                    hasPot: true,
+                },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
+    });
+
+    it('rejects unknown stages, oversized strings and forged fields from the page', async () => {
+        const { run } = await startCapture('dQw4w9WgXcQ');
+        dispatchPageDiagnostic('bridge:unknown', 'window', { stage: 'bridge-installed' });
+        dispatchPageDiagnostic('bridge:oversized', 'window', { transport: 'x'.repeat(65) });
+        dispatchPageDiagnostic('bridge:forged', 'window', {
+            error: 'SENTINEL https://example.test/?sig=SECRET',
+            videoId: 'forgedvideo',
+        });
+        await flushMicrotasks();
+
+        const calls = pageStageCalls();
+        expect(calls).toHaveLength(1);
+        expect(calls[0]?.[2]).toEqual({ video: 'dQw4w9WgXcQ' });
+        expect(JSON.stringify(calls)).not.toContain('SENTINEL');
+        expect(JSON.stringify(calls)).not.toContain('forgedvideo');
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
+    });
+
+    it('stops forwarding page diagnostics after the per-session limit and resets per session', async () => {
+        const { run: first } = await startCapture('dQw4w9WgXcQ');
+        for (let i = 0; i <= DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION; i += 1) {
+            dispatchPageDiagnostic(`bridge:limit-${String(i)}`);
+        }
+        await flushMicrotasks();
+        expect(pageStageCalls()).toHaveLength(
+            DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION,
+        );
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await first;
+
+        const { run: second } = await startCapture('dQw4w9WgXcQ');
+        dispatchPageDiagnostic('bridge:next-session');
+        await flushMicrotasks();
+        expect(pageStageCalls()).toHaveLength(
+            DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION + 1,
+        );
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await second;
+    });
+
+    it('does not forward page diagnostics while logging is off', async () => {
+        debugLogClientMocks.isEnabled.mockReturnValue(false);
+        const { run } = await startCapture('dQw4w9WgXcQ');
+        dispatchPageDiagnostic('bridge:off');
+        await flushMicrotasks();
+
+        expect(pageStageCalls()).toEqual([]);
+        expect(countContentLogStage('page:timedtext-empty-body')).toBe(1);
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
     });
 });

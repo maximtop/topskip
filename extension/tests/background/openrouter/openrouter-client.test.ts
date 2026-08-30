@@ -134,4 +134,38 @@ describe('callOpenRouterChat', () => {
             expect(r.error).toContain('401');
         }
     });
+
+    it('classifies an HTTP failure with status and kind, no body in the shape', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+            ok: false,
+            status: 429,
+            text: (): Promise<string> => Promise.resolve('secret body 12345'),
+        }));
+
+        const r = await callOpenRouterChat({
+            apiKey: 'k',
+            model: 'm',
+            messages: [{ role: 'user', content: 'hi' }],
+        });
+
+        expect(r.ok).toBe(false);
+        if (!r.ok) {
+            expect(r.status).toBe(429);
+            expect(r.kind).toBe('http');
+        }
+    });
+
+    it('classifies a network throw as kind network with null status', async () => {
+        vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('down')));
+        const r = await callOpenRouterChat({
+            apiKey: 'k',
+            model: 'm',
+            messages: [{ role: 'user', content: 'hi' }],
+        });
+        expect(r.ok).toBe(false);
+        if (!r.ok) {
+            expect(r.kind).toBe('network');
+            expect(r.status).toBeNull();
+        }
+    });
 });

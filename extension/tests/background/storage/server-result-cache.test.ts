@@ -16,7 +16,8 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-const { STORAGE_KEY_SERVER_RESULT_CACHE } = await import('@/shared/constants');
+const { STORAGE_KEY_SERVER_RESULT_CACHE, STORAGE_KEY_SERVER_RESULT_CACHE_INDEX } =
+    await import('@/shared/constants');
 const { ServerResultCacheStorage } =
     await import('@/background/storage/server-result-cache');
 
@@ -34,6 +35,7 @@ const CACHE_KEY = [
     LANGUAGE_CODE,
     TRANSCRIPT_HASH,
 ].join(':');
+const INDEX_KEY = STORAGE_KEY_SERVER_RESULT_CACHE_INDEX;
 
 const EXACT_ENTRY = {
     status: 'ready' as const,
@@ -166,6 +168,7 @@ describe('ServerResultCacheStorage', () => {
                 ...EXACT_ENTRY,
                 storedAtMs: NOW_MS,
             },
+            [INDEX_KEY]: [CACHE_KEY],
         });
         expect(storageSet).toHaveBeenNthCalledWith(2, {
             [CACHE_KEY]: {
@@ -178,6 +181,7 @@ describe('ServerResultCacheStorage', () => {
                 freshness: { expiresAtMs: EXPIRES_AT_MS },
                 storedAtMs: NOW_MS,
             },
+            [INDEX_KEY]: [CACHE_KEY],
         });
         expect(JSON.stringify(storageSet.mock.calls)).not.toContain('segments');
         expect(JSON.stringify(storageSet.mock.calls)).not.toContain(
@@ -207,5 +211,69 @@ describe('ServerResultCacheStorage', () => {
 
         expect(storageGet).toHaveBeenCalledWith(null);
         expect(storageRemove).toHaveBeenCalledWith([oldKey, corruptKey]);
+        expect(storageSet).toHaveBeenCalledWith({ [INDEX_KEY]: [CACHE_KEY] });
+    });
+
+    it('reads only the indexed keys once an index exists and never scans the debug log', async () => {
+        const oldKey = [
+            STORAGE_KEY_SERVER_RESULT_CACHE,
+            'server-v4',
+            VIDEO_ID,
+            LANGUAGE_CODE,
+            TRANSCRIPT_HASH,
+        ].join(':');
+        const stored: Record<string, unknown> = {
+            [INDEX_KEY]: [CACHE_KEY, oldKey],
+            [CACHE_KEY]: EXACT_ENTRY,
+            [oldKey]: { ...EXACT_ENTRY, algorithmVersion: 'server-v4' },
+            'topskip:debug-log:segment:3': 'SEGMENT_SENTINEL',
+        };
+        storageGet.mockImplementation((keys: string | string[] | null) => {
+            if (keys === null) {
+                return Promise.resolve(stored);
+            }
+            const list = Array.isArray(keys) ? keys : [keys];
+            return Promise.resolve(
+                Object.fromEntries(
+                    list
+                        .filter((key) => key in stored)
+                        .map((key) => [key, stored[key]]),
+                ),
+            );
+        });
+
+        await ServerResultCacheStorage.removeOtherAlgorithmVersions(ALGORITHM_VERSION);
+
+        expect(storageGet).not.toHaveBeenCalledWith(null);
+        expect(storageGet).toHaveBeenCalledWith(INDEX_KEY);
+        expect(storageGet).toHaveBeenCalledWith([CACHE_KEY, oldKey]);
+        expect(storageRemove).toHaveBeenCalledWith([oldKey]);
+        expect(storageSet).toHaveBeenCalledWith({ [INDEX_KEY]: [CACHE_KEY] });
+        expect(JSON.stringify(storageRemove.mock.calls)).not.toContain('debug-log');
+    });
+
+    it('prunes the index when an invalid row is repaired', async () => {
+        storageGet.mockImplementation((keys: string | string[] | null) =>
+            Promise.resolve(
+                keys === CACHE_KEY
+                    ? { [CACHE_KEY]: { nope: true } }
+                    : keys === INDEX_KEY
+                        ? { [INDEX_KEY]: [CACHE_KEY, 'other'] }
+                        : {},
+            ),
+        );
+
+        await expect(
+            ServerResultCacheStorage.loadExact({
+                videoId: VIDEO_ID,
+                languageCode: LANGUAGE_CODE,
+                transcriptHash: TRANSCRIPT_HASH,
+                algorithmVersion: ALGORITHM_VERSION,
+                nowMs: NOW_MS,
+            }),
+        ).resolves.toBeNull();
+
+        expect(storageRemove).toHaveBeenCalledWith(CACHE_KEY);
+        expect(storageSet).toHaveBeenCalledWith({ [INDEX_KEY]: ['other'] });
     });
 });

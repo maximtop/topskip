@@ -57,6 +57,8 @@ export type ProviderHostAccessRequiredAnalysisResult = {
     error: string;
     tooLarge?: never;
     rawAssistant?: never;
+    status?: never;
+    kind?: never;
 };
 
 /**
@@ -70,6 +72,14 @@ type ProviderAnalysisFailure = {
      * Raw model text when available (e.g. parse failures).
      */
     rawAssistant?: string;
+    /**
+     * HTTP status from the provider call, or `null` for transport failures.
+     */
+    status?: number | null;
+    /**
+     * Stable transport/parse classification for BYOK metadata.
+     */
+    kind?: 'http' | 'network' | 'timeout' | 'parse' | 'aborted';
     failureCode?: never;
 };
 

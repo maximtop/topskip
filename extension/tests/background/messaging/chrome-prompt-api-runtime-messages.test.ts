@@ -128,4 +128,10 @@ describe('ChromePromptApiRuntimeMessages', () => {
             }
         });
     });
+
+    it('prints no console lines under release-like flags', async () => {
+        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        await ChromePromptApiRuntimeMessages.handleGetStatus();
+        expect(info).not.toHaveBeenCalled();
+    });
 });

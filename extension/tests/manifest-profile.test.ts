@@ -7,6 +7,7 @@ import {
     getDevE2eOrigin,
 } from '../build-modes';
 import {
+    REQUIRED_API_PERMISSIONS,
     TOPSKIP_MINIMUM_CHROME_VERSION,
     composeExtensionManifest,
 } from '../manifest-profile';
@@ -57,6 +58,7 @@ describe('composeExtensionManifest', () => {
             'storage',
             'scripting',
             'activeTab',
+            'unlimitedStorage',
         ]);
         expect(manifest.optional_permissions).toEqual([]);
         expect(manifest.minimum_chrome_version).toBe(
@@ -91,6 +93,24 @@ describe('composeExtensionManifest', () => {
         expect(manifest.background).toEqual({
             service_worker: 'background.js',
         });
+    });
+
+    it('requires unlimitedStorage for the debug log and never makes it optional', () => {
+        const manifest = composeExtensionManifest(
+            staleSourceManifest(),
+            TopSkipBuild.Release,
+            'https://topskip.example.com',
+        );
+
+        expect(REQUIRED_API_PERMISSIONS).toEqual([
+            'storage',
+            'scripting',
+            'activeTab',
+            'unlimitedStorage',
+        ]);
+        expect(manifest.permissions).toHaveLength(4);
+        expect(manifest.permissions).toContain('unlimitedStorage');
+        expect(manifest.optional_permissions).toEqual([]);
     });
 
     it.each([TopSkipBuild.Beta, TopSkipBuild.Release])(

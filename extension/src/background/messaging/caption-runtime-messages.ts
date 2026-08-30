@@ -1,8 +1,10 @@
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 import { logTranscriptForDeveloper } from '@/background/captions/log-transcript-dev';
+import { DebugLog } from '@/background/debug-log/debug-log';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     CAPTION_CAPTURE_FAILURE_REASON,
     type CaptionCaptureFailureReason,
@@ -40,7 +42,14 @@ export class CaptionRuntimeMessages {
                 payload.reason !== undefined &&
                 EXPECTED_CAPTION_FAILURE_REASONS.has(payload.reason);
             const log = expectedFailure ? console.warn : console.error;
-            log(LOG_PREFIX_CAPTIONS, payload.error);
+            // Stable picklist reason only — payload.error can embed a signed
+            // caption URL or raw stack.
+            log(LOG_PREFIX_CAPTIONS, payload.reason ?? 'unknown');
+            DebugLog.record(
+                DEBUG_LOG_EVENT.CaptureFailed,
+                { reason: payload.reason ?? 'unknown' },
+                { tab: sender.tab?.id },
+            );
             return { ok: true };
         }
 

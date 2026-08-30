@@ -26,6 +26,9 @@ const {
 
 vi.mock('@/shared/browser', () => ({
     default: {
+        i18n: {
+            getMessage: (key: string): string => key,
+        },
         runtime: {
             getManifest,
             sendMessage,
@@ -67,6 +70,8 @@ import {
 import {
     CONTENT_PREFS_REQUEST_TIMEOUT_MS,
     CONTENT_PREFS_RETRY_DELAY_MS,
+    explainPromoBlocksRejection,
+    PROMO_BLOCKS_REJECTION_CAUSE,
     shouldAcceptPromoBlocksForActiveRoute,
 } from '@/content/youtube-watch';
 import {
@@ -78,6 +83,11 @@ import {
     SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS,
     SERVER_ANALYSIS_SESSION_DEADLINE_MS,
 } from '@/content/server-analysis-session';
+import {
+    DEBUG_LOG_CLIENT_FLUSH_DELAY_MS,
+    DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS,
+} from '@/shared/debug-log-constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 
 /**
  * Simulates the YoutubeWatch.onTimeUpdate loop by calling
@@ -677,12 +687,14 @@ describe('per-video analysis route lifecycle', () => {
         disposeContent(): void;
         emitPrefs(prefs: UserPreferences): Promise<void>;
         emitRuntimeMessage(message: unknown): Promise<void>;
+        dispatchRuntimeMessage(message: unknown): unknown;
         probeContent(): unknown;
         routeStatus(): unknown;
         setRouteWithoutNavigation(pathname: string, search: string): void;
         messagesOfType(type: string): unknown[];
         activeVideoListenerCount(): number;
         dispatchTimeUpdate(currentTime: number): number;
+        dispatchVideoEvent(type: 'seeking' | 'seeked', currentTime?: number): void;
         navigateToVideo(videoId: string): Promise<void>;
         pollBindings(): Promise<void>;
         replaceVideoElement(): Promise<void>;
@@ -809,6 +821,14 @@ describe('per-video analysis route lifecycle', () => {
                     ? video
                     : null;
             },
+            getElementById: (): null => null,
+            createElement: (): Record<string, unknown> => ({
+                id: '',
+                style: { cssText: '', opacity: '' },
+                textContent: '',
+                remove: vi.fn(),
+            }),
+            documentElement: { appendChild: vi.fn() },
         });
         vi.stubGlobal('window', {
             addEventListener: windowEvents.addEventListener.bind(windowEvents),
@@ -816,6 +836,7 @@ describe('per-video analysis route lifecycle', () => {
                 windowEvents.removeEventListener.bind(windowEvents),
             clearTimeout: globalThis.clearTimeout,
             dispatchEvent: windowEvents.dispatchEvent.bind(windowEvents),
+            matchMedia: (): { matches: boolean } => ({ matches: true }),
             setTimeout: globalThis.setTimeout,
         });
         vi.stubGlobal('fetch', fetchMock);
@@ -860,6 +881,9 @@ describe('per-video analysis route lifecycle', () => {
                 getRuntimeMessageListener()(message);
                 await flushAsyncWork();
             },
+            dispatchRuntimeMessage(message: unknown): unknown {
+                return getRuntimeMessageListener()(message);
+            },
             probeContent(): unknown {
                 return getRuntimeMessageListener()({
                     type: TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY,
@@ -896,6 +920,18 @@ describe('per-video analysis route lifecycle', () => {
                 video.dispatchEvent(new Event('timeupdate'));
                 return video.currentTime;
             },
+            dispatchVideoEvent(
+                type: 'seeking' | 'seeked',
+                currentTime?: number,
+            ): void {
+                if (video === null) {
+                    throw new Error('Missing fake video.');
+                }
+                if (currentTime !== undefined) {
+                    video.currentTime = currentTime;
+                }
+                video.dispatchEvent(new Event(type));
+            },
             async navigateToVideo(videoId: string): Promise<void> {
                 locationState.search = `?v=${videoId}`;
                 await dispatchNavigation();
@@ -928,6 +964,145 @@ describe('per-video analysis route lifecycle', () => {
                 vi.unstubAllGlobals();
             },
         };
+    }
+
+    type RouteHarness = Awaited<ReturnType<typeof createRouteHarness>>;
+
+    /**
+     * One content event as appended through `DEBUG_LOG_APPEND`.
+     */
+    type AppendedDebugLogEvent = {
+        event: unknown;
+        fields: Record<string, unknown>;
+        video: unknown;
+        session: unknown;
+        job: unknown;
+    };
+
+    /**
+     * Boots the watch harness with the background reporting logging as on.
+     *
+     * @param serverResponder - Optional Server runtime responder.
+     * @returns Route harness whose GET_PREFS reply carries `debugLogEnabled`.
+     */
+    async function createLoggingHarness(
+        serverResponder?: ServerRuntimeResponder,
+    ): Promise<RouteHarness> {
+        return createRouteHarness(
+            serverPrefs,
+            true,
+            120,
+            serverResponder,
+            undefined,
+            () =>
+                Promise.resolve({
+                    ok: true,
+                    prefs: serverPrefs,
+                    debugLogEnabled: true,
+                }),
+        );
+    }
+
+    /**
+     * Flattens every appended batch into its events.
+     *
+     * @param harness - Active route harness.
+     * @returns Appended content events in send order.
+     */
+    function appendedDebugLogEvents(
+        harness: RouteHarness,
+    ): AppendedDebugLogEvent[] {
+        return harness
+            .messagesOfType(TOPSKIP_MESSAGE.DEBUG_LOG_APPEND)
+            .flatMap((message): unknown[] => {
+                const events = readTestProperty(
+                    readTestProperty(message, 'payload'),
+                    'events',
+                );
+                return Array.isArray(events) ? events : [];
+            })
+            .map((event: unknown): AppendedDebugLogEvent => {
+                const fields = readTestProperty(event, 'fields');
+                return {
+                    event: readTestProperty(event, 'event'),
+                    fields:
+                        fields !== null && typeof fields === 'object'
+                            ? Object.fromEntries(Object.entries(fields))
+                            : {},
+                    video: readTestProperty(event, 'video'),
+                    session: readTestProperty(event, 'session'),
+                    job: readTestProperty(event, 'job'),
+                };
+            });
+    }
+
+    /**
+     * Selects appended events by name.
+     *
+     * @param harness - Active route harness.
+     * @param name - Debug log event name.
+     * @returns Matching events in send order.
+     */
+    function appendedEventsNamed(
+        harness: RouteHarness,
+        name: string,
+    ): AppendedDebugLogEvent[] {
+        return appendedDebugLogEvents(harness).filter(
+            (event) => event.event === name,
+        );
+    }
+
+    const NEVER_RESPOND: ServerRuntimeResponder = () =>
+        new Promise<unknown>(() => undefined);
+
+    /**
+     * Delivers Server blocks for the harness's live session, which stays
+     * active (and pollable) because the submit ack never resolves.
+     *
+     * @param harness - Logging harness created with `NEVER_RESPOND`.
+     * @param promoBlocks - Blocks to deliver for `dQw4w9WgXcQ`.
+     * @returns Resolves after the delivery and one client flush.
+     */
+    async function deliverServerBlocks(
+        harness: RouteHarness,
+        promoBlocks: PromoBlock[],
+    ): Promise<void> {
+        const request = harness.messagesOfType(
+            TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+        )[0];
+        const sessionId = readTestProperty(
+            readTestProperty(request, 'payload'),
+            'sessionId',
+        );
+        await harness.emitRuntimeMessage({
+            type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+            source: 'server' as const,
+            sessionId,
+            videoId: 'dQw4w9WgXcQ',
+            promoBlocks,
+        });
+        await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+    }
+
+    /**
+     * Finds console-relay lines that must never be printed by the skip path.
+     *
+     * @param harness - Active route harness.
+     * @returns Relayed `CONTENT_LOG` first arguments.
+     */
+    function relayedConsoleHeads(harness: RouteHarness): unknown[] {
+        return harness
+            .messagesOfType(TOPSKIP_MESSAGE.CONTENT_LOG)
+            .map((message): unknown => {
+                const args = readTestProperty(message, 'args');
+                if (!Array.isArray(args)) {
+                    return undefined;
+                }
+                // Array.isArray narrows to any[]; rebind the head as unknown
+                // so the relay probe never leaks `any` into assertions.
+                const head: unknown = args[0];
+                return head;
+            });
     }
 
     it('acknowledges the background readiness probe and disposes replacement state', async () => {
@@ -2513,5 +2688,822 @@ describe('per-video analysis route lifecycle', () => {
         } finally {
             harness.dispose();
         }
+    });
+
+    describe('debug logging state propagation', () => {
+        it('applies the flag from the preferences reply before routing and logs prefs-received', async () => {
+            const harness = await createLoggingHarness();
+            try {
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(
+                    harness.messagesOfType(TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS),
+                ).toHaveLength(1);
+                const received = appendedEventsNamed(
+                    harness,
+                    DEBUG_LOG_EVENT.PrefsReceived,
+                );
+                expect(received).toHaveLength(1);
+                expect(received[0]).toMatchObject({
+                    fields: { reason: 'bootstrap' },
+                    video: 'dQw4w9WgXcQ',
+                });
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('keeps the client off when the preferences reply omits the flag', async () => {
+            const harness = await createRouteHarness(serverPrefs);
+            try {
+                await harness.emitPrefs({ ...serverPrefs, enabled: true });
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS * 3);
+
+                expect(
+                    harness.messagesOfType(TOPSKIP_MESSAGE.DEBUG_LOG_APPEND),
+                ).toHaveLength(0);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('applies DEBUG_LOG_STATE_UPDATED without touching the player', async () => {
+            const harness = await createRouteHarness({
+                ...serverPrefs,
+                enabled: false,
+            });
+            try {
+                const queriesBefore = harness.videoQueryCount();
+                const listenersBefore = harness.activeVideoListenerCount();
+
+                const reply = harness.dispatchRuntimeMessage({
+                    type: TOPSKIP_MESSAGE.DEBUG_LOG_STATE_UPDATED,
+                    enabled: true,
+                });
+                await expect(reply).resolves.toEqual({ ok: true });
+                expect(harness.videoQueryCount()).toBe(queriesBefore);
+                expect(harness.activeVideoListenerCount()).toBe(listenersBefore);
+
+                await harness.emitPrefs({ ...serverPrefs, enabled: false });
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.PrefsReceived),
+                ).toEqual([
+                    expect.objectContaining({ fields: { reason: 'broadcast' } }),
+                ]);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('discards queued events when the switch turns off', async () => {
+            const harness = await createLoggingHarness();
+            try {
+                await harness.emitRuntimeMessage({
+                    type: TOPSKIP_MESSAGE.DEBUG_LOG_STATE_UPDATED,
+                    enabled: false,
+                });
+                await harness.emitPrefs(serverPrefs);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS * 2);
+
+                expect(
+                    harness.messagesOfType(TOPSKIP_MESSAGE.DEBUG_LOG_APPEND),
+                ).toHaveLength(0);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('flushes pending events when the content context is replaced', async () => {
+            const harness = await createLoggingHarness();
+            try {
+                expect(
+                    harness.messagesOfType(TOPSKIP_MESSAGE.DEBUG_LOG_APPEND),
+                ).toHaveLength(0);
+
+                harness.disposeContent();
+
+                expect(
+                    harness.messagesOfType(TOPSKIP_MESSAGE.DEBUG_LOG_APPEND),
+                ).toHaveLength(1);
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.PrefsReceived),
+                ).toHaveLength(1);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS * 2);
+                expect(
+                    harness.messagesOfType(TOPSKIP_MESSAGE.DEBUG_LOG_APPEND),
+                ).toHaveLength(1);
+            } finally {
+                harness.dispose();
+            }
+        });
+    });
+
+    describe('skip and seek diagnostics', () => {
+        it('logs skip-applied once when playback crosses a block', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await deliverServerBlocks(harness, [{ startSec: 10, endSec: 20 }]);
+
+                expect(harness.dispatchTimeUpdate(9)).toBe(9);
+                expect(harness.dispatchTimeUpdate(10.2)).toBe(20);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const applied = appendedEventsNamed(harness, DEBUG_LOG_EVENT.SkipApplied);
+                expect(applied).toHaveLength(1);
+                expect(applied[0]).toMatchObject({
+                    video: 'dQw4w9WgXcQ',
+                    fields: { block: 0, fromSec: 10.2, toSec: 20, deltaSec: 1.2 },
+                });
+                expect(typeof applied[0]?.session).toBe('string');
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('logs skip-suppressed once per block and reason', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                // Reach 9s before blocks arrive: with an empty block list the
+                // hook only tracks position, so the harness's 0→9 teleport (a
+                // stand-in for continuous playback) logs no jump summary.
+                harness.dispatchTimeUpdate(9);
+                await deliverServerBlocks(harness, [{ startSec: 10, endSec: 20 }]);
+                harness.dispatchTimeUpdate(10.2);
+                // Jump back inside the fired block: one already-fired entry,
+                // then silence while the situation is unchanged.
+                harness.dispatchTimeUpdate(12);
+                harness.dispatchTimeUpdate(12.25);
+                harness.dispatchTimeUpdate(12.5);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const suppressed = appendedEventsNamed(
+                    harness,
+                    DEBUG_LOG_EVENT.SkipSuppressed,
+                );
+                expect(suppressed).toHaveLength(1);
+                expect(suppressed[0]?.fields).toEqual({
+                    block: 0,
+                    reason: 'already-fired',
+                    fromSec: 20,
+                    toSec: 12,
+                });
+                // Hoisted as `unknown` because the matcher factory returns
+                // `any`, which no-unsafe-assignment refuses inside a literal.
+                const jumpFields: unknown = expect.objectContaining({
+                    reason: 'jump',
+                    fromSec: 20,
+                    toSec: 12,
+                    deltaSec: -8,
+                });
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.SeekSummary),
+                ).toEqual([
+                    expect.objectContaining({ fields: jumpFields }),
+                ]);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it.each([
+            {
+                reason: 'not-crossed',
+                blocks: [{ startSec: 30, endSec: 40 }],
+                play: (harness: RouteHarness): void => {
+                    harness.dispatchVideoEvent('seeked', 35);
+                    harness.dispatchTimeUpdate(35.2);
+                },
+            },
+            {
+                reason: 'seek-guard',
+                blocks: [{ startSec: 10, endSec: 20 }],
+                play: (harness: RouteHarness): void => {
+                    harness.dispatchTimeUpdate(5);
+                    harness.dispatchTimeUpdate(12);
+                },
+            },
+            {
+                reason: 'seeking',
+                blocks: [{ startSec: 10, endSec: 20 }],
+                play: (harness: RouteHarness): void => {
+                    harness.dispatchTimeUpdate(9);
+                    harness.dispatchVideoEvent('seeking');
+                    harness.dispatchTimeUpdate(10.2);
+                },
+            },
+            {
+                reason: 'no-duration',
+                blocks: [{ startSec: 10, endSec: 20 }],
+                play: (harness: RouteHarness): void => {
+                    harness.setVideoDuration(0);
+                    harness.dispatchTimeUpdate(9);
+                    harness.dispatchTimeUpdate(10.2);
+                },
+            },
+        ])('logs skip-suppressed with reason $reason', async ({ reason, blocks, play }) => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await deliverServerBlocks(harness, blocks);
+                play(harness);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const suppressed = appendedEventsNamed(
+                    harness,
+                    DEBUG_LOG_EVENT.SkipSuppressed,
+                );
+                expect(suppressed).toHaveLength(1);
+                expect(suppressed[0]?.fields).toMatchObject({ block: 0, reason });
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.SkipApplied),
+                ).toHaveLength(0);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('logs fired-reset only when a backward seek clears keys, plus seek summaries', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                // Reach 9s before blocks arrive: with an empty block list the
+                // hook only tracks position, so the harness's 0→9 teleport (a
+                // stand-in for continuous playback) logs no jump summary.
+                harness.dispatchTimeUpdate(9);
+                await deliverServerBlocks(harness, [{ startSec: 10, endSec: 20 }]);
+                harness.dispatchTimeUpdate(10.2);
+                // Backward seek that stays past the block start clears nothing.
+                harness.dispatchVideoEvent('seeking');
+                harness.dispatchVideoEvent('seeked', 15);
+                // Backward seek before the block start clears the fired key.
+                harness.dispatchVideoEvent('seeking');
+                harness.dispatchVideoEvent('seeked', 5);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.FiredReset),
+                ).toEqual([
+                    expect.objectContaining({
+                        fields: { count: 1, reason: 'seeked' },
+                    }),
+                ]);
+                const seeks = appendedEventsNamed(harness, DEBUG_LOG_EVENT.SeekSummary);
+                expect(seeks.map((event) => event.fields)).toEqual([
+                    expect.objectContaining({ reason: 'seek', fromSec: 20, toSec: 15 }),
+                    expect.objectContaining({ reason: 'seek', fromSec: 15, toSec: 5 }),
+                ]);
+                // The cleared block fires again on replay.
+                expect(harness.dispatchTimeUpdate(9)).toBe(9);
+                expect(harness.dispatchTimeUpdate(10.2)).toBe(20);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('sends nothing across 1,000 time-update ticks without a decision', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await deliverServerBlocks(harness, [{ startSec: 50, endSec: 60 }]);
+                const sentBefore = sendMessage.mock.calls.length;
+
+                for (let tick = 1; tick <= 1000; tick += 1) {
+                    harness.dispatchTimeUpdate(tick * 0.04);
+                }
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(sendMessage.mock.calls.length).toBe(sentBefore);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('prints no skip or seek lines through the console relay', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await deliverServerBlocks(harness, [{ startSec: 10, endSec: 20 }]);
+                harness.dispatchTimeUpdate(9);
+                harness.dispatchTimeUpdate(10.2);
+                harness.dispatchVideoEvent('seeking');
+                harness.dispatchVideoEvent('seeked', 5);
+                harness.dispatchTimeUpdate(12);
+
+                const heads = relayedConsoleHeads(harness);
+                for (const forbidden of [
+                    'SKIP block',
+                    'timeupdate jump',
+                    'seeking started at',
+                    'backward seeked:',
+                    'after reset fired=',
+                    'forward seeked:',
+                ]) {
+                    expect(heads).not.toContain(forbidden);
+                }
+            } finally {
+                harness.dispose();
+            }
+        });
+    });
+
+    describe('promo block delivery diagnostics', () => {
+        it('explains every refusal the boolean gate makes', () => {
+            const base = {
+                currentVideoId: 'dQw4w9WgXcQ',
+                messageVideoId: 'dQw4w9WgXcQ',
+                source: 'server' as const,
+                enabled: true,
+                analysisMode: ANALYSIS_MODE.Server,
+                activeSessionId: '00000000-0000-4000-8000-000000000002',
+                messageSessionId: '00000000-0000-4000-8000-000000000002',
+            };
+            type AcceptanceCase = [
+                Parameters<typeof explainPromoBlocksRejection>[0],
+                string | null,
+            ];
+            const cases: AcceptanceCase[] = [
+                [base, null],
+                [{ ...base, enabled: false }, PROMO_BLOCKS_REJECTION_CAUSE.Disabled],
+                [
+                    { ...base, messageVideoId: 'aaaaaaaaaaa' },
+                    PROMO_BLOCKS_REJECTION_CAUSE.VideoMismatch,
+                ],
+                [
+                    { ...base, analysisMode: ANALYSIS_MODE.Byok },
+                    PROMO_BLOCKS_REJECTION_CAUSE.RouteMismatch,
+                ],
+                [{ ...base, activeSessionId: null }, PROMO_BLOCKS_REJECTION_CAUSE.SessionMismatch],
+                [
+                    { ...base, messageSessionId: '00000000-0000-4000-8000-000000000001' },
+                    PROMO_BLOCKS_REJECTION_CAUSE.SessionMismatch,
+                ],
+                [
+                    { ...base, source: 'local_provider' as const, analysisMode: ANALYSIS_MODE.Byok },
+                    null,
+                ],
+                [
+                    { ...base, source: 'local_provider' as const },
+                    PROMO_BLOCKS_REJECTION_CAUSE.RouteMismatch,
+                ],
+            ];
+            for (const [input, cause] of cases) {
+                expect(explainPromoBlocksRejection(input)).toBe(cause);
+                expect(shouldAcceptPromoBlocksForActiveRoute(input)).toBe(cause === null);
+            }
+        });
+
+        it('logs blocks-received with bounded timings and the delivery source', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await deliverServerBlocks(harness, [
+                    { startSec: 10, endSec: 20 },
+                    { startSec: 30.2, endSec: 40.5 },
+                ]);
+
+                const received = appendedEventsNamed(
+                    harness,
+                    DEBUG_LOG_EVENT.BlocksReceived,
+                );
+                expect(received).toHaveLength(1);
+                expect(received[0]).toMatchObject({
+                    video: 'dQw4w9WgXcQ',
+                    fields: {
+                        count: 2,
+                        blocks: '10.0-20.0;30.2-40.5',
+                        reason: 'server',
+                    },
+                });
+                expect(typeof received[0]?.session).toBe('string');
+                expect(relayedConsoleHeads(harness)).not.toContain('blocks received');
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('logs blocks-rejected with the real cause', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                const request = harness.messagesOfType(
+                    TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                )[0];
+                const sessionId = readTestProperty(
+                    readTestProperty(request, 'payload'),
+                    'sessionId',
+                );
+                const blocks = [{ startSec: 10, endSec: 20 }];
+                await harness.emitRuntimeMessage({
+                    type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                    source: 'server' as const,
+                    sessionId: '00000000-0000-4000-8000-000000000009',
+                    videoId: 'dQw4w9WgXcQ',
+                    promoBlocks: blocks,
+                });
+                await harness.emitRuntimeMessage({
+                    type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                    source: 'server' as const,
+                    sessionId,
+                    videoId: 'aaaaaaaaaaa',
+                    promoBlocks: blocks,
+                });
+                await harness.emitRuntimeMessage({
+                    type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                    source: 'local_provider' as const,
+                    videoId: 'dQw4w9WgXcQ',
+                    promoBlocks: blocks,
+                });
+                await deliverServerBlocks(harness, blocks);
+                await deliverServerBlocks(harness, blocks);
+
+                const rejected = appendedEventsNamed(
+                    harness,
+                    DEBUG_LOG_EVENT.BlocksRejected,
+                );
+                expect(rejected.map((event) => event.fields)).toEqual([
+                    { cause: 'session-mismatch', count: 1 },
+                    { cause: 'video-mismatch', count: 1 },
+                    { cause: 'route-mismatch', count: 1 },
+                    { cause: 'duplicate-terminal', count: 1 },
+                ]);
+                expect(rejected[1]?.video).toBe('aaaaaaaaaaa');
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.BlocksReceived),
+                ).toHaveLength(1);
+                expect(relayedConsoleHeads(harness)).not.toContain(
+                    'PROMO_BLOCKS_DETECTED: videoId mismatch',
+                );
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('logs blocks-rejected with cause disabled while the extension is off', async () => {
+            const harness = await createRouteHarness({ ...serverPrefs, enabled: false });
+            try {
+                await harness.emitRuntimeMessage({
+                    type: TOPSKIP_MESSAGE.DEBUG_LOG_STATE_UPDATED,
+                    enabled: true,
+                });
+                await harness.emitRuntimeMessage({
+                    type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                    source: 'local_provider' as const,
+                    videoId: 'dQw4w9WgXcQ',
+                    promoBlocks: [{ startSec: 10, endSec: 20 }],
+                });
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.BlocksRejected),
+                ).toEqual([
+                    expect.objectContaining({ fields: { cause: 'disabled', count: 1 } }),
+                ]);
+            } finally {
+                harness.dispose();
+            }
+        });
+    });
+
+    describe('poll summaries', () => {
+        /**
+         * Builds a processing ack bound to the harness video.
+         *
+         * @param jobId - Backend job id.
+         * @param videoId - Video id echoed from the request payload.
+         * @param pollAfterSec - Poll cadence.
+         * @returns Processing acknowledgement.
+         */
+        function processingAck(
+            jobId: string,
+            videoId: unknown,
+            pollAfterSec = 1,
+        ): Record<string, unknown> {
+            return {
+                ok: true,
+                status: 'processing',
+                jobId,
+                pollAfterSec,
+                identity: {
+                    videoId,
+                    languageCode: 'en',
+                    transcriptHash: 'a'.repeat(64),
+                    algorithmVersion: 'server-v6',
+                },
+            };
+        }
+
+        function payloadVideoId(message: Record<string, unknown>): unknown {
+            return readTestProperty(readTestProperty(message, 'payload'), 'videoId');
+        }
+
+        function finalSummaries(harness: RouteHarness): AppendedDebugLogEvent[] {
+            return appendedEventsNamed(harness, DEBUG_LOG_EVENT.PollSummary).filter(
+                (event) => event.fields.terminal === true,
+            );
+        }
+
+        it('emits exactly one final summary when polling ends with a terminal status', async () => {
+            let polls = 0;
+            const harness = await createLoggingHarness((message) => {
+                if (message.type === TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS) {
+                    polls += 1;
+                    if (polls === 3) {
+                        return Promise.resolve({ ok: true, status: 'ready' });
+                    }
+                }
+                return Promise.resolve(processingAck('job-final', payloadVideoId(message)));
+            });
+            try {
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const finals = finalSummaries(harness);
+                expect(finals).toHaveLength(1);
+                expect(finals[0]).toMatchObject({
+                    video: 'dQw4w9WgXcQ',
+                    job: 'job-final',
+                    fields: {
+                        polls: 3,
+                        retries: 0,
+                        totalMs: 3 * MS_PER_SECOND,
+                        lastStatus: 'ready',
+                        terminal: true,
+                        reason: 'terminal-response',
+                    },
+                });
+                expect(typeof finals[0]?.session).toBe('string');
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('emits the final summary with reason navigation when the route is cancelled', async () => {
+            const harness = await createLoggingHarness((message) =>
+                Promise.resolve(processingAck('job-nav', payloadVideoId(message))),
+            );
+            try {
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.navigateToVideo('aaaaaaaaaaa');
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const finals = finalSummaries(harness).filter(
+                    (event) => event.video === 'dQw4w9WgXcQ',
+                );
+                expect(finals).toHaveLength(1);
+                expect(finals[0]?.fields).toMatchObject({
+                    polls: 2,
+                    retries: 0,
+                    lastStatus: 'processing',
+                    terminal: true,
+                    reason: 'navigation',
+                });
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('gives a resubmitted job its own final summary', async () => {
+            let requests = 0;
+            let polls = 0;
+            const harness = await createLoggingHarness((message) => {
+                if (message.type === TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS) {
+                    requests += 1;
+                    return Promise.resolve(
+                        processingAck(requests === 1 ? 'job-a' : 'job-b', payloadVideoId(message)),
+                    );
+                }
+                polls += 1;
+                return Promise.resolve(
+                    polls === 1
+                        ? { ok: true, status: 'resubmit_required' }
+                        : { ok: true, status: 'ready' },
+                );
+            });
+            try {
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const finals = finalSummaries(harness);
+                expect(finals.map((event) => [event.job, event.fields])).toEqual([
+                    [
+                        'job-a',
+                        expect.objectContaining({
+                            polls: 1,
+                            lastStatus: 'resubmit_required',
+                            reason: 'resubmit',
+                        }),
+                    ],
+                    [
+                        'job-b',
+                        expect.objectContaining({
+                            polls: 1,
+                            lastStatus: 'ready',
+                            reason: 'terminal-response',
+                        }),
+                    ],
+                ]);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('summarizes the deadline final poll once', async () => {
+            const harness = await createLoggingHarness((message) =>
+                Promise.resolve(processingAck('job-deadline', payloadVideoId(message), 60 * 60)),
+            );
+            try {
+                await harness.advanceBindingTime(SERVER_ANALYSIS_SESSION_DEADLINE_MS);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const finals = finalSummaries(harness);
+                expect(finals).toHaveLength(1);
+                expect(finals[0]).toMatchObject({
+                    job: 'job-deadline',
+                    fields: {
+                        polls: 1,
+                        retries: 0,
+                        lastStatus: 'processing',
+                        terminal: true,
+                        reason: 'analysis_deadline_exceeded',
+                    },
+                });
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('counts transport retries across a simulated worker restart mid-poll', async () => {
+            let polls = 0;
+            const harness = await createLoggingHarness((message) => {
+                if (message.type === TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS) {
+                    polls += 1;
+                    if (polls === 1) {
+                        return Promise.reject(new Error('message port closed'));
+                    }
+                    if (polls === 3) {
+                        return Promise.resolve({ ok: true, status: 'ready' });
+                    }
+                }
+                return Promise.resolve(processingAck('job-restart', payloadVideoId(message)));
+            });
+            try {
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0]);
+                await harness.advanceBindingTime(MS_PER_SECOND);
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const finals = finalSummaries(harness);
+                expect(finals).toHaveLength(1);
+                expect(finals[0]).toMatchObject({
+                    job: 'job-restart',
+                    fields: { polls: 2, retries: 1, lastStatus: 'ready', terminal: true },
+                });
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('emits an interim summary every DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS polls', async () => {
+            const harness = await createLoggingHarness((message) =>
+                Promise.resolve(processingAck('job-interim', payloadVideoId(message))),
+            );
+            try {
+                for (let poll = 0; poll < DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS + 2; poll += 1) {
+                    await harness.advanceBindingTime(MS_PER_SECOND);
+                }
+                await harness.navigateToVideo('aaaaaaaaaaa');
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                const summaries = appendedEventsNamed(
+                    harness,
+                    DEBUG_LOG_EVENT.PollSummary,
+                ).filter(
+                    (event) =>
+                        event.job === 'job-interim' &&
+                        event.video === 'dQw4w9WgXcQ',
+                );
+                expect(summaries.map((event) => event.fields)).toEqual([
+                    expect.objectContaining({
+                        polls: DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS,
+                        terminal: false,
+                    }),
+                    expect.objectContaining({
+                        polls: DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS + 2,
+                        terminal: true,
+                        reason: 'navigation',
+                    }),
+                ]);
+                expect(summaries[0]?.fields).not.toHaveProperty('reason');
+                // SC-005: a 12-poll synthetic Server-mode analysis stays under
+                // the 40-event budget on the content side (the F9 E2E checks
+                // the same bound over the full flow at 2 polls).
+                expect(appendedDebugLogEvents(harness).length).toBeLessThanOrEqual(40);
+            } finally {
+                harness.dispose();
+            }
+        });
+    });
+
+    describe('content lifecycle diagnostics', () => {
+        // Hoisted as `unknown` because the matcher factory returns `any`,
+        // which no-unsafe-assignment refuses inside a literal.
+        const ANY_STRING: unknown = expect.any(String);
+
+        it('logs video-bound, route-decision once per decision, analysis-requested and route-status', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await harness.pollBindings();
+                await harness.pollBindings();
+                await expect(harness.routeStatus()).resolves.toMatchObject({
+                    ok: true,
+                });
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(appendedEventsNamed(harness, DEBUG_LOG_EVENT.VideoBound)).toEqual([
+                    expect.objectContaining({
+                        video: 'dQw4w9WgXcQ',
+                        fields: { outcome: 'bound' },
+                    }),
+                ]);
+                const decisions = appendedEventsNamed(
+                    harness,
+                    DEBUG_LOG_EVENT.RouteDecision,
+                ).map((event) => event.fields.decision);
+                expect(decisions.filter((decision) => decision === 'server-request')).toHaveLength(1);
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.AnalysisRequested),
+                ).toEqual([
+                    expect.objectContaining({
+                        video: 'dQw4w9WgXcQ',
+                        session: ANY_STRING,
+                        fields: { route: ANALYSIS_MODE.Server },
+                    }),
+                ]);
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.RouteStatus),
+                ).toEqual([
+                    expect.objectContaining({
+                        video: 'dQw4w9WgXcQ',
+                        session: ANY_STRING,
+                        fields: {
+                            route: ANALYSIS_MODE.Server,
+                            outcome: 'enabled',
+                            protocol: CONTENT_SCRIPT_PROTOCOL_VERSION,
+                        },
+                    }),
+                ]);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('logs video-swapped once when the player element is replaced', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await harness.replaceVideoElement();
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.VideoSwapped),
+                ).toEqual([
+                    expect.objectContaining({
+                        video: 'dQw4w9WgXcQ',
+                        fields: { reason: 'element-replaced' },
+                    }),
+                ]);
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.VideoBound),
+                ).toHaveLength(2);
+                expect(relayedConsoleHeads(harness)).not.toContain(
+                    'video element swap detected, rebinding',
+                );
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('logs analysis-interrupted with the stable reason', async () => {
+            const harness = await createLoggingHarness(() =>
+                Promise.reject(new Error('message port closed')),
+            );
+            try {
+                for (const retryAfterMs of SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS) {
+                    await harness.advanceBindingTime(retryAfterMs);
+                }
+                await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
+
+                expect(
+                    appendedEventsNamed(harness, DEBUG_LOG_EVENT.AnalysisInterrupted),
+                ).toEqual([
+                    expect.objectContaining({
+                        video: 'dQw4w9WgXcQ',
+                        session: ANY_STRING,
+                        fields: { reason: 'runtime_unavailable' },
+                    }),
+                ]);
+            } finally {
+                harness.dispose();
+            }
+        });
     });
 });

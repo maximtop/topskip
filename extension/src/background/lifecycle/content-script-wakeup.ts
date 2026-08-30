@@ -1,11 +1,31 @@
+import type { Tabs } from 'webextension-polyfill/namespaces/tabs';
 import * as v from 'valibot';
 
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 import browser from '@/shared/browser';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     TOPSKIP_MESSAGE,
     contentScriptReadyResponseSchema,
+    type ContentScriptReadyResponse,
 } from '@/shared/messages';
+
+/**
+ * Tab whose id the browser exposed; only those can be probed.
+ */
+type IdentifiedTab = Tabs.Tab & { id: number };
+
+/**
+ * Keeps tabs without an id out of the probe list with a narrowing filter.
+ *
+ * @param tab - Tab from `tabs.query`.
+ * @returns Whether the tab carries an id.
+ */
+function hasTabId(tab: Tabs.Tab): tab is IdentifiedTab {
+    return tab.id !== undefined;
+}
 
 /**
  * Two attempts tolerate document-start listeners attaching around worker wake.
@@ -30,12 +50,13 @@ export class ContentScriptWakeup {
      * Sends a bounded readiness notification to every identified tab.
      *
      * Failures stay inside this startup boundary because absent receivers are
-     * expected for ordinary tabs and after extension updates.
+     * expected for ordinary tabs and after extension updates. The aggregate
+     * result is the only probe fact that reaches the debug log.
      *
      * @returns Promise settled after all best-effort probes complete.
      */
     static async notifyExistingTabs(): Promise<void> {
-        let tabs: Awaited<ReturnType<typeof browser.tabs.query>>;
+        let tabs: Tabs.Tab[];
         try {
             tabs = await browser.tabs.query({});
         } catch {
@@ -46,34 +67,59 @@ export class ContentScriptWakeup {
             return;
         }
 
-        const tabIds = tabs.flatMap((tab) =>
-            tab.id === undefined ? [] : [tab.id],
-        );
+        const identified = tabs.filter(hasTabId);
         const readiness = await Promise.all(
-            tabIds.map((tabId) => ContentScriptWakeup.notifyTab(tabId)),
+            identified.map((tab) => ContentScriptWakeup.notifyTab(tab)),
         );
         const readyTabCount = readiness.filter(Boolean).length;
+        const unavailableTabCount = identified.length - readyTabCount;
         BackgroundServerAnalysisLog.info('content-script-wakeup-complete', {
             tabCount: tabs.length,
-            identifiedTabCount: tabIds.length,
+            identifiedTabCount: identified.length,
             readyTabCount,
-            unavailableTabCount: tabIds.length - readyTabCount,
+            unavailableTabCount,
+        });
+        DebugLog.record(DEBUG_LOG_EVENT.WakeupProbe, {
+            readyTabs: readyTabCount,
+            unavailableTabs: unavailableTabCount,
         });
     }
 
     /**
      * Gives one live content context two bounded opportunities to acknowledge.
+     * An acknowledgement is the only proof of a live content context, so only
+     * then is the tab noted for attribution and its readiness logged.
      *
-     * @param tabId - Browser tab identity; its URL is deliberately not read.
+     * @param tab - Identified browser tab; its URL is deliberately not read.
      * @returns Whether the current bundle acknowledged the wake notification.
      */
-    private static async notifyTab(tabId: number): Promise<boolean> {
+    private static async notifyTab(tab: IdentifiedTab): Promise<boolean> {
         for (
             let attempt = 0;
             attempt < CONTENT_SCRIPT_WAKE_ATTEMPTS;
             attempt += 1
         ) {
-            if (await ContentScriptWakeup.probeTab(tabId)) {
+            const ack = await ContentScriptWakeup.probeTabAck(
+                tab.id,
+                CONTENT_SCRIPT_WAKE_TIMEOUT_MS,
+            );
+            if (ack !== null) {
+                // A tab whose first runtime message already reached the
+                // dispatcher is known here; it logged content-ready there,
+                // so the wake ack must not log it a second time.
+                const firstSeen =
+                    TabAttributionRegistry.isIncognitoSync(tab.id) === null;
+                TabAttributionRegistry.noteTab(tab);
+                if (firstSeen) {
+                    DebugLog.record(
+                        DEBUG_LOG_EVENT.ContentReady,
+                        {
+                            protocol: ack.protocolVersion,
+                            extensionVersion: ack.extensionVersion,
+                        },
+                        { tab: tab.id },
+                    );
+                }
                 return true;
             }
             const hasAnotherAttempt =
@@ -100,6 +146,22 @@ export class ContentScriptWakeup {
         tabId: number,
         timeoutMs: number = CONTENT_SCRIPT_WAKE_TIMEOUT_MS,
     ): Promise<boolean> {
+        const ack = await ContentScriptWakeup.probeTabAck(tabId, timeoutMs);
+        return ack !== null;
+    }
+
+    /**
+     * One bounded probe returning the validated acknowledgement so the caller
+     * can log the protocol it saw.
+     *
+     * @param tabId - Tab receiving the readiness notification.
+     * @param timeoutMs - Bound for this single attempt.
+     * @returns Validated current-bundle acknowledgement, or `null`.
+     */
+    private static async probeTabAck(
+        tabId: number,
+        timeoutMs: number,
+    ): Promise<ContentScriptReadyResponse | null> {
         let timeoutId: ReturnType<typeof globalThis.setTimeout> | undefined;
         try {
             const timeout = new Promise<null>((resolve) => {
@@ -118,13 +180,15 @@ export class ContentScriptWakeup {
                 contentScriptReadyResponseSchema,
                 response,
             );
-            return (
-                parsed.success &&
+            if (!parsed.success) {
+                return null;
+            }
+            const isCurrentBundle =
                 parsed.output.extensionVersion ===
-                    browser.runtime.getManifest().version
-            );
+                browser.runtime.getManifest().version;
+            return isCurrentBundle ? parsed.output : null;
         } catch {
-            return false;
+            return null;
         } finally {
             if (timeoutId !== undefined) {
                 globalThis.clearTimeout(timeoutId);

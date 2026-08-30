@@ -100,9 +100,20 @@ export class OpenRouterAdapter implements LlmProviderAdapter {
                 /HTTP 400/i.test(llm.error) &&
                 /context|length|token|maximum|too large/i.test(llm.error);
             if (tooLarge) {
-                return { ok: false, error: llm.error, tooLarge: true };
+                return {
+                    ok: false,
+                    error: llm.error,
+                    tooLarge: true,
+                    status: llm.status,
+                    kind: llm.kind,
+                };
             }
-            return { ok: false, error: llm.error };
+            return {
+                ok: false,
+                error: llm.error,
+                status: llm.status,
+                kind: llm.kind,
+            };
         }
 
         const parsed = parseLlmPromoResponse(
@@ -114,6 +125,8 @@ export class OpenRouterAdapter implements LlmProviderAdapter {
                 ok: false,
                 error: parsed.error,
                 rawAssistant: llm.rawContent,
+                status: null,
+                kind: 'parse',
             };
         }
 

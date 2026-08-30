@@ -83,12 +83,15 @@ automatic fallback.
 
 ## Extension permissions and Private BYOK
 
-TopSkip installs with three required extension API permissions: **`storage`**
-for background-owned state, plus **`scripting`** and **`activeTab`** so that
+TopSkip installs with four required extension API permissions: **`storage`**
+for background-owned state, **`scripting`** and **`activeTab`** so that
 opening the popup can re-attach the YouTube bundles into a tab that was already
-open when the extension was installed, updated, or reloaded. None of the three
-adds an install-time warning, and `activeTab` limits that injection to the tab
-the popup was opened on. Its only required host permission is the configured
+open when the extension was installed, updated, or reloaded, and
+**`unlimitedStorage`** so the optional local debug log (below) cannot exhaust
+the `storage.local` quota shared with preferences and the result cache. None
+of the four adds an install-time warning (`unlimitedStorage` is granted
+silently on update), and `activeTab` limits that injection to the tab the
+popup was opened on. Its only required host permission is the configured
 TopSkip backend used by Server mode. YouTube access appears as two declarative
 content-script matches, not as a separate required host permission. Development
 builds add only the `http://127.0.0.1:4173/*` E2E fixture match; beta and
@@ -107,6 +110,21 @@ All extension-originated TopSkip and Private BYOK network requests are owned by
 the background service worker. Popup, options, content, and the page bridge do
 not fetch those services directly.
 
+**Debug logging** (Options → Diagnostics) is off by default in beta/release
+(on in dev builds) and entirely user-initiated and local-only: while the switch
+is on, the background keeps allow-listed diagnostics — route decisions,
+caption-capture stages, HTTP status/latency, one polling summary per job, skip
+decisions, BYOK metadata, worker lifecycle — in a `storage.local` ring buffer
+up to 5 MiB (oldest entries replaced). The log includes YouTube video IDs and
+excludes transcripts and secrets (no captions, prompts, model output, API keys,
+installation tokens, cookies, signed URLs, page URLs, or raw provider
+responses); incognito windows are not logged. Turning the switch off keeps the
+log; it is kept until debug logging is turned on again, which discards it and
+starts a new one. **Copy log** / **Download log** export a plain-text bundle
+(its header says it lists video IDs) that the user attaches to a GitHub issue
+themselves — nothing is uploaded, and Private BYOK still makes zero TopSkip
+requests.
+
 Chrome 111 is the minimum supported version because TopSkip declares its
 MAIN-world caption bridge statically at `document_start`. The bridge's
 fetch/XHR wrappers remain dormant outside an active caption capture. The
@@ -119,7 +137,8 @@ background-owned extension storage. `/v1/config` supplies the active
 server-owned algorithm version and support URL, so backend releases do not
 require matching extension releases. Successful promo and no-promo results
 remain fresh for 30 days. The backend stores state in SQLite, and the extension
-mirrors ready results in its own versioned cache. The server API key stays in
+mirrors ready results in its own versioned cache (and, while Debug logging is
+on, keeps the local debug log beside it). The server API key stays in
 the backend process; it is not bundled with or returned to the extension.
 OpenRouter does receive the timed transcript needed for model analysis.
 Validated transcripts and bounded assistant output may be retained for up to

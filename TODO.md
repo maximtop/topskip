@@ -50,17 +50,22 @@ no in-product correction UI, and this section is the reason why.
 
 ## Decided against
 
-- **Sentry for error reporting.** The extension ships no error-reporting SDK.
-  For eligible failures the user may explicitly open a sanitized prefilled
-  GitHub issue, which never includes the video ID — see
-  `extension/DEPLOYMENT.md`.
+- **Sentry for error reporting.** The extension ships no error-reporting SDK;
+  reporting stays explicit and user-initiated. For eligible failures the user
+  may open a sanitized prefilled GitHub issue, which never includes the video
+  ID; the optional, user-initiated, local debug log (Options → Diagnostics;
+  off by default in beta/release, ring buffer up to 5 MiB, oldest entries
+  replaced) does include video IDs and says so in the UI and export header —
+  the user attaches it to the issue themselves. See `extension/DEPLOYMENT.md`.
 
 ## Done
 
 - [x] Translate to 20 locales — `extension/src/_locales/` covers 20.
 - [x] Design and icons — the popup/options redesign shipped along with the icon
       set in `extension/src/public/icons/`.
-- [x] Add a logger — `content-log.ts` plus the server-analysis dev logs.
+- [x] Add a logger — `content-log.ts` plus the server-analysis dev logs, and
+      the user-facing Debug logging switch (Options → Diagnostics) that routes
+      the same stages into a local ring buffer.
 - [x] Public backend hardening — Cloudflare Tunnel, anonymous installation
       tokens, durable quotas and budgets, SQLite artifacts, and a constrained
       container are all live; see `DEPLOYMENT.md`.

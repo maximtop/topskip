@@ -10,6 +10,11 @@ import {
     CAPTION_PAGE_BRIDGE_EVENT,
     CAPTION_PAGE_BRIDGE_SOURCE,
 } from '@/content/captions/caption-page-bridge-contract';
+import {
+    CaptureDiagnostics,
+    PAGE_DIAGNOSTIC_STAGE_PREFIX,
+} from '@/content/captions/capture-diagnostics';
+import { DebugLogClient } from '@/content/debug-log-client';
 import { contentLog } from '@/content/content-log';
 import { formatLogStage } from '@/shared/log-fields';
 import type {
@@ -86,7 +91,6 @@ type PageDiagnosticDetails = {
     urlShape?: CapturedTimedtextUrlShape;
     ok?: boolean;
     reason?: string;
-    error?: string;
     wasOn?: boolean | null;
     userIntervened?: boolean;
     buttonPressed?: string | null;
@@ -173,6 +177,12 @@ export class PlayerCaptionCapture {
      * Deactivate command.
      */
     private static cleanupPromise: Promise<void> | null = null;
+
+    /**
+     * MAIN-bridge diagnostics forwarded during the current capture session.
+     * The page can forge them, so the count is bounded per session.
+     */
+    private static bridgeDiagnosticCount = 0;
 
     /**
      * Shared bridge readiness probe lets document setup and capture reuse one
@@ -281,6 +291,7 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.activeSession = null;
         PlayerCaptionCapture.activeWait = null;
         PlayerCaptionCapture.cleanupPromise = null;
+        PlayerCaptionCapture.bridgeDiagnosticCount = 0;
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
         PlayerCaptionCapture.recentPageBridgeMessageOrder.length = 0;
@@ -304,6 +315,7 @@ export class PlayerCaptionCapture {
         CaptionPageBridgeClient.dispose();
         PlayerCaptionCapture.activeSession = null;
         PlayerCaptionCapture.activeWait = null;
+        PlayerCaptionCapture.bridgeDiagnosticCount = 0;
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.removeMessageListeners();
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
@@ -499,6 +511,7 @@ export class PlayerCaptionCapture {
             input.captureTimeoutMs ?? DEFAULT_CAPTURE_TIMEOUT_MS,
         );
         PlayerCaptionCapture.activeSession = session;
+        PlayerCaptionCapture.bridgeDiagnosticCount = 0;
         emptyBodyReloadCount = 0;
         const waitForCapture = PlayerCaptionCapture.waitForCapture(
             session,
@@ -826,7 +839,7 @@ export class PlayerCaptionCapture {
             typeof body !== 'string' ||
             (contentType !== null && typeof contentType !== 'string') ||
             typeof bodyLength !== 'number' ||
-            !PlayerCaptionCapture.isUrlShape(urlShape)
+            !CaptureDiagnostics.isUrlShape(urlShape)
         ) {
             PlayerCaptionCapture.log('capture-event-ignored', {
                 videoId: session.videoId,
@@ -911,31 +924,6 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Narrows sanitized URL shape from page messages without accepting values.
-     *
-     * @param value Untrusted page bridge value.
-     * @returns Whether the value is safe URL-shape metadata.
-     */
-    private static isUrlShape(
-        value: unknown,
-    ): value is CapturedTimedtextUrlShape {
-        if (value === null || typeof value !== 'object') {
-            return false;
-        }
-        const pathname: unknown = Reflect.get(value, 'pathname');
-        const paramNames: unknown = Reflect.get(value, 'paramNames');
-        const fmt: unknown = Reflect.get(value, 'fmt');
-        const hasPot: unknown = Reflect.get(value, 'hasPot');
-        return (
-            typeof pathname === 'string' &&
-            Array.isArray(paramNames) &&
-            paramNames.every((item) => typeof item === 'string') &&
-            (fmt === null || typeof fmt === 'string') &&
-            typeof hasPot === 'boolean'
-        );
-    }
-
-    /**
      * Retries activation while the page reports a transient player state.
      *
      * @param session Current bounded capture session.
@@ -982,16 +970,19 @@ export class PlayerCaptionCapture {
                 });
                 return null;
             }
-            PlayerCaptionCapture.log('activation-failed', {
-                videoId: session.videoId,
-                attempt,
-                reason: failure.reason,
-                error: failure.error,
-            });
             const canRetry =
                 failure.reason ===
                 CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady;
-            if (!canRetry || attempt === maxAttempts) {
+            const retrying = canRetry && attempt < maxAttempts;
+            PlayerCaptionCapture.log('activation-failed', {
+                videoId: session.videoId,
+                attempt,
+                ok: false,
+                reason: failure.reason,
+                error: failure.error,
+                retrying,
+            });
+            if (!retrying) {
                 return {
                     reason: failure.reason,
                     message: failure.error,
@@ -1073,6 +1064,12 @@ export class PlayerCaptionCapture {
     private static resolveFailure(
         failure: CaptionCaptureFailure,
     ): CaptionCaptureResult {
+        PlayerCaptionCapture.log('capture-failed', {
+            videoId: PlayerCaptionCapture.activeSession?.videoId ?? null,
+            reason: failure.reason,
+            stage: failure.diagnostics?.stage,
+            error: failure.message,
+        });
         const result: CaptionCaptureResult = {
             status: 'failed',
             failure,
@@ -1331,7 +1328,12 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Relays safe page-world bridge diagnostics to the service-worker console.
+     * Relays safe page-world bridge diagnostics to the dev console and, under
+     * the ISOLATED gate, to the debug log. The page can forge these messages,
+     * so nothing is forwarded unless this context owns a capture session, the
+     * switch is on, the stage is allow-listed, strings are bounded, and the
+     * per-session budget is not spent; the video id comes from the owned
+     * session, never from the page.
      *
      * @param data Untrusted page bridge diagnostic message.
      */
@@ -1343,7 +1345,29 @@ export class PlayerCaptionCapture {
         // The event name already carries the page stage, so it is not
         // repeated inside the inline fields.
         const { stage: pageStage, ...fields } = details;
-        PlayerCaptionCapture.log(`page:${pageStage}`, fields);
+        const stage = `${PAGE_DIAGNOSTIC_STAGE_PREFIX}${pageStage}`;
+        if (CAPTION_CAPTURE_VERBOSE_LOGS) {
+            contentLog.info('caption-capture', ...formatLogStage(stage, fields));
+        }
+        const session = PlayerCaptionCapture.activeSession;
+        if (
+            session === null ||
+            DebugLogClient.isEnabled() !== true ||
+            !CaptureDiagnostics.acceptBridgeDiagnostic(
+                details,
+                PlayerCaptionCapture.bridgeDiagnosticCount,
+            )
+        ) {
+            return;
+        }
+        PlayerCaptionCapture.bridgeDiagnosticCount += 1;
+        const mapped = CaptureDiagnostics.toDebugLogEvent(stage, fields);
+        if (mapped === null) {
+            return;
+        }
+        DebugLogClient.log(mapped.event, mapped.fields, {
+            video: session.videoId,
+        });
     }
 
     /**
@@ -1362,7 +1386,6 @@ export class PlayerCaptionCapture {
         const details: PageDiagnosticDetails = { stage };
         PlayerCaptionCapture.copyOptionalString(data, details, 'transport');
         PlayerCaptionCapture.copyOptionalString(data, details, 'reason');
-        PlayerCaptionCapture.copyOptionalString(data, details, 'error');
         PlayerCaptionCapture.copyOptionalString(data, details, 'contentType');
         PlayerCaptionCapture.copyOptionalString(data, details, 'buttonPressed');
         PlayerCaptionCapture.copyOptionalNullableString(
@@ -1399,7 +1422,7 @@ export class PlayerCaptionCapture {
             'wasOn',
         );
         const urlShape: unknown = Reflect.get(data, 'urlShape');
-        if (PlayerCaptionCapture.isUrlShape(urlShape)) {
+        if (CaptureDiagnostics.isUrlShape(urlShape)) {
             details.urlShape = urlShape;
         }
         const actions: unknown = Reflect.get(data, 'actions');
@@ -1560,18 +1583,32 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Sends verbose manual-smoke diagnostics through the content log channel.
+     * Emits one capture stage once: verbose builds keep the exact dev console
+     * line, and the allow-listed subset reaches the debug log with sanitized
+     * scalar fields (the client drops it while the switch is off).
      *
      * @param stage Capture stage name.
-     * @param details Safe structured metadata.
+     * @param details Structured metadata; free-form text never reaches the log.
      */
     private static log(
         stage: string,
         details: Record<string, unknown> = {},
     ): void {
-        if (!CAPTION_CAPTURE_VERBOSE_LOGS) {
+        if (CAPTION_CAPTURE_VERBOSE_LOGS) {
+            contentLog.info(
+                'caption-capture',
+                ...formatLogStage(stage, details),
+            );
+        }
+        const mapped = CaptureDiagnostics.toDebugLogEvent(stage, details);
+        if (mapped === null) {
             return;
         }
-        contentLog.info('caption-capture', ...formatLogStage(stage, details));
+        const videoId: unknown = details.videoId;
+        DebugLogClient.log(
+            mapped.event,
+            mapped.fields,
+            typeof videoId === 'string' ? { video: videoId } : {},
+        );
     }
 }

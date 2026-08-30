@@ -64,6 +64,47 @@ grep -Fqi 'caption acquisition' "${REPOSITORY_DIRECTORY}/DEVELOPMENT.md"
 grep -Fqi 'backend/config verification' "${REPOSITORY_DIRECTORY}/DEPLOYMENT.md"
 grep -Fqi 'no new beta monitor' "${REPOSITORY_DIRECTORY}/DEPLOYMENT.md"
 
+# SC-009: the user-facing debug log is disclosed wherever permissions/storage
+# are described, with the exact phrases the spec asks reviewers to grep for.
+require_documented_phrase() {
+    local file=$1
+    local phrase=$2
+    if ! grep -Fq -- "${phrase}" "${file}"; then
+        echo "Expected '${phrase}' in ${file}." >&2
+        exit 1
+    fi
+}
+
+for debug_log_policy_file in \
+    "${REPOSITORY_DIRECTORY}/README.md" \
+    "${REPOSITORY_DIRECTORY}/extension/DEPLOYMENT.md" \
+    "${REPOSITORY_DIRECTORY}/AGENTS.md"; do
+    require_documented_phrase "${debug_log_policy_file}" 'unlimitedStorage'
+done
+
+for debug_log_user_document in \
+    "${REPOSITORY_DIRECTORY}/README.md" \
+    "${REPOSITORY_DIRECTORY}/extension/DEPLOYMENT.md"; do
+    for debug_log_phrase in 'ring buffer' '5 MiB' 'video IDs' 'turned on again'; do
+        require_documented_phrase "${debug_log_user_document}" "${debug_log_phrase}"
+    done
+done
+
+for debug_log_phrase in \
+    'off by default' \
+    'user-initiated' \
+    'local-only' \
+    'excludes transcripts and secrets'; do
+    require_documented_phrase \
+        "${REPOSITORY_DIRECTORY}/extension/DEPLOYMENT.md" "${debug_log_phrase}"
+done
+
+if ! awk '/^## Decided against$/ { inside = 1; next } /^## / { inside = 0 } inside' \
+    "${REPOSITORY_DIRECTORY}/TODO.md" | grep -Fq 'Sentry'; then
+    echo 'TODO.md must keep the Sentry decision under "Decided against".' >&2
+    exit 1
+fi
+
 for script in "${DEPLOY_DIRECTORY}"/scripts/*.sh; do
     [[ -x ${script} ]]
     bash -n "${script}"

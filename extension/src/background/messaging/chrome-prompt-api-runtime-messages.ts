@@ -5,6 +5,7 @@ import {
     LANGUAGE_MODEL_METHOD,
     PROVIDER_AVAILABILITY,
 } from '@/shared/chrome-prompt-api';
+import { DevConsole } from '@/background/dev-console';
 import { getErrorMessage } from '@/shared/error';
 import {
     type GetChromePromptApiStatusResponse,
@@ -51,7 +52,7 @@ const AVAILABILITY_MAP: Readonly<Record<string, ProviderAvailabilityMessage>> =
 async function resolveAvailability(): Promise<ProviderAvailabilityMessage> {
     const lm: unknown = Reflect.get(globalThis, LANGUAGE_MODEL_GLOBAL);
     if (!lm || (typeof lm !== 'object' && typeof lm !== 'function')) {
-        console.info(
+        DevConsole.info(
             `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG} ${LANGUAGE_MODEL_GLOBAL}` +
                 ' global not found — requires Chrome 138+ with Prompt API enabled',
         );
@@ -62,7 +63,7 @@ async function resolveAvailability(): Promise<ProviderAvailabilityMessage> {
         LANGUAGE_MODEL_METHOD.AVAILABILITY,
     );
     if (typeof availFn !== 'function') {
-        console.info(
+        DevConsole.info(
             `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}` +
                 ` ${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.AVAILABILITY} is` +
                 ' not a function',
@@ -74,7 +75,7 @@ async function resolveAvailability(): Promise<ProviderAvailabilityMessage> {
         typeof raw === 'string' && raw in AVAILABILITY_MAP
             ? AVAILABILITY_MAP[raw]
             : PROVIDER_AVAILABILITY.UNAVAILABLE;
-    console.info(
+    DevConsole.info(
         `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}` +
             ` ${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.AVAILABILITY}() →`,
         raw,
@@ -136,7 +137,7 @@ export class ChromePromptApiRuntimeMessages {
         }
 
         ChromePromptApiRuntimeMessages.downloadProgress = 0;
-        console.info(
+        DevConsole.info(
             `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}` +
                 ` triggering model download via ${LANGUAGE_MODEL_GLOBAL}.` +
                 `${LANGUAGE_MODEL_METHOD.CREATE}()`,
@@ -178,14 +179,14 @@ export class ChromePromptApiRuntimeMessages {
             })
             .then((session) => {
                 session.destroy();
-                console.info(
+                DevConsole.info(
                     `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}`,
                     'model download/create completed',
                 );
                 ChromePromptApiRuntimeMessages.downloadProgress = null;
             })
             .catch((e: unknown) => {
-                console.warn(
+                DevConsole.warn(
                     `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}`,
                     'model download failed:',
                     getErrorMessage(e),

@@ -237,3 +237,20 @@ export function applyDetectionTransportFailure(
         error,
     };
 }
+
+/**
+ * Whether the popup holds a trustworthy background status: a first read
+ * succeeded (Available) or only a later refresh is late (Stale). Loading and
+ * Unavailable never did, so nothing derived from a default may be rendered.
+ *
+ * @param state - Current transport health.
+ * @returns Whether status-derived indicators may render.
+ */
+export function isDetectionTransportKnown(
+    state: DetectionTransportState,
+): boolean {
+    return (
+        state.status === DETECTION_TRANSPORT_STATUS.Available ||
+        state.status === DETECTION_TRANSPORT_STATUS.Stale
+    );
+}

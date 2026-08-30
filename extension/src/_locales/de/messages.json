@@ -562,5 +562,165 @@
     "popup_server_report_secondary": {
         "message": "Melden, wenn dies falsch erscheint",
         "description": "Secondary popup button for a possibly incorrect video limitation."
+    },
+    "options_section_general": {
+        "message": "General",
+        "description": "Options sidebar label of the General section."
+    },
+    "options_section_detection": {
+        "message": "Detection",
+        "description": "Options sidebar label of the Detection section."
+    },
+    "options_section_appearance": {
+        "message": "Appearance",
+        "description": "Options sidebar label of the Appearance section."
+    },
+    "options_section_shortcuts": {
+        "message": "Shortcuts",
+        "description": "Options sidebar label of the Shortcuts section."
+    },
+    "options_section_diagnostics": {
+        "message": "Diagnostics",
+        "description": "Options sidebar label of the Diagnostics section."
+    },
+    "options_section_about": {
+        "message": "About",
+        "description": "Options sidebar label of the About section."
+    },
+    "options_sidebar_nav_aria": {
+        "message": "Settings sections",
+        "description": "Accessible name of the options sidebar navigation."
+    },
+    "options_placeholder_notice": {
+        "message": "%section% settings are visible for navigation preview, but not configurable yet.",
+        "description": "Notice shown in options sections that are not configurable yet. %section% is replaced with the section label."
+    },
+    "options_general_heading": {
+        "message": "TopSkip Settings",
+        "description": "Heading of the General options section."
+    },
+    "options_general_description": {
+        "message": "Configure how TopSkip detects and skips promo segments on YouTube.",
+        "description": "Short description under the General options heading."
+    },
+    "options_about_heading": {
+        "message": "About TopSkip",
+        "description": "Heading of the About options section."
+    },
+    "options_about_description": {
+        "message": "Automatically skip detected sponsor and promo segments on YouTube.",
+        "description": "One-line product description in the About options section."
+    },
+    "options_about_version_label": {
+        "message": "Version",
+        "description": "Label before the extension version in the About options section."
+    },
+    "options_diagnostics_heading": {
+        "message": "Diagnostics",
+        "description": "Heading of the Diagnostics options section."
+    },
+    "options_diagnostics_switch_label": {
+        "message": "Debug logging",
+        "description": "Label and accessible name of the debug logging switch."
+    },
+    "options_diagnostics_notice": {
+        "message": "Records which YouTube videos you watched and when (video IDs, times, tab numbers) plus your extension and browser version, OS, language, analysis mode and model. Never captions, transcripts, keys, tokens, cookies or URLs. Incognito windows are not logged.",
+        "description": "Privacy notice next to the debug logging switch: what the log contains and never contains."
+    },
+    "options_diagnostics_storage_note": {
+        "message": "Stored locally up to %cap% (oldest entries are replaced) and kept until Debug logging is turned on again. To discard it, turn Debug logging on and off again.",
+        "description": "Storage and retention note for the debug log. %cap% is replaced with the size limit, e.g. 5 MiB."
+    },
+    "options_diagnostics_sharing": {
+        "message": "Copy the log and paste it into your GitHub issue or support message. Nothing is sent automatically.",
+        "description": "Guidance on how to share the debug log."
+    },
+    "options_diagnostics_restart_note": {
+        "message": "Turning Debug logging on discards the stored log and starts a new one.",
+        "description": "Inline note shown while debug logging is off and a log is stored."
+    },
+    "options_diagnostics_state_loading": {
+        "message": "Loading diagnostics…",
+        "description": "Status text while the Diagnostics section reads its state from the background."
+    },
+    "options_diagnostics_state_on": {
+        "message": "Debug logging on since %since%",
+        "description": "Status text while debug logging is on. %since% is replaced with a local date and time."
+    },
+    "options_diagnostics_state_off_stored": {
+        "message": "Debug logging off — %count% events stored, %size%, disabled at %time%",
+        "description": "Status text while debug logging is off and a log is stored. %count% is the number of events, %size% the log size, %time% a local date and time."
+    },
+    "options_diagnostics_state_off_empty": {
+        "message": "Debug logging off — no log stored",
+        "description": "Status text while debug logging is off and no log is stored."
+    },
+    "options_diagnostics_state_unavailable": {
+        "message": "Diagnostics are unavailable right now.",
+        "description": "Error shown when the Diagnostics section cannot read its state from the background."
+    },
+    "options_diagnostics_retry_button": {
+        "message": "Retry",
+        "description": "Button that re-reads the Diagnostics state after an error."
+    },
+    "options_diagnostics_toggle_failed": {
+        "message": "Could not change Debug logging — try again",
+        "description": "Feedback when switching debug logging on or off failed."
+    },
+    "options_diagnostics_counter_events": {
+        "message": "Events: %count%",
+        "description": "Debug log counter. %count% is replaced with the number of stored events."
+    },
+    "options_diagnostics_counter_size": {
+        "message": "Size: %size% of %cap%",
+        "description": "Debug log counter. %size% is the current log size, %cap% the size limit."
+    },
+    "options_diagnostics_counter_evicted": {
+        "message": "Evicted: %count%",
+        "description": "Debug log counter. %count% is the number of oldest events replaced because the log was full."
+    },
+    "options_diagnostics_counter_dropped": {
+        "message": "Dropped: %count% (incognito %incognito%, coalesced %coalesced%, ceiling %ceiling%, unreachable %unreachable%, lost %lost%)",
+        "description": "Debug log counter of events that were not stored, with a breakdown by reason. All placeholders are numbers."
+    },
+    "options_diagnostics_preview_heading": {
+        "message": "Recent log",
+        "description": "Heading above the read-only preview of the most recent part of the debug log."
+    },
+    "options_diagnostics_preview_aria": {
+        "message": "Debug log preview",
+        "description": "Accessible name of the read-only debug log preview."
+    },
+    "options_diagnostics_preview_truncated": {
+        "message": "Showing the last %shown% of %total%",
+        "description": "Note when the preview shows only the end of the log. %shown% and %total% are sizes, e.g. 256 KiB."
+    },
+    "options_diagnostics_copy_button": {
+        "message": "Copy log",
+        "description": "Button that copies the full debug log to the clipboard."
+    },
+    "options_diagnostics_download_button": {
+        "message": "Download log",
+        "description": "Button that downloads the full debug log as a text file."
+    },
+    "options_diagnostics_copied": {
+        "message": "Log copied to the clipboard",
+        "description": "Feedback after the debug log was copied."
+    },
+    "options_diagnostics_copy_failed": {
+        "message": "Could not copy the log — try again or use Download log",
+        "description": "Feedback when the clipboard write was refused. 'Download log' refers to the download button."
+    },
+    "options_diagnostics_export_failed": {
+        "message": "Could not read the log — try again",
+        "description": "Feedback when the debug log could not be read from the background for copy or download."
+    },
+    "options_diagnostics_download_started": {
+        "message": "Download started",
+        "description": "Neutral feedback after the debug log download was offered to the browser."
+    },
+    "popup_debug_logging_on": {
+        "message": "Debug logging on",
+        "description": "Popup status text shown while debug logging is enabled. TEXT MAX LENGTH: 24"
     }
 }

@@ -21,14 +21,19 @@ import { CONTENT_SCRIPT_BUNDLE } from './src/shared/content-script-bundles.ts';
 /**
  * Required API permissions. `storage` holds background-owned state;
  * `scripting` plus `activeTab` let the popup re-attach the two watch bundles
- * into a YouTube tab that an install/update/reload orphaned. Neither adds an
- * install-time warning, and `activeTab` scopes programmatic injection to the
- * tab the user invoked the popup on, so no required YouTube host is needed.
+ * into a YouTube tab that an install/update/reload orphaned; `unlimitedStorage`
+ * lifts the 10 MB `storage.local` quota so the user-controlled debug log (a
+ * 5 MiB ring buffer) can never starve preference, credential, or cache writes.
+ * None of the four adds an install-time warning, so an update that adds
+ * `unlimitedStorage` is granted silently, and `activeTab` still scopes
+ * programmatic injection to the tab the user invoked the popup on. The order
+ * is part of the policy: tests compare the exact tuple.
  */
 export const REQUIRED_API_PERMISSIONS = [
     'storage',
     'scripting',
     'activeTab',
+    'unlimitedStorage',
 ] as const;
 
 /**

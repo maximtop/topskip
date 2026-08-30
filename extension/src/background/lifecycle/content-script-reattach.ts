@@ -1,8 +1,11 @@
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 import browser from '@/shared/browser';
 import { CAPTION_PAGE_BRIDGE_INSTALL_FLAG } from '@/shared/caption-page-bridge-flags';
 import { CONTENT_SCRIPT_BUNDLE } from '@/shared/content-script-bundles';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { getErrorMessage } from '@/shared/error';
 import { MS_PER_SECOND } from '@/shared/constants';
 import {
@@ -10,6 +13,23 @@ import {
     type ReattachContentScriptResponse,
 } from '@/shared/messages';
 import { isTopSkipContentDocumentUrl } from '@/shared/watch-route';
+
+/**
+ * Outcomes written to the debug log: the popup's outcome vocabulary plus the
+ * two failure classes, logged as stable codes because the API error text can
+ * embed the tab URL.
+ */
+const REATTACH_LOG_OUTCOME = {
+    ...CONTENT_SCRIPT_REATTACH_OUTCOME,
+    InjectFailed: 'inject_failed',
+    TabsUnavailable: 'tabs_unavailable',
+} as const;
+
+/**
+ * One logged re-attach outcome.
+ */
+type ReattachLogOutcome =
+    (typeof REATTACH_LOG_OUTCOME)[keyof typeof REATTACH_LOG_OUTCOME];
 
 /**
  * A live watch script answers within milliseconds; the bound only matters
@@ -74,9 +94,17 @@ export class ContentScriptReattach {
         try {
             target = await ContentScriptReattach.resolveActiveTab();
         } catch (e) {
+            ContentScriptReattach.recordOutcome(
+                null,
+                REATTACH_LOG_OUTCOME.TabsUnavailable,
+            );
             return { ok: false, error: getErrorMessage(e) };
         }
         if (target === null) {
+            ContentScriptReattach.recordOutcome(
+                null,
+                REATTACH_LOG_OUTCOME.NoActiveTab,
+            );
             return {
                 ok: true,
                 tabId: null,
@@ -85,6 +113,10 @@ export class ContentScriptReattach {
         }
         const { tabId, url } = target;
         if (url === undefined) {
+            ContentScriptReattach.recordOutcome(
+                tabId,
+                REATTACH_LOG_OUTCOME.UrlUnavailable,
+            );
             return {
                 ok: true,
                 tabId,
@@ -92,6 +124,10 @@ export class ContentScriptReattach {
             };
         }
         if (!isTopSkipContentDocumentUrl(url)) {
+            ContentScriptReattach.recordOutcome(
+                tabId,
+                REATTACH_LOG_OUTCOME.UnsupportedPage,
+            );
             return {
                 ok: true,
                 tabId,
@@ -111,7 +147,9 @@ export class ContentScriptReattach {
 
     /**
      * Reads the frontmost tab of the current window the same way the popup's
-     * detection status does, so both describe the same tab.
+     * detection status does, so both describe the same tab; the tab is noted
+     * from the browser's own metadata so the outcome can be attributed (and
+     * dropped for an incognito window).
      *
      * @returns Tab identity and exposed URL, or `null` without an active tab.
      */
@@ -124,6 +162,7 @@ export class ContentScriptReattach {
         if (first?.id === undefined) {
             return null;
         }
+        TabAttributionRegistry.noteTab(first);
         return { tabId: first.id, url: first.url };
     }
 
@@ -143,6 +182,10 @@ export class ContentScriptReattach {
             CONTENT_SCRIPT_REATTACH_PROBE_TIMEOUT_MS,
         );
         if (isLive) {
+            ContentScriptReattach.recordOutcome(
+                tabId,
+                REATTACH_LOG_OUTCOME.AlreadyAttached,
+            );
             return {
                 ok: true,
                 tabId,
@@ -167,16 +210,39 @@ export class ContentScriptReattach {
                 tabId,
                 error,
             });
+            ContentScriptReattach.recordOutcome(
+                tabId,
+                REATTACH_LOG_OUTCOME.InjectFailed,
+            );
             return { ok: false, error };
         }
         BackgroundServerAnalysisLog.info('content-script-reattached', {
             tabId,
         });
+        ContentScriptReattach.recordOutcome(tabId, REATTACH_LOG_OUTCOME.Reattached);
         return {
             ok: true,
             tabId,
             outcome: CONTENT_SCRIPT_REATTACH_OUTCOME.Reattached,
         };
+    }
+
+    /**
+     * Logs one outcome per request as a stable code; the free-form API error
+     * never reaches the log because it can embed the tab URL.
+     *
+     * @param tabId - Active tab, or `null` when none was resolved.
+     * @param outcome - Stable outcome code.
+     */
+    private static recordOutcome(
+        tabId: number | null,
+        outcome: ReattachLogOutcome,
+    ): void {
+        DebugLog.record(
+            DEBUG_LOG_EVENT.Reattach,
+            { outcome },
+            tabId === null ? {} : { tab: tabId },
+        );
     }
 
     /**

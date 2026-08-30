@@ -6,6 +6,7 @@ import type {
 } from '@/background/providers/llm-provider-adapter';
 import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
 import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { PROMO_DETECTION_SOURCE } from '@/shared/messages';
 import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
 
@@ -37,6 +38,15 @@ vi.mock('@/shared/browser', () => ({
             sendMessage: browserMocks.tabsSendMessage,
         },
     },
+}));
+
+// Typed so `mock.calls` stays `unknown[][]` (no-unsafe-return in helpers).
+const debugLogMock = vi.hoisted(() => ({
+    record: vi.fn<(...args: unknown[]) => void>(),
+}));
+
+vi.mock('@/background/debug-log/debug-log', () => ({
+    DebugLog: debugLogMock,
 }));
 
 const logMocks = vi.hoisted(() => ({
@@ -205,6 +215,7 @@ function resetMocks(): void {
 describe('PromoAnalysis — adapter routing', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        debugLogMock.record.mockReset();
         browserMocks.tabsSendMessage.mockReset().mockResolvedValue(undefined);
         browserMocks.permissionsContains.mockReset().mockResolvedValue(true);
         detectionStoreMocks.set.mockReset().mockResolvedValue(undefined);
@@ -816,6 +827,81 @@ describe('PromoAnalysis — adapter routing', () => {
                     analysisMode: 'byok',
                 },
             );
+        });
+
+        it('records byok-run-started, byok-chunk and byok-run-ended (metadata only)', async () => {
+            registryMocks.get.mockReturnValue(mockAdapter);
+            PromoAnalysis.onCaptionsReady(baseSender(), basePayload());
+
+            await vi.waitFor(() => {
+                expect(detectionStoreMocks.set).toHaveBeenCalledWith(
+                    42,
+                    expect.objectContaining({ status: 'no_promo' }),
+                );
+            });
+
+            const events = debugLogMock.record.mock.calls.map(
+                (call) => call[0],
+            );
+            expect(events).toContain(DEBUG_LOG_EVENT.ByokRunStarted);
+            expect(events).toContain(DEBUG_LOG_EVENT.ByokChunk);
+            expect(events).toContain(DEBUG_LOG_EVENT.ByokRunEnded);
+            // No chunk/assistant text anywhere in recorded fields.
+            const flat = JSON.stringify(debugLogMock.record.mock.calls);
+            expect(flat).not.toContain('Hello world');
+        });
+
+        it(
+            'logs a stable code (not the raw error) on an unexpected ' +
+                'analysis exception',
+            async () => {
+                const err = new Error(
+                    'OpenRouter HTTP 500: secret provider body',
+                );
+                registryMocks.get.mockReturnValue(
+                    makeAdapter({
+                        analyzeTranscript: vi.fn().mockRejectedValue(err),
+                    }),
+                );
+                const consoleError = vi
+                    .spyOn(console, 'error')
+                    .mockImplementation(() => {});
+
+                PromoAnalysis.onCaptionsReady(
+                    baseSender(),
+                    basePayload('boom'),
+                );
+                await vi.waitFor(() => {
+                    expect(consoleError).toHaveBeenCalled();
+                });
+
+                expect(consoleError).not.toHaveBeenCalledWith(
+                    '[TopSkip] Promo analysis failed',
+                    expect.stringContaining('secret provider body'),
+                );
+                consoleError.mockRestore();
+            },
+        );
+
+        it('logs host-access-check when the provider grant is missing', async () => {
+            registryMocks.get.mockReturnValue(
+                makeAdapter({
+                    maxTranscriptChars: vi.fn().mockResolvedValue(20),
+                    analyzeTranscript: vi.fn().mockResolvedValue({
+                        ok: false,
+                        failureCode: 'host_access_required',
+                        error: 'Provider host access is required',
+                    }),
+                }),
+            );
+            PromoAnalysis.onCaptionsReady(baseSender(), basePayload('revoked'));
+            await vi.waitFor(() => {
+                expect(debugLogMock.record).toHaveBeenCalledWith(
+                    DEBUG_LOG_EVENT.HostAccessCheck,
+                    { provider: 'openrouter', outcome: 'host-access-required' },
+                    { tab: 42, video: 'revoked' },
+                );
+            });
         });
     });
 });

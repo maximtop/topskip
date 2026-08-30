@@ -224,9 +224,34 @@ describe('OpenRouterAdapter', () => {
             const adapter = new OpenRouterAdapter();
             const result = await adapter.analyzeTranscript(baseParams);
 
-            expect(result).toEqual({
+            expect(result).toMatchObject({
                 ok: false,
                 error: 'OpenRouter HTTP 429: rate limit',
+            });
+        });
+
+        it('surfaces the client status and kind on an HTTP failure', async () => {
+            mocks.storageGet.mockResolvedValue({
+                'topskip:openrouter': {
+                    apiKey: 'sk-test',
+                    model: 'openai/gpt-4o',
+                    customModels: [],
+                },
+            });
+            mocks.callOpenRouterChat.mockResolvedValue({
+                ok: false,
+                error: 'OpenRouter HTTP 429: rate',
+                status: 429,
+                kind: 'http',
+            });
+
+            const result =
+                await new OpenRouterAdapter().analyzeTranscript(baseParams);
+
+            expect(result).toMatchObject({
+                ok: false,
+                status: 429,
+                kind: 'http',
             });
         });
 

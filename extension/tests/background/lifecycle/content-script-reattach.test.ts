@@ -27,6 +27,19 @@ vi.mock('@/background/server-analysis-log', () => ({
     BackgroundServerAnalysisLog: logMocks,
 }));
 
+const debugLogMocks = vi.hoisted(() => ({
+    record: vi.fn(),
+    noteTab: vi.fn(),
+}));
+
+vi.mock('@/background/debug-log/debug-log', () => ({
+    DebugLog: { record: debugLogMocks.record },
+}));
+
+vi.mock('@/background/debug-log/tab-attribution-registry', () => ({
+    TabAttributionRegistry: { noteTab: debugLogMocks.noteTab },
+}));
+
 import {
     CONTENT_SCRIPT_REATTACH_PROBE_TIMEOUT_MS,
     CONTENT_SCRIPT_REATTACH_SETTLE_TIMEOUT_MS,
@@ -34,6 +47,7 @@ import {
 } from '@/background/lifecycle/content-script-reattach';
 import { CAPTION_PAGE_BRIDGE_INSTALL_FLAG } from '@/shared/caption-page-bridge-flags';
 import { CONTENT_SCRIPT_BUNDLE } from '@/shared/content-script-bundles';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     CONTENT_SCRIPT_PROTOCOL_VERSION,
     CONTENT_SCRIPT_REATTACH_OUTCOME,
@@ -121,10 +135,16 @@ describe('ContentScriptReattach.handleRequest', () => {
         });
         expect(browserMocks.sendMessage).not.toHaveBeenCalled();
         expect(browserMocks.executeScript).not.toHaveBeenCalled();
+        expect(debugLogMocks.noteTab).not.toHaveBeenCalled();
+        expect(debugLogMocks.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.Reattach,
+            { outcome: CONTENT_SCRIPT_REATTACH_OUTCOME.NoActiveTab },
+            {},
+        );
     });
 
     it('never injects when Chrome hides the active tab URL', async () => {
-        browserMocks.query.mockResolvedValue([{ id: TAB_ID }]);
+        browserMocks.query.mockResolvedValue([{ id: TAB_ID, incognito: false }]);
 
         await expect(ContentScriptReattach.handleRequest()).resolves.toEqual({
             ok: true,
@@ -133,6 +153,57 @@ describe('ContentScriptReattach.handleRequest', () => {
         });
         expect(browserMocks.sendMessage).not.toHaveBeenCalled();
         expect(browserMocks.executeScript).not.toHaveBeenCalled();
+        expect(debugLogMocks.noteTab).toHaveBeenCalledWith(
+            expect.objectContaining({ id: TAB_ID, incognito: false }),
+        );
+        expect(debugLogMocks.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.Reattach,
+            { outcome: CONTENT_SCRIPT_REATTACH_OUTCOME.UrlUnavailable },
+            { tab: TAB_ID },
+        );
+    });
+
+    it('logs already_attached and reattached outcomes with the tab id', async () => {
+        browserMocks.sendMessage.mockResolvedValue(CURRENT_ACK);
+        await ContentScriptReattach.handleRequest();
+        expect(debugLogMocks.record).toHaveBeenLastCalledWith(
+            DEBUG_LOG_EVENT.Reattach,
+            { outcome: CONTENT_SCRIPT_REATTACH_OUTCOME.AlreadyAttached },
+            { tab: TAB_ID },
+        );
+
+        browserMocks.sendMessage.mockRejectedValue(RECEIVING_END_MISSING);
+        await ContentScriptReattach.handleRequest();
+        expect(debugLogMocks.record).toHaveBeenLastCalledWith(
+            DEBUG_LOG_EVENT.Reattach,
+            { outcome: CONTENT_SCRIPT_REATTACH_OUTCOME.Reattached },
+            { tab: TAB_ID },
+        );
+        expect(debugLogMocks.record).toHaveBeenCalledTimes(2);
+    });
+
+    it('logs failures as stable codes and never the API error text', async () => {
+        browserMocks.executeScript.mockImplementation((injection: unknown) =>
+            isFlagProbe([injection])
+                ? Promise.resolve([{ result: false, frameId: 0 }])
+                : Promise.reject(new Error('Cannot access contents of the page')),
+        );
+        await ContentScriptReattach.handleRequest();
+        expect(debugLogMocks.record).toHaveBeenLastCalledWith(
+            DEBUG_LOG_EVENT.Reattach,
+            { outcome: 'inject_failed' },
+            { tab: TAB_ID },
+        );
+
+        browserMocks.query.mockRejectedValue(new Error('tabs unavailable'));
+        await ContentScriptReattach.handleRequest();
+        expect(debugLogMocks.record).toHaveBeenLastCalledWith(
+            DEBUG_LOG_EVENT.Reattach,
+            { outcome: 'tabs_unavailable' },
+            {},
+        );
+        expect(JSON.stringify(debugLogMocks.record.mock.calls)).not.toContain('Cannot access');
+        expect(JSON.stringify(debugLogMocks.record.mock.calls)).not.toContain('tabs unavailable');
     });
 
     it.each([
@@ -283,6 +354,7 @@ describe('ContentScriptReattach.handleRequest', () => {
 
         expect(results[0]).toEqual(results[1]);
         expect(injectionCalls()).toHaveLength(2);
+        expect(debugLogMocks.record).toHaveBeenCalledTimes(1);
     });
 
     it('probes again after a completed request', async () => {

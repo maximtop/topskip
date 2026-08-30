@@ -274,6 +274,17 @@ function parseUsage(value: unknown): OpenRouterUsage | undefined {
 }
 
 /**
+ * Stable transport/parse classification attached to a failed provider call so
+ * BYOK metadata can record it without the response body.
+ */
+export type ProviderCallFailureKind =
+    | 'http'
+    | 'network'
+    | 'timeout'
+    | 'parse'
+    | 'aborted';
+
+/**
  * Calls OpenRouter chat completions (non-streaming). Does not log the API key.
  *
  * @param params - Model, key, messages, optional abort signal
@@ -291,7 +302,12 @@ export async function callOpenRouterChat(
           finishReason?: string | null;
           nativeFinishReason?: string | null;
       }
-    | { ok: false; error: string }
+    | {
+          ok: false;
+          error: string;
+          status: number | null;
+          kind: ProviderCallFailureKind;
+      }
 > {
     const { apiKey, model, messages, reasoningEffort, signal } = params;
     try {
@@ -317,35 +333,64 @@ export async function callOpenRouterChat(
             return {
                 ok: false,
                 error: `OpenRouter HTTP ${res.status}: ${text.slice(0, 200)}`,
+                status: res.status,
+                kind: 'http',
             };
         }
         let json: unknown;
         try {
             json = JSON.parse(text) as unknown;
         } catch {
-            return { ok: false, error: 'OpenRouter response was not JSON' };
+            return {
+                ok: false,
+                error: 'OpenRouter response was not JSON',
+                status: res.status,
+                kind: 'parse',
+            };
         }
         if (!isRecord(json)) {
-            return { ok: false, error: 'OpenRouter JSON shape invalid' };
+            return {
+                ok: false,
+                error: 'OpenRouter JSON shape invalid',
+                status: res.status,
+                kind: 'parse',
+            };
         }
         const rawChoices = json.choices;
         if (!Array.isArray(rawChoices) || rawChoices.length === 0) {
-            return { ok: false, error: 'OpenRouter response missing choices' };
+            return {
+                ok: false,
+                error: 'OpenRouter response missing choices',
+                status: res.status,
+                kind: 'parse',
+            };
         }
         const first: unknown = rawChoices[0];
         if (!isRecord(first)) {
             return {
                 ok: false,
                 error: 'OpenRouter first choice shape invalid',
+                status: res.status,
+                kind: 'parse',
             };
         }
         const message = first.message;
         if (!isRecord(message)) {
-            return { ok: false, error: 'OpenRouter response missing message' };
+            return {
+                ok: false,
+                error: 'OpenRouter response missing message',
+                status: res.status,
+                kind: 'parse',
+            };
         }
         const content = message.content;
         if (typeof content !== 'string') {
-            return { ok: false, error: 'OpenRouter assistant content missing' };
+            return {
+                ok: false,
+                error: 'OpenRouter assistant content missing',
+                status: res.status,
+                kind: 'parse',
+            };
         }
         return {
             ok: true,
@@ -357,7 +402,14 @@ export async function callOpenRouterChat(
             nativeFinishReason: getNullableString(first.native_finish_reason),
         };
     } catch (e) {
+        const aborted = signal?.aborted === true ||
+            (e instanceof DOMException && e.name === 'AbortError');
         const msg = e instanceof Error ? e.message : String(e);
-        return { ok: false, error: msg };
+        return {
+            ok: false,
+            error: msg,
+            status: null,
+            kind: aborted ? 'aborted' : 'network',
+        };
     }
 }

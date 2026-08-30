@@ -13,6 +13,18 @@ const browserMocks = vi.hoisted(() => ({
     create: vi.fn<(input: { url?: string }) => Promise<void>>(),
     getManifest: vi.fn(() => ({ version: '0.1.0' })),
 }));
+const debugLogMocks = vi.hoisted(() => ({
+    hasLog: vi.fn().mockResolvedValue(false),
+    record: vi.fn(),
+}));
+
+vi.mock('@/background/debug-log/debug-log-store', () => ({
+    DebugLogStore: { hasLog: debugLogMocks.hasLog },
+}));
+
+vi.mock('@/background/debug-log/debug-log', () => ({
+    DebugLog: { record: debugLogMocks.record },
+}));
 
 vi.mock('@/background/storage/prefs-sync', () => ({
     PrefsSyncStorage: prefsMocks,
@@ -30,7 +42,9 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-const { ServerAnalysisIssueReport } =
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+
+const { DEBUG_LOG_ISSUE_HINT_LINE, ServerAnalysisIssueReport } =
     await import('@/background/server-analysis-issue-report');
 
 describe('ServerAnalysisIssueReport', () => {
@@ -73,6 +87,7 @@ describe('ServerAnalysisIssueReport', () => {
                 extensionVersion: '0.1.0',
             },
             now: new Date('2026-07-15T12:34:56.000Z'),
+            hasDebugLog: false,
         });
 
         expect(url).not.toBeNull();
@@ -98,6 +113,7 @@ describe('ServerAnalysisIssueReport', () => {
                 extensionVersion: '0.1.0',
             },
             now: new Date('2026-07-15T12:34:56.000Z'),
+            hasDebugLog: false,
         });
 
         const parsed = new URL(url ?? 'https://example.invalid');
@@ -123,6 +139,7 @@ describe('ServerAnalysisIssueReport', () => {
                     extensionVersion: '0.1.0',
                 },
                 now: new Date('2026-07-15T12:34:56.000Z'),
+                hasDebugLog: false,
             }),
         ).toBeNull();
     });
@@ -171,5 +188,57 @@ describe('ServerAnalysisIssueReport', () => {
             error: 'Server issue reporting is unavailable.',
         });
         expect(browserMocks.create).not.toHaveBeenCalled();
+    });
+
+    it('adds exactly one English hint line when a debug log exists', () => {
+        const url = ServerAnalysisIssueReport.buildUrl({
+            baseUrl: 'https://github.com/maximtop/topskip/issues/new',
+            failure: { code: 'internal_error', apiVersion: 1, extensionVersion: '0.1.0' },
+            now: new Date('2026-07-15T12:34:56.000Z'),
+            hasDebugLog: true,
+        });
+        const body = new URL(url ?? 'https://example.invalid').searchParams.get('body') ?? '';
+        const lines = body.split('\n');
+        expect(lines.filter((line) => line === DEBUG_LOG_ISSUE_HINT_LINE)).toHaveLength(1);
+        expect(lines.at(-1)).toBe(DEBUG_LOG_ISSUE_HINT_LINE);
+        expect(DEBUG_LOG_ISSUE_HINT_LINE).toBe(
+            'If you enabled Debug logging in Options → Diagnostics, you can attach the exported log (it lists the video IDs you watched while logging; review it first).',
+        );
+        expect(body).not.toContain('dQw4w9WgXcQ');
+
+        const without = ServerAnalysisIssueReport.buildUrl({
+            baseUrl: 'https://github.com/maximtop/topskip/issues/new',
+            failure: { code: 'internal_error', apiVersion: 1, extensionVersion: '0.1.0' },
+            now: new Date('2026-07-15T12:34:56.000Z'),
+            hasDebugLog: false,
+        });
+        expect(new URL(without ?? 'https://example.invalid').searchParams.get('body')).not.toContain(
+            'Debug logging',
+        );
+    });
+
+    it('reads the stored-log flag and logs the opening with failure code and support id only', async () => {
+        debugLogMocks.hasLog.mockResolvedValue(true);
+
+        await expect(ServerAnalysisIssueReport.handleOpen()).resolves.toEqual({ ok: true });
+
+        const url = browserMocks.create.mock.calls[0]?.[0]?.url ?? '';
+        expect(new URL(url).searchParams.get('body')).toContain(DEBUG_LOG_ISSUE_HINT_LINE);
+        expect(debugLogMocks.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.IssueReportOpened,
+            { failureCode: 'internal_error' },
+            { tab: 42, support: 'support-safe-123' },
+        );
+        expect(JSON.stringify(debugLogMocks.record.mock.calls)).not.toContain('github.com');
+    });
+
+    it('omits the hint and still logs the opening when no log exists', async () => {
+        debugLogMocks.hasLog.mockResolvedValue(false);
+
+        await ServerAnalysisIssueReport.handleOpen();
+
+        const url = browserMocks.create.mock.calls[0]?.[0]?.url ?? '';
+        expect(new URL(url).searchParams.get('body')).not.toContain('Debug logging');
+        expect(debugLogMocks.record).toHaveBeenCalledTimes(1);
     });
 });

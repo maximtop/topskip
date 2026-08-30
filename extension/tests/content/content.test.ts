@@ -31,6 +31,12 @@ vi.mock('@/content/watch-captions', () => ({
     WatchCaptions: { teardownPageBridge },
 }));
 
+const { debugLogDispose } = vi.hoisted(() => ({ debugLogDispose: vi.fn() }));
+
+vi.mock('@/content/debug-log-client', () => ({
+    DebugLogClient: { dispose: debugLogDispose },
+}));
+
 import { Content } from '@/content/content';
 import { EXTENSION_CONTEXT_POLL_INTERVAL_MS } from '@/content/extension-context-watch';
 
@@ -41,6 +47,7 @@ describe('Content', () => {
         disposeWatch.mockClear();
         initWatch.mockClear();
         teardownPageBridge.mockClear();
+        debugLogDispose.mockClear();
     });
 
     afterEach(() => {
@@ -57,6 +64,7 @@ describe('Content', () => {
 
         expect(disposeWatch).toHaveBeenCalledOnce();
         expect(teardownPageBridge).not.toHaveBeenCalled();
+        expect(debugLogDispose).not.toHaveBeenCalled();
         expect(vi.getTimerCount()).toBe(0);
     });
 
@@ -72,6 +80,10 @@ describe('Content', () => {
 
         expect(disposeWatch).toHaveBeenCalledOnce();
         expect(teardownPageBridge).toHaveBeenCalledOnce();
+        expect(debugLogDispose).toHaveBeenCalledOnce();
+        expect(debugLogDispose.mock.invocationCallOrder[0]).toBeLessThan(
+            disposeWatch.mock.invocationCallOrder[0],
+        );
         expect(disposeWatch.mock.invocationCallOrder[0]).toBeLessThan(
             teardownPageBridge.mock.invocationCallOrder[0],
         );

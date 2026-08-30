@@ -69,7 +69,12 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
+const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
+
+vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
+
 import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     CONTENT_SCRIPT_PROTOCOL_VERSION,
     TOPSKIP_MESSAGE,
@@ -129,6 +134,7 @@ function currentRouteStatus(): Record<string, unknown> {
 describe('ServerAnalysisRuntimeMessages', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        debugLogMock.record.mockReset();
         prefsMocks.load.mockResolvedValue({
             enabled: true,
             providerId: 'openrouter',
@@ -294,6 +300,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
             extensionVersion: '0.1.0',
             languageCode: LANGUAGE_CODE,
             segments: SEGMENTS,
+            tabId: 42,
         });
     });
 
@@ -361,6 +368,7 @@ describe('ServerAnalysisRuntimeMessages', () => {
         expect(clientMocks.requestJobStatus).toHaveBeenCalledWith({
             jobId: 'job-v5',
             identity: IDENTITY,
+            tabId: 42,
         });
     });
 
@@ -738,5 +746,53 @@ describe('ServerAnalysisRuntimeMessages', () => {
         ).resolves.toEqual({ ok: false, error: 'Untrusted sender.' });
 
         expect(detectionMocks.clear).not.toHaveBeenCalled();
+    });
+
+    describe('ServerAnalysisRuntimeMessages debug-log routing', () => {
+        it('records cache-decision and blocks-delivered on a ready cache hit', async () => {
+            const promoBlocks = [{ startSec: 4, endSec: 24 }];
+            cacheMocks.loadExact.mockResolvedValueOnce({
+                status: 'ready',
+                ...IDENTITY,
+                sourceResultId: 'result-v5',
+                freshness: { expiresAtMs: 4_102_444_800_000 },
+                promoBlocks,
+                storedAtMs: 1_900_000_000_000,
+            });
+
+            await ServerAnalysisRuntimeMessages.handleRequest(REQUEST, SENDER);
+
+            expect(debugLogMock.record).toHaveBeenCalledWith(
+                DEBUG_LOG_EVENT.CacheDecision,
+                { decision: 'local_cache' },
+                { tab: 42, video: VIDEO_ID, session: SESSION_ID },
+            );
+            expect(debugLogMock.record).toHaveBeenCalledWith(
+                DEBUG_LOG_EVENT.BlocksDelivered,
+                { count: 1, blocks: '4.0-24.0' },
+                { tab: 42, video: VIDEO_ID, session: SESSION_ID },
+            );
+        });
+
+        it('records a terminal-event with the stable failure code and support id', async () => {
+            clientMocks.requestAnalysis.mockResolvedValueOnce({
+                status: 'error',
+                algorithmVersion: 'server-v6',
+                error: { code: 'analysis_failed', supportId: 'support-abc' },
+            });
+
+            await ServerAnalysisRuntimeMessages.handleRequest(REQUEST, SENDER);
+
+            expect(debugLogMock.record).toHaveBeenCalledWith(
+                DEBUG_LOG_EVENT.TerminalEvent,
+                { failureCode: 'analysis_failed' },
+                {
+                    tab: 42,
+                    video: VIDEO_ID,
+                    session: SESSION_ID,
+                    support: 'support-abc',
+                },
+            );
+        });
     });
 });

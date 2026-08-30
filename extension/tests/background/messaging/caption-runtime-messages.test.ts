@@ -23,7 +23,11 @@ vi.mock('@/background/captions/log-transcript-dev', () => ({
     logTranscriptForDeveloper: transcriptLogMock,
 }));
 
+const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
+vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
+
 import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import type { CaptionsFromContentPayload } from '@/shared/messages';
 
 const payload: CaptionsFromContentPayload = {
@@ -113,6 +117,41 @@ describe('CaptionRuntimeMessages analysis mode guard', () => {
             'bridge-install-failed',
         );
         expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    it('logs the stable reason (not the free-form error) and records capture-failed', async () => {
+        await CaptionRuntimeMessages.handle(
+            {
+                ok: false,
+                videoId: 'dQw4w9WgXcQ',
+                error: 'https://youtube.com/api/timedtext?pot=SECRET_LEAK',
+                reason: 'capture-timeout',
+            },
+            { tab: { id: 42 } } as never,
+        );
+
+        expect(console.warn).toHaveBeenCalledWith('[TopSkip captions]', 'capture-timeout');
+        expect(console.warn).not.toHaveBeenCalledWith(
+            '[TopSkip captions]',
+            expect.stringContaining('SECRET_LEAK'),
+        );
+        expect(debugLogMock.record).toHaveBeenCalledWith(
+            DEBUG_LOG_EVENT.CaptureFailed,
+            { reason: 'capture-timeout' },
+            { tab: 42 },
+        );
+    });
+
+    it('logs an unknown sentinel when a genuine failure has no reason', async () => {
+        await CaptionRuntimeMessages.handle(
+            { ok: false, videoId: 'dQw4w9WgXcQ', error: 'raw stack trace' },
+            { tab: { id: 42 } } as never,
+        );
+        expect(console.error).toHaveBeenCalledWith('[TopSkip captions]', 'unknown');
+        expect(console.error).not.toHaveBeenCalledWith(
+            '[TopSkip captions]',
+            'raw stack trace',
+        );
     });
 
     it('keeps BYOK mode on the existing provider path', async () => {

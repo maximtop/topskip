@@ -40,6 +40,13 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
+vi.mock('@/background/debug-log/debug-log-store', () => ({
+    DebugLogStore: {
+        ready: vi.fn().mockResolvedValue(undefined),
+        isEnabled: vi.fn(() => false),
+    },
+}));
+
 const { mockCallOpenRouter } = vi.hoisted(() => ({
     mockCallOpenRouter: vi.fn(),
 }));
@@ -203,6 +210,7 @@ describe(
                     partialCoverage: false,
                     source: 'local_provider',
                 },
+                debugLoggingEnabled: false,
             });
 
             // 4. Referential identity: content message uses the store's array

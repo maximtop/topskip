@@ -52,7 +52,7 @@ export const contentLog = {
  * @param args - Serialisable values.
  */
 function send(level: ContentLogLevel, args: unknown[]): void {
-    if (!logChannelAvailable) {
+    if (!__TOPSKIP_INCLUDE_DEV_LOCAL__ || !logChannelAvailable) {
         return;
     }
     try {

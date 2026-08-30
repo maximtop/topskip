@@ -9,7 +9,11 @@ import {
     type AnalysisMode,
     type UserPreferences,
 } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import { toDebugLogModelId } from '@/shared/detection-models';
 
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
@@ -20,15 +24,18 @@ import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
  */
 export class PrefsRuntimeMessages {
     /**
-     * Loads validated prefs from storage for the popup GET handler.
+     * Loads validated prefs from storage for the popup and content bootstrap;
+     * the debug-log switch state rides along so a content context learns it
+     * before its first loggable decision.
      *
-     * @returns Current preferences
+     * @returns Current preferences plus the debug-log switch state
      */
     static async handleGet(): Promise<GetPrefsResponse> {
         await PrefsSyncStorage.ready();
         try {
             const prefs = await PrefsSyncStorage.load();
-            return { ok: true, prefs };
+            await DebugLogStore.ready();
+            return { ok: true, prefs, debugLogEnabled: DebugLogStore.isEnabled() };
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
         }
@@ -76,7 +83,8 @@ export class PrefsRuntimeMessages {
     }
 
     /**
-     * Preserves the required storage and dual-broadcast fan-out after every preference write.
+     * Preserves the required storage and dual-broadcast fan-out after every
+     * preference write and records the saved values (never keys) for support.
      *
      * @param prefs - Validated preferences that replace the current snapshot.
      * @returns Promise resolved when storage and both notification paths complete.
@@ -85,6 +93,12 @@ export class PrefsRuntimeMessages {
         prefs: UserPreferences,
     ): Promise<void> {
         await PrefsSyncStorage.save(prefs);
+        DebugLog.record(DEBUG_LOG_EVENT.PrefsSaved, {
+            enabled: prefs.enabled,
+            mode: prefs.analysisMode,
+            provider: prefs.providerId,
+            model: toDebugLogModelId(prefs.providerId, prefs.activeModelId),
+        });
         await PrefsBroadcast.sendUpdatedToAllTabs(prefs);
         PrefsPortHub.broadcastPrefsUpdate(prefs);
     }

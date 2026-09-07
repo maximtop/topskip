@@ -621,8 +621,13 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   to load captions.
 - **`page:activation-finished`**: page bridge recorded caption state, hide style,
   track count, and activation actions. When captions were off, expect
-  **`setOption:track`** if YouTube exposes a tracklist; otherwise expect
-  **`setOption:reload`**. When captions were already on, expect
+  **`setOption:track:<rule>`** if YouTube exposes a tracklist; otherwise
+  expect **`setOption:reload`**. The rule is `default-flag` (the tracklist
+  entry YouTube marks `is_default`), `player-response`
+  (`defaultCaptionTrackIndex` from the player response), or `first` (no
+  default known). Both default rules follow the video's audio language, so a
+  translated manual track that omits the sponsor read is not captured ahead
+  of the original-language captions. When captions were already on, expect
   **`skipped:already-on`**.
 - **`page:timedtext-observed`**: the player made a `fmt=json3` timedtext
   request; metadata includes transport, status, body length, language, and

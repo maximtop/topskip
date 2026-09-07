@@ -521,6 +521,99 @@ describe('caption page bridge', () => {
         },
     );
 
+    it('activates the track YouTube flags as default instead of the first one', async () => {
+        const harness = installHarness();
+        const translated = { languageCode: 'en', vss_id: '.en' };
+        const original = {
+            languageCode: 'ru',
+            vss_id: 'a.ru',
+            is_default: true,
+        };
+        Object.assign(document.getElementById(MOVIE_PLAYER_ID) ?? {}, {
+            getOption: vi.fn(() => [translated, original]),
+        });
+        await installBridge();
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        expect(harness.setOption).toHaveBeenCalledWith(
+            'captions',
+            'track',
+            original,
+        );
+        expect(harness.setOption).not.toHaveBeenCalledWith(
+            'captions',
+            'track',
+            translated,
+        );
+        expect(readLastCommandResult(harness)).toMatchObject({
+            ok: true,
+            hasTracks: 2,
+            actions: expect.arrayContaining([
+                'setOption:track:default-flag',
+            ]) as string[],
+        });
+    });
+
+    it('resolves the default track from the player response when the tracklist has no flag', async () => {
+        const harness = installHarness();
+        const translated = { languageCode: 'en', vss_id: '.en' };
+        const original = { languageCode: 'ru', vss_id: 'a.ru' };
+        Object.assign(document.getElementById(MOVIE_PLAYER_ID) ?? {}, {
+            getOption: vi.fn(() => [translated, original]),
+            getPlayerResponse: vi.fn(() => ({
+                captions: {
+                    playerCaptionsTracklistRenderer: {
+                        captionTracks: [
+                            { languageCode: 'en', vssId: '.en' },
+                            { languageCode: 'ru', vssId: 'a.ru', kind: 'asr' },
+                        ],
+                        defaultCaptionTrackIndex: 1,
+                    },
+                },
+            })),
+        });
+        await installBridge();
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        expect(harness.setOption).toHaveBeenCalledWith(
+            'captions',
+            'track',
+            original,
+        );
+        expect(readLastCommandResult(harness)).toMatchObject({
+            actions: expect.arrayContaining([
+                'setOption:track:player-response',
+            ]) as string[],
+        });
+    });
+
+    it('falls back to the first track and survives a throwing getPlayerResponse', async () => {
+        const harness = installHarness();
+        const first = { languageCode: 'en', vss_id: '.en' };
+        Object.assign(document.getElementById(MOVIE_PLAYER_ID) ?? {}, {
+            getOption: vi.fn(() => [first, { languageCode: 'ru' }]),
+            getPlayerResponse: vi.fn(() => {
+                throw new Error('player not ready');
+            }),
+        });
+        await installBridge();
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        expect(harness.setOption).toHaveBeenCalledWith(
+            'captions',
+            'track',
+            first,
+        );
+        expect(readLastCommandResult(harness)).toMatchObject({
+            actions: expect.arrayContaining([
+                'setOption:track:first',
+            ]) as string[],
+        });
+    });
+
     it('restores wrappers and removes its command listener on teardown', async () => {
         const harness = installHarness();
         await installBridge();

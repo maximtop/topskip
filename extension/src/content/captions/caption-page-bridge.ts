@@ -9,6 +9,7 @@ import {
     type CaptionPageBridgeCommand,
     parseCaptionPageBridgeCommandRequest,
 } from '@/content/captions/caption-page-bridge-contract';
+import { selectPreferredCaptionTrack } from '@/content/captions/caption-track-selection';
 import {
     CAPTION_PAGE_BRIDGE_INSTALL_FLAG,
     CAPTION_PAGE_BRIDGE_TEARDOWN_FLAG,
@@ -382,6 +383,22 @@ const installCaptionPageBridge = (): void => {
         }
     };
 
+    const getPlayerResponse = (): unknown => {
+        const player = getMoviePlayer();
+        if (player === null) {
+            return null;
+        }
+        const method: unknown = Reflect.get(player, 'getPlayerResponse');
+        if (typeof method !== 'function') {
+            return null;
+        }
+        try {
+            return Reflect.apply(method, player, []);
+        } catch {
+            return null;
+        }
+    };
+
     const setPlayerOption = (optionName: string, value: unknown): boolean => {
         const player = getMoviePlayer();
         if (player === null) {
@@ -547,6 +564,28 @@ const installCaptionPageBridge = (): void => {
         return { ok: true, wasOn, userIntervened, hasTracks, actions };
     };
 
+    /**
+     * Activates the video-language caption track so a translated subtitle
+     * track that omits the sponsor read is not the transcript we upload.
+     *
+     * @param tracks - Untrusted player tracklist.
+     * @param actions - Activation action log to extend.
+     * @returns Whether the tracklist offered any track at all.
+     */
+    const selectTrack = (tracks: unknown, actions: string[]): boolean => {
+        const selection = selectPreferredCaptionTrack(
+            tracks,
+            getPlayerResponse(),
+        );
+        if (selection === null) {
+            return false;
+        }
+        if (setPlayerOption(CAPTION_TRACK_OPTION, selection.track)) {
+            actions.push(`setOption:track:${selection.source}`);
+        }
+        return true;
+    };
+
     const activateCaptions = (): Record<string, unknown> => {
         const actions: string[] = [];
         if (!isWatchPlayerStable()) {
@@ -596,12 +635,7 @@ const installCaptionPageBridge = (): void => {
             if (setPlayerOption(CAPTION_RELOAD_OPTION, true)) {
                 actions.push('setOption:reload');
             }
-            if (Array.isArray(tracks) && tracks.length > 0) {
-                const firstTrack: unknown = Reflect.get(tracks, '0');
-                if (setPlayerOption(CAPTION_TRACK_OPTION, firstTrack)) {
-                    actions.push('setOption:track');
-                }
-            }
+            selectTrack(tracks, actions);
             if (captionsCurrentlyOn) {
                 actions.push('reactivated:already-on');
                 return finishActivation(
@@ -622,12 +656,10 @@ const installCaptionPageBridge = (): void => {
         }
 
         if (!isReactivation) {
-            if (Array.isArray(tracks) && tracks.length > 0) {
-                const firstTrack: unknown = Reflect.get(tracks, '0');
-                if (setPlayerOption(CAPTION_TRACK_OPTION, firstTrack)) {
-                    actions.push('setOption:track');
-                }
-            } else if (setPlayerOption(CAPTION_RELOAD_OPTION, true)) {
+            if (
+                !selectTrack(tracks, actions) &&
+                setPlayerOption(CAPTION_RELOAD_OPTION, true)
+            ) {
                 actions.push('setOption:reload');
             }
         }

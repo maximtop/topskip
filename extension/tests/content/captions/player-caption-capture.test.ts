@@ -65,13 +65,30 @@ vi.mock('@/content/content-log', () => ({
     contentLog: { info: contentLogInfo, warn: vi.fn(), error: vi.fn() },
 }));
 
-import { PlayerCaptionCapture } from '@/content/captions/player-caption-capture';
+import { CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS } from '@/content/captions/caption-page-bridge-contract';
+import {
+    ACTIVATION_VISIBLE_BUDGET_MS,
+    DEFAULT_CAPTURE_TIMEOUT_MS,
+    EMPTY_BODY_RELOAD_BASE_DELAY_MS,
+    EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+    MAX_POT_EMPTY_BODY_RELOADS,
+    PlayerCaptionCapture,
+} from '@/content/captions/player-caption-capture';
 import { WatchCaptions } from '@/content/watch-captions';
 import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-constants';
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 const PAGE_EVENT = 'topskip:caption-capture-page';
+const ACTIVATION_RETRY_DELAY_MS = 250;
+const PLAYER_NOT_READY_RESULT = {
+    ok: false,
+    reason: 'player-not-ready',
+    error: 'Watch player is not ready for caption capture',
+};
+const CAPTION_JSON = JSON.stringify({
+    events: [{ tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: 'promo' }] }],
+});
 
 // `expect.any` is typed `any`; widening it to `unknown` keeps the expected
 // event literals free of unsafe-assignment errors.
@@ -152,7 +169,12 @@ async function flushMicrotasks(): Promise<void> {
     await Promise.resolve();
 }
 
+// Enough microtask turns for the bridge probe, the Activate round trip and
+// the `armCaptureTimeout` that follows acceptance to have all run: empty-body
+// reloads are refused until that timer exists.
 async function acceptActivation(): Promise<void> {
+    await flushMicrotasks();
+    await flushMicrotasks();
     await flushMicrotasks();
     await flushMicrotasks();
 }
@@ -235,6 +257,23 @@ function dispatchPageDiagnostic(
     );
 }
 
+/**
+ * Dispatches one empty-body diagnostic whose sanitized URL shape reports
+ * whether the player had already minted the `pot` token.
+ */
+function dispatchEmptyBody(messageId: string, hasPot: boolean): void {
+    dispatchPageDiagnostic(messageId, 'window', {
+        urlShape: {
+            pathname: '/api/timedtext',
+            paramNames: hasPot
+                ? ['fmt', 'lang', 'pot', 'v']
+                : ['fmt', 'lang', 'v'],
+            fmt: 'json3',
+            hasPot,
+        },
+    });
+}
+
 function countRuntimeMessages(type: string): number {
     return mockSendMessage.mock.calls.filter((call) => {
         const message: unknown = Reflect.get(call, '0');
@@ -266,6 +305,31 @@ function pageStageCalls(): unknown[][] {
                 ? Reflect.get(fields, 'stage')
                 : undefined;
         return typeof stage === 'string' && stage.startsWith('page:');
+    });
+}
+
+/**
+ * Reports the tab as hidden or visible to the activation loop; the stubbed
+ * document has no visibility state of its own.
+ */
+function setVisibilityState(state: 'hidden' | 'visible'): void {
+    Object.defineProperty(document, 'visibilityState', {
+        configurable: true,
+        get: () => state,
+    });
+}
+
+/**
+ * Reads the stage names recorded on debug-log capture-stage events.
+ */
+function captureStageNames(): string[] {
+    return debugLogCalls(DEBUG_LOG_EVENT.CaptureStage).flatMap((call) => {
+        const fields: unknown = call[1];
+        const stage: unknown =
+            fields !== null && typeof fields === 'object'
+                ? Reflect.get(fields, 'stage')
+                : undefined;
+        return typeof stage === 'string' ? [stage] : [];
     });
 }
 
@@ -306,6 +370,7 @@ describe('PlayerCaptionCapture', () => {
     });
 
     afterEach(() => {
+        Reflect.deleteProperty(document, 'visibilityState');
         vi.useRealTimers();
         vi.restoreAllMocks();
     });
@@ -424,11 +489,7 @@ describe('PlayerCaptionCapture', () => {
         mockActivateBridge.mockImplementation(() => {
             activationCalls += 1;
             if (activationCalls === 1) {
-                return Promise.resolve({
-                    ok: false,
-                    reason: 'player-not-ready',
-                    error: 'Watch player is not ready for caption capture',
-                });
+                return Promise.resolve(PLAYER_NOT_READY_RESULT);
             }
             return Promise.resolve({ ok: true });
         });
@@ -437,6 +498,10 @@ describe('PlayerCaptionCapture', () => {
             captureTimeoutMs: 10,
         });
         await flushMicrotasks();
+        // The retry is accepted, so the capture budget starts there and the
+        // run ends on the transient capture-timeout instead.
+        await vi.advanceTimersByTimeAsync(ACTIVATION_RETRY_DELAY_MS);
+        await vi.advanceTimersByTimeAsync(20);
         await finishCleanup();
         await finishCleanup();
         PlayerCaptionCapture.scheduleForVideoId('abc', 'player-ready', {
@@ -444,7 +509,7 @@ describe('PlayerCaptionCapture', () => {
         });
         await flushMicrotasks();
 
-        expect(activationCalls).toBe(2);
+        expect(activationCalls).toBe(3);
     });
 
     it('reactivates after an empty json3 body while waiting for capture', async () => {
@@ -456,6 +521,10 @@ describe('PlayerCaptionCapture', () => {
         await acceptActivation();
         expect(mockActivateBridge).toHaveBeenCalledTimes(1);
         dispatchPageDiagnostic('empty:1');
+        await acceptActivation();
+        // The reload waits out the backoff instead of racing the player.
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_BASE_DELAY_MS);
         await acceptActivation();
         expect(mockActivateBridge).toHaveBeenCalledTimes(2);
         dispatchTimedtextCapture(
@@ -474,6 +543,260 @@ describe('PlayerCaptionCapture', () => {
         await expect(run).resolves.toMatchObject({
             status: 'ready',
         });
+    });
+
+    it('keeps reloading while empty bodies arrive without a pot token', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        // Five reloads, well past the pot-bearing budget of three.
+        const delays = [250, 500, 1000, 2000, 2000];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`no-pot:${String(index)}`, false);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs);
+            await acceptActivation();
+            expect(mockActivateBridge).toHaveBeenCalledTimes(index + 2);
+        }
+        dispatchTimedtextCapture('abc', CAPTION_JSON);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({ status: 'ready' });
+    });
+
+    it('stops reloading once the pot-bearing empty-body budget is spent', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 20_000,
+        });
+        await acceptActivation();
+        const delays = [250, 500, 1000, 2000];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`pot:${String(index)}`, true);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs);
+            await acceptActivation();
+        }
+        expect(mockActivateBridge).toHaveBeenCalledTimes(
+            MAX_POT_EMPTY_BODY_RELOADS + 1,
+        );
+
+        await vi.advanceTimersByTimeAsync(20_000);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({
+            status: 'failed',
+            failure: { reason: 'capture-timeout' },
+        });
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                {
+                    reason: 'capture-timeout',
+                    stage: 'waiting-capture',
+                    attempts: MAX_POT_EMPTY_BODY_RELOADS + 1,
+                    emptyPot: 4,
+                },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+    });
+
+    it('reports the exhausted reload budget once per session', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        const delays = [250, 500, 1000];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`pot:${String(index)}`, true);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs);
+            await acceptActivation();
+        }
+        // Budget gone: every further pot-bearing empty is silent apart from
+        // the single line that says why.
+        dispatchEmptyBody('pot:over-1', true);
+        await acceptActivation();
+        dispatchEmptyBody('pot:over-2', true);
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS);
+        await acceptActivation();
+
+        expect(mockActivateBridge).toHaveBeenCalledTimes(
+            MAX_POT_EMPTY_BODY_RELOADS + 1,
+        );
+        expect(
+            debugLogCalls(DEBUG_LOG_EVENT.CaptureStage).filter((call) => {
+                const fields: unknown = call[1];
+                return (
+                    fields !== null &&
+                    typeof fields === 'object' &&
+                    Reflect.get(fields, 'stage') === 'reload-skipped'
+                );
+            }),
+        ).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureStage,
+                { stage: 'reload-skipped', reason: 'budget' },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+        expect(countContentLogStage('reload-skipped')).toBe(1);
+
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
+    });
+
+    it('reports tokenless empty bodies on the capture-failed line', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 20_000,
+        });
+        await acceptActivation();
+        const delays = [
+            EMPTY_BODY_RELOAD_BASE_DELAY_MS,
+            EMPTY_BODY_RELOAD_BASE_DELAY_MS * 2,
+        ];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`no-pot:${String(index)}`, false);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs);
+            await acceptActivation();
+        }
+
+        await vi.advanceTimersByTimeAsync(20_000);
+        await finishCleanup();
+        await run;
+
+        // The whole path — page diagnostic, free reload, timeout — reports
+        // the tokenless empties and nothing about pot-bearing ones.
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                {
+                    reason: 'capture-timeout',
+                    stage: 'waiting-capture',
+                    attempts: delays.length + 1,
+                    emptyNoPot: delays.length,
+                },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+    });
+
+    it('doubles the reload delay up to the cap on consecutive empty bodies', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        const delays = [
+            EMPTY_BODY_RELOAD_BASE_DELAY_MS,
+            500,
+            1000,
+            EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+            EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+        ];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`backoff:${String(index)}`, false);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs - 1);
+            expect(mockActivateBridge).toHaveBeenCalledTimes(index + 1);
+            await vi.advanceTimersByTimeAsync(1);
+            await acceptActivation();
+            expect(mockActivateBridge).toHaveBeenCalledTimes(index + 2);
+        }
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
+    });
+
+    it('drops a pending empty-body reload when the route cancels', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        dispatchEmptyBody('cancelled:1', false);
+        await acceptActivation();
+        PlayerCaptionCapture.cancel('route-change');
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({ status: 'cancelled' });
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+    });
+
+    it('coalesces empty bodies that arrive while a reload is pending', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        dispatchEmptyBody('pending:1', false);
+        dispatchEmptyBody('pending:2', false);
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_BASE_DELAY_MS);
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+
+        // The coalesced body scheduled nothing of its own.
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS);
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
+    });
+
+    it('treats an empty body with a malformed url shape as pot-bearing', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 20_000,
+        });
+        await acceptActivation();
+        for (let index = 0; index < 4; index += 1) {
+            dispatchPageDiagnostic(`malformed:${String(index)}`, 'window', {
+                urlShape: { pathname: '/api/timedtext' },
+            });
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS);
+            await acceptActivation();
+        }
+        expect(mockActivateBridge).toHaveBeenCalledTimes(
+            MAX_POT_EMPTY_BODY_RELOADS + 1,
+        );
+
+        await vi.advanceTimersByTimeAsync(20_000);
+        await finishCleanup();
+        await run;
+
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                {
+                    reason: 'capture-timeout',
+                    stage: 'waiting-capture',
+                    attempts: MAX_POT_EMPTY_BODY_RELOADS + 1,
+                    emptyPot: 4,
+                },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
     });
 
     it('relays safe page diagnostics to the content log channel', async () => {
@@ -595,11 +918,7 @@ describe('PlayerCaptionCapture', () => {
         mockActivateBridge.mockImplementation(() => {
             activationCalls += 1;
             if (activationCalls === 1) {
-                return Promise.resolve({
-                    ok: false,
-                    reason: 'player-not-ready',
-                    error: 'Watch player is not ready for caption capture',
-                });
+                return Promise.resolve(PLAYER_NOT_READY_RESULT);
             }
             return Promise.resolve({ ok: true });
         });
@@ -607,11 +926,270 @@ describe('PlayerCaptionCapture', () => {
             captureTimeoutMs: 300,
         });
         await flushMicrotasks();
-        await vi.advanceTimersByTimeAsync(250);
-        await vi.advanceTimersByTimeAsync(100);
+        await vi.advanceTimersByTimeAsync(ACTIVATION_RETRY_DELAY_MS);
+        // The capture budget only starts at the accepted retry.
+        await vi.advanceTimersByTimeAsync(400);
         await finishCleanup();
         await run;
         expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+    });
+
+    it('keeps the capture budget unspent while a visible player is not ready', async () => {
+        const notReadyAttempts = 12;
+        let activationCalls = 0;
+        mockActivateBridge.mockImplementation(() => {
+            activationCalls += 1;
+            if (activationCalls <= notReadyAttempts) {
+                return Promise.resolve(PLAYER_NOT_READY_RESULT);
+            }
+            return Promise.resolve({ ok: true });
+        });
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        // Three seconds of retries — three times the capture timeout that the
+        // old flow armed before activation was ever accepted.
+        await vi.advanceTimersByTimeAsync(
+            notReadyAttempts * ACTIVATION_RETRY_DELAY_MS,
+        );
+        expect(activationCalls).toBe(notReadyAttempts + 1);
+
+        dispatchTimedtextCapture('abc', CAPTION_JSON);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({ status: 'ready' });
+    });
+
+    it('measures the capture timeout from activation acceptance', async () => {
+        const notReadyAttempts = 4;
+        let activationCalls = 0;
+        mockActivateBridge.mockImplementation(() => {
+            activationCalls += 1;
+            if (activationCalls <= notReadyAttempts) {
+                return Promise.resolve(PLAYER_NOT_READY_RESULT);
+            }
+            return Promise.resolve({ ok: true });
+        });
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        const settled = vi.fn();
+        void run.then(settled);
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(
+            notReadyAttempts * ACTIVATION_RETRY_DELAY_MS,
+        );
+        expect(activationCalls).toBe(notReadyAttempts + 1);
+
+        await vi.advanceTimersByTimeAsync(900);
+        expect(settled).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(200);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({
+            status: 'failed',
+            failure: { reason: 'capture-timeout' },
+        });
+    });
+
+    it('fails with player-not-ready once the visible activation budget is spent', async () => {
+        mockActivateBridge.mockResolvedValue(PLAYER_NOT_READY_RESULT);
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        const settled = vi.fn();
+        void run.then(settled);
+        await acceptActivation();
+        // The budget is wall-clock visible time, so the deadline lands on the
+        // first attempt past 120 s and not one retry earlier.
+        await vi.advanceTimersByTimeAsync(
+            ACTIVATION_VISIBLE_BUDGET_MS - ACTIVATION_RETRY_DELAY_MS,
+        );
+        expect(settled).not.toHaveBeenCalled();
+
+        await vi.advanceTimersByTimeAsync(ACTIVATION_RETRY_DELAY_MS);
+        await finishCleanup();
+
+        await expect(run).resolves.toEqual({
+            status: 'failed',
+            failure: {
+                reason: 'player-not-ready',
+                message: 'Watch player never became ready for caption capture',
+                diagnostics: { stage: 'activating' },
+            },
+        });
+        const failedFields: unknown = debugLogCalls(
+            DEBUG_LOG_EVENT.CaptureFailed,
+        )[0]?.[1];
+        const attempts: unknown =
+            failedFields !== null && typeof failedFields === 'object'
+                ? Reflect.get(failedFields, 'attempts')
+                : undefined;
+        expect(typeof attempts === 'number' ? attempts : 0).toBeGreaterThan(0);
+    });
+
+    it('charges slow activation round trips to the visible budget', async () => {
+        // Each Activate takes as long as the gap that follows it, so a
+        // wall-clock budget buys half the attempts a retry count would.
+        mockActivateBridge.mockImplementation(
+            () =>
+                new Promise((resolve) => {
+                    globalThis.setTimeout(() => {
+                        resolve(PLAYER_NOT_READY_RESULT);
+                    }, ACTIVATION_RETRY_DELAY_MS);
+                }),
+        );
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(
+            ACTIVATION_VISIBLE_BUDGET_MS + ACTIVATION_RETRY_DELAY_MS,
+        );
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({
+            status: 'failed',
+            failure: { reason: 'player-not-ready' },
+        });
+        expect(mockActivateBridge.mock.calls.length).toBeLessThan(
+            ACTIVATION_VISIBLE_BUDGET_MS / ACTIVATION_RETRY_DELAY_MS,
+        );
+    });
+
+    it('defers activation while the tab is hidden and resumes when it is shown', async () => {
+        setVisibilityState('hidden');
+        mockActivateBridge.mockImplementation(() =>
+            Promise.resolve(
+                document.visibilityState === 'hidden'
+                    ? PLAYER_NOT_READY_RESULT
+                    : { ok: true },
+            ),
+        );
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        const settled = vi.fn();
+        void run.then(settled);
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+
+        await vi.advanceTimersByTimeAsync(30_000);
+
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        // Thirty times the capture timeout: a hidden tab parks the capture
+        // instead of letting any deadline expire under it.
+        expect(settled).not.toHaveBeenCalled();
+        expect(countContentLogStage('activation-deferred')).toBe(1);
+        expect(captureStageNames()).toContain('activation-deferred');
+
+        setVisibilityState('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+        await acceptActivation();
+
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+        expect(captureStageNames()).toContain('activation-resumed');
+
+        dispatchTimedtextCapture('abc', CAPTION_JSON);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({ status: 'ready' });
+    });
+
+    it('ignores forged empty bodies while activation is parked on a hidden tab', async () => {
+        setVisibilityState('hidden');
+        mockActivateBridge.mockImplementation(() =>
+            Promise.resolve(
+                document.visibilityState === 'hidden'
+                    ? PLAYER_NOT_READY_RESULT
+                    : { ok: true },
+            ),
+        );
+        const addListener = vi.spyOn(document, 'addEventListener');
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        // Positive precondition: activation is genuinely parked on the
+        // hidden tab (the capture timeout stays unarmed), not merely slow —
+        // otherwise the negative assertions below could pass for the wrong
+        // reason, e.g. because the helper flushed too few microtask ticks.
+        expect(countContentLogStage('activation-deferred')).toBe(1);
+        const countVisibilityListeners = (): number =>
+            addListener.mock.calls.filter(
+                (call) => call[0] === 'visibilitychange',
+            ).length;
+        const parkedListeners = countVisibilityListeners();
+
+        // The page can forge these: without an accepted activation they must
+        // buy no reload, no detached Activate, and no extra parked waiter.
+        for (let index = 0; index < 5; index += 1) {
+            dispatchEmptyBody(`forged:${String(index)}`, false);
+        }
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS * 4);
+        await acceptActivation();
+
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        expect(countContentLogStage('reload-scheduled')).toBe(0);
+        expect(captureStageNames()).not.toContain('reload-scheduled');
+        expect(countVisibilityListeners()).toBe(parkedListeners);
+
+        // Resuming after the forged storm proves the parked wait survived it
+        // intact: activation retries and a genuine capture still completes.
+        setVisibilityState('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+        await acceptActivation();
+
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+        dispatchTimedtextCapture('abc', CAPTION_JSON);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({ status: 'ready' });
+    });
+
+    it('cancels a capture parked on tab visibility and drops the listener', async () => {
+        setVisibilityState('hidden');
+        mockActivateBridge.mockResolvedValue(PLAYER_NOT_READY_RESULT);
+        const controller = new AbortController();
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: controller.signal,
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        expect(countContentLogStage('activation-deferred')).toBe(1);
+        const removeListener = vi.spyOn(document, 'removeEventListener');
+
+        controller.abort();
+        await finishCleanup();
+
+        await expect(run).resolves.toEqual({ status: 'cancelled' });
+        expect(removeListener).toHaveBeenCalledWith(
+            'visibilitychange',
+            expect.any(Function),
+        );
+
+        setVisibilityState('visible');
+        document.dispatchEvent(new Event('visibilitychange'));
+        await acceptActivation();
+
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
     });
 
     it('logs safe activation details from the page bridge result', async () => {
@@ -977,6 +1555,43 @@ describe('PlayerCaptionCapture', () => {
         });
     });
 
+    it('cancels a replaced waiter outright so its stale timeout cannot settle the new one', async () => {
+        // No cancellation here: the first waiter's activation is accepted
+        // (its capture timeout gets armed) and then a second capture starts
+        // for the same video without anyone cancelling the first. Every real
+        // caller cancels first, but `waitForCapture` must not depend on that:
+        // a left-behind timer belonging to the replaced waiter must not be
+        // able to fire later and settle the new waiter with `capture-timeout`.
+        const firstRun = PlayerCaptionCapture.capture({
+            videoId: 'replaced-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 1_000,
+        });
+        await acceptActivation();
+
+        const secondRun = PlayerCaptionCapture.capture({
+            videoId: 'replaced-video',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 5_000,
+        });
+        await acceptActivation();
+
+        // The replaced waiter settles immediately instead of hanging.
+        await expect(firstRun).resolves.toEqual({ status: 'cancelled' });
+
+        // Advancing past the first waiter's 1s budget must not settle the
+        // second waiter, whose own budget is 5s.
+        await vi.advanceTimersByTimeAsync(1_000);
+        const secondSettled = vi.fn();
+        void secondRun.then(secondSettled);
+        await flushMicrotasks();
+        expect(secondSettled).not.toHaveBeenCalled();
+
+        dispatchTimedtextCapture('replaced-video', CAPTION_JSON);
+        await finishCleanup();
+        await expect(secondRun).resolves.toMatchObject({ status: 'ready' });
+    });
+
     it('returns cancelled while bridge confirmation remains pending', async () => {
         let finishProbe: ((value: { ok: true }) => void) | undefined;
         mockProbeBridge.mockImplementation(() => {
@@ -1153,7 +1768,11 @@ describe('PlayerCaptionCapture', () => {
         expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
             [
                 DEBUG_LOG_EVENT.CaptureFailed,
-                { reason: 'capture-timeout', stage: 'waiting-capture' },
+                {
+                    reason: 'capture-timeout',
+                    stage: 'waiting-capture',
+                    attempts: 1,
+                },
                 { video: 'dQw4w9WgXcQ' },
             ],
         ]);
@@ -1162,7 +1781,7 @@ describe('PlayerCaptionCapture', () => {
         );
     });
 
-    it('records one activation failure after retries are exhausted', async () => {
+    it('records one activation failure after the visible readiness budget', async () => {
         mockActivateBridge.mockResolvedValue({
             ok: false,
             reason: 'player-not-ready',
@@ -1172,9 +1791,9 @@ describe('PlayerCaptionCapture', () => {
             captureTimeoutMs: 500,
         });
         await acceptActivation();
-        await vi.advanceTimersByTimeAsync(250);
-        await acceptActivation();
-        await vi.advanceTimersByTimeAsync(250);
+        await vi.advanceTimersByTimeAsync(
+            ACTIVATION_VISIBLE_BUDGET_MS + ACTIVATION_RETRY_DELAY_MS,
+        );
         await finishCleanup();
         await run;
 
@@ -1188,7 +1807,11 @@ describe('PlayerCaptionCapture', () => {
         expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
             [
                 DEBUG_LOG_EVENT.CaptureFailed,
-                { reason: 'player-not-ready', stage: 'activating' },
+                {
+                    reason: 'player-not-ready',
+                    stage: 'activating',
+                    attempts: ANY_NUMBER,
+                },
                 { video: 'dQw4w9WgXcQ' },
             ],
         ]);
@@ -1300,5 +1923,15 @@ describe('PlayerCaptionCapture', () => {
         PlayerCaptionCapture.cancel('test');
         await finishCleanup();
         await run;
+    });
+
+    it('keeps the default capture timeout well inside the MAIN bridge lease', () => {
+        // The MAIN lease must outlive the capture window: if the capture
+        // budget could reach or exceed the lease, the bridge could return to
+        // dormant pass-through mode mid-capture and drop the very response
+        // the wait is still expecting.
+        expect(DEFAULT_CAPTURE_TIMEOUT_MS).toBeLessThan(
+            CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS,
+        );
     });
 });

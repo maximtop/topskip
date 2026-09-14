@@ -68,7 +68,10 @@ export class CaptionPageBridgeClient {
     }
 
     /**
-     * Starts one lease-bounded page capture generation.
+     * Activates page-world caption capture: the first call of a session
+     * starts a lease-bounded capture generation, and later calls (a
+     * reactivation after an empty-body reload, say) reuse that generation
+     * and only refresh the lease.
      *
      * @param signal Optional owner cancellation.
      * @returns Opaque bridge result or a bounded bridge-unavailable failure.

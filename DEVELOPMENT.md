@@ -619,6 +619,38 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   `document_start`; this does not mean capture is active.
 - **`activation-attempt`** / **`activation-accepted`**: TopSkip asked the player
   to load captions.
+- **`activation-deferred`** (`reason=hidden`) / **`activation-resumed`**: the
+  player answered `player-not-ready` in a background tab. YouTube loads no
+  media while the tab is hidden, so TopSkip stops asking and parks on
+  `visibilitychange`; the pair brackets the time the user spent away. The park
+  has no deadline of its own: while the tab stays hidden the capture waits
+  indefinitely and emits **no `capture-failed`** — only the session's own end
+  (route change, SPA navigation, tab close, or the capture timeout once
+  activation was accepted) finishes it. Expect `activation-deferred` with no
+  follow-up line for as long as the user is away.
+  Activation retries a visible player every 250 ms for up to 120 s of
+  wall-clock *visible* time (**`ACTIVATION_VISIBLE_BUDGET_MS`**, long enough to
+  sit through a pre-roll ad). The budget is a deadline, not a retry count: the
+  Activate round trips count against it as well as the gaps between them, so a
+  slow player spends it in fewer attempts. Hidden time never counts.
+- **`capture-failed`**: the single failure line. Its **`attempts`** field
+  counts the Activate commands sent in the session, which separates "the
+  player never became ready" (`reason=player-not-ready`, many attempts) from
+  "the player accepted and then sent nothing" (`reason=capture-timeout`).
+  The capture timeout starts when activation is **accepted**, not when the
+  capture begins, so waiting for the player can no longer consume it. On
+  `reason=capture-timeout` the line also carries **`emptyNoPot`** and
+  **`emptyPot`** — the session's empty timedtext bodies split by `pot`
+  presence, omitted when zero.
+- **`reload-scheduled`**: a caption reload was queued after an empty body.
+  **`delayMs`** is the backoff gap it waits out, **`hasPot`** says which kind
+  of empty body triggered it, and **`budgetLeft`** is the pot-bearing reload
+  budget left afterwards.
+- **`reload-skipped`** (`reason=budget`): a pot-bearing empty body arrived
+  after **`MAX_POT_EMPTY_BODY_RELOADS`** was already spent, so no reload was
+  queued. One line per session, however many further empties arrive; it is
+  what separates "TopSkip gave up on reloading" from "no empty body ever
+  arrived" when the capture then times out.
 - **`page:activation-finished`**: page bridge recorded caption state, hide style,
   track count, and activation actions. When captions were off, expect
   **`setOption:track:<rule>`** if YouTube exposes a tracklist; otherwise
@@ -633,7 +665,22 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   request; metadata includes transport, status, body length, language, and
   sanitized URL shape only.
 - **`page:timedtext-empty-body`** or **`page:timedtext-non-json`**: YouTube
-  returned a response that the parser should not use.
+  returned a response that the parser should not use. An empty body is
+  answered with a reload, and the **`hasPot`** field decides its cost.
+  YouTube returns 200 with no payload for a timedtext request that carries no
+  `pot` (proof-of-origin) token, and the player fires its first request before
+  minting one — so `hasPot=false` is "too early" and reloads for free, while
+  `hasPot=true` really is "nothing to send" and spends one of
+  **`MAX_POT_EMPTY_BODY_RELOADS`** (3). A malformed URL shape counts as
+  pot-bearing. Reloads are spaced by a doubling backoff from
+  **`EMPTY_BODY_RELOAD_BASE_DELAY_MS`** (250 ms) to
+  **`EMPTY_BODY_RELOAD_MAX_DELAY_MS`** (2 s), and only one is ever pending.
+  A reload is scheduled only once activation has been **accepted** — which is
+  also when the capture timeout is armed — so the timeout bounds the whole
+  reload loop. An empty body arriving before that (while activation is still
+  parked on a hidden tab, say) cannot be genuine, because the MAIN bridge
+  forwards timedtext only inside an active capture generation; it is ignored
+  rather than answered with an untimed reload.
 - **`page:timedtext-forwarded`** / **`capture-event-received`** /
   **`capture-parsed`**: non-empty caption JSON reached content and parsed.
 - **`cleanup-start`** / **`page:cleanup-finished`** /
@@ -658,7 +705,9 @@ The production path no longer uses direct timedtext probing, direct InnerTube fa
 **video id** changes, **`WatchCaptions`** schedules
 **`PlayerCaptionCapture`**. The capture flow probes the static bridge, waits
 through bounded activation retries if the player appears unstable or an ad is
-visible, then cleans up temporary caption state after success or timeout.
+visible — parking on `visibilitychange` instead of retrying while the tab is
+hidden — arms the capture timeout only once the player accepted activation,
+then cleans up temporary caption state after success or timeout.
 
 1. `make build`, load **`extension/dist/`** unpacked.
 2. Open **`chrome://extensions`**, find TopSkip, click **Service worker** (this DevTools window is where **chunked transcript** **`[TopSkip captions]`** logs from the background appear).

@@ -88,6 +88,109 @@ describe('CaptureDiagnostics.toDebugLogEvent', () => {
         expect(JSON.stringify(final)).not.toContain('SENTINEL');
     });
 
+    it('maps the hidden-tab activation pause and its resume to capture-stage', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('activation-deferred', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'hidden',
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: { stage: 'activation-deferred', reason: 'hidden' },
+        });
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('activation-resumed', {
+                videoId: 'dQw4w9WgXcQ',
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: { stage: 'activation-resumed' },
+        });
+    });
+
+    it('keeps the activation attempt count on capture-failed', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('capture-failed', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'player-not-ready',
+                stage: 'activating',
+                error: SENTINEL_ERROR,
+                attempts: 481,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureFailed,
+            fields: {
+                reason: 'player-not-ready',
+                stage: 'activating',
+                attempts: 481,
+            },
+        });
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('capture-failed', {
+                reason: 'capture-timeout',
+                stage: 'waiting-capture',
+                attempts: Number.NaN,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureFailed,
+            fields: { reason: 'capture-timeout', stage: 'waiting-capture' },
+        });
+    });
+
+    it('maps reload-scheduled to capture-stage with the backoff and budget', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('reload-scheduled', {
+                videoId: 'dQw4w9WgXcQ',
+                delayMs: 500,
+                hasPot: false,
+                budgetLeft: 3,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: {
+                stage: 'reload-scheduled',
+                delayMs: 500,
+                hasPot: false,
+                budgetLeft: 3,
+            },
+        });
+    });
+
+    it('maps reload-skipped to capture-stage with the exhausted-budget reason', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('reload-skipped', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'budget',
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: { stage: 'reload-skipped', reason: 'budget' },
+        });
+    });
+
+    it('keeps the empty-body split by pot presence on capture-failed', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('capture-failed', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'capture-timeout',
+                stage: 'waiting-capture',
+                error: SENTINEL_ERROR,
+                attempts: 4,
+                emptyNoPot: 2,
+                emptyPot: 4,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureFailed,
+            fields: {
+                reason: 'capture-timeout',
+                stage: 'waiting-capture',
+                attempts: 4,
+                emptyNoPot: 2,
+                emptyPot: 4,
+            },
+        });
+    });
+
     it('maps capture-event-received to capture-stage with the URL shape split', () => {
         expect(
             CaptureDiagnostics.toDebugLogEvent('capture-event-received', {

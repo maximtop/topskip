@@ -604,15 +604,25 @@ const installCaptionPageBridge = (): void => {
             );
         }
 
-        const isReactivation = activeCaptureGeneration !== null;
-        if (!isReactivation) {
+        // A reactivation keeps the generation it found. The wrappers stamp a
+        // request with the generation current when it started and drop any
+        // body whose generation has moved on, so bumping here would silently
+        // discard a timedtext response the player fired on its own between an
+        // empty body and the reload that follows it — the very response the
+        // reload is waiting for, now that reloads wait out a backoff. Only a
+        // fresh activation (Deactivate or teardown nulled the generation)
+        // takes a new number, which is what keeps a previous session's
+        // responses out.
+        const previousGeneration = activeCaptureGeneration;
+        const isReactivation = previousGeneration !== null;
+        if (previousGeneration === null) {
             restoreSnapshot = Object.freeze({
                 wasOn: button?.getAttribute('aria-pressed') === 'true',
             });
             userIntervened = false;
+            nextCaptureGeneration += 1;
         }
-        nextCaptureGeneration += 1;
-        const generation = nextCaptureGeneration;
+        const generation = previousGeneration ?? nextCaptureGeneration;
         activeCaptureGeneration = generation;
         refreshActiveLease();
 

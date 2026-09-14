@@ -198,6 +198,11 @@ const CAPTION_CAPTURE_FIELDS = [
     'hasPot',
     'segments',
     'reason',
+    'attempts',
+    'emptyNoPot',
+    'emptyPot',
+    'delayMs',
+    'budgetLeft',
 ] as const;
 
 /**

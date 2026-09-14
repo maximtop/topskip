@@ -68,10 +68,28 @@ const HIDDEN_VISIBILITY_STATE = 'hidden';
  */
 const HIDDEN_DEFERRAL_REASON = 'hidden';
 
-const MAX_EMPTY_BODY_RELOADS = 3;
+/**
+ * Reloads spent on empty bodies that *did* carry a `pot` token. Those are the
+ * only empties that mean "YouTube had everything it needed and still returned
+ * nothing", so they are the ones worth a bounded budget. Empties without a
+ * token are premature requests and never consume it.
+ */
+export const MAX_POT_EMPTY_BODY_RELOADS = 3;
+
+/**
+ * First gap between an empty body and the reload it triggers. YouTube mints
+ * the `pot` token roughly 150 ms after the player's first timedtext request,
+ * so reloading immediately only produces another tokenless miss.
+ */
+export const EMPTY_BODY_RELOAD_BASE_DELAY_MS = 250;
+
+/**
+ * Ceiling for the doubling reload gap; the capture timeout bounds the total.
+ */
+export const EMPTY_BODY_RELOAD_MAX_DELAY_MS = 2_000;
+
 const EMPTY_TIMEDTEXT_BODY_STAGE =
     CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody;
-let emptyBodyReloadCount = 0;
 const PAGE_SOURCE = CAPTION_PAGE_BRIDGE_SOURCE.Main;
 const PAGE_EVENT = CAPTION_PAGE_BRIDGE_EVENT.PageMessage;
 const MAX_RECENT_PAGE_BRIDGE_MESSAGES = 256;
@@ -193,6 +211,39 @@ export class PlayerCaptionCapture {
      * the failures that player readiness explains.
      */
     private static activationAttempts = 0;
+
+    /**
+     * Empty timedtext bodies seen in the current session. Every empty body a
+     * session sees is consecutive by definition — any non-empty body settles
+     * the capture — so this doubles as the backoff exponent.
+     */
+    private static emptyBodyCount = 0;
+
+    /**
+     * Empty bodies whose request carried no `pot` token, reported on the
+     * timeout line as `emptyNoPot`.
+     */
+    private static emptyNoPotCount = 0;
+
+    /**
+     * Empty bodies whose request already carried a `pot` token, reported on
+     * the timeout line as `emptyPot`.
+     */
+    private static emptyPotCount = 0;
+
+    /**
+     * Reloads already spent from {@link MAX_POT_EMPTY_BODY_RELOADS}.
+     */
+    private static potEmptyBodyReloads = 0;
+
+    /**
+     * Pending backoff timer for the next reload, kept so a settled or replaced
+     * session cannot leave one behind. At most one exists at a time: an empty
+     * body arriving while it is pending is counted but schedules nothing.
+     */
+    private static emptyBodyReloadTimeoutId:
+        | ReturnType<typeof setTimeout>
+        | null = null;
 
     /**
      * Releases activation waiters parked on tab visibility once the wait they
@@ -342,6 +393,7 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.cleanupPromise = null;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
         PlayerCaptionCapture.activationAttempts = 0;
+        PlayerCaptionCapture.resetEmptyBodyReloadState();
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
         PlayerCaptionCapture.recentPageBridgeMessageOrder.length = 0;
@@ -367,6 +419,7 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.activeWait = null;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
         PlayerCaptionCapture.activationAttempts = 0;
+        PlayerCaptionCapture.resetEmptyBodyReloadState();
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.removeMessageListeners();
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
@@ -564,7 +617,7 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.activeSession = session;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
         PlayerCaptionCapture.activationAttempts = 0;
-        emptyBodyReloadCount = 0;
+        PlayerCaptionCapture.resetEmptyBodyReloadState();
         const waitForCapture = PlayerCaptionCapture.waitForCapture(
             session,
             input.signal,
@@ -1230,7 +1283,10 @@ export class PlayerCaptionCapture {
                     message: 'Caption capture timed out',
                     diagnostics: { stage: 'waiting-capture' },
                 },
-                { attempts: PlayerCaptionCapture.activationAttempts },
+                {
+                    attempts: PlayerCaptionCapture.activationAttempts,
+                    ...PlayerCaptionCapture.getEmptyBodyLogFields(),
+                },
             );
         }, session.captureTimeoutMs);
     }
@@ -1241,6 +1297,11 @@ export class PlayerCaptionCapture {
      * @param result Capture result to return to the owning route.
      */
     private static resolveActiveWait(result: CaptionCaptureResult): void {
+        // Unconditional, and before the waiter check: every path that settles
+        // or abandons a wait — capture, parse failure, timeout, `cancel`,
+        // `dispose`, `resetForTest` — comes through here, so no empty-body
+        // reload can outlive the wait it was scheduled for.
+        PlayerCaptionCapture.clearPendingEmptyBodyReload();
         const activeWait = PlayerCaptionCapture.activeWait;
         if (activeWait === null) {
             return;
@@ -1512,6 +1573,22 @@ export class PlayerCaptionCapture {
      * body. That empty fetch is premature, not evidence that captions are
      * missing; a later tracklist or reload can still produce cues.
      *
+     * The `pot` (proof-of-origin) token decides how much the empty body is
+     * worth. YouTube answers a tokenless request with 200 and no payload, and
+     * the player fires its first request before the token exists, so a burst
+     * of `hasPot=false` empties says only "too early": those schedule a reload
+     * without consuming the budget. An empty body that *did* carry a token is
+     * a real "nothing to send" answer and spends one of
+     * {@link MAX_POT_EMPTY_BODY_RELOADS}. A malformed or missing URL shape is
+     * treated as token-bearing, so a forged diagnostic cannot buy unlimited
+     * reloads.
+     *
+     * Reloads are spaced by a doubling backoff and only one may be pending: an
+     * empty body arriving inside that window still counts toward the reported
+     * totals and the backoff — a burst is exactly the storm being backed off
+     * from — but schedules nothing and spends no budget. The capture timeout,
+     * armed once activation is accepted, bounds the whole loop.
+     *
      * @param data Untrusted page bridge diagnostic message.
      */
     private static reloadAfterEmptyTimedtext(data: object): void {
@@ -1524,14 +1601,105 @@ export class PlayerCaptionCapture {
         if (session === null || activeWait === null) {
             return;
         }
-        if (emptyBodyReloadCount >= MAX_EMPTY_BODY_RELOADS) {
+        const urlShape: unknown = Reflect.get(data, 'urlShape');
+        const hasPot =
+            !CaptureDiagnostics.isUrlShape(urlShape) || urlShape.hasPot;
+        PlayerCaptionCapture.emptyBodyCount += 1;
+        if (hasPot) {
+            PlayerCaptionCapture.emptyPotCount += 1;
+        } else {
+            PlayerCaptionCapture.emptyNoPotCount += 1;
+        }
+        if (PlayerCaptionCapture.emptyBodyReloadTimeoutId !== null) {
             return;
         }
-        emptyBodyReloadCount += 1;
-        void PlayerCaptionCapture.activateCaptions(
-            session,
-            activeWait.signal,
+        const budgetLeft =
+            MAX_POT_EMPTY_BODY_RELOADS -
+            PlayerCaptionCapture.potEmptyBodyReloads;
+        if (hasPot) {
+            if (budgetLeft <= 0) {
+                return;
+            }
+            PlayerCaptionCapture.potEmptyBodyReloads += 1;
+        }
+        const delayMs = PlayerCaptionCapture.getEmptyBodyReloadDelayMs();
+        PlayerCaptionCapture.log('reload-scheduled', {
+            videoId: session.videoId,
+            delayMs,
+            hasPot,
+            budgetLeft: hasPot ? budgetLeft - 1 : budgetLeft,
+        });
+        PlayerCaptionCapture.emptyBodyReloadTimeoutId = globalThis.setTimeout(
+            () => {
+                PlayerCaptionCapture.emptyBodyReloadTimeoutId = null;
+                if (
+                    PlayerCaptionCapture.activeSession !== session ||
+                    PlayerCaptionCapture.activeWait !== activeWait
+                ) {
+                    return;
+                }
+                void PlayerCaptionCapture.activateCaptions(
+                    session,
+                    activeWait.signal,
+                ).catch(() => undefined);
+            },
+            delayMs,
         );
+    }
+
+    /**
+     * Widens the gap before each reload: the base delay doubles per empty body
+     * seen in the session, capped at {@link EMPTY_BODY_RELOAD_MAX_DELAY_MS}.
+     *
+     * @returns Delay in milliseconds for the reload being scheduled.
+     */
+    private static getEmptyBodyReloadDelayMs(): number {
+        const growth = 2 ** (PlayerCaptionCapture.emptyBodyCount - 1);
+        return Math.min(
+            EMPTY_BODY_RELOAD_BASE_DELAY_MS * growth,
+            EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+        );
+    }
+
+    /**
+     * Clears the per-session empty-body counters and any pending reload as a
+     * new capture takes over.
+     */
+    private static resetEmptyBodyReloadState(): void {
+        PlayerCaptionCapture.clearPendingEmptyBodyReload();
+        PlayerCaptionCapture.emptyBodyCount = 0;
+        PlayerCaptionCapture.emptyNoPotCount = 0;
+        PlayerCaptionCapture.emptyPotCount = 0;
+        PlayerCaptionCapture.potEmptyBodyReloads = 0;
+    }
+
+    /**
+     * Drops a reload the settled or replaced session will never want.
+     */
+    private static clearPendingEmptyBodyReload(): void {
+        if (PlayerCaptionCapture.emptyBodyReloadTimeoutId === null) {
+            return;
+        }
+        globalThis.clearTimeout(PlayerCaptionCapture.emptyBodyReloadTimeoutId);
+        PlayerCaptionCapture.emptyBodyReloadTimeoutId = null;
+    }
+
+    /**
+     * Reports how the session's empty bodies split by `pot` presence, so one
+     * timeout line separates "the player kept asking too early" from "YouTube
+     * had the token and still sent nothing". Zero counts are omitted.
+     *
+     * @returns Allow-listed log fields for the `capture-failed` line.
+     */
+    private static getEmptyBodyLogFields(): Record<string, number> {
+        const fields: Record<string, number> = {};
+        if (PlayerCaptionCapture.emptyNoPotCount > 0) {
+            fields.emptyNoPot = PlayerCaptionCapture.emptyNoPotCount;
+        }
+        if (PlayerCaptionCapture.emptyPotCount > 0) {
+            fields.emptyPot = PlayerCaptionCapture.emptyPotCount;
+        }
+        return fields;
     }
 
     /**

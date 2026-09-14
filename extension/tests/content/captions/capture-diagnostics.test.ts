@@ -137,6 +137,48 @@ describe('CaptureDiagnostics.toDebugLogEvent', () => {
         });
     });
 
+    it('maps reload-scheduled to capture-stage with the backoff and budget', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('reload-scheduled', {
+                videoId: 'dQw4w9WgXcQ',
+                delayMs: 500,
+                hasPot: false,
+                budgetLeft: 3,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: {
+                stage: 'reload-scheduled',
+                delayMs: 500,
+                hasPot: false,
+                budgetLeft: 3,
+            },
+        });
+    });
+
+    it('keeps the empty-body split by pot presence on capture-failed', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('capture-failed', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'capture-timeout',
+                stage: 'waiting-capture',
+                error: SENTINEL_ERROR,
+                attempts: 4,
+                emptyNoPot: 2,
+                emptyPot: 4,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureFailed,
+            fields: {
+                reason: 'capture-timeout',
+                stage: 'waiting-capture',
+                attempts: 4,
+                emptyNoPot: 2,
+                emptyPot: 4,
+            },
+        });
+    });
+
     it('maps capture-event-received to capture-stage with the URL shape split', () => {
         expect(
             CaptureDiagnostics.toDebugLogEvent('capture-event-received', {

@@ -138,6 +138,17 @@ describe('isAllowedDebugLogField', () => {
         expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.HttpError, 'url')).toBe(false);
         expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.CaptureFailed, 'attempts')).toBe(true);
         expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.SkipApplied, 'attempts')).toBe(false);
+        expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.CaptureFailed, 'emptyNoPot')).toBe(
+            true,
+        );
+        expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.CaptureFailed, 'emptyPot')).toBe(
+            true,
+        );
+        expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.CaptureStage, 'delayMs')).toBe(true);
+        expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.CaptureStage, 'budgetLeft')).toBe(
+            true,
+        );
+        expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.HttpError, 'emptyPot')).toBe(false);
     });
 });
 

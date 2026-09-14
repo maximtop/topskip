@@ -631,7 +631,14 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   player never became ready" (`reason=player-not-ready`, many attempts) from
   "the player accepted and then sent nothing" (`reason=capture-timeout`).
   The capture timeout starts when activation is **accepted**, not when the
-  capture begins, so waiting for the player can no longer consume it.
+  capture begins, so waiting for the player can no longer consume it. On
+  `reason=capture-timeout` the line also carries **`emptyNoPot`** and
+  **`emptyPot`** — the session's empty timedtext bodies split by `pot`
+  presence, omitted when zero.
+- **`reload-scheduled`**: a caption reload was queued after an empty body.
+  **`delayMs`** is the backoff gap it waits out, **`hasPot`** says which kind
+  of empty body triggered it, and **`budgetLeft`** is the pot-bearing reload
+  budget left afterwards.
 - **`page:activation-finished`**: page bridge recorded caption state, hide style,
   track count, and activation actions. When captions were off, expect
   **`setOption:track:<rule>`** if YouTube exposes a tracklist; otherwise
@@ -646,7 +653,17 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   request; metadata includes transport, status, body length, language, and
   sanitized URL shape only.
 - **`page:timedtext-empty-body`** or **`page:timedtext-non-json`**: YouTube
-  returned a response that the parser should not use.
+  returned a response that the parser should not use. An empty body is
+  answered with a reload, and the **`hasPot`** field decides its cost.
+  YouTube returns 200 with no payload for a timedtext request that carries no
+  `pot` (proof-of-origin) token, and the player fires its first request before
+  minting one — so `hasPot=false` is "too early" and reloads for free, while
+  `hasPot=true` really is "nothing to send" and spends one of
+  **`MAX_POT_EMPTY_BODY_RELOADS`** (3). A malformed URL shape counts as
+  pot-bearing. Reloads are spaced by a doubling backoff from
+  **`EMPTY_BODY_RELOAD_BASE_DELAY_MS`** (250 ms) to
+  **`EMPTY_BODY_RELOAD_MAX_DELAY_MS`** (2 s), only one is ever pending, and
+  the capture timeout bounds the whole loop.
 - **`page:timedtext-forwarded`** / **`capture-event-received`** /
   **`capture-parsed`**: non-empty caption JSON reached content and parsed.
 - **`cleanup-start`** / **`page:cleanup-finished`** /

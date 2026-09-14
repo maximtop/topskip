@@ -67,6 +67,9 @@ vi.mock('@/content/content-log', () => ({
 
 import {
     ACTIVATION_VISIBLE_BUDGET_MS,
+    EMPTY_BODY_RELOAD_BASE_DELAY_MS,
+    EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+    MAX_POT_EMPTY_BODY_RELOADS,
     PlayerCaptionCapture,
 } from '@/content/captions/player-caption-capture';
 import { WatchCaptions } from '@/content/watch-captions';
@@ -245,6 +248,23 @@ function dispatchPageDiagnostic(
             data,
         }),
     );
+}
+
+/**
+ * Dispatches one empty-body diagnostic whose sanitized URL shape reports
+ * whether the player had already minted the `pot` token.
+ */
+function dispatchEmptyBody(messageId: string, hasPot: boolean): void {
+    dispatchPageDiagnostic(messageId, 'window', {
+        urlShape: {
+            pathname: '/api/timedtext',
+            paramNames: hasPot
+                ? ['fmt', 'lang', 'pot', 'v']
+                : ['fmt', 'lang', 'v'],
+            fmt: 'json3',
+            hasPot,
+        },
+    });
 }
 
 function countRuntimeMessages(type: string): number {
@@ -495,6 +515,10 @@ describe('PlayerCaptionCapture', () => {
         expect(mockActivateBridge).toHaveBeenCalledTimes(1);
         dispatchPageDiagnostic('empty:1');
         await acceptActivation();
+        // The reload waits out the backoff instead of racing the player.
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_BASE_DELAY_MS);
+        await acceptActivation();
         expect(mockActivateBridge).toHaveBeenCalledTimes(2);
         dispatchTimedtextCapture(
             'abc',
@@ -512,6 +536,173 @@ describe('PlayerCaptionCapture', () => {
         await expect(run).resolves.toMatchObject({
             status: 'ready',
         });
+    });
+
+    it('keeps reloading while empty bodies arrive without a pot token', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+        // Five reloads, well past the pot-bearing budget of three.
+        const delays = [250, 500, 1000, 2000, 2000];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`no-pot:${String(index)}`, false);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs);
+            await acceptActivation();
+            expect(mockActivateBridge).toHaveBeenCalledTimes(index + 2);
+        }
+        dispatchTimedtextCapture('abc', CAPTION_JSON);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({ status: 'ready' });
+    });
+
+    it('stops reloading once the pot-bearing empty-body budget is spent', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 20_000,
+        });
+        await acceptActivation();
+        const delays = [250, 500, 1000, 2000];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`pot:${String(index)}`, true);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs);
+            await acceptActivation();
+        }
+        expect(mockActivateBridge).toHaveBeenCalledTimes(
+            MAX_POT_EMPTY_BODY_RELOADS + 1,
+        );
+
+        await vi.advanceTimersByTimeAsync(20_000);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({
+            status: 'failed',
+            failure: { reason: 'capture-timeout' },
+        });
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                {
+                    reason: 'capture-timeout',
+                    stage: 'waiting-capture',
+                    attempts: MAX_POT_EMPTY_BODY_RELOADS + 1,
+                    emptyPot: 4,
+                },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
+    });
+
+    it('doubles the reload delay up to the cap on consecutive empty bodies', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        const delays = [
+            EMPTY_BODY_RELOAD_BASE_DELAY_MS,
+            500,
+            1000,
+            EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+            EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+        ];
+        for (const [index, delayMs] of delays.entries()) {
+            dispatchEmptyBody(`backoff:${String(index)}`, false);
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(delayMs - 1);
+            expect(mockActivateBridge).toHaveBeenCalledTimes(index + 1);
+            await vi.advanceTimersByTimeAsync(1);
+            await acceptActivation();
+            expect(mockActivateBridge).toHaveBeenCalledTimes(index + 2);
+        }
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
+    });
+
+    it('drops a pending empty-body reload when the route cancels', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        dispatchEmptyBody('cancelled:1', false);
+        await acceptActivation();
+        PlayerCaptionCapture.cancel('route-change');
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({ status: 'cancelled' });
+        expect(mockActivateBridge).toHaveBeenCalledTimes(1);
+    });
+
+    it('coalesces empty bodies that arrive while a reload is pending', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'abc',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 60_000,
+        });
+        await acceptActivation();
+        dispatchEmptyBody('pending:1', false);
+        dispatchEmptyBody('pending:2', false);
+        await acceptActivation();
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_BASE_DELAY_MS);
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+
+        // The coalesced body scheduled nothing of its own.
+        await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS);
+        await acceptActivation();
+        expect(mockActivateBridge).toHaveBeenCalledTimes(2);
+        PlayerCaptionCapture.cancel('test');
+        await finishCleanup();
+        await run;
+    });
+
+    it('treats an empty body with a malformed url shape as pot-bearing', async () => {
+        const run = PlayerCaptionCapture.capture({
+            videoId: 'dQw4w9WgXcQ',
+            signal: new AbortController().signal,
+            captureTimeoutMs: 20_000,
+        });
+        await acceptActivation();
+        for (let index = 0; index < 4; index += 1) {
+            dispatchPageDiagnostic(`malformed:${String(index)}`, 'window', {
+                urlShape: { pathname: '/api/timedtext' },
+            });
+            await acceptActivation();
+            await vi.advanceTimersByTimeAsync(EMPTY_BODY_RELOAD_MAX_DELAY_MS);
+            await acceptActivation();
+        }
+        expect(mockActivateBridge).toHaveBeenCalledTimes(
+            MAX_POT_EMPTY_BODY_RELOADS + 1,
+        );
+
+        await vi.advanceTimersByTimeAsync(20_000);
+        await finishCleanup();
+        await run;
+
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureFailed)).toEqual([
+            [
+                DEBUG_LOG_EVENT.CaptureFailed,
+                {
+                    reason: 'capture-timeout',
+                    stage: 'waiting-capture',
+                    attempts: MAX_POT_EMPTY_BODY_RELOADS + 1,
+                    emptyPot: 4,
+                },
+                { video: 'dQw4w9WgXcQ' },
+            ],
+        ]);
     });
 
     it('relays safe page diagnostics to the content log channel', async () => {

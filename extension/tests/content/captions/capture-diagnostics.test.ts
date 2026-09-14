@@ -88,6 +88,55 @@ describe('CaptureDiagnostics.toDebugLogEvent', () => {
         expect(JSON.stringify(final)).not.toContain('SENTINEL');
     });
 
+    it('maps the hidden-tab activation pause and its resume to capture-stage', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('activation-deferred', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'hidden',
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: { stage: 'activation-deferred', reason: 'hidden' },
+        });
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('activation-resumed', {
+                videoId: 'dQw4w9WgXcQ',
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: { stage: 'activation-resumed' },
+        });
+    });
+
+    it('keeps the activation attempt count on capture-failed', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('capture-failed', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'player-not-ready',
+                stage: 'activating',
+                error: SENTINEL_ERROR,
+                attempts: 481,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureFailed,
+            fields: {
+                reason: 'player-not-ready',
+                stage: 'activating',
+                attempts: 481,
+            },
+        });
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('capture-failed', {
+                reason: 'capture-timeout',
+                stage: 'waiting-capture',
+                attempts: Number.NaN,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureFailed,
+            fields: { reason: 'capture-timeout', stage: 'waiting-capture' },
+        });
+    });
+
     it('maps capture-event-received to capture-stage with the URL shape split', () => {
         expect(
             CaptureDiagnostics.toDebugLogEvent('capture-event-received', {

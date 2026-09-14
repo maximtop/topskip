@@ -136,6 +136,8 @@ describe('isAllowedDebugLogField', () => {
         expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.ByokChunk, 'latencyMs')).toBe(true);
         expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.ByokChunk, 'transcript')).toBe(false);
         expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.HttpError, 'url')).toBe(false);
+        expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.CaptureFailed, 'attempts')).toBe(true);
+        expect(isAllowedDebugLogField(DEBUG_LOG_EVENT.SkipApplied, 'attempts')).toBe(false);
     });
 });
 

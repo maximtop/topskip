@@ -619,6 +619,19 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   `document_start`; this does not mean capture is active.
 - **`activation-attempt`** / **`activation-accepted`**: TopSkip asked the player
   to load captions.
+- **`activation-deferred`** (`reason=hidden`) / **`activation-resumed`**: the
+  player answered `player-not-ready` in a background tab. YouTube loads no
+  media while the tab is hidden, so TopSkip stops asking and parks on
+  `visibilitychange`; the pair brackets the time the user spent away.
+  Activation retries a visible player every 250 ms for up to 120 s
+  (**`ACTIVATION_VISIBLE_BUDGET_MS`**, long enough to sit through a pre-roll
+  ad); hidden time never counts against that budget.
+- **`capture-failed`**: the single failure line. Its **`attempts`** field
+  counts the Activate commands sent in the session, which separates "the
+  player never became ready" (`reason=player-not-ready`, many attempts) from
+  "the player accepted and then sent nothing" (`reason=capture-timeout`).
+  The capture timeout starts when activation is **accepted**, not when the
+  capture begins, so waiting for the player can no longer consume it.
 - **`page:activation-finished`**: page bridge recorded caption state, hide style,
   track count, and activation actions. When captions were off, expect
   **`setOption:track:<rule>`** if YouTube exposes a tracklist; otherwise
@@ -658,7 +671,9 @@ The production path no longer uses direct timedtext probing, direct InnerTube fa
 **video id** changes, **`WatchCaptions`** schedules
 **`PlayerCaptionCapture`**. The capture flow probes the static bridge, waits
 through bounded activation retries if the player appears unstable or an ad is
-visible, then cleans up temporary caption state after success or timeout.
+visible — parking on `visibilitychange` instead of retrying while the tab is
+hidden — arms the capture timeout only once the player accepted activation,
+then cleans up temporary caption state after success or timeout.
 
 1. `make build`, load **`extension/dist/`** unpacked.
 2. Open **`chrome://extensions`**, find TopSkip, click **Service worker** (this DevTools window is where **chunked transcript** **`[TopSkip captions]`** logs from the background appear).

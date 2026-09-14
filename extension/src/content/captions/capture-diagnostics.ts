@@ -83,6 +83,7 @@ const CAPTURE_SCALAR_FIELDS = [
     'userIntervened',
     'hasTracks',
     'reason',
+    'attempts',
 ] as const;
 
 /**
@@ -96,6 +97,8 @@ const CAPTURE_STAGE_EVENTS: Readonly<Partial<Record<string, DebugLogEventName>>>
     'schedule-clear': DEBUG_LOG_EVENT.CaptureStage,
     'capture-start': DEBUG_LOG_EVENT.CaptureStage,
     'bridge-ready': DEBUG_LOG_EVENT.CaptureStage,
+    'activation-deferred': DEBUG_LOG_EVENT.CaptureStage,
+    'activation-resumed': DEBUG_LOG_EVENT.CaptureStage,
     'activation-accepted': DEBUG_LOG_EVENT.CaptureActivation,
     'activation-failed': DEBUG_LOG_EVENT.CaptureActivation,
     'capture-event-received': DEBUG_LOG_EVENT.CaptureStage,

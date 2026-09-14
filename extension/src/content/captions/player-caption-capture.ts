@@ -36,6 +36,38 @@ import {
 
 const DEFAULT_CAPTURE_TIMEOUT_MS = 15_000;
 const ACTIVATION_RETRY_DELAY_MS = 250;
+
+/**
+ * Total time activation may spend polling a *visible* watch player that keeps
+ * answering `player-not-ready`. Hidden time never counts: a background tab
+ * loads no media at all, so polling it would only burn the budget. Long
+ * pre-roll ads are the reason this is minutes rather than seconds.
+ */
+export const ACTIVATION_VISIBLE_BUDGET_MS = 120_000;
+
+/**
+ * Retry slots the visible budget buys at the fixed activation delay.
+ */
+const MAX_VISIBLE_ACTIVATION_RETRIES = Math.max(
+    1,
+    Math.ceil(ACTIVATION_VISIBLE_BUDGET_MS / ACTIVATION_RETRY_DELAY_MS),
+);
+
+/**
+ * Document event that reports a tab moving between foreground and background.
+ */
+const VISIBILITY_CHANGE_EVENT = 'visibilitychange';
+
+/**
+ * `document.visibilityState` value for a tab the user cannot see.
+ */
+const HIDDEN_VISIBILITY_STATE = 'hidden';
+
+/**
+ * Diagnostic reason recorded when activation parks on tab visibility.
+ */
+const HIDDEN_DEFERRAL_REASON = 'hidden';
+
 const MAX_EMPTY_BODY_RELOADS = 3;
 const EMPTY_TIMEDTEXT_BODY_STAGE =
     CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody;
@@ -60,11 +92,13 @@ type CaptureOptions = {
 };
 
 /**
- * Pending capture promise and timeout tied to the active session.
+ * Pending capture promise and timeout tied to the active session. The timeout
+ * id stays `null` until activation is accepted, because the capture budget
+ * must not run while the player is still refusing to activate.
  */
 type ActiveCaptureWait = {
     session: CaptionCaptureSession;
-    timeoutId: ReturnType<typeof setTimeout>;
+    timeoutId: ReturnType<typeof setTimeout> | null;
     signal: AbortSignal;
     abortListener: () => void;
     resolve: (result: CaptionCaptureResult) => void;
@@ -153,6 +187,21 @@ export class PlayerCaptionCapture {
      * Active waiter resolved by capture, parse failure, or timeout.
      */
     private static activeWait: ActiveCaptureWait | null = null;
+
+    /**
+     * Activate commands sent during the current capture session, reported on
+     * the failures that player readiness explains.
+     */
+    private static activationAttempts = 0;
+
+    /**
+     * Releases activation waiters parked on tab visibility once the wait they
+     * belong to settles or is replaced, so a hidden tab cannot leave a
+     * `visibilitychange` listener behind.
+     */
+    private static readonly activationVisibilityReleases = new Set<
+        () => void
+    >();
 
     /**
      * Avoids adding duplicate window message listeners after SPA navigation.
@@ -292,6 +341,7 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.activeWait = null;
         PlayerCaptionCapture.cleanupPromise = null;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
+        PlayerCaptionCapture.activationAttempts = 0;
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
         PlayerCaptionCapture.recentPageBridgeMessageOrder.length = 0;
@@ -316,6 +366,7 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.activeSession = null;
         PlayerCaptionCapture.activeWait = null;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
+        PlayerCaptionCapture.activationAttempts = 0;
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.removeMessageListeners();
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
@@ -512,6 +563,7 @@ export class PlayerCaptionCapture {
         );
         PlayerCaptionCapture.activeSession = session;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
+        PlayerCaptionCapture.activationAttempts = 0;
         emptyBodyReloadCount = 0;
         const waitForCapture = PlayerCaptionCapture.waitForCapture(
             session,
@@ -572,8 +624,11 @@ export class PlayerCaptionCapture {
             }
             const activationFailure = activationStage.failure;
             if (activationFailure !== null) {
-                return PlayerCaptionCapture.resolveFailure(activationFailure);
+                return PlayerCaptionCapture.resolveFailure(activationFailure, {
+                    attempts: PlayerCaptionCapture.activationAttempts,
+                });
             }
+            PlayerCaptionCapture.armCaptureTimeout(session);
             const result = await waitForCapture;
             if (
                 result.status === 'failed' &&
@@ -924,31 +979,35 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Retries activation while the page reports a transient player state.
+     * Keeps asking the player to activate captions until it accepts, fails for
+     * a reason retrying cannot fix, or the visible budget runs out. A hidden
+     * tab parks the loop on `visibilitychange` instead of polling, because
+     * YouTube loads no media in a background tab and the player would answer
+     * `player-not-ready` for as long as the user stays away.
      *
      * @param session Current bounded capture session.
      * @param signal Route-owned cancellation signal.
-     * @returns A bounded failure, or `null` when activation was accepted.
+     * @returns A bounded failure, or `null` when activation was accepted or
+     *   this session no longer owns the capture.
      */
     private static async activateCaptions(
         session: CaptionCaptureSession,
         signal: AbortSignal,
     ): Promise<CaptionCaptureFailure | null> {
-        const maxAttempts = Math.max(
-            1,
-            Math.ceil(session.captureTimeoutMs / ACTIVATION_RETRY_DELAY_MS),
-        );
-        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        let attempt = 0;
+        let visibleRetries = 0;
+        for (;;) {
             if (
                 signal.aborted ||
                 PlayerCaptionCapture.activeWait?.session !== session
             ) {
                 return null;
             }
+            attempt += 1;
+            PlayerCaptionCapture.activationAttempts += 1;
             PlayerCaptionCapture.log('activation-attempt', {
                 videoId: session.videoId,
                 attempt,
-                maxAttempts,
             });
             const result =
                 await PlayerCaptionCapture.runBridgeCommand(
@@ -973,7 +1032,10 @@ export class PlayerCaptionCapture {
             const canRetry =
                 failure.reason ===
                 CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady;
-            const retrying = canRetry && attempt < maxAttempts;
+            const hidden = canRetry && PlayerCaptionCapture.isTabHidden();
+            const budgetSpent =
+                !hidden && visibleRetries >= MAX_VISIBLE_ACTIVATION_RETRIES;
+            const retrying = canRetry && !budgetSpent;
             PlayerCaptionCapture.log('activation-failed', {
                 videoId: session.videoId,
                 attempt,
@@ -982,24 +1044,139 @@ export class PlayerCaptionCapture {
                 error: failure.error,
                 retrying,
             });
-            if (!retrying) {
+            if (!canRetry) {
                 return {
                     reason: failure.reason,
                     message: failure.error,
                     diagnostics: { stage: 'activating' },
                 };
             }
+            if (budgetSpent) {
+                return {
+                    reason: CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady,
+                    message:
+                        'Watch player never became ready for caption capture',
+                    diagnostics: { stage: 'activating' },
+                };
+            }
+            if (hidden) {
+                PlayerCaptionCapture.log('activation-deferred', {
+                    videoId: session.videoId,
+                    reason: HIDDEN_DEFERRAL_REASON,
+                });
+                const resumed = await PlayerCaptionCapture.waitForVisibleTab(
+                    session,
+                    signal,
+                );
+                if (!resumed) {
+                    return null;
+                }
+                PlayerCaptionCapture.log('activation-resumed', {
+                    videoId: session.videoId,
+                });
+                continue;
+            }
+            visibleRetries += 1;
             await PlayerCaptionCapture.delay(ACTIVATION_RETRY_DELAY_MS);
         }
-        return {
-            reason: CAPTION_CAPTURE_FAILURE_REASON.ActivationUnavailable,
-            message: 'Caption activation is unavailable',
-            diagnostics: { stage: 'activating' },
-        };
     }
 
     /**
-     * Waits until page capture resolves or the bounded timer expires.
+     * Reads tab visibility, treating a context without `document` as visible
+     * so activation keeps its bounded retry behavior everywhere else.
+     *
+     * @returns Whether the watch tab is currently hidden from the user.
+     */
+    private static isTabHidden(): boolean {
+        if (typeof document === 'undefined') {
+            return false;
+        }
+        return document.visibilityState === HIDDEN_VISIBILITY_STATE;
+    }
+
+    /**
+     * Parks until the user brings the watch tab forward. The wait also ends
+     * when the route cancels or another session takes over the capture, and
+     * every exit removes the listeners it added.
+     *
+     * @param session Session that must still own the capture on resume.
+     * @param signal Route-owned cancellation signal.
+     * @returns Whether the tab became visible while this session still owns
+     *   the capture.
+     */
+    private static waitForVisibleTab(
+        session: CaptionCaptureSession,
+        signal: AbortSignal,
+    ): Promise<boolean> {
+        return new Promise<boolean>((resolve) => {
+            const visibilityTarget =
+                typeof document === 'undefined' ? null : document;
+            const removals: (() => void)[] = [];
+            const settle = (): void => {
+                for (const remove of removals) {
+                    remove();
+                }
+                removals.length = 0;
+                PlayerCaptionCapture.activationVisibilityReleases.delete(
+                    settle,
+                );
+                resolve(
+                    !signal.aborted &&
+                        PlayerCaptionCapture.activeWait?.session === session,
+                );
+            };
+            const onVisibilityChange = (): void => {
+                if (!PlayerCaptionCapture.isTabHidden()) {
+                    settle();
+                }
+            };
+            PlayerCaptionCapture.activationVisibilityReleases.add(settle);
+            signal.addEventListener('abort', settle, { once: true });
+            removals.push(() => {
+                signal.removeEventListener('abort', settle);
+            });
+            if (visibilityTarget !== null) {
+                visibilityTarget.addEventListener(
+                    VISIBILITY_CHANGE_EVENT,
+                    onVisibilityChange,
+                );
+                removals.push(() => {
+                    visibilityTarget.removeEventListener(
+                        VISIBILITY_CHANGE_EVENT,
+                        onVisibilityChange,
+                    );
+                });
+            }
+            if (
+                signal.aborted ||
+                PlayerCaptionCapture.activeWait?.session !== session ||
+                !PlayerCaptionCapture.isTabHidden()
+            ) {
+                settle();
+            }
+        });
+    }
+
+    /**
+     * Ends every parked visibility wait because the wait it belonged to has
+     * settled or been replaced; each waiter then rechecks ownership and
+     * reports that it no longer owns the capture.
+     */
+    private static releaseVisibilityWaits(): void {
+        const releases = [
+            ...PlayerCaptionCapture.activationVisibilityReleases,
+        ];
+        PlayerCaptionCapture.activationVisibilityReleases.clear();
+        for (const release of releases) {
+            release();
+        }
+    }
+
+    /**
+     * Creates the waiter resolved by page capture, cancellation, or the
+     * capture timeout. The timer itself stays unarmed until
+     * {@link PlayerCaptionCapture.armCaptureTimeout} runs, so waiting for the
+     * player to become ready cannot consume the capture budget.
      *
      * @param session Active capture session.
      * @param signal Route-owned cancellation signal.
@@ -1010,13 +1187,6 @@ export class PlayerCaptionCapture {
         signal: AbortSignal,
     ): Promise<CaptionCaptureResult> {
         return new Promise((resolve) => {
-            const timeoutId = globalThis.setTimeout(() => {
-                PlayerCaptionCapture.resolveFailure({
-                    reason: CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
-                    message: 'Caption capture timed out',
-                    diagnostics: { stage: 'waiting-capture' },
-                });
-            }, session.captureTimeoutMs);
             const abortListener = (): void => {
                 PlayerCaptionCapture.resolveActiveWait({
                     status: 'cancelled',
@@ -1024,16 +1194,45 @@ export class PlayerCaptionCapture {
             };
             PlayerCaptionCapture.activeWait = {
                 session,
-                timeoutId,
+                timeoutId: null,
                 signal,
                 abortListener,
                 resolve,
             };
+            PlayerCaptionCapture.releaseVisibilityWaits();
             signal.addEventListener('abort', abortListener, { once: true });
             if (signal.aborted) {
                 abortListener();
             }
         });
+    }
+
+    /**
+     * Starts the capture budget once the player accepted activation, so the
+     * timeout measures the wait for a timedtext response and nothing else.
+     * Reactivations during the same session keep the original deadline.
+     *
+     * @param session Session whose waiter owns the timer.
+     */
+    private static armCaptureTimeout(session: CaptionCaptureSession): void {
+        const activeWait = PlayerCaptionCapture.activeWait;
+        if (
+            activeWait === null ||
+            activeWait.session !== session ||
+            activeWait.timeoutId !== null
+        ) {
+            return;
+        }
+        activeWait.timeoutId = globalThis.setTimeout(() => {
+            PlayerCaptionCapture.resolveFailure(
+                {
+                    reason: CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
+                    message: 'Caption capture timed out',
+                    diagnostics: { stage: 'waiting-capture' },
+                },
+                { attempts: PlayerCaptionCapture.activationAttempts },
+            );
+        }, session.captureTimeoutMs);
     }
 
     /**
@@ -1046,12 +1245,15 @@ export class PlayerCaptionCapture {
         if (activeWait === null) {
             return;
         }
-        globalThis.clearTimeout(activeWait.timeoutId);
+        if (activeWait.timeoutId !== null) {
+            globalThis.clearTimeout(activeWait.timeoutId);
+        }
         activeWait.signal.removeEventListener(
             'abort',
             activeWait.abortListener,
         );
         PlayerCaptionCapture.activeWait = null;
+        PlayerCaptionCapture.releaseVisibilityWaits();
         activeWait.resolve(result);
     }
 
@@ -1059,16 +1261,21 @@ export class PlayerCaptionCapture {
      * Resolves the active session with one normalized capture failure.
      *
      * @param failure Safe failure returned to the route owner.
+     * @param logDetails Extra allow-listed fields for the single
+     *   `capture-failed` line, such as the activation `attempts` that explain
+     *   a readiness or timeout failure.
      * @returns The same terminal result for immediate control flow.
      */
     private static resolveFailure(
         failure: CaptionCaptureFailure,
+        logDetails: Record<string, unknown> = {},
     ): CaptionCaptureResult {
         PlayerCaptionCapture.log('capture-failed', {
             videoId: PlayerCaptionCapture.activeSession?.videoId ?? null,
             reason: failure.reason,
             stage: failure.diagnostics?.stage,
             error: failure.message,
+            ...logDetails,
         });
         const result: CaptionCaptureResult = {
             status: 'failed',

@@ -156,6 +156,18 @@ describe('CaptureDiagnostics.toDebugLogEvent', () => {
         });
     });
 
+    it('maps reload-skipped to capture-stage with the exhausted-budget reason', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('reload-skipped', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'budget',
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: { stage: 'reload-skipped', reason: 'budget' },
+        });
+    });
+
     it('keeps the empty-body split by pot presence on capture-failed', () => {
         expect(
             CaptureDiagnostics.toDebugLogEvent('capture-failed', {

@@ -106,6 +106,7 @@ const CAPTURE_STAGE_EVENTS: Readonly<Partial<Record<string, DebugLogEventName>>>
     'activation-resumed': DEBUG_LOG_EVENT.CaptureStage,
     'activation-accepted': DEBUG_LOG_EVENT.CaptureActivation,
     'reload-scheduled': DEBUG_LOG_EVENT.CaptureStage,
+    'reload-skipped': DEBUG_LOG_EVENT.CaptureStage,
     'activation-failed': DEBUG_LOG_EVENT.CaptureActivation,
     'capture-event-received': DEBUG_LOG_EVENT.CaptureStage,
     'capture-parsed': DEBUG_LOG_EVENT.CaptureSucceeded,

@@ -34,24 +34,25 @@ import {
     type CaptionCaptureFailureReason,
 } from '@/shared/messages';
 
-const DEFAULT_CAPTURE_TIMEOUT_MS = 15_000;
+/**
+ * Default capture budget when a caller does not override it. Kept well
+ * under {@link CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS} so the MAIN lease never
+ * expires mid-capture; exported so tests can assert that relationship
+ * directly instead of hardcoding the number.
+ */
+export const DEFAULT_CAPTURE_TIMEOUT_MS = 15_000;
 const ACTIVATION_RETRY_DELAY_MS = 250;
 
 /**
- * Total time activation may spend polling a *visible* watch player that keeps
- * answering `player-not-ready`. Hidden time never counts: a background tab
- * loads no media at all, so polling it would only burn the budget. Long
- * pre-roll ads are the reason this is minutes rather than seconds.
+ * Wall-clock time activation may spend on a *visible* watch player that keeps
+ * answering `player-not-ready`. Every millisecond the tab is visible counts —
+ * the Activate round trips as well as the gaps between them — so the budget
+ * is a real deadline rather than a retry count that each slow round trip
+ * stretches. Hidden time never counts: a background tab loads no media at
+ * all, so polling it would only burn the budget. Long pre-roll ads are the
+ * reason this is minutes rather than seconds.
  */
 export const ACTIVATION_VISIBLE_BUDGET_MS = 120_000;
-
-/**
- * Retry slots the visible budget buys at the fixed activation delay.
- */
-const MAX_VISIBLE_ACTIVATION_RETRIES = Math.max(
-    1,
-    Math.ceil(ACTIVATION_VISIBLE_BUDGET_MS / ACTIVATION_RETRY_DELAY_MS),
-);
 
 /**
  * Document event that reports a tab moving between foreground and background.
@@ -88,6 +89,13 @@ export const EMPTY_BODY_RELOAD_BASE_DELAY_MS = 250;
  */
 export const EMPTY_BODY_RELOAD_MAX_DELAY_MS = 2_000;
 
+/**
+ * Reason recorded on the single `reload-skipped` line a session emits once
+ * {@link MAX_POT_EMPTY_BODY_RELOADS} is spent, so an exhausted budget is
+ * visible in the debug log instead of looking like silence.
+ */
+const RELOAD_BUDGET_SKIP_REASON = 'budget';
+
 const EMPTY_TIMEDTEXT_BODY_STAGE =
     CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody;
 const PAGE_SOURCE = CAPTION_PAGE_BRIDGE_SOURCE.Main;
@@ -110,9 +118,16 @@ type CaptureOptions = {
 };
 
 /**
- * Pending capture promise and timeout tied to the active session. The timeout
- * id stays `null` until activation is accepted, because the capture budget
- * must not run while the player is still refusing to activate.
+ * Pending capture promise, timeout and per-session counters, all tied to one
+ * session identity. The timeout id stays `null` until activation is accepted,
+ * because the capture budget must not run while the player is still refusing
+ * to activate — and because an armed timer is what proves the session reached
+ * acceptance at all.
+ *
+ * The counters live here rather than on the class so a late Activate reply or
+ * a page diagnostic belonging to a replaced session cannot be charged to its
+ * successor: every writer reaches them through the current `activeWait`,
+ * which is the same identity every other ownership check uses.
  */
 type ActiveCaptureWait = {
     session: CaptionCaptureSession;
@@ -120,6 +135,42 @@ type ActiveCaptureWait = {
     signal: AbortSignal;
     abortListener: () => void;
     resolve: (result: CaptionCaptureResult) => void;
+
+    /**
+     * Activate commands sent for this session, reported on the failures that
+     * player readiness explains.
+     */
+    activationAttempts: number;
+
+    /**
+     * Empty bodies whose request carried no `pot` token, reported as
+     * `emptyNoPot`.
+     */
+    emptyNoPotCount: number;
+
+    /**
+     * Empty bodies whose request already carried a `pot` token, reported as
+     * `emptyPot`.
+     */
+    emptyPotCount: number;
+
+    /**
+     * Reloads already spent from {@link MAX_POT_EMPTY_BODY_RELOADS}.
+     */
+    potEmptyBodyReloads: number;
+
+    /**
+     * Pending backoff timer for the next reload. At most one exists at a
+     * time: an empty body arriving while it is pending is counted but
+     * schedules nothing.
+     */
+    reloadTimeoutId: ReturnType<typeof setTimeout> | null;
+
+    /**
+     * Whether the exhausted-budget line was already emitted, so a storm of
+     * pot-bearing empties still costs the log exactly one entry.
+     */
+    reloadBudgetSkipLogged: boolean;
 };
 
 /**
@@ -205,45 +256,6 @@ export class PlayerCaptionCapture {
      * Active waiter resolved by capture, parse failure, or timeout.
      */
     private static activeWait: ActiveCaptureWait | null = null;
-
-    /**
-     * Activate commands sent during the current capture session, reported on
-     * the failures that player readiness explains.
-     */
-    private static activationAttempts = 0;
-
-    /**
-     * Empty timedtext bodies seen in the current session. Every empty body a
-     * session sees is consecutive by definition — any non-empty body settles
-     * the capture — so this doubles as the backoff exponent.
-     */
-    private static emptyBodyCount = 0;
-
-    /**
-     * Empty bodies whose request carried no `pot` token, reported on the
-     * timeout line as `emptyNoPot`.
-     */
-    private static emptyNoPotCount = 0;
-
-    /**
-     * Empty bodies whose request already carried a `pot` token, reported on
-     * the timeout line as `emptyPot`.
-     */
-    private static emptyPotCount = 0;
-
-    /**
-     * Reloads already spent from {@link MAX_POT_EMPTY_BODY_RELOADS}.
-     */
-    private static potEmptyBodyReloads = 0;
-
-    /**
-     * Pending backoff timer for the next reload, kept so a settled or replaced
-     * session cannot leave one behind. At most one exists at a time: an empty
-     * body arriving while it is pending is counted but schedules nothing.
-     */
-    private static emptyBodyReloadTimeoutId:
-        | ReturnType<typeof setTimeout>
-        | null = null;
 
     /**
      * Releases activation waiters parked on tab visibility once the wait they
@@ -392,8 +404,6 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.activeWait = null;
         PlayerCaptionCapture.cleanupPromise = null;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
-        PlayerCaptionCapture.activationAttempts = 0;
-        PlayerCaptionCapture.resetEmptyBodyReloadState();
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
         PlayerCaptionCapture.recentPageBridgeMessageOrder.length = 0;
@@ -418,8 +428,6 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.activeSession = null;
         PlayerCaptionCapture.activeWait = null;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
-        PlayerCaptionCapture.activationAttempts = 0;
-        PlayerCaptionCapture.resetEmptyBodyReloadState();
         PlayerCaptionCapture.bridgeReadyPromise = null;
         PlayerCaptionCapture.removeMessageListeners();
         PlayerCaptionCapture.recentPageBridgeMessageIds.clear();
@@ -616,8 +624,6 @@ export class PlayerCaptionCapture {
         );
         PlayerCaptionCapture.activeSession = session;
         PlayerCaptionCapture.bridgeDiagnosticCount = 0;
-        PlayerCaptionCapture.activationAttempts = 0;
-        PlayerCaptionCapture.resetEmptyBodyReloadState();
         const waitForCapture = PlayerCaptionCapture.waitForCapture(
             session,
             input.signal,
@@ -677,9 +683,14 @@ export class PlayerCaptionCapture {
             }
             const activationFailure = activationStage.failure;
             if (activationFailure !== null) {
-                return PlayerCaptionCapture.resolveFailure(activationFailure, {
-                    attempts: PlayerCaptionCapture.activationAttempts,
-                });
+                const failedWait =
+                    PlayerCaptionCapture.getWaitForSession(session);
+                return PlayerCaptionCapture.resolveFailure(
+                    activationFailure,
+                    failedWait === null
+                        ? {}
+                        : { attempts: failedWait.activationAttempts },
+                );
             }
             PlayerCaptionCapture.armCaptureTimeout(session);
             const result = await waitForCapture;
@@ -1047,20 +1058,17 @@ export class PlayerCaptionCapture {
         session: CaptionCaptureSession,
         signal: AbortSignal,
     ): Promise<CaptionCaptureFailure | null> {
-        let attempt = 0;
-        let visibleRetries = 0;
+        let visibleElapsedMs = 0;
+        let visibleSince = Date.now();
         for (;;) {
-            if (
-                signal.aborted ||
-                PlayerCaptionCapture.activeWait?.session !== session
-            ) {
+            const wait = PlayerCaptionCapture.getWaitForSession(session);
+            if (signal.aborted || wait === null) {
                 return null;
             }
-            attempt += 1;
-            PlayerCaptionCapture.activationAttempts += 1;
+            wait.activationAttempts += 1;
             PlayerCaptionCapture.log('activation-attempt', {
                 videoId: session.videoId,
-                attempt,
+                attempt: wait.activationAttempts,
             });
             const result =
                 await PlayerCaptionCapture.runBridgeCommand(
@@ -1077,7 +1085,7 @@ export class PlayerCaptionCapture {
             if (failure === null) {
                 PlayerCaptionCapture.log('activation-accepted', {
                     videoId: session.videoId,
-                    attempt,
+                    attempt: wait.activationAttempts,
                     ...PlayerCaptionCapture.getBridgeCommandDetails(result),
                 });
                 return null;
@@ -1086,12 +1094,23 @@ export class PlayerCaptionCapture {
                 failure.reason ===
                 CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady;
             const hidden = canRetry && PlayerCaptionCapture.isTabHidden();
+            // Charge the round trip that just ended, plus the gap that
+            // preceded it, to the visible budget only while the tab is
+            // visible right now; a round trip during which the tab went
+            // hidden is excluded rather than charged to the visible budget.
+            // The clock still resets every iteration so parked time is never
+            // counted once the tab comes back.
+            const now = Date.now();
+            if (!hidden) {
+                visibleElapsedMs += now - visibleSince;
+            }
+            visibleSince = now;
             const budgetSpent =
-                !hidden && visibleRetries >= MAX_VISIBLE_ACTIVATION_RETRIES;
+                !hidden && visibleElapsedMs >= ACTIVATION_VISIBLE_BUDGET_MS;
             const retrying = canRetry && !budgetSpent;
             PlayerCaptionCapture.log('activation-failed', {
                 videoId: session.videoId,
-                attempt,
+                attempt: wait.activationAttempts,
                 ok: false,
                 reason: failure.reason,
                 error: failure.error,
@@ -1127,11 +1146,27 @@ export class PlayerCaptionCapture {
                 PlayerCaptionCapture.log('activation-resumed', {
                     videoId: session.videoId,
                 });
+                visibleSince = Date.now();
                 continue;
             }
-            visibleRetries += 1;
             await PlayerCaptionCapture.delay(ACTIVATION_RETRY_DELAY_MS);
         }
+    }
+
+    /**
+     * Resolves the waiter that still belongs to one session, so per-session
+     * counters are never read or written through a wait a newer capture owns.
+     *
+     * @param session Session whose waiter is wanted.
+     * @returns The session's own waiter, or `null` once it was replaced.
+     */
+    private static getWaitForSession(
+        session: CaptionCaptureSession,
+    ): ActiveCaptureWait | null {
+        const activeWait = PlayerCaptionCapture.activeWait;
+        return activeWait !== null && activeWait.session === session
+            ? activeWait
+            : null;
     }
 
     /**
@@ -1245,12 +1280,29 @@ export class PlayerCaptionCapture {
                     status: 'cancelled',
                 });
             };
+            // A waiter replaced without settling would otherwise leave its
+            // armed capture timeout, abort listener and pending reload
+            // alive with no owner left to clear them — the stale timeout
+            // could later fire and settle the waiter installed below with
+            // `capture-timeout`. Cancelling it here settles it immediately,
+            // so nothing belonging to it can fire later.
+            if (PlayerCaptionCapture.activeWait !== null) {
+                PlayerCaptionCapture.resolveActiveWait({
+                    status: 'cancelled',
+                });
+            }
             PlayerCaptionCapture.activeWait = {
                 session,
                 timeoutId: null,
                 signal,
                 abortListener,
                 resolve,
+                activationAttempts: 0,
+                emptyNoPotCount: 0,
+                emptyPotCount: 0,
+                potEmptyBodyReloads: 0,
+                reloadTimeoutId: null,
+                reloadBudgetSkipLogged: false,
             };
             PlayerCaptionCapture.releaseVisibilityWaits();
             signal.addEventListener('abort', abortListener, { once: true });
@@ -1284,8 +1336,8 @@ export class PlayerCaptionCapture {
                     diagnostics: { stage: 'waiting-capture' },
                 },
                 {
-                    attempts: PlayerCaptionCapture.activationAttempts,
-                    ...PlayerCaptionCapture.getEmptyBodyLogFields(),
+                    attempts: activeWait.activationAttempts,
+                    ...PlayerCaptionCapture.getEmptyBodyLogFields(activeWait),
                 },
             );
         }, session.captureTimeoutMs);
@@ -1297,15 +1349,14 @@ export class PlayerCaptionCapture {
      * @param result Capture result to return to the owning route.
      */
     private static resolveActiveWait(result: CaptionCaptureResult): void {
-        // Unconditional, and before the waiter check: every path that settles
-        // or abandons a wait — capture, parse failure, timeout, `cancel`,
-        // `dispose`, `resetForTest` — comes through here, so no empty-body
-        // reload can outlive the wait it was scheduled for.
-        PlayerCaptionCapture.clearPendingEmptyBodyReload();
         const activeWait = PlayerCaptionCapture.activeWait;
         if (activeWait === null) {
             return;
         }
+        // Every path that settles a wait — capture, parse failure, timeout,
+        // `cancel`, `dispose`, `resetForTest` — comes through here, so no
+        // empty-body reload can outlive the wait it was scheduled for.
+        PlayerCaptionCapture.clearPendingEmptyBodyReload(activeWait);
         if (activeWait.timeoutId !== null) {
             globalThis.clearTimeout(activeWait.timeoutId);
         }
@@ -1586,8 +1637,17 @@ export class PlayerCaptionCapture {
      * Reloads are spaced by a doubling backoff and only one may be pending: an
      * empty body arriving inside that window still counts toward the reported
      * totals and the backoff — a burst is exactly the storm being backed off
-     * from — but schedules nothing and spends no budget. The capture timeout,
-     * armed once activation is accepted, bounds the whole loop.
+     * from — but schedules nothing and spends no budget.
+     *
+     * Nothing is scheduled before the session's capture timeout is armed,
+     * which happens exactly when the bridge accepted activation. A genuine
+     * empty body can never precede that: the MAIN bridge forwards timedtext
+     * only while `activeCaptureGeneration !== null`, which the Activate
+     * handler sets synchronously before replying. So an empty body arriving
+     * earlier — while activation is still parked on a hidden tab, say — was
+     * forged by a page script, and honouring it would start an untimed reload
+     * loop whose detached activations park again, leaking Activate commands
+     * and `visibilitychange` listeners with no deadline in force.
      *
      * @param data Untrusted page bridge diagnostic message.
      */
@@ -1596,65 +1656,80 @@ export class PlayerCaptionCapture {
         if (stage !== EMPTY_TIMEDTEXT_BODY_STAGE) {
             return;
         }
-        const session = PlayerCaptionCapture.activeSession;
-        const activeWait = PlayerCaptionCapture.activeWait;
-        if (session === null || activeWait === null) {
+        const wait = PlayerCaptionCapture.activeWait;
+        if (wait === null || wait.timeoutId === null) {
             return;
         }
+        const session = wait.session;
         const urlShape: unknown = Reflect.get(data, 'urlShape');
         const hasPot =
             !CaptureDiagnostics.isUrlShape(urlShape) || urlShape.hasPot;
-        PlayerCaptionCapture.emptyBodyCount += 1;
         if (hasPot) {
-            PlayerCaptionCapture.emptyPotCount += 1;
+            wait.emptyPotCount += 1;
         } else {
-            PlayerCaptionCapture.emptyNoPotCount += 1;
+            wait.emptyNoPotCount += 1;
         }
-        if (PlayerCaptionCapture.emptyBodyReloadTimeoutId !== null) {
+        if (wait.reloadTimeoutId !== null) {
             return;
         }
         const budgetLeft =
-            MAX_POT_EMPTY_BODY_RELOADS -
-            PlayerCaptionCapture.potEmptyBodyReloads;
+            MAX_POT_EMPTY_BODY_RELOADS - wait.potEmptyBodyReloads;
         if (hasPot) {
             if (budgetLeft <= 0) {
+                PlayerCaptionCapture.logReloadBudgetSpent(wait);
                 return;
             }
-            PlayerCaptionCapture.potEmptyBodyReloads += 1;
+            wait.potEmptyBodyReloads += 1;
         }
-        const delayMs = PlayerCaptionCapture.getEmptyBodyReloadDelayMs();
+        const delayMs = PlayerCaptionCapture.getEmptyBodyReloadDelayMs(wait);
         PlayerCaptionCapture.log('reload-scheduled', {
             videoId: session.videoId,
             delayMs,
             hasPot,
             budgetLeft: hasPot ? budgetLeft - 1 : budgetLeft,
         });
-        PlayerCaptionCapture.emptyBodyReloadTimeoutId = globalThis.setTimeout(
-            () => {
-                PlayerCaptionCapture.emptyBodyReloadTimeoutId = null;
-                if (
-                    PlayerCaptionCapture.activeSession !== session ||
-                    PlayerCaptionCapture.activeWait !== activeWait
-                ) {
-                    return;
-                }
-                void PlayerCaptionCapture.activateCaptions(
-                    session,
-                    activeWait.signal,
-                ).catch(() => undefined);
-            },
-            delayMs,
-        );
+        wait.reloadTimeoutId = globalThis.setTimeout(() => {
+            wait.reloadTimeoutId = null;
+            if (PlayerCaptionCapture.activeWait !== wait) {
+                return;
+            }
+            void PlayerCaptionCapture.activateCaptions(
+                session,
+                wait.signal,
+            ).catch(() => undefined);
+        }, delayMs);
+    }
+
+    /**
+     * Reports the exhausted pot-bearing reload budget once per session, so a
+     * capture that goes quiet after three reloads is distinguishable in the
+     * log from one that never saw an empty body at all.
+     *
+     * @param wait Waiter whose budget is spent.
+     */
+    private static logReloadBudgetSpent(wait: ActiveCaptureWait): void {
+        if (wait.reloadBudgetSkipLogged) {
+            return;
+        }
+        wait.reloadBudgetSkipLogged = true;
+        PlayerCaptionCapture.log('reload-skipped', {
+            videoId: wait.session.videoId,
+            reason: RELOAD_BUDGET_SKIP_REASON,
+        });
     }
 
     /**
      * Widens the gap before each reload: the base delay doubles per empty body
      * seen in the session, capped at {@link EMPTY_BODY_RELOAD_MAX_DELAY_MS}.
+     * Every empty body a session sees is consecutive by definition — a parsed
+     * body settles the capture — so their total is the exponent.
      *
+     * @param wait Waiter holding the session's empty-body counts.
      * @returns Delay in milliseconds for the reload being scheduled.
      */
-    private static getEmptyBodyReloadDelayMs(): number {
-        const growth = 2 ** (PlayerCaptionCapture.emptyBodyCount - 1);
+    private static getEmptyBodyReloadDelayMs(wait: ActiveCaptureWait): number {
+        const emptyBodies = wait.emptyNoPotCount + wait.emptyPotCount;
+        const growth = 2 ** (emptyBodies - 1);
         return Math.min(
             EMPTY_BODY_RELOAD_BASE_DELAY_MS * growth,
             EMPTY_BODY_RELOAD_MAX_DELAY_MS,
@@ -1662,26 +1737,18 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Clears the per-session empty-body counters and any pending reload as a
-     * new capture takes over.
+     * Drops a reload the settled or replaced waiter will never want.
+     *
+     * @param wait Waiter losing ownership, or `null` when there is none.
      */
-    private static resetEmptyBodyReloadState(): void {
-        PlayerCaptionCapture.clearPendingEmptyBodyReload();
-        PlayerCaptionCapture.emptyBodyCount = 0;
-        PlayerCaptionCapture.emptyNoPotCount = 0;
-        PlayerCaptionCapture.emptyPotCount = 0;
-        PlayerCaptionCapture.potEmptyBodyReloads = 0;
-    }
-
-    /**
-     * Drops a reload the settled or replaced session will never want.
-     */
-    private static clearPendingEmptyBodyReload(): void {
-        if (PlayerCaptionCapture.emptyBodyReloadTimeoutId === null) {
+    private static clearPendingEmptyBodyReload(
+        wait: ActiveCaptureWait | null,
+    ): void {
+        if (wait === null || wait.reloadTimeoutId === null) {
             return;
         }
-        globalThis.clearTimeout(PlayerCaptionCapture.emptyBodyReloadTimeoutId);
-        PlayerCaptionCapture.emptyBodyReloadTimeoutId = null;
+        globalThis.clearTimeout(wait.reloadTimeoutId);
+        wait.reloadTimeoutId = null;
     }
 
     /**
@@ -1689,15 +1756,18 @@ export class PlayerCaptionCapture {
      * timeout line separates "the player kept asking too early" from "YouTube
      * had the token and still sent nothing". Zero counts are omitted.
      *
+     * @param wait Waiter holding the session's empty-body counts.
      * @returns Allow-listed log fields for the `capture-failed` line.
      */
-    private static getEmptyBodyLogFields(): Record<string, number> {
+    private static getEmptyBodyLogFields(
+        wait: ActiveCaptureWait,
+    ): Record<string, number> {
         const fields: Record<string, number> = {};
-        if (PlayerCaptionCapture.emptyNoPotCount > 0) {
-            fields.emptyNoPot = PlayerCaptionCapture.emptyNoPotCount;
+        if (wait.emptyNoPotCount > 0) {
+            fields.emptyNoPot = wait.emptyNoPotCount;
         }
-        if (PlayerCaptionCapture.emptyPotCount > 0) {
-            fields.emptyPot = PlayerCaptionCapture.emptyPotCount;
+        if (wait.emptyPotCount > 0) {
+            fields.emptyPot = wait.emptyPotCount;
         }
         return fields;
     }

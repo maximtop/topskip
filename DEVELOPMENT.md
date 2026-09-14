@@ -622,10 +622,17 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
 - **`activation-deferred`** (`reason=hidden`) / **`activation-resumed`**: the
   player answered `player-not-ready` in a background tab. YouTube loads no
   media while the tab is hidden, so TopSkip stops asking and parks on
-  `visibilitychange`; the pair brackets the time the user spent away.
-  Activation retries a visible player every 250 ms for up to 120 s
-  (**`ACTIVATION_VISIBLE_BUDGET_MS`**, long enough to sit through a pre-roll
-  ad); hidden time never counts against that budget.
+  `visibilitychange`; the pair brackets the time the user spent away. The park
+  has no deadline of its own: while the tab stays hidden the capture waits
+  indefinitely and emits **no `capture-failed`** — only the session's own end
+  (route change, SPA navigation, tab close, or the capture timeout once
+  activation was accepted) finishes it. Expect `activation-deferred` with no
+  follow-up line for as long as the user is away.
+  Activation retries a visible player every 250 ms for up to 120 s of
+  wall-clock *visible* time (**`ACTIVATION_VISIBLE_BUDGET_MS`**, long enough to
+  sit through a pre-roll ad). The budget is a deadline, not a retry count: the
+  Activate round trips count against it as well as the gaps between them, so a
+  slow player spends it in fewer attempts. Hidden time never counts.
 - **`capture-failed`**: the single failure line. Its **`attempts`** field
   counts the Activate commands sent in the session, which separates "the
   player never became ready" (`reason=player-not-ready`, many attempts) from
@@ -639,6 +646,11 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   **`delayMs`** is the backoff gap it waits out, **`hasPot`** says which kind
   of empty body triggered it, and **`budgetLeft`** is the pot-bearing reload
   budget left afterwards.
+- **`reload-skipped`** (`reason=budget`): a pot-bearing empty body arrived
+  after **`MAX_POT_EMPTY_BODY_RELOADS`** was already spent, so no reload was
+  queued. One line per session, however many further empties arrive; it is
+  what separates "TopSkip gave up on reloading" from "no empty body ever
+  arrived" when the capture then times out.
 - **`page:activation-finished`**: page bridge recorded caption state, hide style,
   track count, and activation actions. When captions were off, expect
   **`setOption:track:<rule>`** if YouTube exposes a tracklist; otherwise
@@ -662,8 +674,13 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   **`MAX_POT_EMPTY_BODY_RELOADS`** (3). A malformed URL shape counts as
   pot-bearing. Reloads are spaced by a doubling backoff from
   **`EMPTY_BODY_RELOAD_BASE_DELAY_MS`** (250 ms) to
-  **`EMPTY_BODY_RELOAD_MAX_DELAY_MS`** (2 s), only one is ever pending, and
-  the capture timeout bounds the whole loop.
+  **`EMPTY_BODY_RELOAD_MAX_DELAY_MS`** (2 s), and only one is ever pending.
+  A reload is scheduled only once activation has been **accepted** — which is
+  also when the capture timeout is armed — so the timeout bounds the whole
+  reload loop. An empty body arriving before that (while activation is still
+  parked on a hidden tab, say) cannot be genuine, because the MAIN bridge
+  forwards timedtext only inside an active capture generation; it is ignored
+  rather than answered with an untimed reload.
 - **`page:timedtext-forwarded`** / **`capture-event-received`** /
   **`capture-parsed`**: non-empty caption JSON reached content and parsed.
 - **`cleanup-start`** / **`page:cleanup-finished`** /

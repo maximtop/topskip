@@ -438,6 +438,9 @@ describe('caption page bridge', () => {
         await flushCapture();
         expect(stale.text).toHaveBeenCalledOnce();
 
+        // Only a fresh activation takes a new generation, so the previous
+        // session's in-flight body has to be dropped across Deactivate.
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate, 'between');
         sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate, 'second');
         resolveBody?.(TIMEDTEXT_BODY);
         await flushCapture();
@@ -446,6 +449,34 @@ describe('caption page bridge', () => {
         await window.fetch(TIMEDTEXT_URL);
         await flushCapture();
         expect(harness.captures).toHaveLength(1);
+    });
+
+    it('forwards a body that was started before a reactivation', async () => {
+        const harness = installHarness();
+        let resolveBody: ((value: string) => void) | undefined;
+        const body = new Promise<string>((resolve) => {
+            resolveBody = resolve;
+        });
+        const inFlight = createResponse(body);
+        harness.originalFetch.mockResolvedValueOnce(inFlight.response);
+        await installBridge();
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate, 'first');
+        await window.fetch(TIMEDTEXT_URL);
+        await flushCapture();
+
+        // The reload the ISOLATED side sends after an empty body must not
+        // invalidate the response the player already had in flight.
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate, 'reactivate');
+        resolveBody?.(TIMEDTEXT_BODY);
+        await flushCapture();
+
+        expect(harness.captures).toHaveLength(1);
+        expect(harness.captures[0]).toMatchObject({
+            kind: 'timedtext-capture',
+            body: TIMEDTEXT_BODY,
+        });
+        expect(diagnosticStages(harness)).toContain('timedtext-observed');
     });
 
     it('keeps XHR dormant and rejects completion from a stale generation', async () => {
@@ -476,6 +507,7 @@ describe('caption page bridge', () => {
         stale.open('GET', TIMEDTEXT_URL);
         stale.send();
 
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate, 'xhr-between');
         sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate, 'xhr-second');
         stale.dispatchEvent(new Event('loadend'));
         expect(staleResponseRead).not.toHaveBeenCalled();

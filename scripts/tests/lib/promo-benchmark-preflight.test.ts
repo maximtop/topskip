@@ -20,8 +20,8 @@ describe('promo benchmark preflight', () => {
         });
 
         expect(preflight.manifest.itemCount).toBe(10);
-        expect(preflight.models).toHaveLength(12);
-        expect(preflight.requestCount).toBe(360);
+        expect(preflight.models).toHaveLength(13);
+        expect(preflight.requestCount).toBe(390);
         expect(
             preflight.manifest.items.filter(
                 (item) => item.languageCode === 'en',

@@ -426,7 +426,7 @@ describe('backend promo analysis worker', () => {
         const fetchMock = vi.fn().mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    model: 'deepseek/deepseek-v4-flash',
+                    model: 'deepseek/deepseek-v4.1-flash',
                     choices: [{ message: { content: '{"hasPromo":false}' } }],
                 }),
             ),
@@ -447,7 +447,7 @@ describe('backend promo analysis worker', () => {
             expect(result.terminalResponse.status).toBe('no_promo');
             expect(result.analysisRun).toMatchObject({
                 provider: 'openrouter',
-                model: 'deepseek/deepseek-v4-flash',
+                model: 'deepseek/deepseek-v4.1-flash',
                 promptVersion: '4',
             });
             expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -476,7 +476,7 @@ describe('backend promo analysis worker', () => {
             clock: () => 1_900_000_046_000,
             adapter: {
                 providerId: 'openrouter',
-                model: 'deepseek/deepseek-v4-flash',
+                model: 'deepseek/deepseek-v4.1-flash',
                 promptVersion: '1',
                 analyze: () => Promise.reject(new Error('secret details')),
             },
@@ -488,7 +488,7 @@ describe('backend promo analysis worker', () => {
         });
         expect(result.analysisRun).toMatchObject({
             provider: 'openrouter',
-            model: 'deepseek/deepseek-v4-flash',
+            model: 'deepseek/deepseek-v4.1-flash',
             promptVersion: '1',
             startedAtMs: 1_900_000_001_000,
             completedAtMs: 1_900_000_046_000,

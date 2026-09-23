@@ -966,7 +966,6 @@ export class PlayerCaptionCapture {
             });
             return;
         }
-
         const payload: CapturedTimedtextPayload = {
             videoId,
             languageCode,

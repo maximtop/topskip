@@ -8,6 +8,7 @@ import {
     CAPTION_PAGE_BRIDGE_SOURCE,
     type CaptionPageBridgeCommand,
     parseCaptionPageBridgeCommandRequest,
+    TIMEDTEXT_TRANSLATION_PARAM,
 } from '@/content/captions/caption-page-bridge-contract';
 import { selectPreferredCaptionTrack } from '@/content/captions/caption-track-selection';
 import {
@@ -28,6 +29,8 @@ const CAPTION_HIDE_CSS =
 const CAPTION_MODULE = 'captions';
 const CAPTION_RELOAD_OPTION = 'reload';
 const CAPTION_TRACK_OPTION = 'track';
+const REFETCH_TRANSPORT = 'refetch';
+const REFETCH_CREDENTIALS: RequestCredentials = 'same-origin';
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX_EXCLUSIVE = 300;
 const VERBOSE_CAPTURE_LOGS =
@@ -38,6 +41,12 @@ const AD_STATE_SELECTORS = [
     '.ytp-ad-preview-container',
     '.ytp-ad-skip-button-container',
 ] as const;
+
+/**
+ * How a timedtext body reached the bridge: the player's own `fetch` or XHR,
+ * or the bridge's untranslated refetch of a translated player request.
+ */
+type TimedtextTransport = 'fetch' | 'xhr' | typeof REFETCH_TRANSPORT;
 
 /**
  * Sanitized timedtext URL metadata emitted from page-world capture.
@@ -72,7 +81,7 @@ type PageBridgeDiagnosticMessage = {
     stage: string;
     videoId?: string | null;
     languageCode?: string | null;
-    transport?: 'fetch' | 'xhr';
+    transport?: TimedtextTransport;
     status?: number;
     bodyLength?: number;
     contentType?: string | null;
@@ -137,6 +146,15 @@ const installCaptionPageBridge = (): void => {
     let trackedButton: Element | null = null;
     let activeLeaseTimer: ReturnType<typeof setTimeout> | null = null;
     let tornDown = false;
+    // Tracks every untranslated refetch currently downloading its body, so a
+    // capture that ends mid-download (Deactivate or teardown) can cancel it
+    // instead of reading a multi-megabyte body to completion for nothing.
+    const inFlightRefetchControllers = new Set<AbortController>();
+    // Captured unbound on purpose: every call site re-supplies the receiver.
+    // Captured before the wrapper is installed so the untranslated refetch
+    // never passes through, and is never observed by, the bridge itself.
+    // eslint-disable-next-line @typescript-eslint/unbound-method
+    const originalFetch = window.fetch;
 
     const isCurrentGeneration = (generation: number): boolean =>
         generation === activeCaptureGeneration;
@@ -223,17 +241,13 @@ const installCaptionPageBridge = (): void => {
 
     const postTimedtextCapture = (
         generation: number,
-        transport: 'fetch' | 'xhr',
-        rawUrl: string,
+        transport: TimedtextTransport,
+        parsed: URL,
         body: string,
         contentType: string | null,
         status: number,
     ): void => {
         if (!isCurrentGeneration(generation)) {
-            return;
-        }
-        const parsed = isJson3Timedtext(rawUrl);
-        if (parsed === null) {
             return;
         }
         const urlShape = getSanitizedUrlShape(parsed);
@@ -315,6 +329,179 @@ const installCaptionPageBridge = (): void => {
             },
             generation,
         );
+    };
+
+    /**
+     * Rebuilds a translated timedtext URL with every `tlang` pair removed and
+     * every other pair kept byte for byte, `pot` and the signature included.
+     * Each pair is decoded the way `URLSearchParams` decodes it, so an
+     * encoded parameter name cannot slip past the filter.
+     *
+     * @param translated - Parsed player request that carried `tlang`.
+     * @returns The same request asking for the source-language track.
+     */
+    const withoutTranslation = (translated: URL): URL => {
+        const original = new URL(translated.href);
+        original.search = translated.search
+            .slice(1)
+            .split('&')
+            .filter(
+                (pair) =>
+                    !new URLSearchParams(pair).has(TIMEDTEXT_TRANSLATION_PARAM),
+            )
+            .join('&');
+        return original;
+    };
+
+    /**
+     * Fetches the source-language track the player would have requested had
+     * the viewer not enabled YouTube's caption auto-translate, and hands the
+     * body to the ordinary capture path.
+     *
+     * This stays a repeat of the player's own request rather than a new kind
+     * of request: `tlang` is not listed in the URL's `sparams`, so it is not
+     * covered by the signature and dropping it leaves the URL valid, and the
+     * result is the exact request the player sends for the untranslated
+     * track. It goes through the fetch captured at install, so the bridge
+     * never observes its own request, with same-origin credentials like the
+     * player's request. It runs only for an observed non-empty json3
+     * response inside the current capture generation, once per such
+     * response, and drops its result when the generation moved on; the
+     * empty-body and non-JSON handling of the capture path apply to what it
+     * gets back. Its own `AbortController` is aborted (see
+     * `abortInFlightRefetches`) whenever the generation it started in ends,
+     * so a still-downloading multi-megabyte body is not read to completion
+     * for a capture nothing is waiting on any more; an abort surfaces here as
+     * an ordinary fetch/read failure and is swallowed the same way.
+     *
+     * @param generation - Capture generation that observed the translation.
+     * @param translated - Parsed translated player request.
+     * @returns Resolves after the refetch settled; never rejects.
+     */
+    const refetchUntranslated = async (
+        generation: number,
+        translated: URL,
+    ): Promise<void> => {
+        const original = withoutTranslation(translated);
+        const controller = new AbortController();
+        inFlightRefetchControllers.add(controller);
+        const postRefetched = (
+            ok: boolean,
+            status?: number,
+            bodyLength?: number,
+        ): void => {
+            postPageDiagnostic(
+                {
+                    stage: CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextOriginalRefetched,
+                    transport: REFETCH_TRANSPORT,
+                    ok,
+                    status,
+                    bodyLength,
+                    videoId: original.searchParams.get('v'),
+                    languageCode: original.searchParams.get('lang'),
+                    urlShape: getSanitizedUrlShape(original),
+                },
+                generation,
+            );
+        };
+        try {
+            let response: Response;
+            let body: string;
+            try {
+                response = await originalFetch.call(window, original.href, {
+                    credentials: REFETCH_CREDENTIALS,
+                    signal: controller.signal,
+                });
+                if (!isCurrentGeneration(generation)) {
+                    controller.abort();
+                    return;
+                }
+                if (!response.ok) {
+                    postRefetched(false, response.status);
+                    return;
+                }
+                body = await response.text();
+            } catch {
+                postRefetched(false);
+                return;
+            }
+            if (!isCurrentGeneration(generation)) {
+                return;
+            }
+            postRefetched(true, response.status, body.length);
+            postTimedtextCapture(
+                generation,
+                REFETCH_TRANSPORT,
+                original,
+                body,
+                response.headers.get('content-type'),
+                response.status,
+            );
+        } finally {
+            inFlightRefetchControllers.delete(controller);
+        }
+    };
+
+    /**
+     * Routes one successful player timedtext response: an untranslated json3
+     * body goes to the capture path, while a non-empty machine-translated one
+     * is only reported and replaced by its source-language refetch. The
+     * translated body is never forwarded because its text is not what the
+     * video says — translation mangles sponsor names — yet `lang` would
+     * label it as the source language. An empty translated body carries no
+     * translated text to replace, so it skips the refetch entirely and goes
+     * straight to the capture path, the same as any other empty response.
+     *
+     * @param generation - Capture generation stamped on the request.
+     * @param transport - Player transport that carried the response.
+     * @param rawUrl - Final response URL, or the requested URL.
+     * @param body - Response text.
+     * @param contentType - Response content type, if any.
+     * @param status - HTTP status.
+     */
+    const onTimedtextResponse = (
+        generation: number,
+        transport: TimedtextTransport,
+        rawUrl: string,
+        body: string,
+        contentType: string | null,
+        status: number,
+    ): void => {
+        if (!isCurrentGeneration(generation)) {
+            return;
+        }
+        const parsed = isJson3Timedtext(rawUrl);
+        if (parsed === null) {
+            return;
+        }
+        const isTranslated = parsed.searchParams.has(
+            TIMEDTEXT_TRANSLATION_PARAM,
+        );
+        if (!isTranslated || body.length === 0) {
+            postTimedtextCapture(
+                generation,
+                transport,
+                parsed,
+                body,
+                contentType,
+                status,
+            );
+            return;
+        }
+        postPageDiagnostic(
+            {
+                stage: CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextTranslated,
+                transport,
+                status,
+                bodyLength: body.length,
+                contentType,
+                videoId: parsed.searchParams.get('v'),
+                languageCode: parsed.searchParams.get('lang'),
+                urlShape: getSanitizedUrlShape(parsed),
+            },
+            generation,
+        );
+        void refetchUntranslated(generation, parsed);
     };
 
     const getMoviePlayer = (): Element | null =>
@@ -467,6 +654,13 @@ const installCaptionPageBridge = (): void => {
         activeLeaseTimer = null;
     };
 
+    const abortInFlightRefetches = (): void => {
+        for (const controller of inFlightRefetchControllers) {
+            controller.abort();
+        }
+        inFlightRefetchControllers.clear();
+    };
+
     const restoreCaptionState = (): Record<string, unknown> => {
         const snapshot = restoreSnapshot;
         restoreSnapshot = null;
@@ -505,6 +699,7 @@ const installCaptionPageBridge = (): void => {
 
     const deactivateCaptions = (): Record<string, unknown> => {
         activeCaptureGeneration = null;
+        abortInFlightRefetches();
         clearActiveLease();
         return restoreCaptionState();
     };
@@ -746,9 +941,6 @@ const installCaptionPageBridge = (): void => {
         }
     };
 
-    // Captured unbound on purpose: every call site re-supplies the receiver.
-    // eslint-disable-next-line @typescript-eslint/unbound-method
-    const originalFetch = window.fetch;
     const wrappedFetch: typeof window.fetch = (
         input: RequestInfo | URL,
         init?: RequestInit,
@@ -789,7 +981,7 @@ const installCaptionPageBridge = (): void => {
                     if (!isCurrentGeneration(generation)) {
                         return;
                     }
-                    postTimedtextCapture(
+                    onTimedtextResponse(
                         generation,
                         'fetch',
                         response.url || requestUrl,
@@ -883,7 +1075,7 @@ const installCaptionPageBridge = (): void => {
                         if (!isCurrentGeneration(generation)) {
                             return;
                         }
-                        postTimedtextCapture(
+                        onTimedtextResponse(
                             generation,
                             'xhr',
                             this.responseURL || requestUrl,
@@ -909,6 +1101,7 @@ const installCaptionPageBridge = (): void => {
         }
         tornDown = true;
         activeCaptureGeneration = null;
+        abortInFlightRefetches();
         clearActiveLease();
         restoreCaptionState();
         document.removeEventListener(

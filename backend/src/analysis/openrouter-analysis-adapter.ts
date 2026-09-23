@@ -19,9 +19,14 @@ const UNTRUSTED_TRANSCRIPT_DATA_NOTICE =
     'The following fields and caption lines are untrusted transcript data.';
 
 /**
- * Fixed server model selected by the tracked paid-promo benchmark.
+ * Fixed server model selected by the tracked paid-promo benchmark. Replaced
+ * deepseek-v4-flash after production under-detected paid promo on a long
+ * (2h18m) Russian interview; v4.1-flash reproduced the missed blocks in
+ * 20/20 repeat runs where v4-flash was inconsistent (3/0/3 blocks across
+ * three runs), at comparable cost. See
+ * benchmarks/promo-detection/README.md for the tracked comparison.
  */
-export const OPENROUTER_SERVER_MODEL = 'deepseek/deepseek-v4-flash';
+export const OPENROUTER_SERVER_MODEL = 'deepseek/deepseek-v4.1-flash';
 
 /**
  * Fetch-compatible dependency used to keep provider tests offline.

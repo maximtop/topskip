@@ -1,4 +1,5 @@
 import type { CapturedTimedtextUrlShape } from '@/content/captions/caption-capture-types';
+import { CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE } from '@/content/captions/caption-page-bridge-contract';
 import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-constants';
 import {
     DEBUG_LOG_EVENT,
@@ -18,6 +19,8 @@ export const CAPTION_PAGE_DIAGNOSTIC_STAGES: ReadonlySet<string> = new Set([
     'timedtext-empty-body',
     'timedtext-non-json',
     'timedtext-forwarded',
+    CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextTranslated,
+    CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextOriginalRefetched,
     'activation-finished',
 ]);
 
@@ -118,6 +121,10 @@ const CAPTURE_STAGE_EVENTS: Readonly<Partial<Record<string, DebugLogEventName>>>
     [`${PAGE_DIAGNOSTIC_STAGE_PREFIX}timedtext-empty-body`]: DEBUG_LOG_EVENT.CaptureStage,
     [`${PAGE_DIAGNOSTIC_STAGE_PREFIX}timedtext-non-json`]: DEBUG_LOG_EVENT.CaptureStage,
     [`${PAGE_DIAGNOSTIC_STAGE_PREFIX}timedtext-forwarded`]: DEBUG_LOG_EVENT.CaptureStage,
+    [`${PAGE_DIAGNOSTIC_STAGE_PREFIX}${CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextTranslated}`]:
+        DEBUG_LOG_EVENT.CaptureStage,
+    [`${PAGE_DIAGNOSTIC_STAGE_PREFIX}${CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextOriginalRefetched}`]:
+        DEBUG_LOG_EVENT.CaptureStage,
     [`${PAGE_DIAGNOSTIC_STAGE_PREFIX}activation-finished`]:
         DEBUG_LOG_EVENT.CaptureActivation,
 };

@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 
 import {
     CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS,
@@ -21,6 +21,34 @@ const TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
 const TIMEDTEXT_URL =
     'https://www.youtube.com/api/timedtext?v=video-1&lang=en&fmt=json3';
 const TIMEDTEXT_BODY = '{"events":[]}';
+// Mirrors the player's auto-translate request: `tlang` sits between signed
+// parameters and is not listed in `sparams`.
+const TRANSLATED_URL =
+    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&tlang=en&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
+const UNTRANSLATED_URL =
+    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
+// No `pot` at all: the player's first, tokenless request for an
+// auto-translated track.
+const TRANSLATED_URL_NO_POT =
+    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&tlang=en&fmt=json3';
+// `tlang` first, repeated, and percent-encoded (`%74lang` decodes to
+// `tlang`); an empty pair (`&&`) and a percent-encoded comma in `sparams`
+// exercise that everything else survives byte for byte.
+const MESSY_TRANSLATED_URL =
+    'https://www.youtube.com/api/timedtext?tlang=en&v=video-1&lang=ru&pot=POT-TOKEN&tlang=de&%74lang=fr&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
+const MESSY_UNTRANSLATED_URL =
+    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
+const TRANSLATED_BODY = '{"events":[{"segs":[{"utf8":"EASSV Payol"}]}]}';
+const ORIGINAL_BODY = '{"events":[{"segs":[{"utf8":"Easystaff"}]}]}';
+// The refetch carries its own AbortController (item 3). `expect.any` is
+// typed `any`; widening it to `unknown` first, like `MESSAGE_ID_SHAPE`
+// above, before it goes into the object literal keeps the literal's own
+// property assignment unsafe-assignment free.
+const REFETCH_SIGNAL_SHAPE: unknown = expect.any(AbortSignal);
+const REFETCH_INIT: unknown = {
+    credentials: 'same-origin',
+    signal: REFETCH_SIGNAL_SHAPE,
+};
 const MOVIE_PLAYER_ID = 'movie_player';
 const HIDE_STYLE_ID = 'topskip-caption-hide-style';
 
@@ -109,9 +137,14 @@ type FetchResponseHarness = {
     text: ReturnType<typeof vi.fn>;
 };
 
+/**
+ * Signature of the page fetch the bridge wraps and refetches through.
+ */
+type PageFetch = (input: unknown, init?: unknown) => Promise<Response>;
+
 type BridgeHarness = {
     button: TestElement;
-    originalFetch: ReturnType<typeof vi.fn>;
+    originalFetch: Mock<PageFetch>;
     captures: unknown[];
     diagnostics: unknown[];
     commandResults: unknown[];
@@ -174,6 +207,7 @@ class TestDocument extends EventTarget {
 
 function createResponse(
     body: string | Promise<string> = TIMEDTEXT_BODY,
+    url = TIMEDTEXT_URL,
 ): FetchResponseHarness {
     const text = vi.fn(() => Promise.resolve(body));
     const clone = vi.fn(() => ({ text }));
@@ -181,7 +215,7 @@ function createResponse(
         status: 200,
         headers: { 'content-type': 'application/json' },
     });
-    Object.defineProperty(response, 'url', { value: TIMEDTEXT_URL });
+    Object.defineProperty(response, 'url', { value: url });
     Object.defineProperty(response, 'clone', { value: clone });
     return { response, clone, text };
 }
@@ -208,7 +242,7 @@ function installHarness(captionsInitiallyOn = false): BridgeHarness {
         toggleSubtitlesOff: toggleOff,
     });
     const documentHarness = new TestDocument(player, button);
-    const originalFetch = vi.fn();
+    const originalFetch = vi.fn<PageFetch>();
     const windowHarness = Object.assign(new EventTarget(), {
         location: {
             origin: 'https://www.youtube.com',
@@ -337,6 +371,62 @@ async function flushCapture(): Promise<void> {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
+}
+
+/**
+ * Builds the response the bridge's own untranslated refetch receives; it
+ * reads the body directly instead of through a clone.
+ */
+function createRefetchResponse(body: string, status = 200): Response {
+    const response = new Response(body, {
+        status,
+        headers: { 'content-type': 'application/json' },
+    });
+    Object.defineProperty(response, 'url', { value: UNTRANSLATED_URL });
+    return response;
+}
+
+/**
+ * A successful refetch response whose body read stays pending until the
+ * caller resolves it, so a test can act while the generation is between the
+ * response resolving and `response.text()` settling.
+ */
+function createControllableRefetchResponse(): {
+    response: Response;
+    resolveText: (body: string) => void;
+} {
+    let resolveText: ((body: string) => void) | undefined;
+    const pendingText = new Promise<string>((resolve) => {
+        resolveText = resolve;
+    });
+    if (resolveText === undefined) {
+        throw new Error('Promise executor must run synchronously');
+    }
+    const response = new Response(null, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+    });
+    Object.defineProperty(response, 'url', { value: UNTRANSLATED_URL });
+    Object.defineProperty(response, 'text', { value: () => pendingText });
+    return { response, resolveText };
+}
+
+/**
+ * Lets the player response, the refetch round trip and its body read settle.
+ */
+async function flushRefetch(): Promise<void> {
+    await flushCapture();
+    await flushCapture();
+    await flushCapture();
+}
+
+function findDiagnostic(harness: BridgeHarness, stage: string): unknown {
+    return harness.diagnostics.find(
+        (message) =>
+            message !== null &&
+            typeof message === 'object' &&
+            Reflect.get(message, 'stage') === stage,
+    );
 }
 
 function diagnosticStages(harness: BridgeHarness): unknown[] {
@@ -790,6 +880,344 @@ describe('caption page bridge', () => {
         await flushCapture();
         expect(harness.diagnostics).toHaveLength(3);
         expect(harness.captures).toHaveLength(1);
+    });
+
+    it('replaces a translated response with its untranslated refetch', async () => {
+        const harness = installHarness();
+        const translated = createResponse(TRANSLATED_BODY, TRANSLATED_URL);
+        harness.originalFetch
+            .mockResolvedValueOnce(translated.response)
+            .mockResolvedValueOnce(createRefetchResponse(ORIGINAL_BODY));
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        const returned = await window.fetch(TRANSLATED_URL);
+        await flushRefetch();
+
+        // The player still gets the translation it asked for.
+        expect(returned).toBe(translated.response);
+        expect(harness.originalFetch).toHaveBeenCalledTimes(2);
+        expect(harness.originalFetch).toHaveBeenLastCalledWith(
+            UNTRANSLATED_URL,
+            REFETCH_INIT,
+        );
+        expect(harness.captures).toEqual([
+            expect.objectContaining({
+                kind: 'timedtext-capture',
+                videoId: 'video-1',
+                languageCode: 'ru',
+                body: ORIGINAL_BODY,
+                urlShape: {
+                    pathname: '/api/timedtext',
+                    paramNames: [
+                        'fmt',
+                        'lang',
+                        'pot',
+                        'signature',
+                        'sparams',
+                        'v',
+                    ],
+                    fmt: 'json3',
+                    hasPot: true,
+                },
+            }),
+        ]);
+        expect(JSON.stringify(harness.captures)).not.toContain('EASSV');
+        expect(diagnosticStages(harness)).toEqual([
+            'activation-finished',
+            'timedtext-translated',
+            'timedtext-original-refetched',
+            'timedtext-observed',
+            'timedtext-forwarded',
+        ]);
+        expect(findDiagnostic(harness, 'timedtext-translated')).toMatchObject({
+            transport: 'fetch',
+            status: 200,
+            bodyLength: TRANSLATED_BODY.length,
+            languageCode: 'ru',
+            urlShape: {
+                paramNames: expect.arrayContaining(['tlang']) as string[],
+            },
+        });
+        expect(
+            findDiagnostic(harness, 'timedtext-original-refetched'),
+        ).toMatchObject({
+            transport: 'refetch',
+            ok: true,
+            status: 200,
+            bodyLength: ORIGINAL_BODY.length,
+            languageCode: 'ru',
+        });
+        const logged = JSON.stringify(harness.diagnostics);
+        expect(logged).not.toContain('POT-TOKEN');
+        expect(logged).not.toContain('SIG-VALUE');
+        expect(logged).not.toContain('tlang=');
+    });
+
+    it('refetches a translated XHR response through the original fetch', async () => {
+        const harness = installHarness();
+        harness.originalFetch.mockResolvedValueOnce(
+            createRefetchResponse(ORIGINAL_BODY),
+        );
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        const xhr = new TestXmlHttpRequest();
+        xhr.response = TRANSLATED_BODY;
+        xhr.status = 200;
+        xhr.responseURL = TRANSLATED_URL;
+        xhr.open('GET', TRANSLATED_URL);
+        xhr.send();
+        xhr.dispatchEvent(new Event('loadend'));
+        await flushRefetch();
+
+        expect(harness.originalFetch).toHaveBeenCalledOnce();
+        expect(harness.originalFetch).toHaveBeenCalledWith(
+            UNTRANSLATED_URL,
+            REFETCH_INIT,
+        );
+        expect(harness.captures).toEqual([
+            expect.objectContaining({
+                languageCode: 'ru',
+                body: ORIGINAL_BODY,
+            }),
+        ]);
+        expect(findDiagnostic(harness, 'timedtext-translated')).toMatchObject({
+            transport: 'xhr',
+        });
+    });
+
+    it('sends an empty tokenless translated player body straight to the empty-body path without refetching', async () => {
+        const harness = installHarness();
+        harness.originalFetch.mockResolvedValueOnce(
+            createResponse('', TRANSLATED_URL_NO_POT).response,
+        );
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        await window.fetch(TRANSLATED_URL_NO_POT);
+        await flushRefetch();
+
+        // The empty body carries no translated text to replace, so it never
+        // reaches `timedtext-translated` or a refetch at all.
+        expect(harness.originalFetch).toHaveBeenCalledOnce();
+        expect(harness.captures).toEqual([]);
+        expect(diagnosticStages(harness)).toEqual([
+            'activation-finished',
+            'timedtext-observed',
+            'timedtext-empty-body',
+        ]);
+        expect(findDiagnostic(harness, 'timedtext-empty-body')).toMatchObject({
+            transport: 'fetch',
+            bodyLength: 0,
+            urlShape: { hasPot: false },
+        });
+    });
+
+    it('strips every form of tlang from the refetch URL while preserving all other params verbatim', async () => {
+        const harness = installHarness();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, MESSY_TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(createRefetchResponse(ORIGINAL_BODY));
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        await window.fetch(MESSY_TRANSLATED_URL);
+        await flushRefetch();
+
+        expect(harness.originalFetch).toHaveBeenLastCalledWith(
+            MESSY_UNTRANSLATED_URL,
+            REFETCH_INIT,
+        );
+    });
+
+    it('hands an empty untranslated refetch to the empty-body handling', async () => {
+        const harness = installHarness();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(createRefetchResponse(''));
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        await window.fetch(TRANSLATED_URL);
+        await flushRefetch();
+
+        expect(harness.captures).toEqual([]);
+        expect(diagnosticStages(harness)).toEqual([
+            'activation-finished',
+            'timedtext-translated',
+            'timedtext-original-refetched',
+            'timedtext-observed',
+            'timedtext-empty-body',
+        ]);
+        expect(findDiagnostic(harness, 'timedtext-empty-body')).toMatchObject({
+            transport: 'refetch',
+            languageCode: 'ru',
+            urlShape: { hasPot: true },
+        });
+    });
+
+    it('hands a non-JSON untranslated refetch to the non-JSON handling', async () => {
+        const harness = installHarness();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(createRefetchResponse('<html>'));
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        await window.fetch(TRANSLATED_URL);
+        await flushRefetch();
+
+        expect(harness.captures).toEqual([]);
+        expect(diagnosticStages(harness)).toContain('timedtext-non-json');
+    });
+
+    it.each([
+        ['a failing status', () => Promise.resolve(createRefetchResponse('', 403)), 403],
+        ['a network error', () => Promise.reject(new Error('offline')), undefined],
+    ] as const)(
+        'reports an untranslated refetch that ends in %s and forwards nothing',
+        async (_label, refetch, status) => {
+            const harness = installHarness();
+            harness.originalFetch
+                .mockResolvedValueOnce(
+                    createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+                )
+                .mockImplementationOnce(refetch);
+            await installBridge();
+            sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+            await window.fetch(TRANSLATED_URL);
+            await flushRefetch();
+
+            expect(harness.captures).toEqual([]);
+            expect(diagnosticStages(harness)).toEqual([
+                'activation-finished',
+                'timedtext-translated',
+                'timedtext-original-refetched',
+            ]);
+            const refetched = findDiagnostic(
+                harness,
+                'timedtext-original-refetched',
+            );
+            expect(refetched).toMatchObject({ ok: false });
+            expect(
+                refetched !== null && typeof refetched === 'object'
+                    ? Reflect.get(refetched, 'status')
+                    : null,
+            ).toBe(status);
+        },
+    );
+
+    it('drops an untranslated refetch that settles after deactivation', async () => {
+        const harness = installHarness();
+        let resolveRefetch: ((value: Response) => void) | undefined;
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+            )
+            .mockReturnValueOnce(
+                new Promise<Response>((resolve) => {
+                    resolveRefetch = resolve;
+                }),
+            );
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+        await window.fetch(TRANSLATED_URL);
+        await flushRefetch();
+        expect(harness.originalFetch).toHaveBeenCalledTimes(2);
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate);
+        resolveRefetch?.(createRefetchResponse(ORIGINAL_BODY));
+        await flushRefetch();
+
+        expect(harness.captures).toEqual([]);
+        expect(diagnosticStages(harness)).not.toContain(
+            'timedtext-original-refetched',
+        );
+    });
+
+    it('drops a refetch whose generation ends between the response resolving and its body settling', async () => {
+        const harness = installHarness();
+        const { response: refetchResponse, resolveText } =
+            createControllableRefetchResponse();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(refetchResponse);
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+        await window.fetch(TRANSLATED_URL);
+        // Lets the refetch's own fetch() settle (its ok-check passes) while
+        // `response.text()` stays pending, landing generation-check exactly
+        // between the two.
+        await flushRefetch();
+        expect(harness.originalFetch).toHaveBeenCalledTimes(2);
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate);
+        resolveText(ORIGINAL_BODY);
+        await flushRefetch();
+
+        expect(harness.captures).toEqual([]);
+        expect(diagnosticStages(harness)).not.toContain(
+            'timedtext-original-refetched',
+        );
+    });
+
+    it('aborts the in-flight refetch signal when the generation ends mid-refetch', async () => {
+        const harness = installHarness();
+        const { response: refetchResponse, resolveText } =
+            createControllableRefetchResponse();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(refetchResponse);
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+        await window.fetch(TRANSLATED_URL);
+        await flushRefetch();
+        expect(harness.originalFetch).toHaveBeenCalledTimes(2);
+
+        const refetchInit: unknown = harness.originalFetch.mock.calls[1]?.[1];
+        const signal: unknown =
+            refetchInit !== null && typeof refetchInit === 'object'
+                ? Reflect.get(refetchInit, 'signal')
+                : undefined;
+        if (!(signal instanceof AbortSignal)) {
+            throw new Error('Expected the refetch to carry an AbortSignal');
+        }
+        expect(signal.aborted).toBe(false);
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate);
+
+        expect(signal.aborted).toBe(true);
+
+        // Let the stalled body read settle so it does not leak into another test.
+        resolveText(ORIGINAL_BODY);
+        await flushRefetch();
+    });
+
+    it('never refetches a translated response while dormant', async () => {
+        const harness = installHarness();
+        const translated = createResponse(TRANSLATED_BODY, TRANSLATED_URL);
+        harness.originalFetch.mockResolvedValue(translated.response);
+        await installBridge();
+
+        await window.fetch(TRANSLATED_URL);
+        await flushRefetch();
+
+        expect(harness.originalFetch).toHaveBeenCalledOnce();
+        expect(translated.clone).not.toHaveBeenCalled();
+        expect(harness.captures).toEqual([]);
+        expect(harness.diagnostics).toEqual([]);
     });
 
     it('keeps install-time and cleanup diagnostics dev-only', async () => {

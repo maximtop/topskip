@@ -657,9 +657,10 @@ export function buildBenchmarkReadme(repoRoot: string): string {
     );
     const kimiMetrics = metricsForModel(rows, 'kimi-k3');
     const lunaMetrics = metricsForModel(rows, 'gpt-5.6-luna');
-    const deepseekFlashMetrics = metricsForModel(
+    const deepseekV4FlashMetrics = metricsForModel(rows, 'deepseek-v4-flash');
+    const deepseekV41FlashMetrics = metricsForModel(
         rows,
-        'deepseek-v4-flash',
+        'deepseek-v4.1-flash',
     );
     const sonnetMetrics = metricsForModel(rows, 'sonnet-5');
     const lines = [
@@ -742,22 +743,40 @@ export function buildBenchmarkReadme(repoRoot: string): string {
             '',
             '## Practical choices',
             '',
-            '- **Selected production default: deepseek-v4-flash.** ' +
+            '- **Selected production default: deepseek-v4.1-flash.** ' +
                 `${formatMatchedBlocks(
-                    deepseekFlashMetrics.matchedBlockCount,
-                    deepseekFlashMetrics.referenceBlockCount,
+                    deepseekV41FlashMetrics.matchedBlockCount,
+                    deepseekV41FlashMetrics.referenceBlockCount,
                 )} references found,`,
-            `  ${String(deepseekFlashMetrics.extraBlockCount ?? 0)} extra, ` +
+            `  ${String(deepseekV41FlashMetrics.extraBlockCount ?? 0)} extra, ` +
                 `${formatPercent(
-                    deepseekFlashMetrics.referenceIou,
+                    deepseekV41FlashMetrics.referenceIou,
                 )} time overlap, ` +
                 `${formatSeconds(
-                    deepseekFlashMetrics.latencyP50Ms,
+                    deepseekV41FlashMetrics.latencyP50Ms,
                 )} observed response, ` +
                 `${formatCostPerTask(
-                    deepseekFlashMetrics.totalCostUsd,
-                    deepseekFlashMetrics.sampleCount,
-                )}/task.`,
+                    deepseekV41FlashMetrics.totalCostUsd,
+                    deepseekV41FlashMetrics.sampleCount,
+                )}/task. Replaces deepseek-v4-flash (` +
+                `${formatMatchedBlocks(
+                    deepseekV4FlashMetrics.matchedBlockCount,
+                    deepseekV4FlashMetrics.referenceBlockCount,
+                )} found, ${String(
+                    deepseekV4FlashMetrics.extraBlockCount ?? 0,
+                )} extra, ` +
+                `${formatCostPerTask(
+                    deepseekV4FlashMetrics.totalCostUsd,
+                    deepseekV4FlashMetrics.sampleCount,
+                )}/task) after production under-detected paid promo on a` +
+                ' long (2h18m) Russian interview; on that exact chunk' +
+                ' v4.1-flash reproduced the missed blocks in 20/20 repeat' +
+                ' runs where v4-flash was inconsistent (3/0/3 blocks across' +
+                ' three runs). On this ten-video tracked corpus the two' +
+                ' models tie on found refs, while v4.1-flash records' +
+                ' slightly more extra blocks and slightly lower repeat' +
+                ' stability than v4-flash — a small-sample trade-off' +
+                ' accepted for the long-transcript reliability gain.',
             `- **Highest paid-only detection quality: kimi-k3.** ${formatMatchedBlocks(
                 kimiMetrics.matchedBlockCount,
                 kimiMetrics.referenceBlockCount,

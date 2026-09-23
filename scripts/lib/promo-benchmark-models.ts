@@ -75,6 +75,23 @@ export const PROMO_BENCHMARK_MODELS: readonly BenchmarkModel[] = [
         },
     },
     {
+        id: 'deepseek-v4.1-flash',
+        supportedReasoning: ['none', 'low', 'high', 'xhigh'],
+        pricing: {
+            // From https://openrouter.ai/api/v1/models (id
+            // deepseek/deepseek-v4.1-flash): prompt $0.0000001/token,
+            // completion $0.0000005/token, input_cache_read
+            // $0.00000001/token. That listing has no separate cache-write
+            // or reasoning price, so cacheWritePerMillion reuses the input
+            // figure and reasoningPerMillion reuses the output figure.
+            inputPerMillion: 0.1,
+            outputPerMillion: 0.5,
+            cacheReadPerMillion: 0.01,
+            cacheWritePerMillion: 0.1,
+            reasoningPerMillion: 0.5,
+        },
+    },
+    {
         id: 'hy3',
         supportedReasoning: ['none', 'low', 'high'],
         pricing: {

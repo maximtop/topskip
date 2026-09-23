@@ -573,7 +573,7 @@ describe('BackendAnalysisApi', () => {
             body: {
                 status: 'ready',
                 videoId: 'e2eFixture1',
-                sourceResultId: 'result-e2eFixture1-server-v7',
+                sourceResultId: 'result-e2eFixture1-server-v8',
             },
         });
         expect(legacy.body).not.toHaveProperty('transcriptHash');

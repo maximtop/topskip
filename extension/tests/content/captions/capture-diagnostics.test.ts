@@ -370,36 +370,13 @@ describe('CaptureDiagnostics.toDebugLogEvent', () => {
         });
     });
 
-    it('maps capture-event-rejected to capture-stage with the rejection reason', () => {
-        expect(
-            CaptureDiagnostics.toDebugLogEvent('capture-event-rejected', {
-                videoId: 'dQw4w9WgXcQ',
-                reason: 'translated',
-                languageCode: 'ru',
-                bodyLength: 10,
-                urlShape: URL_SHAPE,
-            }),
-        ).toEqual({
-            event: DEBUG_LOG_EVENT.CaptureStage,
-            fields: {
-                stage: 'capture-event-rejected',
-                reason: 'translated',
-                bodyLength: 10,
-                lang: 'ru',
-                urlPath: '/api/timedtext',
-                urlParams: 'fmt,lang,pot,v',
-                fmt: 'json3',
-                hasPot: true,
-            },
-        });
-    });
-
     it.each([
         'schedule-duplicate',
         'schedule-replace',
         'bridge-readiness-requested',
         'activation-attempt',
         'capture-event-ignored',
+        'capture-event-rejected',
         'capture-timeout',
         'capture-parse-failed',
         'bridge-readiness-failed',

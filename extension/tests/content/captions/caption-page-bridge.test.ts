@@ -27,9 +27,28 @@ const TRANSLATED_URL =
     'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&tlang=en&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
 const UNTRANSLATED_URL =
     'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
+// No `pot` at all: the player's first, tokenless request for an
+// auto-translated track.
+const TRANSLATED_URL_NO_POT =
+    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&tlang=en&fmt=json3';
+// `tlang` first, repeated, and percent-encoded (`%74lang` decodes to
+// `tlang`); an empty pair (`&&`) and a percent-encoded comma in `sparams`
+// exercise that everything else survives byte for byte.
+const MESSY_TRANSLATED_URL =
+    'https://www.youtube.com/api/timedtext?tlang=en&v=video-1&lang=ru&pot=POT-TOKEN&tlang=de&%74lang=fr&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
+const MESSY_UNTRANSLATED_URL =
+    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
 const TRANSLATED_BODY = '{"events":[{"segs":[{"utf8":"EASSV Payol"}]}]}';
 const ORIGINAL_BODY = '{"events":[{"segs":[{"utf8":"Easystaff"}]}]}';
-const REFETCH_INIT = { credentials: 'same-origin' };
+// The refetch carries its own AbortController (item 3). `expect.any` is
+// typed `any`; widening it to `unknown` first, like `MESSAGE_ID_SHAPE`
+// above, before it goes into the object literal keeps the literal's own
+// property assignment unsafe-assignment free.
+const REFETCH_SIGNAL_SHAPE: unknown = expect.any(AbortSignal);
+const REFETCH_INIT: unknown = {
+    credentials: 'same-origin',
+    signal: REFETCH_SIGNAL_SHAPE,
+};
 const MOVIE_PLAYER_ID = 'movie_player';
 const HIDE_STYLE_ID = 'topskip-caption-hide-style';
 
@@ -365,6 +384,31 @@ function createRefetchResponse(body: string, status = 200): Response {
     });
     Object.defineProperty(response, 'url', { value: UNTRANSLATED_URL });
     return response;
+}
+
+/**
+ * A successful refetch response whose body read stays pending until the
+ * caller resolves it, so a test can act while the generation is between the
+ * response resolving and `response.text()` settling.
+ */
+function createControllableRefetchResponse(): {
+    response: Response;
+    resolveText: (body: string) => void;
+} {
+    let resolveText: ((body: string) => void) | undefined;
+    const pendingText = new Promise<string>((resolve) => {
+        resolveText = resolve;
+    });
+    if (resolveText === undefined) {
+        throw new Error('Promise executor must run synchronously');
+    }
+    const response = new Response(null, {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+    });
+    Object.defineProperty(response, 'url', { value: UNTRANSLATED_URL });
+    Object.defineProperty(response, 'text', { value: () => pendingText });
+    return { response, resolveText };
 }
 
 /**
@@ -943,6 +987,52 @@ describe('caption page bridge', () => {
         });
     });
 
+    it('sends an empty tokenless translated player body straight to the empty-body path without refetching', async () => {
+        const harness = installHarness();
+        harness.originalFetch.mockResolvedValueOnce(
+            createResponse('', TRANSLATED_URL_NO_POT).response,
+        );
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        await window.fetch(TRANSLATED_URL_NO_POT);
+        await flushRefetch();
+
+        // The empty body carries no translated text to replace, so it never
+        // reaches `timedtext-translated` or a refetch at all.
+        expect(harness.originalFetch).toHaveBeenCalledOnce();
+        expect(harness.captures).toEqual([]);
+        expect(diagnosticStages(harness)).toEqual([
+            'activation-finished',
+            'timedtext-observed',
+            'timedtext-empty-body',
+        ]);
+        expect(findDiagnostic(harness, 'timedtext-empty-body')).toMatchObject({
+            transport: 'fetch',
+            bodyLength: 0,
+            urlShape: { hasPot: false },
+        });
+    });
+
+    it('strips every form of tlang from the refetch URL while preserving all other params verbatim', async () => {
+        const harness = installHarness();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, MESSY_TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(createRefetchResponse(ORIGINAL_BODY));
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+
+        await window.fetch(MESSY_TRANSLATED_URL);
+        await flushRefetch();
+
+        expect(harness.originalFetch).toHaveBeenLastCalledWith(
+            MESSY_UNTRANSLATED_URL,
+            REFETCH_INIT,
+        );
+    });
+
     it('hands an empty untranslated refetch to the empty-body handling', async () => {
         const harness = installHarness();
         harness.originalFetch
@@ -1051,6 +1141,68 @@ describe('caption page bridge', () => {
         expect(diagnosticStages(harness)).not.toContain(
             'timedtext-original-refetched',
         );
+    });
+
+    it('drops a refetch whose generation ends between the response resolving and its body settling', async () => {
+        const harness = installHarness();
+        const { response: refetchResponse, resolveText } =
+            createControllableRefetchResponse();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(refetchResponse);
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+        await window.fetch(TRANSLATED_URL);
+        // Lets the refetch's own fetch() settle (its ok-check passes) while
+        // `response.text()` stays pending, landing generation-check exactly
+        // between the two.
+        await flushRefetch();
+        expect(harness.originalFetch).toHaveBeenCalledTimes(2);
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate);
+        resolveText(ORIGINAL_BODY);
+        await flushRefetch();
+
+        expect(harness.captures).toEqual([]);
+        expect(diagnosticStages(harness)).not.toContain(
+            'timedtext-original-refetched',
+        );
+    });
+
+    it('aborts the in-flight refetch signal when the generation ends mid-refetch', async () => {
+        const harness = installHarness();
+        const { response: refetchResponse, resolveText } =
+            createControllableRefetchResponse();
+        harness.originalFetch
+            .mockResolvedValueOnce(
+                createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
+            )
+            .mockResolvedValueOnce(refetchResponse);
+        await installBridge();
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Activate);
+        await window.fetch(TRANSLATED_URL);
+        await flushRefetch();
+        expect(harness.originalFetch).toHaveBeenCalledTimes(2);
+
+        const refetchInit: unknown = harness.originalFetch.mock.calls[1]?.[1];
+        const signal: unknown =
+            refetchInit !== null && typeof refetchInit === 'object'
+                ? Reflect.get(refetchInit, 'signal')
+                : undefined;
+        if (!(signal instanceof AbortSignal)) {
+            throw new Error('Expected the refetch to carry an AbortSignal');
+        }
+        expect(signal.aborted).toBe(false);
+
+        sendCommand(CAPTION_PAGE_BRIDGE_COMMAND.Deactivate);
+
+        expect(signal.aborted).toBe(true);
+
+        // Let the stalled body read settle so it does not leak into another test.
+        resolveText(ORIGINAL_BODY);
+        await flushRefetch();
     });
 
     it('never refetches a translated response while dormant', async () => {

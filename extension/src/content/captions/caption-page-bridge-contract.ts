@@ -64,8 +64,12 @@ export const CAPTION_PAGE_BRIDGE_EVENT = {
 } as const;
 
 /**
- * Diagnostic stages named on both sides of the bridge: the MAIN world emits
- * them and the ISOLATED side reacts to or allow-lists them.
+ * The subset of MAIN-bridge diagnostic stage names shared with the ISOLATED
+ * side through this constant instead of a duplicated string literal:
+ * `TimedtextEmptyBody` drives ISOLATED's reload logic, and the other two are
+ * allow-listed for the debug log. Most other MAIN-bridge stage names (for
+ * example `timedtext-observed`) are still duplicated as literals in
+ * `capture-diagnostics.ts` rather than named here.
  */
 export const CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE = {
     TimedtextEmptyBody: 'timedtext-empty-body',

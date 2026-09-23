@@ -691,21 +691,23 @@ Verbose manual-smoke logs are enabled by **`CAPTION_CAPTURE_VERBOSE_LOGS`** in
   rather than answered with an untimed reload.
 - **`page:timedtext-translated`**: the player requested a machine-translated
   track (`tlang` in `urlParams`, typically because the viewer turned on
-  YouTube's caption auto-translate, which the player remembers across videos).
-  The bridge does not forward that body — translation mangles sponsor names,
-  and `lang` would still label it as the source language — and instead
-  refetches the same URL without `tlang`. `lang` on this line is the source
-  language; the translation target is never logged.
+  YouTube's caption auto-translate, which the player remembers across videos)
+  with a non-empty body. The bridge does not forward that body — translation
+  mangles sponsor names, and `lang` would still label it as the source
+  language — and instead refetches the same URL without `tlang`. `lang` on
+  this line is the source language; the translation target is never logged.
+  An *empty* translated body carries no translated text to replace, so it
+  skips this stage and the refetch entirely and is reported as an ordinary
+  `page:timedtext-empty-body` instead.
 - **`page:timedtext-original-refetched`**: that untranslated refetch settled.
   `ok=true` is followed by the usual `page:timedtext-observed` with
   `transport=refetch`, and from there the ordinary empty-body, non-JSON, and
   forwarded handling applies to the original-language body. `ok=false` (with
   `status` when the server answered) forwards nothing, exactly like a failed
-  player request, so the capture keeps waiting until its timeout.
-- **`capture-event-rejected`** (`reason=translated`): content received a body
-  whose URL still carried `tlang` — from an outdated bridge or a page script —
-  and refused to upload it. The capture keeps waiting for an original-language
-  body.
+  player request, so the capture keeps waiting until its timeout. A non-2xx
+  *translated player response* never reaches this stage at all, because the
+  bridge only inspects successful player responses in the first place — the
+  capture instead waits for the player's next request or times out.
 - **`page:timedtext-forwarded`** / **`capture-event-received`** /
   **`capture-parsed`**: non-empty caption JSON reached content and parsed.
 - **`cleanup-start`** / **`page:cleanup-finished`** /
@@ -730,21 +732,28 @@ the player keeps that choice for later videos. That body is a machine
 translation (sponsor names come out mangled) while `lang` still says `ru`, so
 uploading it would mislabel the transcript and poison the server cache keyed by
 transcript hash. When the MAIN bridge observes such a response inside an active
-capture, it reports `timedtext-translated`, leaves the player's response
-untouched, and refetches the same URL with only the `tlang` pair removed —
-`pot`, the signature and every other pair stay byte for byte. That is safe
-because `tlang` is not listed in the URL's `sparams`, so the signature does not
-cover it, and the result is the exact request the player makes for the
-untranslated track. The refetch uses the `fetch` captured before the wrapper was
-installed (so the bridge never observes itself), same-origin credentials like
-the player's request, runs once per observed translated response, and drops its
-result once the capture generation has ended; its body then goes through the
-ordinary capture path, so empty-body reloads and non-JSON handling apply
-unchanged, all within the existing capture timeout. Content additionally
-rejects any forwarded body whose URL shape still contains `tlang`. Switching the
-player to the untranslated track instead was ruled out: headless probes showed
-the tracklist is empty at activation (`hasTracks=0`), and selecting a track
-rewrites the viewer's persisted YouTube caption language
+capture, and the body is non-empty, it reports `timedtext-translated`, leaves
+the player's response untouched, and refetches the same URL with only the
+`tlang` pair removed — `pot`, the signature and every other pair stay byte for
+byte. That is safe because `tlang` is not listed in the URL's `sparams`, so the
+signature does not cover it, and the result is the exact request the player
+makes for the untranslated track. An *empty* translated body carries no
+translated text to replace, so it skips the refetch and goes straight through
+the ordinary empty-body path instead. The refetch uses the `fetch` captured
+before the wrapper was installed (so the bridge never observes itself),
+same-origin credentials like the player's request, runs once per observed
+non-empty translated response, and drops its result once the capture
+generation has ended; its body then goes through the ordinary capture path, so
+empty-body reloads and non-JSON handling apply unchanged, all within the
+existing capture timeout. Each refetch carries its own `AbortController`,
+aborted as soon as the capture generation that started it ends, so a
+multi-megabyte body already streaming is not downloaded to completion for a
+capture nothing is waiting on any more. A non-2xx *translated player response*
+never triggers a refetch at all — the bridge only inspects successful player
+responses — so the capture just waits for the player's next request or times
+out. Switching the player to the untranslated track instead was ruled out:
+headless probes showed the tracklist is empty at activation (`hasTracks=0`),
+and selecting a track rewrites the viewer's persisted YouTube caption language
 (`yt-player-caption-sticky-language`).
 
 The production path no longer uses direct timedtext probing, direct InnerTube fallback clients, or fresh watch-page HTML scraping. The bridge preserves the page's fetch/XHR behavior, forwards caption bodies only to the internal parser pipeline, and keeps diagnostics to bounded metadata such as failure stage, language, body length, segment count, and sanitized timedtext parameter names.

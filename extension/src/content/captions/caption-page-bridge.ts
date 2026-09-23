@@ -146,6 +146,10 @@ const installCaptionPageBridge = (): void => {
     let trackedButton: Element | null = null;
     let activeLeaseTimer: ReturnType<typeof setTimeout> | null = null;
     let tornDown = false;
+    // Tracks every untranslated refetch currently downloading its body, so a
+    // capture that ends mid-download (Deactivate or teardown) can cancel it
+    // instead of reading a multi-megabyte body to completion for nothing.
+    const inFlightRefetchControllers = new Set<AbortController>();
     // Captured unbound on purpose: every call site re-supplies the receiver.
     // Captured before the wrapper is installed so the untranslated refetch
     // never passes through, and is never observed by, the bridge itself.
@@ -360,10 +364,15 @@ const installCaptionPageBridge = (): void => {
      * result is the exact request the player sends for the untranslated
      * track. It goes through the fetch captured at install, so the bridge
      * never observes its own request, with same-origin credentials like the
-     * player's request. It runs only for an observed json3 response inside
-     * the current capture generation, once per such response, and drops its
-     * result when the generation moved on; the empty-body and non-JSON
-     * handling of the capture path apply to what it gets back.
+     * player's request. It runs only for an observed non-empty json3
+     * response inside the current capture generation, once per such
+     * response, and drops its result when the generation moved on; the
+     * empty-body and non-JSON handling of the capture path apply to what it
+     * gets back. Its own `AbortController` is aborted (see
+     * `abortInFlightRefetches`) whenever the generation it started in ends,
+     * so a still-downloading multi-megabyte body is not read to completion
+     * for a capture nothing is waiting on any more; an abort surfaces here as
+     * an ordinary fetch/read failure and is swallowed the same way.
      *
      * @param generation - Capture generation that observed the translation.
      * @param translated - Parsed translated player request.
@@ -374,6 +383,8 @@ const installCaptionPageBridge = (): void => {
         translated: URL,
     ): Promise<void> => {
         const original = withoutTranslation(translated);
+        const controller = new AbortController();
+        inFlightRefetchControllers.add(controller);
         const postRefetched = (
             ok: boolean,
             status?: number,
@@ -393,45 +404,53 @@ const installCaptionPageBridge = (): void => {
                 generation,
             );
         };
-        let response: Response;
-        let body: string;
         try {
-            response = await originalFetch.call(window, original.href, {
-                credentials: REFETCH_CREDENTIALS,
-            });
+            let response: Response;
+            let body: string;
+            try {
+                response = await originalFetch.call(window, original.href, {
+                    credentials: REFETCH_CREDENTIALS,
+                    signal: controller.signal,
+                });
+                if (!isCurrentGeneration(generation)) {
+                    controller.abort();
+                    return;
+                }
+                if (!response.ok) {
+                    postRefetched(false, response.status);
+                    return;
+                }
+                body = await response.text();
+            } catch {
+                postRefetched(false);
+                return;
+            }
             if (!isCurrentGeneration(generation)) {
                 return;
             }
-            if (!response.ok) {
-                postRefetched(false, response.status);
-                return;
-            }
-            body = await response.text();
-        } catch {
-            postRefetched(false);
-            return;
+            postRefetched(true, response.status, body.length);
+            postTimedtextCapture(
+                generation,
+                REFETCH_TRANSPORT,
+                original,
+                body,
+                response.headers.get('content-type'),
+                response.status,
+            );
+        } finally {
+            inFlightRefetchControllers.delete(controller);
         }
-        if (!isCurrentGeneration(generation)) {
-            return;
-        }
-        postRefetched(true, response.status, body.length);
-        postTimedtextCapture(
-            generation,
-            REFETCH_TRANSPORT,
-            original,
-            body,
-            response.headers.get('content-type'),
-            response.status,
-        );
     };
 
     /**
      * Routes one successful player timedtext response: an untranslated json3
-     * body goes to the capture path, while a machine-translated one is only
-     * reported and replaced by its source-language refetch. The translated
-     * body is never forwarded because its text is not what the video says —
-     * translation mangles sponsor names — yet `lang` would label it as the
-     * source language.
+     * body goes to the capture path, while a non-empty machine-translated one
+     * is only reported and replaced by its source-language refetch. The
+     * translated body is never forwarded because its text is not what the
+     * video says — translation mangles sponsor names — yet `lang` would
+     * label it as the source language. An empty translated body carries no
+     * translated text to replace, so it skips the refetch entirely and goes
+     * straight to the capture path, the same as any other empty response.
      *
      * @param generation - Capture generation stamped on the request.
      * @param transport - Player transport that carried the response.
@@ -455,7 +474,10 @@ const installCaptionPageBridge = (): void => {
         if (parsed === null) {
             return;
         }
-        if (!parsed.searchParams.has(TIMEDTEXT_TRANSLATION_PARAM)) {
+        const isTranslated = parsed.searchParams.has(
+            TIMEDTEXT_TRANSLATION_PARAM,
+        );
+        if (!isTranslated || body.length === 0) {
             postTimedtextCapture(
                 generation,
                 transport,
@@ -632,6 +654,13 @@ const installCaptionPageBridge = (): void => {
         activeLeaseTimer = null;
     };
 
+    const abortInFlightRefetches = (): void => {
+        for (const controller of inFlightRefetchControllers) {
+            controller.abort();
+        }
+        inFlightRefetchControllers.clear();
+    };
+
     const restoreCaptionState = (): Record<string, unknown> => {
         const snapshot = restoreSnapshot;
         restoreSnapshot = null;
@@ -670,6 +699,7 @@ const installCaptionPageBridge = (): void => {
 
     const deactivateCaptions = (): Record<string, unknown> => {
         activeCaptureGeneration = null;
+        abortInFlightRefetches();
         clearActiveLease();
         return restoreCaptionState();
     };
@@ -1071,6 +1101,7 @@ const installCaptionPageBridge = (): void => {
         }
         tornDown = true;
         activeCaptureGeneration = null;
+        abortInFlightRefetches();
         clearActiveLease();
         restoreCaptionState();
         document.removeEventListener(

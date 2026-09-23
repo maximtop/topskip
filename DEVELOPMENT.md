@@ -191,7 +191,7 @@ production image do not install the binary.
 ### Server-owned DeepSeek analysis
 
 Production server analysis uses OpenRouter with the fixed
-`deepseek/deepseek-v4-flash` model. It sends one non-streaming request containing
+`deepseek/deepseek-v4.1-flash` model. It sends one non-streaming request containing
 the validated uploaded transcript as `[startSec] text` lines plus the video ID
 and caption language. It leaves reasoning at the model default and does not set
 an output-token limit. The request has a five-minute timeout, while the HTTP
@@ -200,7 +200,7 @@ response remains size-bounded.
 The system prompt and prompt version live in `common` so server analysis,
 Private BYOK, and the model-comparison script share the same promo definition.
 Only tests select the deterministic fixture adapter; a non-test backend always
-uses DeepSeek V4 Flash. Analysis failures map to stable terminal codes instead of exposing
+uses DeepSeek V4.1 Flash. Analysis failures map to stable terminal codes instead of exposing
 provider response bodies or errors.
 
 Ready and no-promo results expire 30 days after DeepSeek completes. Only the same

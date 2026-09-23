@@ -26,7 +26,7 @@ describe('OpenRouterAnalysisAdapter', () => {
         const fetchMock = vi.fn().mockResolvedValue(
             new Response(
                 JSON.stringify({
-                    model: 'deepseek/deepseek-v4-flash',
+                    model: 'deepseek/deepseek-v4.1-flash',
                     choices: [
                         {
                             message: {
@@ -61,7 +61,7 @@ describe('OpenRouterAnalysisAdapter', () => {
         });
 
         expect(result).toMatchObject({
-            model: 'deepseek/deepseek-v4-flash',
+            model: 'deepseek/deepseek-v4.1-flash',
             usage: {
                 inputTokens: 120,
                 outputTokens: 30,

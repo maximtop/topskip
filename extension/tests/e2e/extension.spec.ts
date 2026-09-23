@@ -63,7 +63,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const extensionPath = path.resolve(__dirname, '../../dist');
 const E2E_SERVER_API_VERSION = 1;
-const E2E_SERVER_ALGORITHM_VERSION = 'server-v7';
+const E2E_SERVER_ALGORITHM_VERSION = 'server-v8';
 const E2E_VIDEO_ID = 'e2eFixture1';
 const E2E_CAPTION_LANGUAGE = 'en';
 const E2E_CAPTION_SEGMENTS = [
@@ -165,7 +165,7 @@ const DEBUG_LOG_OVERFLOW_SEED_BYTES = 64 * BYTES_PER_KIB;
 // POLLING_BACKEND_PROCESSING_POLLS (2) polls; the 10-poll cadence of SC-005
 // is covered by Task D5's interim-summary unit test (12 polls, ≤ 40 events).
 const DEBUG_LOG_FRESH_ANALYSIS_MAX_EVENTS = 40;
-const E2E_POLLING_JOB_ID = 'local-e2eFixture1-server-v7';
+const E2E_POLLING_JOB_ID = 'local-e2eFixture1-server-v8';
 const E2E_RESULT_FRESHNESS_EXPIRES_AT_MS = 4_102_444_800_000;
 const E2E_BACKEND_URL = new URL(E2E_BACKEND_ORIGIN);
 const E2E_BACKEND_HOST_SENTINEL = E2E_BACKEND_URL.host;
@@ -917,7 +917,7 @@ async function seedFreshLocalServerCache(
                             languageCode: fixture.languageCode,
                             transcriptHash: fixture.transcriptHash,
                             algorithmVersion: fixture.algorithmVersion,
-                            sourceResultId: 'result-e2eFixture1-server-v7',
+                            sourceResultId: 'result-e2eFixture1-server-v8',
                             freshness: { expiresAtMs: 4_102_444_800_000 },
                             promoBlocks: [
                                 { startSec: 4, endSec: 24, confidence: 'high' },
@@ -1206,7 +1206,7 @@ async function startPollingBackend(
         status: 'ready',
         ...E2E_TRANSCRIPT_IDENTITY,
         source: 'server_cache',
-        sourceResultId: 'result-e2eFixture1-server-v7',
+        sourceResultId: 'result-e2eFixture1-server-v8',
         freshness: { expiresAtMs: E2E_RESULT_FRESHNESS_EXPIRES_AT_MS },
         promoBlocks: [
             { startSec: 4, endSec: 24, confidence: 'high' },
@@ -1702,7 +1702,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('server transcript contract fixture reaches analysis phase', async () => {
-        const jobId = 'local-e2eFixture1-server-v7';
+        const jobId = 'local-e2eFixture1-server-v8';
         const processingResponse = {
             status: 'processing',
             ...E2E_TRANSCRIPT_IDENTITY,
@@ -1856,7 +1856,7 @@ test.describe('TopSkip extension', () => {
                         status: 'ready',
                         ...E2E_TRANSCRIPT_IDENTITY,
                         source: 'server_cache',
-                        sourceResultId: 'result-e2eFixture1-server-v7',
+                        sourceResultId: 'result-e2eFixture1-server-v8',
                         freshness: { expiresAtMs: 4_102_444_800_000 },
                         promoBlocks: [
                             { startSec: 4, endSec: 24, confidence: 'high' },
@@ -1990,7 +1990,7 @@ test.describe('TopSkip extension', () => {
 
     test('caption phase reaches ready and skips only future blocks', async () => {
         test.setTimeout(45_000);
-        const jobId = 'local-e2eFixture1-server-v7';
+        const jobId = 'local-e2eFixture1-server-v8';
         let terminalReady = false;
         const heldAnalysis: { response: ServerResponse | null } = {
             response: null,
@@ -2011,7 +2011,7 @@ test.describe('TopSkip extension', () => {
             status: 'ready',
             ...E2E_TRANSCRIPT_IDENTITY,
             source: 'server_cache',
-            sourceResultId: 'result-e2eFixture1-server-v7',
+            sourceResultId: 'result-e2eFixture1-server-v8',
             freshness: { expiresAtMs: 4_102_444_800_000 },
             promoBlocks: [
                 { startSec: 4, endSec: 24, confidence: 'high' },
@@ -2235,7 +2235,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('prefs update cancellation stops scheduled server status polling', async () => {
-        const jobId = 'local-e2eFixture1-server-v7';
+        const jobId = 'local-e2eFixture1-server-v8';
         let statusRequestCount = 0;
         let resolveRequestSeen: () => void = () => {};
         const requestSeen = new Promise<void>((resolve) => {
@@ -2329,7 +2329,7 @@ test.describe('TopSkip extension', () => {
     });
 
     test('job loss resubmits one exact captured transcript', async () => {
-        const jobId = 'lost-e2eFixture1-server-v7';
+        const jobId = 'lost-e2eFixture1-server-v8';
         const requestBodies: string[] = [];
         let pollRequestCount = 0;
         const backend = createServer((req, res) => {
@@ -2365,7 +2365,7 @@ test.describe('TopSkip extension', () => {
                             ...E2E_TRANSCRIPT_IDENTITY,
                             source: 'server_cache',
                             sourceResultId:
-                                'result-e2eFixture1-resubmitted-server-v7',
+                                'result-e2eFixture1-resubmitted-server-v8',
                             freshness: {
                                 expiresAtMs: 4_102_444_800_000,
                             },
@@ -2721,7 +2721,7 @@ test.describe('TopSkip extension', () => {
                             status: 'no_promo',
                             ...E2E_TRANSCRIPT_IDENTITY,
                             sourceResultId:
-                                'result-e2eFixture1-exact-miss-server-v7',
+                                'result-e2eFixture1-exact-miss-server-v8',
                             freshness: {
                                 expiresAtMs: 4_102_444_800_000,
                             },
@@ -2849,7 +2849,7 @@ test.describe('TopSkip extension', () => {
                         status: 'no_promo',
                         ...E2E_TRANSCRIPT_IDENTITY,
                         sourceResultId:
-                            'result-e2eFixture1-toggle-server-v7',
+                            'result-e2eFixture1-toggle-server-v8',
                         freshness: { expiresAtMs: 4_102_444_800_000 },
                     }),
                 );

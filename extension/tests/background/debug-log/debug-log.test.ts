@@ -175,7 +175,7 @@ describe('DebugLog', () => {
         DebugLog.record(
             DEBUG_LOG_EVENT.PollSummary,
             { polls: 3, retries: 0, totalMs: 900, lastStatus: 'ready', terminal: true },
-            { tab: 41, job: 'local-e2eFixture1-server-v7' },
+            { tab: 41, job: 'local-e2eFixture1-server-v8' },
         );
         DebugLog.record(
             DEBUG_LOG_EVENT.PollSummary,
@@ -185,7 +185,7 @@ describe('DebugLog', () => {
 
         const lines = await loggedLines();
         expect(lines[0]).toContain('j=job-1f3b9e2c-0000-4000-8000-000000000001');
-        expect(lines[1]).toContain('j=local-e2eFixture1-server-v7');
+        expect(lines[1]).toContain('j=local-e2eFixture1-server-v8');
         expect(lines[2]).not.toContain('j=');
         expect(lines[2]).not.toContain('not a token');
     });

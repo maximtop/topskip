@@ -159,7 +159,7 @@ describe('id patterns', () => {
         expect(UUID_PATTERN.test(SESSION_ID)).toBe(true);
         expect(UUID_PATTERN.test('job-' + SESSION_ID)).toBe(false);
         expect(JOB_ID_PATTERN.test('job-' + SESSION_ID)).toBe(true);
-        expect(JOB_ID_PATTERN.test('local-e2eFixture1-server-v7')).toBe(true);
+        expect(JOB_ID_PATTERN.test('local-e2eFixture1-server-v8')).toBe(true);
         expect(JOB_ID_PATTERN.test('has space')).toBe(false);
         expect(JOB_ID_PATTERN.test('a'.repeat(161))).toBe(false);
         expect(SUPPORT_ID_PATTERN.test(`support-${SESSION_ID}`)).toBe(true);

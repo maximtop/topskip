@@ -873,6 +873,102 @@ describe('PlayerCaptionCapture', () => {
         expect(countContentLogStage('capture-event-ignored')).toBe(0);
     });
 
+    it('rejects a body requested with tlang and keeps waiting for the original', async () => {
+        const run = PlayerCaptionCapture.captureForVideoId('dQw4w9WgXcQ', {
+            captureTimeoutMs: 1000,
+        });
+        await acceptActivation();
+        const translated = JSON.stringify({
+            events: [{ tStartMs: 0, dDurationMs: 1000, segs: [{ utf8: 'EASSV Payol' }] }],
+        });
+        window.dispatchEvent(
+            new MessageEvent('message', {
+                source: window,
+                data: {
+                    source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
+                    kind: 'timedtext-capture',
+                    messageId: 'bridge:translated',
+                    videoId: 'dQw4w9WgXcQ',
+                    languageCode: 'ru',
+                    contentType: 'application/json',
+                    bodyLength: translated.length,
+                    urlShape: {
+                        pathname: '/api/timedtext',
+                        paramNames: ['fmt', 'lang', 'pot', 'tlang', 'v'],
+                        fmt: 'json3',
+                        hasPot: true,
+                    },
+                    body: translated,
+                },
+            }),
+        );
+        await flushMicrotasks();
+
+        expect(
+            countRuntimeMessages(TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT),
+        ).toBe(0);
+        expect(countContentLogStage('capture-event-received')).toBe(0);
+        expect(debugLogCalls(DEBUG_LOG_EVENT.CaptureStage)).toContainEqual([
+            DEBUG_LOG_EVENT.CaptureStage,
+            {
+                stage: 'capture-event-rejected',
+                reason: 'translated',
+                bodyLength: translated.length,
+                lang: 'ru',
+                urlPath: '/api/timedtext',
+                urlParams: 'fmt,lang,pot,tlang,v',
+                fmt: 'json3',
+                hasPot: true,
+            },
+            { video: 'dQw4w9WgXcQ' },
+        ]);
+
+        dispatchTimedtextCapture('dQw4w9WgXcQ', CAPTION_JSON, 'bridge:original');
+        await finishCleanup();
+        await expect(run).resolves.toMatchObject({ status: 'ready' });
+        expect(
+            countRuntimeMessages(TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT),
+        ).toBe(1);
+        expect(JSON.stringify(mockSendMessage.mock.calls)).not.toContain(
+            'EASSV',
+        );
+    });
+
+    it('times out rather than uploading when only translated bodies arrive', async () => {
+        const run = PlayerCaptionCapture.captureForVideoId('abc', {
+            captureTimeoutMs: 10,
+        });
+        await acceptActivation();
+        window.dispatchEvent(
+            new MessageEvent('message', {
+                source: window,
+                data: {
+                    source: 'TOPSKIP_CAPTION_CAPTURE_PAGE',
+                    kind: 'timedtext-capture',
+                    messageId: 'bridge:translated-only',
+                    videoId: 'abc',
+                    languageCode: 'ru',
+                    contentType: null,
+                    bodyLength: CAPTION_JSON.length,
+                    urlShape: {
+                        pathname: '/api/timedtext',
+                        paramNames: ['fmt', 'lang', 'tlang', 'v'],
+                        fmt: 'json3',
+                        hasPot: false,
+                    },
+                    body: CAPTION_JSON,
+                },
+            }),
+        );
+        await vi.advanceTimersByTimeAsync(20);
+        await finishCleanup();
+
+        await expect(run).resolves.toMatchObject({
+            status: 'failed',
+            failure: { reason: 'capture-timeout' },
+        });
+    });
+
     it('calls deactivate after capture timeout', async () => {
         const run = PlayerCaptionCapture.captureForVideoId('abc', {
             captureTimeoutMs: 10,

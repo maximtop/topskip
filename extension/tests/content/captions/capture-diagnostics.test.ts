@@ -307,6 +307,93 @@ describe('CaptureDiagnostics.toDebugLogEvent', () => {
         });
     });
 
+    it('maps the translated response and its untranslated refetch with bounded fields only', () => {
+        const translatedShape = {
+            ...URL_SHAPE,
+            paramNames: ['fmt', 'lang', 'pot', 'tlang', 'v'],
+        };
+        expect(
+            CaptureDiagnostics.toDebugLogEvent(
+                `${PAGE_DIAGNOSTIC_STAGE_PREFIX}timedtext-translated`,
+                {
+                    transport: 'fetch',
+                    status: 200,
+                    bodyLength: 2878880,
+                    contentType: 'application/json',
+                    videoId: 'abc',
+                    languageCode: 'ru',
+                    urlShape: translatedShape,
+                },
+            ),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: {
+                stage: 'page:timedtext-translated',
+                transport: 'fetch',
+                status: 200,
+                bodyLength: 2878880,
+                contentType: 'application/json',
+                lang: 'ru',
+                urlPath: '/api/timedtext',
+                urlParams: 'fmt,lang,pot,tlang,v',
+                fmt: 'json3',
+                hasPot: true,
+            },
+        });
+        expect(
+            CaptureDiagnostics.toDebugLogEvent(
+                `${PAGE_DIAGNOSTIC_STAGE_PREFIX}timedtext-original-refetched`,
+                {
+                    transport: 'refetch',
+                    ok: true,
+                    status: 200,
+                    bodyLength: 2544413,
+                    videoId: 'abc',
+                    languageCode: 'ru',
+                    urlShape: URL_SHAPE,
+                },
+            ),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: {
+                stage: 'page:timedtext-original-refetched',
+                transport: 'refetch',
+                ok: true,
+                status: 200,
+                bodyLength: 2544413,
+                lang: 'ru',
+                urlPath: '/api/timedtext',
+                urlParams: 'fmt,lang,pot,v',
+                fmt: 'json3',
+                hasPot: true,
+            },
+        });
+    });
+
+    it('maps capture-event-rejected to capture-stage with the rejection reason', () => {
+        expect(
+            CaptureDiagnostics.toDebugLogEvent('capture-event-rejected', {
+                videoId: 'dQw4w9WgXcQ',
+                reason: 'translated',
+                languageCode: 'ru',
+                bodyLength: 10,
+                urlShape: URL_SHAPE,
+            }),
+        ).toEqual({
+            event: DEBUG_LOG_EVENT.CaptureStage,
+            fields: {
+                stage: 'capture-event-rejected',
+                reason: 'translated',
+                bodyLength: 10,
+                lang: 'ru',
+                urlPath: '/api/timedtext',
+                urlParams: 'fmt,lang,pot,v',
+                fmt: 'json3',
+                hasPot: true,
+            },
+        });
+    });
+
     it.each([
         'schedule-duplicate',
         'schedule-replace',
@@ -360,6 +447,8 @@ describe('CaptureDiagnostics.acceptBridgeDiagnostic', () => {
             'timedtext-forwarded',
             'timedtext-non-json',
             'timedtext-observed',
+            'timedtext-original-refetched',
+            'timedtext-translated',
         ]);
     });
 

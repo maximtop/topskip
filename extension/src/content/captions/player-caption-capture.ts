@@ -9,6 +9,7 @@ import {
     CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE,
     CAPTION_PAGE_BRIDGE_EVENT,
     CAPTION_PAGE_BRIDGE_SOURCE,
+    TIMEDTEXT_TRANSLATION_PARAM,
 } from '@/content/captions/caption-page-bridge-contract';
 import {
     CaptureDiagnostics,
@@ -95,6 +96,12 @@ export const EMPTY_BODY_RELOAD_MAX_DELAY_MS = 2_000;
  * visible in the debug log instead of looking like silence.
  */
 const RELOAD_BUDGET_SKIP_REASON = 'budget';
+
+/**
+ * Reason recorded when a forwarded body was requested with `tlang`, so a
+ * machine translation labelled as the source language never gets uploaded.
+ */
+const TRANSLATED_REJECT_REASON = 'translated';
 
 const EMPTY_TIMEDTEXT_BODY_STAGE =
     CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody;
@@ -963,6 +970,21 @@ export class PlayerCaptionCapture {
             PlayerCaptionCapture.log('capture-event-ignored', {
                 videoId: session.videoId,
                 reason: 'malformed-page-message',
+            });
+            return;
+        }
+        // The MAIN bridge replaces a translated response with its untranslated
+        // refetch; this is the backstop for any body that still carries
+        // `tlang`, whether from a stale bridge or a page script. It is treated
+        // like an unusable response: no upload, and the capture keeps waiting
+        // for the original-language body until its timeout.
+        if (urlShape.paramNames.includes(TIMEDTEXT_TRANSLATION_PARAM)) {
+            PlayerCaptionCapture.log('capture-event-rejected', {
+                videoId: session.videoId,
+                reason: TRANSLATED_REJECT_REASON,
+                languageCode,
+                bodyLength,
+                urlShape,
             });
             return;
         }

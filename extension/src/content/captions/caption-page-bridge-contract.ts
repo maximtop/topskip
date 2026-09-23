@@ -64,12 +64,22 @@ export const CAPTION_PAGE_BRIDGE_EVENT = {
 } as const;
 
 /**
- * Diagnostic stages that isolated capture must observe even when verbose
- * page logs are compiled out.
+ * Diagnostic stages named on both sides of the bridge: the MAIN world emits
+ * them and the ISOLATED side reacts to or allow-lists them.
  */
 export const CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE = {
     TimedtextEmptyBody: 'timedtext-empty-body',
+    TimedtextTranslated: 'timedtext-translated',
+    TimedtextOriginalRefetched: 'timedtext-original-refetched',
 } as const;
+
+/**
+ * Timedtext query parameter that makes YouTube machine-translate the caption
+ * track into another language. A response requested with it holds translated
+ * text while `lang` still names the source language, so neither world may
+ * treat it as the video's transcript.
+ */
+export const TIMEDTEXT_TRANSLATION_PARAM = 'tlang';
 
 /**
  * Commands accepted by the declaratively installed MAIN bridge.

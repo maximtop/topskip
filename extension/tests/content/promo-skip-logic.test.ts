@@ -80,6 +80,62 @@ describe('evaluatePromoBlocksSkip', () => {
         });
         expect(d.action).toBe('none');
     });
+
+    it('does nothing when there are no blocks', () => {
+        const d = evaluatePromoBlocksSkip({
+            prevTime: 9,
+            currentTime: 11,
+            duration: 120,
+            isSeeking: false,
+            firedStartKeys: new Set(),
+            blocks: [],
+        });
+        expect(d).toEqual({ action: 'none' });
+    });
+
+    it('skips a hole in a sparse blocks array instead of throwing', () => {
+        const sparse: PromoBlock[] = [];
+        sparse[1] = { startSec: 50, endSec: 60 };
+        const d = evaluatePromoBlocksSkip({
+            prevTime: 49,
+            currentTime: 51,
+            duration: 120,
+            isSeeking: false,
+            firedStartKeys: new Set(),
+            blocks: sparse,
+        });
+        expect(d).toEqual({ action: 'skip', blockIndex: 1, targetTime: 60 });
+    });
+
+    it('continues past an already-fired block to skip the next unfired one', () => {
+        const d = evaluatePromoBlocksSkip({
+            prevTime: 49,
+            currentTime: 51,
+            duration: 120,
+            isSeeking: false,
+            firedStartKeys: new Set([10]),
+            blocks: [
+                { startSec: 10, endSec: 20 },
+                { startSec: 50, endSec: 60 },
+            ],
+        });
+        expect(d).toEqual({ action: 'skip', blockIndex: 1, targetTime: 60 });
+    });
+
+    it('does not fire for a non-finite or non-positive duration', () => {
+        const input: PromoBlocksSkipInput = {
+            prevTime: 9,
+            currentTime: 11,
+            duration: Number.NaN,
+            isSeeking: false,
+            firedStartKeys: new Set(),
+            blocks: [{ startSec: 10, endSec: 20 }],
+        };
+        expect(evaluatePromoBlocksSkip(input)).toEqual({ action: 'none' });
+        expect(
+            evaluatePromoBlocksSkip({ ...input, duration: 0 }),
+        ).toEqual({ action: 'none' });
+    });
 });
 
 describe('resetFiredIndicesOnBackwardSeek', () => {
@@ -137,6 +193,19 @@ describe('resetFiredIndicesOnBackwardSeek', () => {
             firedStartKeys: fired,
         });
         expect(fired.size).toBe(0);
+    });
+
+    it('leaves a fired key untouched when its block no longer exists in the list', () => {
+        const blocks = [{ startSec: 50, endSec: 60 }];
+        const fired = new Set([10, 50]);
+        resetFiredIndicesOnBackwardSeek({
+            currentTime: 5,
+            prevTime: 55,
+            blocks,
+            firedStartKeys: fired,
+        });
+        expect(fired.has(10)).toBe(true);
+        expect(fired.has(50)).toBe(false);
     });
 });
 

@@ -37,6 +37,24 @@ describe('ChunkMerge.filterPromoBlocksForChunkTimeRange', () => {
         );
         expect(far).toHaveLength(0);
     });
+
+    it('keeps a block whose start lands exactly on the tolerance boundary', () => {
+        const atLo = ChunkMerge.filterPromoBlocksForChunkTimeRange(
+            [{ startSec: -5, endSec: 0, confidence: 'low' }],
+            0,
+            10,
+            5,
+        );
+        expect(atLo).toHaveLength(1);
+
+        const atHi = ChunkMerge.filterPromoBlocksForChunkTimeRange(
+            [{ startSec: 15, endSec: 20, confidence: 'low' }],
+            0,
+            10,
+            5,
+        );
+        expect(atHi).toHaveLength(1);
+    });
 });
 
 describe('mergePromoBlocksWithGap', () => {

@@ -266,6 +266,18 @@ describe('backend promo analysis worker', () => {
             promoBlocks: [{ startSec: 0, endSec: 120 }],
             label: 'full-video degenerate',
         },
+        {
+            promoBlocks: [{ startSec: -1, endSec: 10 }],
+            label: 'negative start',
+        },
+        {
+            promoBlocks: [{ startSec: 10, endSec: 10 }],
+            label: 'zero-length block (endSec equals startSec)',
+        },
+        {
+            promoBlocks: [{ startSec: 10, endSec: 5 }],
+            label: 'inverted block (endSec before startSec)',
+        },
     ])('rejects unsafe blocks: $label', ({ promoBlocks }) => {
         expect(
             normalizeBackendPromoBlocks({
@@ -277,6 +289,57 @@ describe('backend promo analysis worker', () => {
             failureReason: BACKEND_ANALYSIS_FAILURE_REASON.UnsafeModelBlocks,
         });
     });
+
+    it('passes through an in-bounds block unchanged when duration is unknown', () => {
+        expect(
+            normalizeBackendPromoBlocks({
+                promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' }],
+                durationSec: undefined,
+            }),
+        ).toEqual({
+            ok: true,
+            promoBlocks: [{ startSec: 4, endSec: 24, confidence: 'high' }],
+        });
+    });
+
+    it('does not reject a full-video-degenerate block when duration is unknown', () => {
+        // isSafeBlock's upper-bound and full-video-degenerate checks only
+        // apply when durationSec is known; with no duration, a block report
+        // spanning from 0 to an arbitrarily large endSec is accepted as-is.
+        expect(
+            normalizeBackendPromoBlocks({
+                promoBlocks: [{ startSec: 0, endSec: 999_999 }],
+                durationSec: undefined,
+            }),
+        ).toEqual({
+            ok: true,
+            promoBlocks: [{ startSec: 0, endSec: 999_999 }],
+        });
+    });
+
+    it.each([
+        {
+            promoBlocks: [{ startSec: -1, endSec: 10 }],
+            label: 'negative start',
+        },
+        {
+            promoBlocks: [{ startSec: 10, endSec: 5 }],
+            label: 'inverted block',
+        },
+    ])(
+        'still rejects unsafe blocks when duration is unknown: $label',
+        ({ promoBlocks }) => {
+            expect(
+                normalizeBackendPromoBlocks({
+                    promoBlocks: [...promoBlocks],
+                    durationSec: undefined,
+                }),
+            ).toMatchObject({
+                ok: false,
+                failureReason: BACKEND_ANALYSIS_FAILURE_REASON.UnsafeModelBlocks,
+            });
+        },
+    );
 
     it('returns deterministic raw promo JSON for the primary transcript fixture', async () => {
         const artifact = makeTranscriptArtifact({

@@ -23,14 +23,20 @@ describe('formatPromoBlocksSummary', () => {
             { startSec: 45, endSec: 120 },
             { startSec: 300, endSec: 360 },
         ]);
-        expect(s).toContain('0:45');
-        expect(s).toContain('2:00');
-        expect(s).toContain(';');
+        expect(s).toBe('0:45–2:00; 5:00–6:00');
     });
 
     it('uses default tail when endSec missing', () => {
         const s = formatPromoBlocksSummary([{ startSec: 10 }]);
-        expect(s).toContain('0:10');
-        expect(s).toContain('~');
+        expect(s).toBe('0:10–~0:40');
+    });
+
+    it('falls back to the default tail when endSec does not exceed startSec', () => {
+        const s = formatPromoBlocksSummary([{ startSec: 10, endSec: 10 }]);
+        expect(s).toBe('0:10–~0:40');
+    });
+
+    it('returns an empty string for no blocks', () => {
+        expect(formatPromoBlocksSummary([])).toBe('');
     });
 });

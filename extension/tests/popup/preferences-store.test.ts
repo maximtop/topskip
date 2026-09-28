@@ -107,6 +107,84 @@ describe('PreferencesStore', () => {
         expect(store.analysisMode).toBe(ANALYSIS_MODE.Byok);
     });
 
+    it('load prefers GET_MODEL_SETTINGS and does not fall back to GET_ACTIVE_PROVIDER when the active model is found', async () => {
+        mocks.sendMessage.mockImplementation((msg: unknown) => {
+            const type: unknown =
+                msg && typeof msg === 'object'
+                    ? Reflect.get(msg, 'type')
+                    : undefined;
+            if (type === TOPSKIP_MESSAGE.GET_MODEL_SETTINGS) {
+                return Promise.resolve({
+                    ok: true,
+                    activeModelId: 'openrouter:test-model',
+                    models: [
+                        {
+                            id: 'openrouter:test-model',
+                            label: 'Test Model',
+                            providerId: 'openrouter',
+                            providerLabel: 'OpenRouter',
+                            modelName: 'test-model',
+                            requiresConnection: true,
+                            availability: 'available',
+                        },
+                    ],
+                    connections: [],
+                    customOpenRouterModels: [],
+                });
+            }
+            if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
+                throw new Error(
+                    'must not fall back to GET_ACTIVE_PROVIDER when GET_MODEL_SETTINGS resolves the active model',
+                );
+            }
+            return defaultSendMessage(msg);
+        });
+
+        const store = new PreferencesStore();
+        await store.load();
+        // load() fires refreshPresentationMetadata without awaiting it so
+        // core prefs stay usable even if the secondary read stalls — flush
+        // the pending microtasks before asserting on its result.
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(store.providerId).toBe('openrouter');
+        expect(store.providerDisplayName).toBe('OpenRouter');
+        expect(store.modelDisplayName).toBe('Test Model');
+    });
+
+    it('load falls back to GET_ACTIVE_PROVIDER when GET_MODEL_SETTINGS has no matching active model', async () => {
+        mocks.sendMessage.mockImplementation((msg: unknown) => {
+            const type: unknown =
+                msg && typeof msg === 'object'
+                    ? Reflect.get(msg, 'type')
+                    : undefined;
+            if (type === TOPSKIP_MESSAGE.GET_MODEL_SETTINGS) {
+                return Promise.resolve({
+                    ok: true,
+                    activeModelId: 'openrouter:missing-model',
+                    models: [],
+                    connections: [],
+                    customOpenRouterModels: [],
+                });
+            }
+            return defaultSendMessage(msg);
+        });
+
+        const store = new PreferencesStore();
+        await store.load();
+        // The fallback chains a second sendMessage after GET_MODEL_SETTINGS;
+        // flush both microtask hops before asserting (see comment above).
+        await Promise.resolve();
+        await Promise.resolve();
+
+        expect(store.providerDisplayName).toBe('OpenRouter');
+        expect(store.modelDisplayName).toBe('google/gemini-2.0-flash');
+        expect(mocks.sendMessage).toHaveBeenCalledWith({
+            type: TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER,
+        });
+    });
+
     it('load applies stored enabled flag and providerId', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
             const type: unknown =
@@ -274,6 +352,19 @@ describe('PreferencesStore', () => {
         });
 
         await expect(store.setEnabled(false)).rejects.toThrow('write denied');
+        expect(store.enabled).toBe(true);
+    });
+
+    it('setEnabled rejects and reverts when sendMessage itself throws', async () => {
+        const store = new PreferencesStore();
+        store.enabled = true;
+        mocks.sendMessage.mockRejectedValueOnce(
+            new Error('extension context invalidated'),
+        );
+
+        await expect(store.setEnabled(false)).rejects.toThrow(
+            'extension context invalidated',
+        );
         expect(store.enabled).toBe(true);
     });
 

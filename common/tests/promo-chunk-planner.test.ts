@@ -192,4 +192,33 @@ describe('ChunkPlanner.buildChunkPlan', () => {
         expect(plan.chunks).toHaveLength(1);
         expect(plan.overlapSec).toBe(240);
     });
+
+    it('emits a single oversized line as its own chunk instead of stalling', () => {
+        const oversizedLine = `[0] ${'x'.repeat(50)}`;
+        const lines: TimedLine[] = [
+            { sec: 0, line: oversizedLine },
+            { sec: 5, line: '[5] short' },
+        ];
+        const plan = ChunkPlanner.buildChunkPlan(lines, {
+            budgetChars: 10,
+            maxChunks: MAX_CHUNKS,
+            overlap: DYNAMIC,
+        });
+
+        expect(plan.chunks[0]).toMatchObject({
+            startSec: 0,
+            endSec: 0,
+            text: oversizedLine,
+            chars: oversizedLine.length,
+            lineStartIndex: 0,
+            lineEndIndex: 0,
+        });
+        expect(plan.chunks[1]).toMatchObject({
+            startSec: 5,
+            endSec: 5,
+            text: '[5] short',
+            lineStartIndex: 1,
+            lineEndIndex: 1,
+        });
+    });
 });

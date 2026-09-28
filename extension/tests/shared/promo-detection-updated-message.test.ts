@@ -25,5 +25,28 @@ describe('promo detection updated message', () => {
         expect(
             pickMessage(TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED, second),
         ).toEqual(second);
+        expect(first.tabId).not.toBe(second.tabId);
+    });
+
+    it('returns undefined when the message type does not match', () => {
+        const other = {
+            type: TOPSKIP_MESSAGE.GET_PREFS,
+        } satisfies TopSkipRuntimeMessage;
+
+        expect(
+            pickMessage(TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED, other),
+        ).toBeUndefined();
+    });
+
+    it('returns undefined for non-object and null input', () => {
+        expect(
+            pickMessage(TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED, null),
+        ).toBeUndefined();
+        expect(
+            pickMessage(TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED, 'not-an-object'),
+        ).toBeUndefined();
+        expect(
+            pickMessage(TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED, undefined),
+        ).toBeUndefined();
     });
 });

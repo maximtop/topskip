@@ -2150,7 +2150,7 @@ test.describe('TopSkip extension', () => {
 
             terminalReady = true;
             await readyPollSeen;
-            await page.waitForTimeout(300);
+            await page.waitForTimeout(BLOCK_DELIVERY_SETTLE_MS);
 
             await expect(
                 statusPopup.getByText('2 promo blocks found'),
@@ -2452,7 +2452,14 @@ test.describe('TopSkip extension', () => {
         }
     });
 
-    test('caption failure never contacts TopSkip', async () => {
+    // Seeds failure states directly via the dev-only backdoor rather than
+    // triggering a real caption-acquisition failure (no /video.html
+    // navigation happens in this test) — it verifies the popup renders the
+    // right support affordance for each failure code and that seeding a
+    // terminal failure state does not itself trigger a backend call. It does
+    // not prove a real caption-acquisition failure suppresses the backend
+    // request; that path is untested end-to-end.
+    test('popup shows the right support action for each caption failure code, without contacting TopSkip', async () => {
         const backendRequests: string[] = [];
         const backend = createServer((req, res) => {
             backendRequests.push(`${req.method ?? 'UNKNOWN'} ${req.url ?? ''}`);

@@ -107,4 +107,14 @@ describe('evaluateSkipOnTimeUpdate', () => {
         });
         expect(r.action).toBe('skip');
     });
+
+    it('does not fire when duration is below skip start even while crossing 30', () => {
+        const r = evaluateSkipOnTimeUpdate({
+            ...base,
+            duration: 10,
+            prevTime: 29,
+            currentTime: 30.5,
+        });
+        expect(r).toEqual({ action: 'none' });
+    });
 });

@@ -137,6 +137,39 @@ describe('PromoDetectionStore Server sessions', () => {
         expect(notify).toHaveBeenCalledTimes(5);
     });
 
+    it('evicts the oldest retired session once the per-tab cap is exceeded', async () => {
+        // Mirrors promo-detection-store.ts's MAX_RETIRED_SERVER_SESSIONS_PER_TAB
+        // (32): each caption_acquisition message for a new session retires the
+        // previous active session, so 33 replacements retire 33 sessions and
+        // must evict the single oldest one.
+        const sessionIdFor = (n: number): string =>
+            `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+        const acquisitionFor = (n: number) =>
+            ({
+                videoId: VIDEO_ID,
+                status: 'analyzing',
+                source: 'server',
+                sessionId: sessionIdFor(n),
+                serverAnalysisPhase: 'caption_acquisition',
+            }) as const;
+
+        await PromoDetectionStore.set(TAB_ID, acquisitionFor(0));
+        for (let n = 1; n <= 33; n++) {
+            await PromoDetectionStore.set(TAB_ID, acquisitionFor(n));
+        }
+        expect(PromoDetectionStore.get(TAB_ID)).toEqual(acquisitionFor(33));
+
+        // Session 0 (oldest) was evicted from the retired set: a late
+        // resurrection is no longer recognized as stale and is accepted.
+        await PromoDetectionStore.set(TAB_ID, acquisitionFor(0));
+        expect(PromoDetectionStore.get(TAB_ID)).toEqual(acquisitionFor(0));
+
+        // Session 2 is still within the retained window: a late
+        // resurrection is still rejected as stale.
+        await PromoDetectionStore.set(TAB_ID, acquisitionFor(2));
+        expect(PromoDetectionStore.get(TAB_ID)).toEqual(acquisitionFor(0));
+    });
+
     it('preserves the originating tab id across two-tab broadcasts', async () => {
         const first = {
             videoId: VIDEO_ID,
@@ -157,6 +190,25 @@ describe('PromoDetectionStore Server sessions', () => {
             [OTHER_TAB_ID, second],
             [OTHER_TAB_ID, null],
         ]);
+    });
+
+    it('notifies when only a promo block confidence label changes', async () => {
+        const low = {
+            videoId: VIDEO_ID,
+            status: 'detected',
+            promoBlocks: [{ startSec: 10, endSec: 20, confidence: 'low' }],
+        } satisfies PromoDetectionStatePayload;
+        const high = {
+            ...low,
+            promoBlocks: [{ startSec: 10, endSec: 20, confidence: 'high' }],
+        } satisfies PromoDetectionStatePayload;
+
+        await PromoDetectionStore.set(TAB_ID, low);
+        await PromoDetectionStore.set(TAB_ID, high);
+
+        expect(PromoDetectionStore.get(TAB_ID)).toEqual(high);
+        expect(notify).toHaveBeenCalledTimes(2);
+        expect(notify).toHaveBeenNthCalledWith(2, TAB_ID, high);
     });
 
     it('rejects malformed Server fields and clears only the matching session', async () => {

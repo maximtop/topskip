@@ -62,6 +62,30 @@ describe('excerptTimedLinesAroundSec', () => {
         const ex = excerptTimedLinesAroundSec(timed, 6, 0, 0);
         expect(ex).toBe('[5] b');
     });
+
+    it('reports no lines found for an empty transcript', () => {
+        expect(excerptTimedLinesAroundSec([], 6, 4, 6)).toBe(
+            '(no [seconds] lines found in merged transcript)\n',
+        );
+    });
+
+    it('clamps the window to the start of the transcript', () => {
+        const timed = [
+            { sec: 1, line: '[1] a' },
+            { sec: 5, line: '[5] b' },
+            { sec: 10, line: '[10] c' },
+        ];
+        expect(excerptTimedLinesAroundSec(timed, 1, 4, 0)).toBe('[1] a');
+    });
+
+    it('clamps the window to the end of the transcript', () => {
+        const timed = [
+            { sec: 1, line: '[1] a' },
+            { sec: 5, line: '[5] b' },
+            { sec: 10, line: '[10] c' },
+        ];
+        expect(excerptTimedLinesAroundSec(timed, 10, 0, 6)).toBe('[10] c');
+    });
 });
 
 describe('buildPromoAnalysisLogBundle', () => {

@@ -76,6 +76,7 @@ import {
 } from '@/content/youtube-watch';
 import {
     VIDEO_BINDING_POLL_INTERVAL_MS,
+    YOUTUBE_PLAYER_SELECTOR,
     YOUTUBE_VIDEO_ELEMENT_SELECTOR,
 } from '@/content/youtube-dom';
 import {
@@ -173,7 +174,14 @@ function isAnalysisInterruptionMessage(
     );
 }
 
-describe('onTimeUpdate skip pipeline integration', () => {
+// Despite the historical "integration" name, this block replays the pure
+// skip-decision functions directly via `simulateTimeUpdate` — it never
+// constructs or drives `YoutubeWatch`. It duplicates `promo-skip-logic.test.ts`
+// coverage under FR-numbered names traceable to the spec. Real end-to-end
+// coverage of `YoutubeWatch.onTimeUpdate` (the `enabled` gate, the ad-overlay
+// guard, real DOM/timer wiring) lives in the `per-video analysis route
+// lifecycle` describe block below, which does construct a real `YoutubeWatch`.
+describe('onTimeUpdate skip pipeline integration (pure-function replay, not real wiring)', () => {
     it('rejects late same-video blocks from a superseded Server session', () => {
         expect(
             shouldAcceptPromoBlocksForActiveRoute({
@@ -264,24 +272,22 @@ describe('onTimeUpdate skip pipeline integration', () => {
         expect(target).toBe(210); // min(230, 210)
     });
 
-    it(
-        'FR-003: does not skip when enabled is' +
-            ' simulated off (no blocks evaluated)',
-        () => {
-            // This test verifies the contract: when no blocks are passed
-            // (simulating disabled state), no skip fires.
-            const fired = new Set<number>();
-            const d = simulateTimeUpdate({
-                prevTime: 104.8,
-                currentTime: 105.2,
-                duration: 600,
-                isSeeking: false,
-                firedStartKeys: fired,
-                blocks: [],
-            });
-            expect(d.action).toBe('none');
-        },
-    );
+    it('FR-003: does not skip when there are no blocks to evaluate', () => {
+        // Real `enabled=false` coverage lives in the "does not skip a
+        // delivered block while TopSkip is disabled" integration test below,
+        // which exercises YoutubeWatch.onTimeUpdate directly — this pure
+        // function has no `enabled` concept of its own.
+        const fired = new Set<number>();
+        const d = simulateTimeUpdate({
+            prevTime: 104.8,
+            currentTime: 105.2,
+            duration: 600,
+            isSeeking: false,
+            firedStartKeys: fired,
+            blocks: [],
+        });
+        expect(d.action).toBe('none');
+    });
 
     it.each(['no_promo', 'unavailable', 'error', 'rate_limited'] as const)(
         'server %s state leaves playback unaltered when no blocks are delivered',
@@ -386,26 +392,24 @@ describe('onTimeUpdate skip pipeline integration', () => {
         },
     );
 
-    it(
-        'FR-005: SPA navigation resets are handled' +
-            ' by resetForNewVideo (no pipeline test needed)',
-        () => {
-            // This is tested by verifying that a fresh firedIndices set
-            // allows all blocks to fire. resetForNewVideo clears the set
-            // and replaces blocks — both are constructor-level resets.
-            const fired = new Set<number>();
-            const blocks: PromoBlock[] = [{ startSec: 30, endSec: 60 }];
-            const d = simulateTimeUpdate({
-                prevTime: 29,
-                currentTime: 31,
-                duration: 300,
-                isSeeking: false,
-                firedStartKeys: fired,
-                blocks,
-            });
-            expect(d.action).toBe('skip');
-        },
-    );
+    it('FR-005: a fresh fired-set (as after resetForNewVideo) lets a block fire', () => {
+        // Precondition check only: proves the pure pipeline fires when the
+        // fired-set is empty. It does not exercise `resetForNewVideo` or a
+        // real SPA navigation — no test in this file currently proves that
+        // navigating to a new video clears `YoutubeWatch`'s real
+        // `firedPromoBlockStartKeys`/`promoBlocks` state end-to-end.
+        const fired = new Set<number>();
+        const blocks: PromoBlock[] = [{ startSec: 30, endSec: 60 }];
+        const d = simulateTimeUpdate({
+            prevTime: 29,
+            currentTime: 31,
+            duration: 300,
+            isSeeking: false,
+            firedStartKeys: fired,
+            blocks,
+        });
+        expect(d.action).toBe('skip');
+    });
 
     it('FR-006: does not skip when isSeeking is true', () => {
         const fired = new Set<number>();
@@ -699,6 +703,7 @@ describe('per-video analysis route lifecycle', () => {
         pollBindings(): Promise<void>;
         replaceVideoElement(): Promise<void>;
         setVideoDuration(durationSec: number): void;
+        setAdShowing(showing: boolean): void;
         videoQueryCount(): number;
         fetchCallCount(): number;
         dispose(): void;
@@ -729,6 +734,7 @@ describe('per-video analysis route lifecycle', () => {
         const windowEvents = new EventTarget();
         const fetchMock = vi.fn();
         let videoQueryCount = 0;
+        let adShowing = false;
 
         addRuntimeMessageListener.mockImplementation(
             (listener: RuntimeMessageListener) => {
@@ -815,11 +821,25 @@ describe('per-video analysis route lifecycle', () => {
         vi.stubGlobal('HTMLVideoElement', FakeVideoElement);
         vi.stubGlobal('location', locationState);
         vi.stubGlobal('document', {
-            querySelector(selector: string): FakeVideoElement | null {
+            querySelector(
+                selector: string,
+            ):
+                | FakeVideoElement
+                | { classList: { contains: (cls: string) => boolean } }
+                | null {
                 videoQueryCount += 1;
-                return selector === YOUTUBE_VIDEO_ELEMENT_SELECTOR
-                    ? video
-                    : null;
+                if (selector === YOUTUBE_VIDEO_ELEMENT_SELECTOR) {
+                    return video;
+                }
+                if (selector === YOUTUBE_PLAYER_SELECTOR) {
+                    return {
+                        classList: {
+                            contains: (cls: string): boolean =>
+                                cls === 'ad-showing' && adShowing,
+                        },
+                    };
+                }
+                return null;
             },
             getElementById: (): null => null,
             createElement: (): Record<string, unknown> => ({
@@ -950,6 +970,9 @@ describe('per-video analysis route lifecycle', () => {
                 if (video !== null) {
                     video.duration = durationSec;
                 }
+            },
+            setAdShowing(showing: boolean): void {
+                adShowing = showing;
             },
             videoQueryCount(): number {
                 return videoQueryCount;
@@ -2817,6 +2840,32 @@ describe('per-video analysis route lifecycle', () => {
                     fields: { block: 0, fromSec: 10.2, toSec: 20, deltaSec: 1.2 },
                 });
                 expect(typeof applied[0]?.session).toBe('string');
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('does not skip a delivered block while TopSkip is disabled', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await deliverServerBlocks(harness, [{ startSec: 10, endSec: 20 }]);
+                await harness.emitPrefs({ ...serverPrefs, enabled: false });
+
+                expect(harness.dispatchTimeUpdate(9)).toBe(9);
+                expect(harness.dispatchTimeUpdate(10.2)).toBe(10.2);
+            } finally {
+                harness.dispose();
+            }
+        });
+
+        it('does not skip a delivered block while an ad overlay is showing', async () => {
+            const harness = await createLoggingHarness(NEVER_RESPOND);
+            try {
+                await deliverServerBlocks(harness, [{ startSec: 10, endSec: 20 }]);
+                harness.setAdShowing(true);
+
+                expect(harness.dispatchTimeUpdate(9)).toBe(9);
+                expect(harness.dispatchTimeUpdate(10.2)).toBe(10.2);
             } finally {
                 harness.dispose();
             }

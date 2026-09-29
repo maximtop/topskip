@@ -88,31 +88,30 @@ export const TIMEDTEXT_TRANSLATION_PARAM = 'tlang';
 /**
  * Commands accepted by the declaratively installed MAIN bridge.
  */
-export type CaptionPageBridgeCommand =
-    (typeof CAPTION_PAGE_BRIDGE_COMMAND)[keyof typeof CAPTION_PAGE_BRIDGE_COMMAND];
+export type CaptionPageBridgeCommand = (typeof CAPTION_PAGE_BRIDGE_COMMAND)[keyof typeof CAPTION_PAGE_BRIDGE_COMMAND];
 
 /**
  * Strict local request transported from ISOLATED to MAIN as JSON event detail.
  */
-export type CaptionPageBridgeCommandRequest = {
+export interface CaptionPageBridgeCommandRequest {
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Isolated;
     kind: typeof CAPTION_PAGE_BRIDGE_KIND.Command;
     protocolVersion: typeof CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION;
     requestId: string;
     command: CaptionPageBridgeCommand;
-};
+}
 
 /**
  * Correlated local result transported from MAIN to ISOLATED as JSON event
  * detail.
  */
-export type CaptionPageBridgeCommandResult = {
+export interface CaptionPageBridgeCommandResult {
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Main;
     kind: typeof CAPTION_PAGE_BRIDGE_KIND.CommandResult;
     protocolVersion: typeof CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION;
     requestId: string;
     result: unknown;
-};
+}
 
 const requestIdSchema = v.pipe(
     v.string(),
@@ -148,6 +147,7 @@ const commandResultSchema = v.strictObject({
  * object references across worlds.
  *
  * @param value Candidate CustomEvent detail.
+ *
  * @returns Parsed JSON value, or `null` when detail is not valid JSON text.
  */
 function parseJsonEventDetail(value: unknown): unknown {
@@ -165,6 +165,7 @@ function parseJsonEventDetail(value: unknown): unknown {
  * Accepts only the complete bounded ISOLATED command envelope.
  *
  * @param value Untrusted command-event detail.
+ *
  * @returns Validated command request, or `null` for malformed traffic.
  */
 export function parseCaptionPageBridgeCommandRequest(
@@ -182,6 +183,7 @@ export function parseCaptionPageBridgeCommandRequest(
  * command-specific result opaque to the transport.
  *
  * @param value Untrusted result-event detail.
+ *
  * @returns Validated command result, or `null` for malformed traffic.
  */
 export function parseCaptionPageBridgeCommandResult(

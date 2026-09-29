@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Maintainer-only: same merged transcript → every built-in OpenRouter preset
  * (FR-004). Reads `OPENROUTER_API_KEY` from `.env` (extension root) or the
@@ -12,8 +13,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { config as loadDotEnv } from 'dotenv';
 import { Command, Option } from 'commander';
+import { config as loadDotEnv } from 'dotenv';
 
 import {
     callOpenRouterChat,
@@ -24,18 +25,18 @@ import { PROMO_DETECTION_SYSTEM_PROMPT } from '@/background/openrouter/promo-det
 import { OPENROUTER_BUILTIN_MODEL_SLUGS } from '@/shared/openrouter-model-presets';
 
 import {
-    compareHumanAlignedBlocks,
-    parseReferenceBundleJson,
-    type AlignedBlockMetric,
-    type ReferenceBundle,
-} from './lib/promo-reference-compare';
-import {
     estimateCostFromUsageAndPricing,
     parsePricingNumber,
     rankCompareSummaryRows,
     summarizeVsHumanMetrics,
     type OpenRouterModelPricing,
 } from './lib/openrouter-compare-summary';
+import {
+    compareHumanAlignedBlocks,
+    parseReferenceBundleJson,
+    type AlignedBlockMetric,
+    type ReferenceBundle,
+} from './lib/promo-reference-compare';
 
 /**
  * Loads `.env` from the extension package root when the file exists. Existing
@@ -59,6 +60,7 @@ loadExtensionDotEnv();
  * options” and ignores `--fixture`.
  *
  * @param argv - Typically `process.argv.slice(2)`
+ *
  * @returns Arguments for {@link Command.parseAsync} with `{ from: 'user' }`
  */
 function normalizeForwardedCliArgs(argv: readonly string[]): string[] {
@@ -69,7 +71,7 @@ function normalizeForwardedCliArgs(argv: readonly string[]): string[] {
     return argv.slice(i);
 }
 
-type Row = {
+interface Row {
     model: string;
     responseModel?: string;
     ms: number;
@@ -112,7 +114,7 @@ type Row = {
     blocks?: { startSec: number; endSec?: number; confidence?: string }[];
     vsHuman?: AlignedBlockMetric[];
     vsHumanNote?: string;
-};
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -153,19 +155,17 @@ function formatProgressCost(row: Row): string | undefined {
 function formatProgressLine(row: Row): string {
     const parts = [`${row.ms} ms`];
     if (row.usage !== undefined) {
-        const tokenSummary =
-            `tokens ${String(row.usage.promptTokens)}/` +
-            `${String(row.usage.completionTokens)}`;
+        const tokenSummary = `tokens ${String(row.usage.promptTokens)}/${
+            String(row.usage.completionTokens)}`;
         parts.push(tokenSummary);
     }
     const cost = formatProgressCost(row);
     if (cost !== undefined) {
         parts.push(cost);
     }
-    const summary =
-        row.vsHuman !== undefined
-            ? summarizeVsHumanMetrics(row.vsHuman)
-            : undefined;
+    const summary = row.vsHuman !== undefined
+        ? summarizeVsHumanMetrics(row.vsHuman)
+        : undefined;
     if (summary !== undefined) {
         parts.push(`meanIoU ${summary.meanIoU.toFixed(4)}`);
         parts.push(`|start| ${summary.meanAbsStartDeltaSec.toFixed(2)}s`);
@@ -190,13 +190,13 @@ function normalizePricing(value: unknown): OpenRouterModelPricing | undefined {
         inputCacheWrite: parsePricingNumber(value.input_cache_write),
     };
     if (
-        pricing.prompt === undefined &&
-        pricing.completion === undefined &&
-        pricing.request === undefined &&
-        pricing.webSearch === undefined &&
-        pricing.internalReasoning === undefined &&
-        pricing.inputCacheRead === undefined &&
-        pricing.inputCacheWrite === undefined
+        pricing.prompt === undefined
+        && pricing.completion === undefined
+        && pricing.request === undefined
+        && pricing.webSearch === undefined
+        && pricing.internalReasoning === undefined
+        && pricing.inputCacheRead === undefined
+        && pricing.inputCacheWrite === undefined
     ) {
         return undefined;
     }
@@ -243,6 +243,7 @@ async function fetchOpenRouterPricingMap(): Promise<
  * @param fixturePath - UTF-8: timed `[sec] text` lines or full user body
  * @param videoId - Synthetic id for the user message prefix
  * @param language - Language code for the user message prefix
+ *
  * @returns User message string passed to OpenRouter
  */
 function buildUserContent(
@@ -288,8 +289,8 @@ async function runPresetComparison(): Promise<void> {
     const apiKey = process.env.OPENROUTER_API_KEY?.trim();
     if (!apiKey) {
         console.error(
-            'Missing OPENROUTER_API_KEY (add .env or export in shell; ' +
-                'never commit keys).',
+            'Missing OPENROUTER_API_KEY (add .env or export in shell; '
+                + 'never commit keys).',
         );
         process.exit(1);
     }
@@ -303,13 +304,12 @@ async function runPresetComparison(): Promise<void> {
         { role: 'system' as const, content: PROMO_DETECTION_SYSTEM_PROMPT },
         { role: 'user' as const, content: userContent },
     ];
-    const models =
-        opts.models === undefined
-            ? OPENROUTER_BUILTIN_MODEL_SLUGS
-            : opts.models
-                    .split(',')
-                    .map((model) => model.trim())
-                    .filter((model) => model.length > 0);
+    const models = opts.models === undefined
+        ? OPENROUTER_BUILTIN_MODEL_SLUGS
+        : opts.models
+            .split(',')
+            .map((model) => model.trim())
+            .filter((model) => model.length > 0);
     if (models.length === 0) {
         throw new Error('--models must contain at least one model slug');
     }
@@ -327,9 +327,8 @@ async function runPresetComparison(): Promise<void> {
         if (fr !== undefined) {
             firstRunVsHuman = compareHumanAlignedBlocks(humanBlocks, fr.blocks);
             if (humanBlocks.length !== fr.blocks.length) {
-                firstRunVsHumanNote =
-                    `humanBlocks=${String(humanBlocks.length)} vs ` +
-                    `firstRunModel.blocks=${String(fr.blocks.length)}`;
+                firstRunVsHumanNote = `humanBlocks=${String(humanBlocks.length)} vs `
+                    + `firstRunModel.blocks=${String(fr.blocks.length)}`;
             }
         }
     }
@@ -337,13 +336,13 @@ async function runPresetComparison(): Promise<void> {
     let pricingMap = new Map<string, OpenRouterModelPricing>();
     if (opts.progress) {
         console.error(
-            `Comparing ${String(models.length)} ` +
-                `presets for ${opts.fixture}`,
+            `Comparing ${String(models.length)} `
+                + `presets for ${opts.fixture}`,
         );
         if (humanBlocks !== undefined) {
             console.error(
-                `Loaded ${String(humanBlocks.length)} human ` +
-                    `reference block(s) from ${opts.reference}`,
+                `Loaded ${String(humanBlocks.length)} human `
+                    + `reference block(s) from ${opts.reference}`,
             );
         }
         console.error('Fetching OpenRouter model pricing metadata...');
@@ -352,8 +351,8 @@ async function runPresetComparison(): Promise<void> {
         pricingMap = await fetchOpenRouterPricingMap();
         if (opts.progress) {
             console.error(
-                `Loaded pricing for ${String(pricingMap.size)} ` +
-                    'model ids/canonical slugs.',
+                `Loaded pricing for ${String(pricingMap.size)} `
+                    + 'model ids/canonical slugs.',
             );
         }
     } catch (error) {
@@ -363,9 +362,8 @@ async function runPresetComparison(): Promise<void> {
     const rows: Row[] = [];
     for (const [index, model] of models.entries()) {
         if (opts.progress) {
-            const progressLabel =
-                `[${String(index + 1)}/` +
-                `${String(models.length)}] ${model}...`;
+            const progressLabel = `[${String(index + 1)}/`
+                + `${String(models.length)}] ${model}...`;
             console.error(progressLabel);
         }
         const t0 = performance.now();
@@ -380,20 +378,26 @@ async function runPresetComparison(): Promise<void> {
         const pricing = pricingMap.get(pricingModel) ?? pricingMap.get(model);
 
         if (!chat.ok) {
-            const row = { model, ms, ok: false, error: chat.error, pricing };
+            const row = {
+
+                model,
+                ms,
+                ok: false,
+                error: chat.error,
+                pricing,
+            };
             rows.push(row);
             console.error(
-                `[${String(index + 1)}/` +
-                    `${String(models.length)}] ` +
-                    `${model} failed: ${chat.error}`,
+                `[${String(index + 1)}/`
+                    + `${String(models.length)}] `
+                    + `${model} failed: ${chat.error}`,
             );
             continue;
         }
 
-        const costBreakdown =
-            chat.usage !== undefined && pricing !== undefined
-                ? estimateCostFromUsageAndPricing(chat.usage, pricing)
-                : undefined;
+        const costBreakdown = chat.usage !== undefined && pricing !== undefined
+            ? estimateCostFromUsageAndPricing(chat.usage, pricing)
+            : undefined;
         const parsed = parseLlmPromoResponse(chat.rawContent, undefined);
         if (!parsed.ok) {
             const row = {
@@ -405,28 +409,28 @@ async function runPresetComparison(): Promise<void> {
                 usage: chat.usage,
                 pricing,
                 costAnalysis:
-                    chat.usage?.cost !== undefined ||
-                    costBreakdown !== undefined
+                    chat.usage?.cost !== undefined
+                    || costBreakdown !== undefined
                         ? {
-                                reportedCost: chat.usage?.cost,
-                                estimatedCostUsd: costBreakdown?.totalUsd,
-                                promptCostUsd: costBreakdown?.promptCostUsd,
-                                completionCostUsd:
+                            reportedCost: chat.usage?.cost,
+                            estimatedCostUsd: costBreakdown?.totalUsd,
+                            promptCostUsd: costBreakdown?.promptCostUsd,
+                            completionCostUsd:
                                   costBreakdown?.completionCostUsd,
-                                cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                                cacheWriteCostUsd:
+                            cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                            cacheWriteCostUsd:
                                   costBreakdown?.cacheWriteCostUsd,
-                                internalReasoningCostUsd:
+                            internalReasoningCostUsd:
                                   costBreakdown?.internalReasoningCostUsd,
-                                requestCostUsd: costBreakdown?.requestCostUsd,
-                            }
+                            requestCostUsd: costBreakdown?.requestCostUsd,
+                        }
                         : undefined,
             } satisfies Row;
             rows.push(row);
             console.error(
-                `[${String(index + 1)}/` +
-                    `${String(models.length)}] ` +
-                    `${model} parse failed: ${parsed.error}`,
+                `[${String(index + 1)}/`
+                    + `${String(models.length)}] `
+                    + `${model} parse failed: ${parsed.error}`,
             );
             continue;
         }
@@ -439,21 +443,21 @@ async function runPresetComparison(): Promise<void> {
                 usage: chat.usage,
                 pricing,
                 costAnalysis:
-                    chat.usage?.cost !== undefined ||
-                    costBreakdown !== undefined
+                    chat.usage?.cost !== undefined
+                    || costBreakdown !== undefined
                         ? {
-                                reportedCost: chat.usage?.cost,
-                                estimatedCostUsd: costBreakdown?.totalUsd,
-                                promptCostUsd: costBreakdown?.promptCostUsd,
-                                completionCostUsd:
+                            reportedCost: chat.usage?.cost,
+                            estimatedCostUsd: costBreakdown?.totalUsd,
+                            promptCostUsd: costBreakdown?.promptCostUsd,
+                            completionCostUsd:
                                   costBreakdown?.completionCostUsd,
-                                cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                                cacheWriteCostUsd:
+                            cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                            cacheWriteCostUsd:
                                   costBreakdown?.cacheWriteCostUsd,
-                                internalReasoningCostUsd:
+                            internalReasoningCostUsd:
                                   costBreakdown?.internalReasoningCostUsd,
-                                requestCostUsd: costBreakdown?.requestCostUsd,
-                            }
+                            requestCostUsd: costBreakdown?.requestCostUsd,
+                        }
                         : undefined,
                 blocks: [],
                 vsHuman: humanBlocks !== undefined ? [] : undefined,
@@ -464,10 +468,9 @@ async function runPresetComparison(): Promise<void> {
             } satisfies Row;
             rows.push(row);
             if (opts.progress) {
-                const progressLabel =
-                    `[${String(index + 1)}/` +
-                    `${String(models.length)}] ` +
-                    `${model} done: ${formatProgressLine(row)}`;
+                const progressLabel = `[${String(index + 1)}/`
+                    + `${String(models.length)}] `
+                    + `${model} done: ${formatProgressLine(row)}`;
                 console.error(progressLabel);
             }
             continue;
@@ -478,10 +481,9 @@ async function runPresetComparison(): Promise<void> {
             endSec: b.endSec,
             confidence: b.confidence,
         }));
-        const vsHuman =
-            humanBlocks !== undefined
-                ? compareHumanAlignedBlocks(humanBlocks, blocks)
-                : undefined;
+        const vsHuman = humanBlocks !== undefined
+            ? compareHumanAlignedBlocks(humanBlocks, blocks)
+            : undefined;
         const row = {
             model,
             responseModel: chat.responseModel,
@@ -492,32 +494,31 @@ async function runPresetComparison(): Promise<void> {
             costAnalysis:
                 chat.usage?.cost !== undefined || costBreakdown !== undefined
                     ? {
-                            reportedCost: chat.usage?.cost,
-                            estimatedCostUsd: costBreakdown?.totalUsd,
-                            promptCostUsd: costBreakdown?.promptCostUsd,
-                            completionCostUsd: costBreakdown?.completionCostUsd,
-                            cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                            cacheWriteCostUsd: costBreakdown?.cacheWriteCostUsd,
-                            internalReasoningCostUsd:
+                        reportedCost: chat.usage?.cost,
+                        estimatedCostUsd: costBreakdown?.totalUsd,
+                        promptCostUsd: costBreakdown?.promptCostUsd,
+                        completionCostUsd: costBreakdown?.completionCostUsd,
+                        cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                        cacheWriteCostUsd: costBreakdown?.cacheWriteCostUsd,
+                        internalReasoningCostUsd:
                               costBreakdown?.internalReasoningCostUsd,
-                            requestCostUsd: costBreakdown?.requestCostUsd,
-                        }
+                        requestCostUsd: costBreakdown?.requestCostUsd,
+                    }
                     : undefined,
             blocks,
             vsHuman,
             vsHumanNote:
-                humanBlocks !== undefined &&
-                humanBlocks.length !== blocks.length
-                    ? `humanBlocks=${String(humanBlocks.length)} ` +
-                      `vs predicted=${String(blocks.length)}`
+                humanBlocks !== undefined
+                && humanBlocks.length !== blocks.length
+                    ? `humanBlocks=${String(humanBlocks.length)} `
+                      + `vs predicted=${String(blocks.length)}`
                     : undefined,
         } satisfies Row;
         rows.push(row);
         if (opts.progress) {
-            const progressLabel =
-                `[${String(index + 1)}/` +
-                `${String(models.length)}] ` +
-                `${model} done: ${formatProgressLine(row)}`;
+            const progressLabel = `[${String(index + 1)}/`
+                + `${String(models.length)}] `
+                + `${model} done: ${formatProgressLine(row)}`;
             console.error(progressLabel);
         }
     }
@@ -554,10 +555,9 @@ async function runPresetComparison(): Promise<void> {
     const rankedByAlignment = rankCompareSummaryRows(
         rows
             .filter(
-                (row): row is Row & { vsHuman: AlignedBlockMetric[] } =>
-                    row.ok &&
-                    row.vsHuman !== undefined &&
-                    row.vsHuman.length > 0,
+                (row): row is Row & { vsHuman: AlignedBlockMetric[] } => row.ok
+                    && row.vsHuman !== undefined
+                    && row.vsHuman.length > 0,
             )
             .map((row) => ({
                 model: row.model,
@@ -573,8 +573,8 @@ async function runPresetComparison(): Promise<void> {
         fastestSuccessful:
             successfulRows.length > 0
                 ? [...successfulRows].sort(
-                        (left, right) => left.ms - right.ms,
-                    )[0]
+                    (left, right) => left.ms - right.ms,
+                )[0]
                 : undefined,
         cheapestSuccessful: rankedByReportedCost[0],
         rankedByReportedCost,

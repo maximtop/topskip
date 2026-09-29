@@ -1,4 +1,3 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
@@ -26,6 +25,8 @@ import {
     type SetDebugLoggingResponse,
 } from '@/shared/messages';
 
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+
 /**
  * Returned for a seed request whose payload fails validation.
  */
@@ -48,6 +49,7 @@ export class DebugLogRuntimeMessages {
      *
      * @param payload - Schema-validated append payload.
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Switch state for the content client, or a refusal.
      */
     static async handleAppend(
@@ -76,6 +78,7 @@ export class DebugLogRuntimeMessages {
      * Cheap status for the Options poll and the popup indicator.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Status, or a refusal for non-extension senders.
      */
     static async handleGetStatus(
@@ -96,6 +99,7 @@ export class DebugLogRuntimeMessages {
      * Bounded tail for the Options preview.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Tail text and sizes, or a refusal.
      */
     static async handleGetPreview(
@@ -117,6 +121,7 @@ export class DebugLogRuntimeMessages {
      * event is stamped later than the snapshot.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Bundle text and its snapshot instant, or a refusal/error.
      */
     static async handleGetBundle(
@@ -146,6 +151,7 @@ export class DebugLogRuntimeMessages {
      *
      * @param enabled - Requested switch state.
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Status after the change, or a refusal/error.
      */
     static async handleSetEnabled(
@@ -177,6 +183,7 @@ export class DebugLogRuntimeMessages {
      *
      * @param payload - Requested state and approximate size.
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Ack, or a refusal/validation error.
      */
     static async handleDevSeed(

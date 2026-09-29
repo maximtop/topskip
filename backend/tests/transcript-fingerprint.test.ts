@@ -1,7 +1,7 @@
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import { describe, expect, it } from 'vitest';
 
 import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
-import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 
 describe('TranscriptFingerprint', () => {
     it('hashes the shared golden canonical bytes with SHA-256', () => {

@@ -29,19 +29,18 @@ export const OPENROUTER_MODEL_PRESETS = [
 /**
  * Built-in model slugs (same order as {@link OPENROUTER_MODEL_PRESETS}).
  */
-export const OPENROUTER_BUILTIN_MODEL_SLUGS: readonly string[] =
-    OPENROUTER_MODEL_PRESETS.map((p) => p.value);
+export const OPENROUTER_BUILTIN_MODEL_SLUGS: readonly string[] = OPENROUTER_MODEL_PRESETS.map((p) => p.value);
 
 /**
  * Default model when none is set or after removing a custom active model.
  */
-export const OPENROUTER_DEFAULT_MODEL_SLUG: string =
-    OPENROUTER_MODEL_PRESETS[0]?.value ?? 'google/gemini-3.1-pro-preview';
+export const OPENROUTER_DEFAULT_MODEL_SLUG: string = OPENROUTER_MODEL_PRESETS[0]?.value ?? 'google/gemini-3.1-pro-preview';
 
 /**
  * True when the slug is one of the shipped OpenRouter presets.
  *
  * @param slug - Model id to test
+ *
  * @returns Whether the slug is a built-in preset (not user-added)
  */
 export function isOpenRouterBuiltinModelSlug(slug: string): boolean {
@@ -53,6 +52,7 @@ export function isOpenRouterBuiltinModelSlug(slug: string): boolean {
  * Format regex: `/^[a-z0-9_-]+\/[a-z0-9._-]+$/i`
  *
  * @param slug - Model slug to validate
+ *
  * @returns Whether the slug matches the required format
  */
 export function isValidOpenRouterModelSlug(slug: string): boolean {

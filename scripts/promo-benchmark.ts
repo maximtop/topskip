@@ -3,8 +3,8 @@ import path from 'node:path';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 
-import { config as loadDotEnv } from 'dotenv';
 import { Command, Option } from 'commander';
+import { config as loadDotEnv } from 'dotenv';
 
 import {
     runBenchmarkPreflight,
@@ -59,8 +59,8 @@ async function runCli(): Promise<void> {
         console.log(
             [
                 'Benchmark preflight passed.',
-                `Corpus: ${preflight.manifest.corpusId} ` +
-                    `(${String(preflight.manifest.itemCount)} videos, 5 EN / 5 RU)`,
+                `Corpus: ${preflight.manifest.corpusId} `
+                    + `(${String(preflight.manifest.itemCount)} videos, 5 EN / 5 RU)`,
                 `Models: ${String(preflight.models.length)}`,
                 `Reasoning: ${preflight.reasoning}`,
                 'Output limit: model default',
@@ -86,16 +86,16 @@ async function runCli(): Promise<void> {
                     ? 'valid'
                     : 'invalid';
             console.log(
-                `[${String(progress.completed)}/${String(progress.total)}] ` +
-                    `${progress.model} ${progress.videoId} ` +
-                    `repeat-${String(progress.repeat)} ${outcome}`,
+                `[${String(progress.completed)}/${String(progress.total)}] `
+                    + `${progress.model} ${progress.videoId} `
+                    + `repeat-${String(progress.repeat)} ${outcome}`,
             );
         },
     });
     writeBenchmarkReadme(repoRoot);
     console.log(
-        `Benchmark complete: ${String(result.completed)}/` +
-            `${String(result.total)}, resumed ${String(result.resumed)}.`,
+        `Benchmark complete: ${String(result.completed)}/`
+            + `${String(result.total)}, resumed ${String(result.resumed)}.`,
     );
 }
 
@@ -122,8 +122,7 @@ program
 void program
     .parseAsync(normalizeForwardedArgs(process.argv.slice(2)), { from: 'user' })
     .catch((error: unknown) => {
-        const message =
-            error instanceof Error ? error.message : 'Unknown benchmark error.';
+        const message = error instanceof Error ? error.message : 'Unknown benchmark error.';
         console.error(`Benchmark failed: ${message}`);
         process.exitCode = 1;
     });

@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const operationOrder: string[] = [];
 const setAccessLevel = vi.fn(() => {

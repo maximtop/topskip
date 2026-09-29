@@ -1,5 +1,6 @@
 import browser from '@/shared/browser';
 import { getErrorMessage } from '@/shared/error';
+
 import type { TopSkipRuntimeMessage } from '@/shared/messages';
 
 /**
@@ -9,6 +10,7 @@ import type { TopSkipRuntimeMessage } from '@/shared/messages';
  * @param message - Typed runtime message sent to the background worker.
  * @param timeoutMs - Maximum time to wait for the worker reply.
  * @param timeoutErrorMessage - Safe diagnostic used when the bound expires.
+ *
  * @returns Opaque worker response before the bounded timeout.
  */
 export function requestPopupRuntimeMessage(

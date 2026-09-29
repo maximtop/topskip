@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+    POPUP_DETECTION_HEALTHY_RECONCILE_MS,
+    POPUP_STATE_FAILURE_RETRY_MS,
+} from '@/popup/constants';
+import {
     DETECTION_PUSH_ACTION,
     INITIAL_DETECTION_TRANSPORT_STATE,
     applyDetectionTransportFailure,
@@ -10,10 +14,7 @@ import {
     isDetectionReadCurrent,
     isDetectionTransportKnown,
 } from '@/popup/detection-transport-state';
-import {
-    POPUP_DETECTION_HEALTHY_RECONCILE_MS,
-    POPUP_STATE_FAILURE_RETRY_MS,
-} from '@/popup/constants';
+
 import type { PromoDetectionStatePayload } from '@/shared/messages';
 
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';

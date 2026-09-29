@@ -1,4 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
+import { ANALYSIS_MODE } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    DEFAULT_DETECTION_MODEL_ID,
+    buildOpenRouterModelId,
+} from '@/shared/detection-models';
+import { PROVIDER_ID } from '@/shared/providers';
 
 const mocks = vi.hoisted(() => ({
     prefsReady: vi.fn().mockResolvedValue(undefined),
@@ -41,15 +57,6 @@ vi.mock('@/background/debug-log/debug-log-store', () => ({
 vi.mock('@/background/debug-log/debug-log', () => ({
     DebugLog: { record: mocks.record },
 }));
-
-import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
-import { ANALYSIS_MODE } from '@/shared/constants';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    DEFAULT_DETECTION_MODEL_ID,
-    buildOpenRouterModelId,
-} from '@/shared/detection-models';
-import { PROVIDER_ID } from '@/shared/providers';
 
 const PREFS = {
     enabled: true,

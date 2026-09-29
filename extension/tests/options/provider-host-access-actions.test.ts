@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     ProviderHostAccessActions,
@@ -18,7 +25,7 @@ import { PROVIDER_ID } from '@/shared/providers';
 
 const VALID_RESPONSE: TestConnectionKeyResponse = { ok: true, valid: true };
 
-type EffectsHarness = {
+interface EffectsHarness {
     effects: ProviderHostAccessActionEffects;
     events: string[];
     resolveRequest(outcome: ProviderHostAccessRequestOutcome): void;
@@ -32,7 +39,7 @@ type EffectsHarness = {
     showReloadUnavailable: ReturnType<typeof vi.fn>;
     clearFeedback: ReturnType<typeof vi.fn>;
     markAccessMissing: ReturnType<typeof vi.fn>;
-};
+}
 
 function createInput(
     overrides: Partial<ProviderHostAccessActionInput> = {},
@@ -51,11 +58,10 @@ function createEffectsHarness(): EffectsHarness {
         | ((outcome: ProviderHostAccessRequestOutcome) => void)
         | undefined;
     const request = vi.fn(
-        () =>
-            new Promise<ProviderHostAccessRequestOutcome>((resolve) => {
-                events.push('request');
-                resolvePermission = resolve;
-            }),
+        () => new Promise<ProviderHostAccessRequestOutcome>((resolve) => {
+            events.push('request');
+            resolvePermission = resolve;
+        }),
     );
     const reload = vi.fn(() => {
         events.push('reload');

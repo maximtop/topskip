@@ -1,13 +1,14 @@
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import {
     createServer,
     type IncomingMessage,
     type Server,
     type ServerResponse,
 } from 'node:http';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import AxeBuilder from '@axe-core/playwright';
 import {
     test,
     expect,
@@ -15,12 +16,11 @@ import {
     type BrowserContext,
     type Page,
 } from '@playwright/test';
-import AxeBuilder from '@axe-core/playwright';
-
 import {
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
     TOPSKIP_CAPABILITIES_HEADER_NAME,
 } from '@topskip/common/server-analysis-contract';
+
 import {
     CAPTION_PAGE_BRIDGE_COMMAND,
     CAPTION_PAGE_BRIDGE_EVENT,
@@ -28,11 +28,6 @@ import {
     CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION,
     CAPTION_PAGE_BRIDGE_SOURCE,
 } from '../../src/content/captions/caption-page-bridge-contract';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    DEV_DEBUG_LOG_SEED_STATE,
-    TOPSKIP_MESSAGE,
-} from '../../src/shared/messages';
 import {
     BYTES_PER_KIB,
     STORAGE_KEY_DEBUG_LOG_PREFIX,
@@ -43,7 +38,11 @@ import {
 } from '../../src/shared/debug-log-constants';
 import { DEBUG_LOG_EVENT } from '../../src/shared/debug-log-events';
 import { buildDebugLogFileName } from '../../src/shared/debug-log-format';
-import { E2E_BACKEND_ORIGIN } from './global-setup';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    DEV_DEBUG_LOG_SEED_STATE,
+    TOPSKIP_MESSAGE,
+} from '../../src/shared/messages';
 
 import {
     captureIssueReportUrl,
@@ -59,6 +58,7 @@ import {
     trackServiceWorkerConsoleErrors,
     waitForPopupUi,
 } from './extension-helpers';
+import { E2E_BACKEND_ORIGIN } from './global-setup';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const extensionPath = path.resolve(__dirname, '../../dist');
@@ -73,19 +73,16 @@ const E2E_CAPTION_SEGMENTS = [
         text: 'TopSkip deterministic caption fixture',
     },
 ] as const;
-const E2E_TRANSCRIPT_HASH =
-    '7587903459454f21f7b2d9a0b3e22f21617a4d80a2622137ba8db86675887542';
+const E2E_TRANSCRIPT_HASH = '7587903459454f21f7b2d9a0b3e22f21617a4d80a2622137ba8db86675887542';
 const E2E_TRANSCRIPT_IDENTITY = {
     videoId: E2E_VIDEO_ID,
     languageCode: E2E_CAPTION_LANGUAGE,
     transcriptHash: E2E_TRANSCRIPT_HASH,
     algorithmVersion: E2E_SERVER_ALGORITHM_VERSION,
 } as const;
-const E2E_INSTALLATION_TOKEN =
-    'e2e-installation-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+const E2E_INSTALLATION_TOKEN = 'e2e-installation-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const E2E_INSTALLATION_EXPIRES_AT_MS = 4_102_444_800_000;
-const E2E_CAPABILITIES_HEADER =
-    SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
+const E2E_CAPABILITIES_HEADER = SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
 const POPUP_RACE_TEST_TIMEOUT_MS = 20_000;
 const RUNTIME_MESSAGE_GATE_TIMEOUT_MS = 5_000;
 const GET_MODEL_SETTINGS_MESSAGE_TYPE = 'TOPSKIP_GET_MODEL_SETTINGS';
@@ -93,8 +90,7 @@ const GET_PREFS_MESSAGE_TYPE = 'TOPSKIP_GET_PREFS';
 const GET_DETECTION_STATUS_MESSAGE_TYPE = 'TOPSKIP_GET_DETECTION_STATUS';
 const BYOK_ANALYSIS_MODE = 'byok';
 const RUNTIME_MESSAGE_GATE_STATE_KEY = '__topskipE2eRuntimeMessageGateState';
-const RUNTIME_MESSAGE_GATE_RELEASE_KEY =
-    '__topskipE2eReleaseRuntimeMessageGate';
+const RUNTIME_MESSAGE_GATE_RELEASE_KEY = '__topskipE2eReleaseRuntimeMessageGate';
 const RUNTIME_MESSAGE_GATE_HELD_STATE = 'held';
 const RUNTIME_MESSAGE_GATE_RELEASED_STATE = 'released';
 const OPTIONAL_PROVIDER_ORIGINS = [
@@ -122,23 +118,18 @@ const DEBUG_LOG_UI_TIMEOUT_MS = 10_000;
 const DEBUG_LOG_COPY_LABEL = 'Copy log';
 const DEBUG_LOG_DOWNLOAD_LABEL = 'Download log';
 const DEBUG_LOG_COPIED_TEXT = 'Log copied to the clipboard';
-const DEBUG_LOG_COPY_FAILED_TEXT =
-    'Could not copy the log — try again or use Download log';
+const DEBUG_LOG_COPY_FAILED_TEXT = 'Could not copy the log — try again or use Download log';
 const DEBUG_LOG_EXPORT_FAILED_TEXT = 'Could not read the log — try again';
 const DEBUG_LOG_DOWNLOAD_STARTED_TEXT = 'Download started';
-const DEBUG_LOG_OFF_STORED_PATTERN =
-    /^Debug logging off — [1-9]\d* events stored, /u;
+const DEBUG_LOG_OFF_STORED_PATTERN = /^Debug logging off — [1-9]\d* events stored, /u;
 const DEBUG_LOG_EVICTED_COUNTER_PATTERN = /^Evicted: [1-9]\d*/u;
 const DEBUG_LOG_PREVIEW_TRUNCATED_PATTERN = /^Showing the last /u;
-const DEBUG_LOG_ISSUE_HINT_PREFIX =
-    'If you enabled Debug logging in Options → Diagnostics';
+const DEBUG_LOG_ISSUE_HINT_PREFIX = 'If you enabled Debug logging in Options → Diagnostics';
 // Event lines start with the background-assigned UTC timestamp; the header
 // block precedes the first such line.
 const ISO_TIMESTAMP_LENGTH = 24;
-const ISO_TIMESTAMP_PATTERN =
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
-const DEBUG_LOG_EVENT_LINE_PATTERN =
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z /u;
+const ISO_TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
+const DEBUG_LOG_EVENT_LINE_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z /u;
 // Header keys written by DebugLogExport.buildBundle.
 const DEBUG_LOG_HEADER_EXPORTED_AT = 'exportedAt';
 const DEBUG_LOG_HEADER_EVENTS = 'events';
@@ -171,15 +162,16 @@ const E2E_BACKEND_URL = new URL(E2E_BACKEND_ORIGIN);
 const E2E_BACKEND_HOST_SENTINEL = E2E_BACKEND_URL.host;
 const JSON_RESPONSE_HEADERS = { 'content-type': 'application/json' } as const;
 
-type GrantedExtensionPermissions = {
+interface GrantedExtensionPermissions {
     permissions: string[];
     origins: string[];
-};
+}
 
 /**
  * Reads the browser-owned grant snapshot from an extension document.
  *
  * @param extensionPage - Popup or options page with extension API access.
+ *
  * @returns Sorted required and optional grants currently held by TopSkip.
  */
 async function readGrantedExtensionPermissions(
@@ -229,56 +221,56 @@ async function readGrantedExtensionPermissions(
  * Proves the declarative MAIN bundle answers the document-local protocol.
  *
  * @param page - Fresh fixture document receiving both manifest entries.
+ *
  * @returns Parsed command-result envelope emitted by the MAIN bridge.
  */
 async function probeDeclarativeCaptionBridge(page: Page): Promise<unknown> {
     return page.evaluate(
-        async (contract) =>
-            new Promise<unknown>((resolve, reject) => {
-                const requestId = 'e2e-declarative-main-probe';
-                const timeoutId = globalThis.setTimeout(() => {
-                    document.removeEventListener(
-                        contract.resultEvent,
-                        onResult,
-                    );
-                    reject(new Error('Timed out waiting for MAIN bridge'));
-                }, contract.timeoutMs);
-                const onResult = (event: Event): void => {
-                    if (!(event instanceof CustomEvent)) {
-                        return;
-                    }
-                    const detail: unknown = event.detail;
-                    if (typeof detail !== 'string') {
-                        return;
-                    }
-                    const parsed: unknown = JSON.parse(detail) as unknown;
-                    if (
-                        typeof parsed !== 'object' ||
-                        parsed === null ||
-                        Reflect.get(parsed, 'requestId') !== requestId
-                    ) {
-                        return;
-                    }
-                    globalThis.clearTimeout(timeoutId);
-                    document.removeEventListener(
-                        contract.resultEvent,
-                        onResult,
-                    );
-                    resolve(parsed);
-                };
-                document.addEventListener(contract.resultEvent, onResult);
-                document.dispatchEvent(
-                    new CustomEvent(contract.commandEvent, {
-                        detail: JSON.stringify({
-                            source: contract.isolatedSource,
-                            kind: contract.commandKind,
-                            protocolVersion: contract.protocolVersion,
-                            requestId,
-                            command: contract.probeCommand,
-                        }),
-                    }),
+        async (contract) => new Promise<unknown>((resolve, reject) => {
+            const requestId = 'e2e-declarative-main-probe';
+            const timeoutId = globalThis.setTimeout(() => {
+                document.removeEventListener(
+                    contract.resultEvent,
+                    onResult,
                 );
-            }),
+                reject(new Error('Timed out waiting for MAIN bridge'));
+            }, contract.timeoutMs);
+            const onResult = (event: Event): void => {
+                if (!(event instanceof CustomEvent)) {
+                    return;
+                }
+                const detail: unknown = event.detail;
+                if (typeof detail !== 'string') {
+                    return;
+                }
+                const parsed: unknown = JSON.parse(detail) as unknown;
+                if (
+                    typeof parsed !== 'object'
+                        || parsed === null
+                        || Reflect.get(parsed, 'requestId') !== requestId
+                ) {
+                    return;
+                }
+                globalThis.clearTimeout(timeoutId);
+                document.removeEventListener(
+                    contract.resultEvent,
+                    onResult,
+                );
+                resolve(parsed);
+            };
+            document.addEventListener(contract.resultEvent, onResult);
+            document.dispatchEvent(
+                new CustomEvent(contract.commandEvent, {
+                    detail: JSON.stringify({
+                        source: contract.isolatedSource,
+                        kind: contract.commandKind,
+                        protocolVersion: contract.protocolVersion,
+                        requestId,
+                        command: contract.probeCommand,
+                    }),
+                }),
+            );
+        }),
         {
             commandEvent: CAPTION_PAGE_BRIDGE_EVENT.Command,
             resultEvent: CAPTION_PAGE_BRIDGE_EVENT.CommandResult,
@@ -294,12 +286,12 @@ async function probeDeclarativeCaptionBridge(page: Page): Promise<unknown> {
 /**
  * Observable MAIN-world footprint of the declarative caption bridge.
  */
-type PageBridgeInstallState = {
+interface PageBridgeInstallState {
     installed: boolean;
     fetchNative: boolean;
     xhrOpenNative: boolean;
     xhrSendNative: boolean;
-};
+}
 
 /**
  * Reads whether the MAIN bridge still shadows the page's fetch/XHR.
@@ -309,15 +301,15 @@ type PageBridgeInstallState = {
  * having to reach into either extension world.
  *
  * @param page - Fixture document receiving both manifest entries.
+ *
  * @returns Install flag plus whether each patched API is native again.
  */
 async function readPageBridgeInstallState(
     page: Page,
 ): Promise<PageBridgeInstallState> {
     return page.evaluate((flags) => {
-        const isNative = (value: unknown): boolean =>
-            typeof value === 'function' &&
-            Function.prototype.toString
+        const isNative = (value: unknown): boolean => typeof value === 'function'
+            && Function.prototype.toString
                 .call(value)
                 .includes('[native code]');
         return {
@@ -340,6 +332,7 @@ async function readPageBridgeInstallState(
  * of that function is the page-visible fingerprint of one installation.
  *
  * @param page - Fixture document whose current bridge should be fingerprinted.
+ *
  * @returns Resolves once the reference is stored on the page.
  */
 async function markPageBridgeIdentity(page: Page): Promise<void> {
@@ -363,6 +356,7 @@ async function markPageBridgeIdentity(page: Page): Promise<void> {
  * one installed on the page.
  *
  * @param page - Fixture document previously fingerprinted.
+ *
  * @returns Whether no newer bridge generation replaced the recorded one.
  */
 async function isPageBridgeIdentityUnchanged(page: Page): Promise<boolean> {
@@ -370,8 +364,8 @@ async function isPageBridgeIdentityUnchanged(page: Page): Promise<boolean> {
         (flags) => {
             const marked: unknown = Reflect.get(globalThis, flags.markerKey);
             return (
-                typeof marked === 'function' &&
-                Reflect.get(globalThis, flags.teardownFlag) === marked
+                typeof marked === 'function'
+                && Reflect.get(globalThis, flags.teardownFlag) === marked
             );
         },
         {
@@ -385,6 +379,7 @@ async function isPageBridgeIdentityUnchanged(page: Page): Promise<boolean> {
  * Checks whether a retired bridge left its global teardown hook behind.
  *
  * @param page - Fixture document receiving both manifest entries.
+ *
  * @returns Whether the MAIN teardown hook is still exposed on the page.
  */
 async function readPageBridgeTeardownFlagPresent(page: Page): Promise<boolean> {
@@ -400,13 +395,13 @@ async function readPageBridgeTeardownFlagPresent(page: Page): Promise<boolean> {
  * every content script already running in open tabs.
  *
  * @param context - Persistent context hosting the unpacked extension.
+ *
  * @returns Resolves once the reload was requested; the old worker may already
  *   be gone, so a rejected evaluate is treated as success.
  */
 async function reloadExtension(context: BrowserContext): Promise<void> {
-    const worker =
-        context.serviceWorkers().find((w) => w.url().includes('background')) ??
-        (await context.waitForEvent('serviceworker', {
+    const worker = context.serviceWorkers().find((w) => w.url().includes('background'))
+        ?? (await context.waitForEvent('serviceworker', {
             predicate: (w) => w.url().includes('background'),
             timeout: 30_000,
         }));
@@ -433,6 +428,7 @@ async function reloadExtension(context: BrowserContext): Promise<void> {
  * Sends the worker's route probe to the active fixture tab without reading its URL.
  *
  * @param extensionPage - Extension document allowed to call Tabs messaging.
+ *
  * @returns Current ISOLATED route-status response.
  */
 async function readActiveContentRouteStatus(
@@ -476,6 +472,7 @@ async function readActiveContentRouteStatus(
  *
  * @param req - Fixture backend request.
  * @param res - Fixture backend response.
+ *
  * @returns Whether the request was fully handled.
  */
 function handlePublicApiBootstrap(
@@ -483,7 +480,7 @@ function handlePublicApiBootstrap(
     res: ServerResponse,
 ): boolean {
     if (req.method === 'OPTIONS') {
-        const origin = req.headers.origin;
+        const { origin } = req.headers;
         if (typeof origin === 'string') {
             res.setHeader('access-control-allow-origin', origin);
         }
@@ -612,8 +609,8 @@ async function seedPopupState(
                         reject(
                             new Error(
                                 String(
-                                    Reflect.get(lastError, 'message') ??
-                                        'runtime.sendMessage failed',
+                                    Reflect.get(lastError, 'message')
+                                        ?? 'runtime.sendMessage failed',
                                 ),
                             ),
                         );
@@ -625,9 +622,9 @@ async function seedPopupState(
         });
 
         if (
-            typeof response !== 'object' ||
-            response === null ||
-            Reflect.get(response, 'ok') !== true
+            typeof response !== 'object'
+            || response === null
+            || Reflect.get(response, 'ok') !== true
         ) {
             throw new Error('Failed to seed popup state');
         }
@@ -646,7 +643,14 @@ async function installRuntimeMessageGate(
     messageType: string,
 ): Promise<void> {
     await popupPage.addInitScript(
-        ({ messageType, stateKey, releaseKey, heldState, releasedState }) => {
+        ({
+
+            messageType,
+            stateKey,
+            releaseKey,
+            heldState,
+            releasedState,
+        }) => {
             const chromeApi = Reflect.get(globalThis, 'chrome');
             if (typeof chromeApi !== 'object' || chromeApi === null) {
                 throw new Error('Missing chrome API');
@@ -664,10 +668,9 @@ async function installRuntimeMessageGate(
             let released = false;
             const gatedSendMessage = (...args: unknown[]): unknown => {
                 const matchingMessage = args.find(
-                    (argument) =>
-                        typeof argument === 'object' &&
-                        argument !== null &&
-                        Reflect.get(argument, 'type') === messageType,
+                    (argument) => typeof argument === 'object'
+                        && argument !== null
+                        && Reflect.get(argument, 'type') === messageType,
                 );
                 if (matchingMessage === undefined) {
                     return Reflect.apply(sendMessage, runtime, args);
@@ -713,16 +716,16 @@ async function installRuntimeMessageGate(
  * Waits until the popup has actually attempted the gated runtime request.
  *
  * @param popupPage - Popup page with an installed runtime-message gate.
+ *
  * @returns Promise resolving only after the message is held.
  */
 async function waitForHeldRuntimeMessage(popupPage: Page): Promise<void> {
     await expect
         .poll(
-            () =>
-                popupPage.evaluate((stateKey) => {
-                    const state: unknown = Reflect.get(globalThis, stateKey);
-                    return state;
-                }, RUNTIME_MESSAGE_GATE_STATE_KEY),
+            () => popupPage.evaluate((stateKey) => {
+                const state: unknown = Reflect.get(globalThis, stateKey);
+                return state;
+            }, RUNTIME_MESSAGE_GATE_STATE_KEY),
             { timeout: RUNTIME_MESSAGE_GATE_TIMEOUT_MS },
         )
         .toBe(RUNTIME_MESSAGE_GATE_HELD_STATE);
@@ -732,6 +735,7 @@ async function waitForHeldRuntimeMessage(popupPage: Page): Promise<void> {
  * Releases the held runtime request after the intermediate UI is verified.
  *
  * @param popupPage - Popup page with a held runtime request.
+ *
  * @returns Promise resolving after the real Chrome API receives the request.
  */
 async function releaseHeldRuntimeMessage(popupPage: Page): Promise<void> {
@@ -759,6 +763,7 @@ async function releaseHeldRuntimeMessage(popupPage: Page): Promise<void> {
  *
  * @param extensionPage - Extension page allowed to call the runtime API.
  * @param expectedMode - Analysis mode expected from background preferences.
+ *
  * @returns Promise resolving after GET_PREFS reports the expected mode.
  */
 async function waitForStoredAnalysisMode(
@@ -767,67 +772,66 @@ async function waitForStoredAnalysisMode(
 ): Promise<void> {
     await expect
         .poll(
-            () =>
-                extensionPage.evaluate(async (messageType) => {
-                    const chromeApi = Reflect.get(globalThis, 'chrome');
-                    if (typeof chromeApi !== 'object' || chromeApi === null) {
-                        throw new Error('Missing chrome API');
-                    }
-                    const runtime = Reflect.get(chromeApi, 'runtime');
-                    if (typeof runtime !== 'object' || runtime === null) {
-                        throw new Error('Missing chrome.runtime API');
-                    }
-                    const sendMessage = Reflect.get(runtime, 'sendMessage');
-                    if (typeof sendMessage !== 'function') {
-                        throw new Error(
-                            'Missing chrome.runtime.sendMessage API',
-                        );
-                    }
+            () => extensionPage.evaluate(async (messageType) => {
+                const chromeApi = Reflect.get(globalThis, 'chrome');
+                if (typeof chromeApi !== 'object' || chromeApi === null) {
+                    throw new Error('Missing chrome API');
+                }
+                const runtime = Reflect.get(chromeApi, 'runtime');
+                if (typeof runtime !== 'object' || runtime === null) {
+                    throw new Error('Missing chrome.runtime API');
+                }
+                const sendMessage = Reflect.get(runtime, 'sendMessage');
+                if (typeof sendMessage !== 'function') {
+                    throw new Error(
+                        'Missing chrome.runtime.sendMessage API',
+                    );
+                }
 
-                    const response: unknown = await new Promise(
-                        (resolve, reject) => {
-                            Reflect.apply(sendMessage, runtime, [
-                                { type: messageType },
-                                (result: unknown) => {
-                                    const lastError = Reflect.get(
-                                        runtime,
-                                        'lastError',
-                                    );
-                                    if (
-                                        typeof lastError === 'object' &&
-                                        lastError !== null
-                                    ) {
-                                        reject(
-                                            new Error(
-                                                String(
-                                                    Reflect.get(
-                                                        lastError,
-                                                        'message',
-                                                    ) ??
-                                                        'runtime.sendMessage failed',
-                                                ),
+                const response: unknown = await new Promise(
+                    (resolve, reject) => {
+                        Reflect.apply(sendMessage, runtime, [
+                            { type: messageType },
+                            (result: unknown) => {
+                                const lastError = Reflect.get(
+                                    runtime,
+                                    'lastError',
+                                );
+                                if (
+                                    typeof lastError === 'object'
+                                        && lastError !== null
+                                ) {
+                                    reject(
+                                        new Error(
+                                            String(
+                                                Reflect.get(
+                                                    lastError,
+                                                    'message',
+                                                )
+                                                        ?? 'runtime.sendMessage failed',
                                             ),
-                                        );
-                                        return;
-                                    }
-                                    resolve(result);
-                                },
-                            ]);
-                        },
-                    );
-                    if (typeof response !== 'object' || response === null) {
-                        return null;
-                    }
-                    const prefs: unknown = Reflect.get(response, 'prefs');
-                    if (typeof prefs !== 'object' || prefs === null) {
-                        return null;
-                    }
-                    const analysisMode: unknown = Reflect.get(
-                        prefs,
-                        'analysisMode',
-                    );
-                    return analysisMode;
-                }, GET_PREFS_MESSAGE_TYPE),
+                                        ),
+                                    );
+                                    return;
+                                }
+                                resolve(result);
+                            },
+                        ]);
+                    },
+                );
+                if (typeof response !== 'object' || response === null) {
+                    return null;
+                }
+                const prefs: unknown = Reflect.get(response, 'prefs');
+                if (typeof prefs !== 'object' || prefs === null) {
+                    return null;
+                }
+                const analysisMode: unknown = Reflect.get(
+                    prefs,
+                    'analysisMode',
+                );
+                return analysisMode;
+            }, GET_PREFS_MESSAGE_TYPE),
             { timeout: RUNTIME_MESSAGE_GATE_TIMEOUT_MS },
         )
         .toBe(expectedMode);
@@ -863,27 +867,25 @@ async function seedFreshLocalServerCache(
                 throw new Error('Missing chrome.storage.local mutation API');
             }
 
-            const keyForHash = (hash: string): string =>
-                [
-                    'topskip:server-result-cache',
-                    fixture.algorithmVersion,
-                    fixture.videoId,
-                    fixture.languageCode,
-                    hash,
-                ].join(':');
+            const keyForHash = (hash: string): string => [
+                'topskip:server-result-cache',
+                fixture.algorithmVersion,
+                fixture.videoId,
+                fixture.languageCode,
+                hash,
+            ].join(':');
             const key = keyForHash(fixture.transcriptHash);
             await new Promise<void>((resolve, reject) => {
                 Reflect.apply(remove, local, [
                     [keyForHash(fixture.defaultTranscriptHash), key],
                     () => {
                         const runtime = Reflect.get(chromeApi, 'runtime');
-                        const lastError =
-                            typeof runtime === 'object' && runtime !== null
-                                ? Reflect.get(runtime, 'lastError')
-                                : undefined;
+                        const lastError = typeof runtime === 'object' && runtime !== null
+                            ? Reflect.get(runtime, 'lastError')
+                            : undefined;
                         if (
-                            typeof lastError === 'object' &&
-                            lastError !== null
+                            typeof lastError === 'object'
+                            && lastError !== null
                         ) {
                             reject(
                                 new Error(
@@ -927,13 +929,12 @@ async function seedFreshLocalServerCache(
                     },
                     () => {
                         const runtime = Reflect.get(chromeApi, 'runtime');
-                        const lastError =
-                            typeof runtime === 'object' && runtime !== null
-                                ? Reflect.get(runtime, 'lastError')
-                                : undefined;
+                        const lastError = typeof runtime === 'object' && runtime !== null
+                            ? Reflect.get(runtime, 'lastError')
+                            : undefined;
                         if (
-                            typeof lastError === 'object' &&
-                            lastError !== null
+                            typeof lastError === 'object'
+                            && lastError !== null
                         ) {
                             reject(
                                 new Error(
@@ -963,6 +964,7 @@ async function seedFreshLocalServerCache(
  * Waits until the Diagnostics section left its loading state.
  *
  * @param optionsPage - Options page showing the Diagnostics section.
+ *
  * @returns Promise resolving once the switch accepts input.
  */
 async function expectDiagnosticsReady(optionsPage: Page): Promise<void> {
@@ -977,6 +979,7 @@ async function expectDiagnosticsReady(optionsPage: Page): Promise<void> {
  *
  * @param optionsPage - Options page showing the Diagnostics section.
  * @param enabled - Desired switch state.
+ *
  * @returns Promise resolving once the background confirmed the state.
  */
 async function setDebugLoggingSwitch(
@@ -1009,22 +1012,21 @@ async function setDebugLoggingSwitch(
     });
 }
 
-type DebugLogBundle = {
+interface DebugLogBundle {
     header: string[];
     events: string[];
-};
+}
 
 /**
  * Splits an exported bundle into the header block and its event lines.
  *
  * @param text - Bundle text as copied or downloaded.
+ *
  * @returns Header lines and event lines.
  */
 function splitDebugLogBundle(text: string): DebugLogBundle {
     const lines = text.split('\n');
-    const firstEvent = lines.findIndex((line) =>
-        DEBUG_LOG_EVENT_LINE_PATTERN.test(line),
-    );
+    const firstEvent = lines.findIndex((line) => DEBUG_LOG_EVENT_LINE_PATTERN.test(line));
     return {
         header: firstEvent === -1 ? lines : lines.slice(0, firstEvent),
         events: lines.filter((line) => DEBUG_LOG_EVENT_LINE_PATTERN.test(line)),
@@ -1036,6 +1038,7 @@ function splitDebugLogBundle(text: string): DebugLogBundle {
  *
  * @param header - Header lines of a bundle.
  * @param key - Header key without the `=`.
+ *
  * @returns The value or `null` when the key is absent.
  */
 function readBundleHeaderValue(
@@ -1057,6 +1060,7 @@ function readBundleHeaderValue(
  *
  * @param header - Header lines of a bundle.
  * @param key - Header key without the `=`.
+ *
  * @returns The value.
  */
 function requireBundleHeaderValue(
@@ -1075,6 +1079,7 @@ function requireBundleHeaderValue(
  * log can be compared byte for byte.
  *
  * @param text - Bundle text.
+ *
  * @returns The text without the `exportedAt` line.
  */
 function stripExportedAtLine(text: string): string {
@@ -1094,6 +1099,7 @@ function stripExportedAtLine(text: string): string {
  *
  * @param left - Event line.
  * @param right - Event line.
+ *
  * @returns Sort order of the two lines.
  */
 function compareTimestampPrefix(left: string, right: string): number {
@@ -1112,6 +1118,7 @@ function compareTimestampPrefix(left: string, right: string): number {
  * Sorts event lines by timestamp (stable for equal timestamps).
  *
  * @param events - Event lines in append order.
+ *
  * @returns Event lines in timestamp order.
  */
 function sortEventLinesByTimestamp(events: readonly string[]): string[] {
@@ -1122,6 +1129,7 @@ function sortEventLinesByTimestamp(events: readonly string[]): string[] {
  * Matches the event-name token of a formatted line.
  *
  * @param eventName - Event name from the allow-list.
+ *
  * @returns Regex matching a whitespace-delimited event token.
  */
 function eventLinePattern(eventName: string): RegExp {
@@ -1136,6 +1144,7 @@ function eventLinePattern(eventName: string): RegExp {
  * @param eventName - Event name from the allow-list.
  * @param requiredFields - Substrings each matching line must contain.
  * @param after - Only consider lines after this index.
+ *
  * @returns Matching index or -1.
  */
 function findEventLineIndex(
@@ -1146,10 +1155,9 @@ function findEventLineIndex(
 ): number {
     const pattern = eventLinePattern(eventName);
     return events.findIndex(
-        (line, index) =>
-            index > after &&
-            pattern.test(line) &&
-            requiredFields.every((field) => line.includes(field)),
+        (line, index) => index > after
+            && pattern.test(line)
+            && requiredFields.every((field) => line.includes(field)),
     );
 }
 
@@ -1162,7 +1170,7 @@ function findEventLineIndex(
  */
 function expectEventsInOrder(
     events: readonly string[],
-    steps: ReadonlyArray<readonly [string, ...string[]]>,
+    steps: readonly (readonly [string, ...string[]])[],
 ): void {
     let previous = -1;
     for (const [eventName, ...fields] of steps) {
@@ -1175,10 +1183,10 @@ function expectEventsInOrder(
     }
 }
 
-type PollingBackend = {
+interface PollingBackend {
     server: Server;
     readyPollSeen: Promise<void>;
-};
+}
 
 /**
  * Serves one processing job that turns ready after a fixed number of polls so
@@ -1186,6 +1194,7 @@ type PollingBackend = {
  * shared with the other fixture backends.
  *
  * @param processingPolls - Polls answered `processing` before `ready`.
+ *
  * @returns Listening server and a promise for the ready poll.
  */
 async function startPollingBackend(
@@ -1227,8 +1236,8 @@ async function startPollingBackend(
             return;
         }
         if (
-            req.method === 'GET' &&
-            req.url === `/v1/analysis/jobs/${E2E_POLLING_JOB_ID}`
+            req.method === 'GET'
+            && req.url === `/v1/analysis/jobs/${E2E_POLLING_JOB_ID}`
         ) {
             expectAuthenticatedServerRequest(req);
             polls += 1;
@@ -1259,6 +1268,7 @@ async function startPollingBackend(
  * Closes a fixture backend and waits for the port to free up.
  *
  * @param server - Listening fixture backend.
+ *
  * @returns Promise resolving after close.
  */
 async function closeBackend(server: Server): Promise<void> {
@@ -1274,6 +1284,7 @@ async function closeBackend(server: Server): Promise<void> {
  * @param context - Persistent context hosting the unpacked extension.
  * @param errors - Collector for console/page errors.
  * @param backend - Polling backend started for this flow.
+ *
  * @returns The fixture page (still open).
  */
 async function runServerPollingFlow(
@@ -1312,13 +1323,12 @@ async function runServerPollingFlow(
     });
     await expect
         .poll(
-            async () =>
-                page.evaluate(() => {
-                    const video = document.querySelector('video');
-                    return video instanceof HTMLVideoElement
-                        ? video.currentTime
-                        : -1;
-                }),
+            async () => page.evaluate(() => {
+                const video = document.querySelector('video');
+                return video instanceof HTMLVideoElement
+                    ? video.currentTime
+                    : -1;
+            }),
             { timeout: 8_000 },
         )
         .toBeGreaterThan(44);
@@ -1331,6 +1341,7 @@ async function runServerPollingFlow(
  * Presses Copy log and returns the text the stubbed clipboard received.
  *
  * @param optionsPage - Options page prepared with the capturing clipboard.
+ *
  * @returns Bundle text.
  */
 async function copyDebugLog(optionsPage: Page): Promise<string> {
@@ -1353,16 +1364,17 @@ async function copyDebugLog(optionsPage: Page): Promise<string> {
     return text;
 }
 
-type DownloadedDebugLog = {
+interface DownloadedDebugLog {
     fileName: string;
     text: string;
-};
+}
 
 /**
  * Presses Download log and reads the offered file before the context closes
  * (Playwright deletes downloads with the context).
  *
  * @param optionsPage - Options page showing the Diagnostics section.
+ *
  * @returns Suggested file name and file text.
  */
 async function downloadDebugLog(optionsPage: Page): Promise<DownloadedDebugLog> {
@@ -1386,6 +1398,7 @@ async function downloadDebugLog(optionsPage: Page): Promise<DownloadedDebugLog> 
  *
  * @param page - Page to audit in its current state.
  * @param label - Label for the failure message.
+ *
  * @returns Promise resolving when the audit found no violations.
  */
 async function expectNoAxeViolations(page: Page, label: string): Promise<void> {
@@ -1417,16 +1430,14 @@ test.describe('TopSkip extension', () => {
                 `chrome-extension://${extensionId}/options.html`,
                 { waitUntil: 'domcontentloaded' },
             );
-            const grantsBeforePopup =
-                await readGrantedExtensionPermissions(grantPage);
+            const grantsBeforePopup = await readGrantedExtensionPermissions(grantPage);
 
             const popupPage = await openPopupAndWaitForUi(
                 context,
                 extensionId,
                 errors,
             );
-            const grantsAfterPopup =
-                await readGrantedExtensionPermissions(popupPage);
+            const grantsAfterPopup = await readGrantedExtensionPermissions(popupPage);
             expect(grantsAfterPopup).toEqual(grantsBeforePopup);
             expect(grantsAfterPopup.permissions).toEqual([
                 'activeTab',
@@ -1676,13 +1687,12 @@ test.describe('TopSkip extension', () => {
 
             await expect
                 .poll(
-                    async () =>
-                        page.evaluate(() => {
-                            const video = document.querySelector(
-                                'video',
-                            ) as HTMLVideoElement;
-                            return video.currentTime;
-                        }),
+                    async () => page.evaluate(() => {
+                        const video = document.querySelector(
+                            'video',
+                        ) as HTMLVideoElement;
+                        return video.currentTime;
+                    }),
                     { timeout: 90_000 },
                 )
                 .toBeGreaterThan(31);
@@ -1718,8 +1728,8 @@ test.describe('TopSkip extension', () => {
                 return;
             }
             if (
-                req.method === 'GET' &&
-                req.url === `/v1/analysis/jobs/${jobId}`
+                req.method === 'GET'
+                && req.url === `/v1/analysis/jobs/${jobId}`
             ) {
                 expectAuthenticatedServerRequest(req);
                 res.writeHead(202, { 'content-type': 'application/json' });
@@ -1735,7 +1745,7 @@ test.describe('TopSkip extension', () => {
             let body = '';
             req.setEncoding('utf8');
             req.on('data', (chunk) => {
-                body = body + chunk;
+                body += chunk;
             });
             req.on('end', () => {
                 const request: unknown = JSON.parse(body) as unknown;
@@ -1785,12 +1795,11 @@ test.describe('TopSkip extension', () => {
                 requestSeen,
                 new Promise<never>((_resolve, reject) => {
                     setTimeout(
-                        () =>
-                            reject(
-                                new Error(
-                                    'Timed out waiting for server analysis request.',
-                                ),
+                        () => reject(
+                            new Error(
+                                'Timed out waiting for server analysis request.',
                             ),
+                        ),
                         15_000,
                     );
                 }),
@@ -1839,7 +1848,7 @@ test.describe('TopSkip extension', () => {
             let body = '';
             req.setEncoding('utf8');
             req.on('data', (chunk) => {
-                body = body + chunk;
+                body += chunk;
             });
             req.on('end', () => {
                 expect(JSON.parse(body)).toMatchObject({
@@ -1902,12 +1911,11 @@ test.describe('TopSkip extension', () => {
                 requestSeen,
                 new Promise<never>((_resolve, reject) => {
                     setTimeout(
-                        () =>
-                            reject(
-                                new Error(
-                                    'Timed out waiting for server ready request.',
-                                ),
+                        () => reject(
+                            new Error(
+                                'Timed out waiting for server ready request.',
                             ),
+                        ),
                         15_000,
                     );
                 }),
@@ -1957,13 +1965,12 @@ test.describe('TopSkip extension', () => {
 
             await expect
                 .poll(
-                    async () =>
-                        page.evaluate(() => {
-                            const video = document.querySelector(
-                                'video',
-                            ) as HTMLVideoElement;
-                            return video.currentTime;
-                        }),
+                    async () => page.evaluate(() => {
+                        const video = document.querySelector(
+                            'video',
+                        ) as HTMLVideoElement;
+                        return video.currentTime;
+                    }),
                     { timeout: 12_000 },
                 )
                 .toBeGreaterThan(23);
@@ -2027,7 +2034,7 @@ test.describe('TopSkip extension', () => {
                 let body = '';
                 req.setEncoding('utf8');
                 req.on('data', (chunk) => {
-                    body = body + chunk;
+                    body += chunk;
                 });
                 req.on('end', () => {
                     expect(JSON.parse(body)).toMatchObject({
@@ -2049,8 +2056,8 @@ test.describe('TopSkip extension', () => {
             }
 
             if (
-                req.method === 'GET' &&
-                req.url === `/v1/analysis/jobs/${jobId}`
+                req.method === 'GET'
+                && req.url === `/v1/analysis/jobs/${jobId}`
             ) {
                 expectAuthenticatedServerRequest(req);
                 if (terminalReady) {
@@ -2214,13 +2221,12 @@ test.describe('TopSkip extension', () => {
             });
             await expect
                 .poll(
-                    async () =>
-                        page.evaluate(() => {
-                            const video = document.querySelector(
-                                'video',
-                            ) as HTMLVideoElement;
-                            return video.currentTime;
-                        }),
+                    async () => page.evaluate(() => {
+                        const video = document.querySelector(
+                            'video',
+                        ) as HTMLVideoElement;
+                        return video.currentTime;
+                    }),
                     { timeout: 8_000 },
                 )
                 .toBeGreaterThan(44);
@@ -2261,8 +2267,8 @@ test.describe('TopSkip extension', () => {
             }
 
             if (
-                req.method === 'GET' &&
-                req.url === `/v1/analysis/jobs/${jobId}`
+                req.method === 'GET'
+                && req.url === `/v1/analysis/jobs/${jobId}`
             ) {
                 expectAuthenticatedServerRequest(req);
                 statusRequestCount += 1;
@@ -2341,7 +2347,7 @@ test.describe('TopSkip extension', () => {
                 let body = '';
                 req.setEncoding('utf8');
                 req.on('data', (chunk) => {
-                    body = body + chunk;
+                    body += chunk;
                 });
                 req.on('end', () => {
                     requestBodies.push(body);
@@ -2382,8 +2388,8 @@ test.describe('TopSkip extension', () => {
                 return;
             }
             if (
-                req.method === 'GET' &&
-                req.url === `/v1/analysis/jobs/${jobId}`
+                req.method === 'GET'
+                && req.url === `/v1/analysis/jobs/${jobId}`
             ) {
                 expectAuthenticatedServerRequest(req);
                 pollRequestCount += 1;
@@ -2485,10 +2491,8 @@ test.describe('TopSkip extension', () => {
                 `chrome-extension://${extensionId}/options.html`,
                 { waitUntil: 'domcontentloaded' },
             );
-            const captionsUnavailableSessionId =
-                '00000000-0000-4000-8000-000000000012';
-            const captionExtractionFailureSessionId =
-                '00000000-0000-4000-8000-000000000013';
+            const captionsUnavailableSessionId = '00000000-0000-4000-8000-000000000012';
+            const captionExtractionFailureSessionId = '00000000-0000-4000-8000-000000000013';
             const baseFailureState = {
                 videoId: E2E_VIDEO_ID,
                 source: 'server',
@@ -2710,7 +2714,7 @@ test.describe('TopSkip extension', () => {
                 let body = '';
                 req.setEncoding('utf8');
                 req.on('data', (chunk) => {
-                    body = body + chunk;
+                    body += chunk;
                 });
                 req.on('end', () => {
                     const request: unknown = JSON.parse(body) as unknown;
@@ -2790,13 +2794,12 @@ test.describe('TopSkip extension', () => {
 
             await expect
                 .poll(
-                    async () =>
-                        page.evaluate(() => {
-                            const video = document.querySelector(
-                                'video',
-                            ) as HTMLVideoElement;
-                            return video.currentTime;
-                        }),
+                    async () => page.evaluate(() => {
+                        const video = document.querySelector(
+                            'video',
+                        ) as HTMLVideoElement;
+                        return video.currentTime;
+                    }),
                     { timeout: 12_000 },
                 )
                 .toBeGreaterThan(23);
@@ -2819,10 +2822,9 @@ test.describe('TopSkip extension', () => {
             });
             await expect
                 .poll(
-                    () =>
-                        backendRequests.filter(
-                            (request) => request === 'POST /v1/analysis',
-                        ).length,
+                    () => backendRequests.filter(
+                        (request) => request === 'POST /v1/analysis',
+                    ).length,
                     { timeout: 15_000 },
                 )
                 .toBe(1);
@@ -3024,8 +3026,8 @@ test.describe('TopSkip extension', () => {
 
             const horizontalOverflow = await popupPage.evaluate(() => {
                 return (
-                    document.documentElement.scrollWidth >
-                    document.documentElement.clientWidth
+                    document.documentElement.scrollWidth
+                    > document.documentElement.clientWidth
                 );
             });
             expect(horizontalOverflow).toBe(false);
@@ -3132,8 +3134,8 @@ test.describe('TopSkip extension', () => {
                     .waitFor({ state: 'visible' });
                 const generalOverflow = await page.evaluate(() => {
                     return (
-                        document.documentElement.scrollWidth >
-                        document.documentElement.clientWidth
+                        document.documentElement.scrollWidth
+                        > document.documentElement.clientWidth
                     );
                 });
                 expect(
@@ -3147,8 +3149,8 @@ test.describe('TopSkip extension', () => {
                     .waitFor({ state: 'visible', timeout: DEBUG_LOG_UI_TIMEOUT_MS });
                 const diagnosticsOverflow = await page.evaluate(() => {
                     return (
-                        document.documentElement.scrollWidth >
-                        document.documentElement.clientWidth
+                        document.documentElement.scrollWidth
+                        > document.documentElement.clientWidth
                     );
                 });
                 expect(
@@ -3247,8 +3249,8 @@ test.describe('TopSkip extension', () => {
                 .analyze();
             expect(
                 popupResults.violations,
-                'Popup axe violations:\n' +
-                    JSON.stringify(popupResults.violations, null, 2),
+                `Popup axe violations:\n${
+                    JSON.stringify(popupResults.violations, null, 2)}`,
             ).toEqual([]);
             await popupPage.close();
 
@@ -3275,8 +3277,8 @@ test.describe('TopSkip extension', () => {
                 .analyze();
             expect(
                 serverOptionsResults.violations,
-                'Server options axe violations:\n' +
-                    JSON.stringify(serverOptionsResults.violations, null, 2),
+                `Server options axe violations:\n${
+                    JSON.stringify(serverOptionsResults.violations, null, 2)}`,
             ).toEqual([]);
 
             await optionsPage
@@ -3294,8 +3296,8 @@ test.describe('TopSkip extension', () => {
                 .analyze();
             expect(
                 byokOptionsResults.violations,
-                'Private BYOK options axe violations:\n' +
-                    JSON.stringify(byokOptionsResults.violations, null, 2),
+                `Private BYOK options axe violations:\n${
+                    JSON.stringify(byokOptionsResults.violations, null, 2)}`,
             ).toEqual([]);
 
             // --- Options page: Diagnostics in on, off-stored, off-empty ---
@@ -3367,8 +3369,8 @@ test.describe('TopSkip extension', () => {
             await expect(popupOn.getByTestId('popup-footer')).toHaveCount(0);
             const horizontalOverflow = await popupOn.evaluate(() => {
                 return (
-                    document.documentElement.scrollWidth >
-                    document.documentElement.clientWidth
+                    document.documentElement.scrollWidth
+                    > document.documentElement.clientWidth
                 );
             });
             expect(horizontalOverflow).toBe(false);
@@ -3511,9 +3513,8 @@ test.describe('TopSkip extension', () => {
             // terminal=true) by Task C2's and Task D5's unit tests — no E2E
             // fixture drives a real backend failure.
             const terminalSummaries = ordered.filter(
-                (line) =>
-                    eventLinePattern(DEBUG_LOG_EVENT.PollSummary).test(line) &&
-                    line.includes('terminal=true'),
+                (line) => eventLinePattern(DEBUG_LOG_EVENT.PollSummary).test(line)
+                    && line.includes('terminal=true'),
             );
             expect(terminalSummaries).toHaveLength(1);
             const polls = /polls=(\d+)/u.exec(terminalSummaries[0] ?? '')?.[1];
@@ -3521,10 +3522,9 @@ test.describe('TopSkip extension', () => {
                 POLLING_BACKEND_PROCESSING_POLLS + 1,
             );
             const pollHttpLines = ordered.filter(
-                (line) =>
-                    line.includes('operation=poll') &&
-                    (eventLinePattern(DEBUG_LOG_EVENT.HttpStart).test(line) ||
-                        eventLinePattern(DEBUG_LOG_EVENT.HttpResponse).test(
+                (line) => line.includes('operation=poll')
+                    && (eventLinePattern(DEBUG_LOG_EVENT.HttpStart).test(line)
+                        || eventLinePattern(DEBUG_LOG_EVENT.HttpResponse).test(
                             line,
                         )),
             );
@@ -3755,8 +3755,7 @@ test.describe('TopSkip extension', () => {
                 popupPage,
                 setupPage,
             );
-            const bodyWithLog =
-                new URL(withLogUrl).searchParams.get('body') ?? '';
+            const bodyWithLog = new URL(withLogUrl).searchParams.get('body') ?? '';
             expect(bodyWithLog).toContain(DEBUG_LOG_ISSUE_HINT_PREFIX);
             expect(bodyWithLog).toContain('Support ID: support-e2e-debug-log');
             expect(bodyWithLog).not.toContain(E2E_VIDEO_ID);
@@ -3771,8 +3770,7 @@ test.describe('TopSkip extension', () => {
                 popupPage,
                 setupPage,
             );
-            const bodyWithoutLog =
-                new URL(withoutLogUrl).searchParams.get('body') ?? '';
+            const bodyWithoutLog = new URL(withoutLogUrl).searchParams.get('body') ?? '';
             expect(bodyWithoutLog).not.toContain('Debug logging');
             expect(bodyWithoutLog).not.toContain(E2E_VIDEO_ID);
             // B14's `buildUrl` appends exactly one line (FR-039), no blank.
@@ -3873,8 +3871,8 @@ test.describe('TopSkip extension', () => {
                 await optionsPage.setViewportSize({ width, height: 900 });
                 const hasOverflow = await optionsPage.evaluate(() => {
                     return (
-                        document.documentElement.scrollWidth >
-                        document.documentElement.clientWidth
+                        document.documentElement.scrollWidth
+                        > document.documentElement.clientWidth
                     );
                 });
                 expect(

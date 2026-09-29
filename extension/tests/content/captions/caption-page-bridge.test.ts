@@ -1,6 +1,15 @@
 import { readFileSync } from 'node:fs';
 
-import { afterEach, beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    type Mock,
+    vi,
+} from 'vitest';
 
 import {
     CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS,
@@ -18,26 +27,20 @@ import {
 const MESSAGE_ID_SHAPE: unknown = expect.stringMatching(/^[^:]+:\d+$/u);
 const INSTALL_FLAG = '__topskipCaptionCaptureInstalled';
 const TEARDOWN_FLAG = '__topskipCaptionCaptureTeardown';
-const TIMEDTEXT_URL =
-    'https://www.youtube.com/api/timedtext?v=video-1&lang=en&fmt=json3';
+const TIMEDTEXT_URL = 'https://www.youtube.com/api/timedtext?v=video-1&lang=en&fmt=json3';
 const TIMEDTEXT_BODY = '{"events":[]}';
 // Mirrors the player's auto-translate request: `tlang` sits between signed
 // parameters and is not listed in `sparams`.
-const TRANSLATED_URL =
-    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&tlang=en&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
-const UNTRANSLATED_URL =
-    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
+const TRANSLATED_URL = 'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&tlang=en&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
+const UNTRANSLATED_URL = 'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&fmt=json3&sparams=ip%2Cexpire&signature=SIG-VALUE';
 // No `pot` at all: the player's first, tokenless request for an
 // auto-translated track.
-const TRANSLATED_URL_NO_POT =
-    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&tlang=en&fmt=json3';
+const TRANSLATED_URL_NO_POT = 'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&tlang=en&fmt=json3';
 // `tlang` first, repeated, and percent-encoded (`%74lang` decodes to
 // `tlang`); an empty pair (`&&`) and a percent-encoded comma in `sparams`
 // exercise that everything else survives byte for byte.
-const MESSY_TRANSLATED_URL =
-    'https://www.youtube.com/api/timedtext?tlang=en&v=video-1&lang=ru&pot=POT-TOKEN&tlang=de&%74lang=fr&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
-const MESSY_UNTRANSLATED_URL =
-    'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
+const MESSY_TRANSLATED_URL = 'https://www.youtube.com/api/timedtext?tlang=en&v=video-1&lang=ru&pot=POT-TOKEN&tlang=de&%74lang=fr&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
+const MESSY_UNTRANSLATED_URL = 'https://www.youtube.com/api/timedtext?v=video-1&lang=ru&pot=POT-TOKEN&&sparams=ip%2Cexpire&fmt=json3&signature=SIG-VALUE';
 const TRANSLATED_BODY = '{"events":[{"segs":[{"utf8":"EASSV Payol"}]}]}';
 const ORIGINAL_BODY = '{"events":[{"segs":[{"utf8":"Easystaff"}]}]}';
 // The refetch carries its own AbortController (item 3). `expect.any` is
@@ -131,18 +134,18 @@ class TestXmlHttpRequest extends EventTarget {
     }
 }
 
-type FetchResponseHarness = {
+interface FetchResponseHarness {
     response: Response;
     clone: ReturnType<typeof vi.fn>;
     text: ReturnType<typeof vi.fn>;
-};
+}
 
 /**
  * Signature of the page fetch the bridge wraps and refetches through.
  */
 type PageFetch = (input: unknown, init?: unknown) => Promise<Response>;
 
-type BridgeHarness = {
+interface BridgeHarness {
     button: TestElement;
     originalFetch: Mock<PageFetch>;
     captures: unknown[];
@@ -153,7 +156,7 @@ type BridgeHarness = {
     setOption: ReturnType<typeof vi.fn>;
     originalXhrOpen: unknown;
     originalXhrSend: unknown;
-};
+}
 
 class TestDocument extends EventTarget {
     readonly documentElement: { append: (element: TestElement) => void };
@@ -261,10 +264,9 @@ function installHarness(captionsInitiallyOn = false): BridgeHarness {
                 return;
             }
             const message = JSON.parse(String(event.detail)) as unknown;
-            const kind: unknown =
-                message !== null && typeof message === 'object'
-                    ? Reflect.get(message, 'kind')
-                    : undefined;
+            const kind: unknown = message !== null && typeof message === 'object'
+                ? Reflect.get(message, 'kind')
+                : undefined;
             if (kind === 'diagnostic') {
                 diagnostics.push(message);
                 return;
@@ -376,6 +378,9 @@ async function flushCapture(): Promise<void> {
 /**
  * Builds the response the bridge's own untranslated refetch receives; it
  * reads the body directly instead of through a clone.
+ *
+ * @param body
+ * @param status
  */
 function createRefetchResponse(body: string, status = 200): Response {
     const response = new Response(body, {
@@ -422,19 +427,16 @@ async function flushRefetch(): Promise<void> {
 
 function findDiagnostic(harness: BridgeHarness, stage: string): unknown {
     return harness.diagnostics.find(
-        (message) =>
-            message !== null &&
-            typeof message === 'object' &&
-            Reflect.get(message, 'stage') === stage,
+        (message) => message !== null
+            && typeof message === 'object'
+            && Reflect.get(message, 'stage') === stage,
     );
 }
 
 function diagnosticStages(harness: BridgeHarness): unknown[] {
-    return harness.diagnostics.map((message): unknown =>
-        message !== null && typeof message === 'object'
-            ? Reflect.get(message, 'stage')
-            : undefined,
-    );
+    return harness.diagnostics.map((message): unknown => (message !== null && typeof message === 'object'
+        ? Reflect.get(message, 'stage')
+        : undefined));
 }
 
 describe('caption page bridge', () => {
@@ -1145,8 +1147,7 @@ describe('caption page bridge', () => {
 
     it('drops a refetch whose generation ends between the response resolving and its body settling', async () => {
         const harness = installHarness();
-        const { response: refetchResponse, resolveText } =
-            createControllableRefetchResponse();
+        const { response: refetchResponse, resolveText } = createControllableRefetchResponse();
         harness.originalFetch
             .mockResolvedValueOnce(
                 createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
@@ -1173,8 +1174,7 @@ describe('caption page bridge', () => {
 
     it('aborts the in-flight refetch signal when the generation ends mid-refetch', async () => {
         const harness = installHarness();
-        const { response: refetchResponse, resolveText } =
-            createControllableRefetchResponse();
+        const { response: refetchResponse, resolveText } = createControllableRefetchResponse();
         harness.originalFetch
             .mockResolvedValueOnce(
                 createResponse(TRANSLATED_BODY, TRANSLATED_URL).response,
@@ -1187,10 +1187,9 @@ describe('caption page bridge', () => {
         expect(harness.originalFetch).toHaveBeenCalledTimes(2);
 
         const refetchInit: unknown = harness.originalFetch.mock.calls[1]?.[1];
-        const signal: unknown =
-            refetchInit !== null && typeof refetchInit === 'object'
-                ? Reflect.get(refetchInit, 'signal')
-                : undefined;
+        const signal: unknown = refetchInit !== null && typeof refetchInit === 'object'
+            ? Reflect.get(refetchInit, 'signal')
+            : undefined;
         if (!(signal instanceof AbortSignal)) {
             throw new Error('Expected the refetch to carry an AbortSignal');
         }

@@ -1,8 +1,7 @@
+import type { AlignedBlockMetric } from './promo-reference-compare';
 import type { OpenRouterUsage } from '@/background/openrouter/openrouter-client';
 
-import type { AlignedBlockMetric } from './promo-reference-compare';
-
-export type OpenRouterModelPricing = {
+export interface OpenRouterModelPricing {
     prompt?: number;
     completion?: number;
     request?: number;
@@ -10,9 +9,9 @@ export type OpenRouterModelPricing = {
     internalReasoning?: number;
     inputCacheRead?: number;
     inputCacheWrite?: number;
-};
+}
 
-export type EstimatedCostBreakdown = {
+export interface EstimatedCostBreakdown {
     promptCostUsd: number;
     completionCostUsd: number;
     cacheReadCostUsd: number;
@@ -20,24 +19,24 @@ export type EstimatedCostBreakdown = {
     internalReasoningCostUsd: number;
     requestCostUsd: number;
     totalUsd: number;
-};
+}
 
-export type CompareAlignmentSummary = {
+export interface CompareAlignmentSummary {
     matchedBlocks: number;
     meanIoU: number;
     meanAbsStartDeltaSec: number;
     meanAbsEndDeltaSec: number;
     maxAbsStartDeltaSec: number;
     maxAbsEndDeltaSec: number;
-};
+}
 
-export type CompareSummaryRowInput = {
+export interface CompareSummaryRowInput {
     model: string;
     ms: number;
     reportedCost?: number;
     estimatedCostUsd?: number;
     vsHuman: readonly AlignedBlockMetric[];
-};
+}
 
 export type CompareSummaryRow = CompareAlignmentSummary & {
     model: string;
@@ -48,15 +47,15 @@ export type CompareSummaryRow = CompareAlignmentSummary & {
 
 /**
  * @param value - Numeric string or number from OpenRouter model metadata
+ *
  * @returns Finite non-negative rate, otherwise `undefined`
  */
 export function parsePricingNumber(value: unknown): number | undefined {
-    const numeric =
-        typeof value === 'number'
-            ? value
-            : typeof value === 'string'
-                ? Number(value)
-                : Number.NaN;
+    const numeric = typeof value === 'number'
+        ? value
+        : typeof value === 'string'
+            ? Number(value)
+            : Number.NaN;
     if (!Number.isFinite(numeric) || numeric < 0) {
         return undefined;
     }
@@ -69,6 +68,7 @@ export function parsePricingNumber(value: unknown): number | undefined {
  *
  * @param usage - Usage block from the chat response
  * @param pricing - Public per-token model pricing metadata
+ *
  * @returns Breakdown in USD or `undefined` when no usable rates exist
  */
 export function estimateCostFromUsageAndPricing(
@@ -83,25 +83,22 @@ export function estimateCostFromUsageAndPricing(
         usage.promptTokens - cachedTokens - cacheWriteTokens,
         0,
     );
-    const completionTokens =
-        pricing.internalReasoning !== undefined
-            ? Math.max(usage.completionTokens - reasoningTokens, 0)
-            : usage.completionTokens;
+    const completionTokens = pricing.internalReasoning !== undefined
+        ? Math.max(usage.completionTokens - reasoningTokens, 0)
+        : usage.completionTokens;
 
     const promptCostUsd = promptTokens * (pricing.prompt ?? 0);
     const completionCostUsd = completionTokens * (pricing.completion ?? 0);
     const cacheReadCostUsd = cachedTokens * (pricing.inputCacheRead ?? 0);
     const cacheWriteCostUsd = cacheWriteTokens * (pricing.inputCacheWrite ?? 0);
-    const internalReasoningCostUsd =
-        reasoningTokens * (pricing.internalReasoning ?? 0);
+    const internalReasoningCostUsd = reasoningTokens * (pricing.internalReasoning ?? 0);
     const requestCostUsd = pricing.request ?? 0;
-    const totalUsd =
-        promptCostUsd +
-        completionCostUsd +
-        cacheReadCostUsd +
-        cacheWriteCostUsd +
-        internalReasoningCostUsd +
-        requestCostUsd;
+    const totalUsd = promptCostUsd
+        + completionCostUsd
+        + cacheReadCostUsd
+        + cacheWriteCostUsd
+        + internalReasoningCostUsd
+        + requestCostUsd;
 
     if (totalUsd <= 0) {
         return undefined;
@@ -119,6 +116,7 @@ export function estimateCostFromUsageAndPricing(
 
 /**
  * @param metrics - Human-aligned interval metrics for one model
+ *
  * @returns Aggregate alignment summary or `undefined` for empty input
  */
 export function summarizeVsHumanMetrics(
@@ -178,6 +176,7 @@ function effectiveCost(row: CompareSummaryRow): number | undefined {
  * then boundary precision, then lower cost and latency as tie-breakers.
  *
  * @param rows - Successful model rows with `vsHuman`
+ *
  * @returns Ranked summaries, best first
  */
 export function rankCompareSummaryRows(

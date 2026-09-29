@@ -1,5 +1,6 @@
-import type { PromoBlock, PromoConfidence } from '@topskip/common/promo-types';
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
+
+import type { PromoBlock, PromoConfidence } from '@topskip/common/promo-types';
 
 const CONF_RANK: Record<NonNullable<PromoConfidence>, number> = {
     low: 0,
@@ -12,6 +13,7 @@ const CONF_RANK: Record<NonNullable<PromoConfidence>, number> = {
  *
  * @param a - Optional confidence
  * @param b - Optional confidence
+ *
  * @returns Stronger of the two, or whichever is defined
  */
 function maxConfidence(
@@ -32,6 +34,7 @@ function maxConfidence(
  * (deterministic: merged end is the maximum of implied ends).
  *
  * @param blocks - Raw blocks from the LLM (may overlap)
+ *
  * @returns Non-overlapping blocks sorted by start
  */
 export function sortAndDedupePromoBlocks(blocks: PromoBlock[]): PromoBlock[] {
@@ -73,6 +76,7 @@ export function sortAndDedupePromoBlocks(blocks: PromoBlock[]): PromoBlock[] {
  *
  * @param blocks - Blocks from one or more chunk runs
  * @param gapSec - Maximum gap between implied ends to merge (seconds)
+ *
  * @returns Canonical merged list
  */
 export function mergePromoBlocksWithGap(

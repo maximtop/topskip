@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import { parse } from 'valibot';
+import { describe, expect, it } from 'vitest';
 
 import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
 
@@ -16,9 +16,7 @@ describe('llmPromoDetectionSchema', () => {
     });
 
     it('rejects hasPromo true with empty promoBlocks', () => {
-        expect(() =>
-            parse(llmPromoDetectionSchema, { hasPromo: true, promoBlocks: [] }),
-        ).toThrow();
+        expect(() => parse(llmPromoDetectionSchema, { hasPromo: true, promoBlocks: [] })).toThrow();
     });
 
     it('accepts hasPromo false', () => {

@@ -6,6 +6,7 @@ import type { CaptionSegment } from '@topskip/common/caption-types';
  *
  * @param segments - Caption rows from YouTube transcript
  * @param maxChars - Maximum characters for the merged text
+ *
  * @returns Merged transcript and whether the tail was truncated
  */
 export function mergeCaptionSegmentsToTranscript(

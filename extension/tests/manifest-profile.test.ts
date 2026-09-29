@@ -1,5 +1,12 @@
 import process from 'node:process';
-import { afterEach, describe, expect, it } from 'vitest';
+
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+} from 'vitest';
 
 import {
     DEV_E2E_CONTENT_SCRIPT_MATCH,
@@ -171,13 +178,11 @@ describe('composeExtensionManifest', () => {
         'https://api.openai.com',
         'http://127.0.0.1:4173',
     ])('rejects reserved server origin %s', (origin) => {
-        expect(() =>
-            composeExtensionManifest(
-                staleSourceManifest(),
-                TopSkipBuild.Dev,
-                origin,
-            ),
-        ).toThrow(/reserved/u);
+        expect(() => composeExtensionManifest(
+            staleSourceManifest(),
+            TopSkipBuild.Dev,
+            origin,
+        )).toThrow(/reserved/u);
     });
 
     it.each([
@@ -186,13 +191,11 @@ describe('composeExtensionManifest', () => {
         { manifest_version: 3, name: '', version: '1.0.0' },
         { manifest_version: 3, name: 'TopSkip', version: '' },
     ])('rejects an invalid non-security base manifest %#', (source) => {
-        expect(() =>
-            composeExtensionManifest(
-                source,
-                TopSkipBuild.Release,
-                'https://topskip.example.com',
-            ),
-        ).toThrow();
+        expect(() => composeExtensionManifest(
+            source,
+            TopSkipBuild.Release,
+            'https://topskip.example.com',
+        )).toThrow();
     });
 
     it.each([

@@ -1,13 +1,16 @@
+import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
+
 import { ANALYSIS_MODE, type UserPreferences } from '@/shared/constants';
 import { TOPSKIP_MESSAGE, type TopSkipRuntimeMessage } from '@/shared/messages';
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
-import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
 import type { ServerTranscriptIdentity } from '@topskip/common/server-analysis-contract';
 
 /**
  * Keeps server-mode routing out of the caption capture path.
  *
  * @param prefs - Current preferences cached by the watch content script.
+ *
  * @returns `true` when the video should request server analysis.
  */
 export function shouldUseServerAnalysis(prefs: UserPreferences): boolean {
@@ -18,6 +21,12 @@ export function shouldUseServerAnalysis(prefs: UserPreferences): boolean {
  * Builds the runtime message sent from content to background for server mode.
  *
  * @param input - Current watch video id and optional finite duration.
+ * @param input.sessionId
+ * @param input.videoId
+ * @param input.durationSec
+ * @param input.languageCode
+ * @param input.segments
+ *
  * @returns Runtime message for the background server-analysis handler.
  */
 export function buildRequestServerAnalysisMessage(input: {
@@ -27,13 +36,12 @@ export function buildRequestServerAnalysisMessage(input: {
     languageCode: string;
     segments: readonly CaptionSegment[];
 }): TopSkipRuntimeMessage {
-    const duration =
-        input.durationSec !== undefined &&
-        Number.isFinite(input.durationSec) &&
-        input.durationSec >= 0 &&
-        input.durationSec <= MAX_TRANSCRIPT_TIMELINE_SEC
-            ? { durationSec: input.durationSec }
-            : {};
+    const duration = input.durationSec !== undefined
+        && Number.isFinite(input.durationSec)
+        && input.durationSec >= 0
+        && input.durationSec <= MAX_TRANSCRIPT_TIMELINE_SEC
+        ? { durationSec: input.durationSec }
+        : {};
     return {
         type: TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
         payload: {
@@ -50,6 +58,11 @@ export function buildRequestServerAnalysisMessage(input: {
  * Builds the runtime message sent from content to background for job polling.
  *
  * @param input - Current watch video id and backend job id.
+ * @param input.sessionId
+ * @param input.videoId
+ * @param input.jobId
+ * @param input.identity
+ *
  * @returns Runtime message for the background server-analysis status handler.
  */
 export function buildRefreshServerAnalysisStatusMessage(input: {

@@ -9,6 +9,7 @@ const modelCache = new Map<string, string[]>();
  * Returns an empty array on any error (graceful degradation).
  *
  * @param apiKey - OpenRouter API key for authorization
+ *
  * @returns Array of model IDs (e.g., `["google/gemini-2.5-flash", ...]`)
  */
 export async function fetchOpenRouterModelList(
@@ -27,17 +28,17 @@ export async function fetchOpenRouterModelList(
         }
         const data: unknown = await response.json();
         if (
-            typeof data === 'object' &&
-            data !== null &&
-            'data' in data &&
-            Array.isArray((data).data)
+            typeof data === 'object'
+            && data !== null
+            && 'data' in data
+            && Array.isArray((data).data)
         ) {
             const models = (data as { data: unknown[] }).data
                 .map((item) => {
                     if (
-                        typeof item === 'object' &&
-                        item !== null &&
-                        'id' in item
+                        typeof item === 'object'
+                        && item !== null
+                        && 'id' in item
                     ) {
                         return String((item).id);
                     }

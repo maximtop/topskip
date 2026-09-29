@@ -1,9 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
-import type { OpenRouterConfig } from '@/background/storage/openrouter-storage';
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
 import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
 import { OPENROUTER_DEFAULT_MODEL_SLUG } from '@/shared/openrouter-model-presets';
+
+import type { OpenRouterConfig } from '@/background/storage/openrouter-storage';
 
 const loadMock = vi.fn();
 const saveMock = vi.fn();
@@ -24,15 +32,19 @@ vi.mock('@/background/storage/openrouter-storage', () => ({
             const out: unknown = await loadMock();
             return out as OpenRouterConfig;
         },
+
         /**
          * @param c - Config passed from handler
+         *
          * @returns Resolves when mock finishes
          */
         save: async (c: OpenRouterConfig): Promise<void> => {
             await Promise.resolve(saveMock(c));
         },
+
         /**
          * @param k - Raw API key
+         *
          * @returns Masked key from mock
          */
         maskApiKey: (k: string): string | null => {
@@ -161,10 +173,9 @@ describe('OpenRouterRuntimeMessages', () => {
             customModels: [],
         });
         saveMock.mockResolvedValue(undefined);
-        const r =
-            await OpenRouterRuntimeMessages.handleAddCustomModel(
-                '  vendor/foo  ',
-            );
+        const r = await OpenRouterRuntimeMessages.handleAddCustomModel(
+            '  vendor/foo  ',
+        );
         expect(r).toEqual({ ok: true, customModels: ['vendor/foo'] });
         expect(saveMock).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -181,10 +192,9 @@ describe('OpenRouterRuntimeMessages', () => {
             customModels: ['vendor/foo'],
         });
         saveMock.mockResolvedValue(undefined);
-        const r =
-            await OpenRouterRuntimeMessages.handleRemoveCustomModel(
-                'vendor/foo',
-            );
+        const r = await OpenRouterRuntimeMessages.handleRemoveCustomModel(
+            'vendor/foo',
+        );
         expect(r).toEqual({ ok: true, customModels: [] });
         expect(saveMock).toHaveBeenCalledWith(
             expect.objectContaining({
@@ -209,10 +219,9 @@ describe('OpenRouterRuntimeMessages', () => {
         prefsSaveMock.mockResolvedValue(undefined);
         prefsBroadcastMock.mockResolvedValue(undefined);
 
-        const r =
-            await OpenRouterRuntimeMessages.handleRemoveCustomModel(
-                'vendor/foo',
-            );
+        const r = await OpenRouterRuntimeMessages.handleRemoveCustomModel(
+            'vendor/foo',
+        );
 
         expect(r).toEqual({ ok: true, customModels: [] });
         expect(prefsSaveMock).toHaveBeenCalledWith({
@@ -259,11 +268,10 @@ describe('OpenRouterRuntimeMessages', () => {
     it('keeps a valid slug local and unverified without host access', async () => {
         providerHostAccessIsGrantedMock.mockResolvedValue(false);
 
-        const result =
-            await OpenRouterRuntimeMessages.handleValidateModelSlug(
-                'google/gemini-2.5-flash',
-                'sk-test',
-            );
+        const result = await OpenRouterRuntimeMessages.handleValidateModelSlug(
+            'google/gemini-2.5-flash',
+            'sk-test',
+        );
 
         expect(result).toEqual({
             ok: true,

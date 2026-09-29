@@ -8,6 +8,7 @@ import {
     resetFiredIndicesOnBackwardSeek,
     type PromoBlocksSkipInput,
 } from '@/content/promo-skip-logic';
+
 import type { PromoBlock } from '@topskip/common/promo-types';
 
 describe('computePromoBlockTargetTime', () => {

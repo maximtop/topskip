@@ -14,7 +14,7 @@ import { formatLogFields } from '@/shared/log-fields';
 /**
  * One fully attributed event ready to be serialized as a log line.
  */
-export type DebugLogLineRecord = {
+export interface DebugLogLineRecord {
     tsMs: number;
     worker: string;
     seq: number;
@@ -26,7 +26,7 @@ export type DebugLogLineRecord = {
     support?: string;
     event: DebugLogEventName;
     fields: DebugLogFields;
-};
+}
 
 /**
  * Short source tags keep every line's fixed head narrow.
@@ -104,6 +104,7 @@ const UTF8_DECODER = new TextDecoder();
  * ISO-8601 UTC timestamp, or a stable token when the value is unrepresentable.
  *
  * @param tsMs - Milliseconds since the epoch.
+ *
  * @returns Timestamp text for the line head.
  */
 function formatTimestamp(tsMs: number): string {
@@ -124,6 +125,7 @@ function formatTimestamp(tsMs: number): string {
  * are quoted and undefined fields are omitted.
  *
  * @param record - Fully attributed event.
+ *
  * @returns One line without a trailing newline.
  */
 export function formatDebugLogLine(record: DebugLogLineRecord): string {
@@ -157,6 +159,7 @@ export function formatDebugLogLine(record: DebugLogLineRecord): string {
  * drift from `.length` (UTF-16 units) on non-ASCII content.
  *
  * @param text - Any string.
+ *
  * @returns Encoded byte length.
  */
 export function utf8ByteLength(text: string): number {
@@ -168,6 +171,7 @@ export function utf8ByteLength(text: string): number {
  * instant so the file name and the bundle header agree.
  *
  * @param exportedAt - Snapshot instant (UTC).
+ *
  * @returns Download file name.
  */
 export function buildDebugLogFileName(exportedAt: Date): string {
@@ -184,6 +188,7 @@ export function buildDebugLogFileName(exportedAt: Date): string {
  *
  * @param text - Full bundle or log text.
  * @param maxBytes - Byte budget for the tail.
+ *
  * @returns Tail text plus shown and total byte counts.
  */
 export function sliceDebugLogTail(
@@ -197,8 +202,8 @@ export function sliceDebugLogTail(
     }
     let start = totalBytes - Math.max(0, maxBytes);
     while (
-        start < totalBytes &&
-        (bytes[start] & UTF8_CONTINUATION_MASK) === UTF8_CONTINUATION_BITS
+        start < totalBytes
+        && (bytes[start] & UTF8_CONTINUATION_MASK) === UTF8_CONTINUATION_BITS
     ) {
         start += 1;
     }
@@ -214,6 +219,7 @@ export function sliceDebugLogTail(
  * lines and the cap in UI copy.
  *
  * @param bytes - Non-negative byte count.
+ *
  * @returns Size with unit.
  */
 export function formatBinarySize(bytes: number): string {

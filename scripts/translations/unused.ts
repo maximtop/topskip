@@ -14,12 +14,11 @@ import {
  * Whether a file could reference a message key.
  *
  * @param filePath - Absolute path to inspect.
+ *
  * @returns True for source files outside the locales tree.
  */
 function canContainLocalesStrings(filePath: string): boolean {
-    const isSrcFile = SRC_FILENAME_EXTENSIONS.some((ext) =>
-        filePath.endsWith(ext),
-    );
+    const isSrcFile = SRC_FILENAME_EXTENSIONS.some((ext) => filePath.endsWith(ext));
     return isSrcFile && !filePath.includes(LOCALES_ABSOLUTE_PATH);
 }
 
@@ -28,6 +27,7 @@ function canContainLocalesStrings(filePath: string): boolean {
  *
  * @param dirPath - Directory to walk.
  * @param contents - Accumulator for recursive calls.
+ *
  * @returns File contents.
  */
 function getSrcFilesContents(dirPath: string, contents: string[] = []): string[] {
@@ -52,12 +52,10 @@ export async function checkUnusedMessages(): Promise<void> {
     const baseMessages = Object.keys(baseLocaleTranslations);
     const filesContents = getSrcFilesContents(SRC_ABSOLUTE_PATH);
 
-    const isPresentInFile = (message: string, file: string): boolean =>
-        file.includes(`'${message}'`) || file.includes(`"${message}"`);
+    const isPresentInFile = (message: string, file: string): boolean => file.includes(`'${message}'`) || file.includes(`"${message}"`);
 
-    const isMessageUnused = (message: string): boolean =>
-        !PERSISTENT_MESSAGES.includes(message) &&
-        !filesContents.some((file) => isPresentInFile(message, file));
+    const isMessageUnused = (message: string): boolean => !PERSISTENT_MESSAGES.includes(message)
+        && !filesContents.some((file) => isPresentInFile(message, file));
 
     const unusedMessages = baseMessages.filter(isMessageUnused);
 

@@ -40,9 +40,7 @@ export class Background {
         void i18n.init();
         void PromoDetectionStore.ready();
         void TabAttributionRegistry.ready();
-        void DebugLogStore.ready().then(() =>
-            DebugLogLifecycle.markWorkerStarted(getExtensionBuildLabel()),
-        );
+        void DebugLogStore.ready().then(() => DebugLogLifecycle.markWorkerStarted(getExtensionBuildLabel()));
         browser.tabs.onRemoved.addListener((tabId) => {
             void Background.handleTabRemoved(tabId);
         });
@@ -62,6 +60,7 @@ export class Background {
      * attribution only after the marker is persisted.
      *
      * @param tabId - Removed browser tab id.
+     *
      * @returns Promise settled after its restart-safe snapshot is cleared.
      */
     private static async handleTabRemoved(tabId: number): Promise<void> {

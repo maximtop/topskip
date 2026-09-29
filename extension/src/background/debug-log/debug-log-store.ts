@@ -139,46 +139,46 @@ type DebugLogIndex = v.InferOutput<typeof debugLogIndexSchema>;
  * In-memory lines of a segment that is open or not yet fully persisted;
  * `persistedCount` tracks how many leading lines storage already holds.
  */
-type SegmentBuffer = {
+interface SegmentBuffer {
     lines: string[];
     persistedCount: number;
-};
+}
 
 /**
  * Open segment pair resolved for an append.
  */
-type OpenSegment = {
+interface OpenSegment {
     info: DebugLogSegmentInfo;
     buffer: SegmentBuffer;
-};
+}
 
 /**
  * Lines collected for a read plus the repair performed for missing segments.
  */
-type CollectedLines = {
+interface CollectedLines {
     lines: string[];
     lostCount: number;
     lostBytes: number;
-};
+}
 
 /**
  * Consistent point-in-time read used by export: the status describes exactly
  * the returned lines.
  */
-export type DebugLogSnapshot = {
+export interface DebugLogSnapshot {
     lines: string[];
     status: DebugLogStatusPayload;
-};
+}
 
 /**
  * Bounded tail for the Options preview.
  */
-export type DebugLogPreview = {
+export interface DebugLogPreview {
     text: string;
     shownBytes: number;
     totalBytes: number;
     revision: number;
-};
+}
 
 /**
  * Background-owned debug-log store: one switch record, one index and
@@ -248,8 +248,7 @@ export class DebugLogStore {
     /**
      * Pending debounced flush.
      */
-    private static flushTimer: ReturnType<typeof globalThis.setTimeout> | null =
-        null;
+    private static flushTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
     /**
      * Events accepted since the last flush was scheduled.
@@ -261,6 +260,7 @@ export class DebugLogStore {
      *
      * @param defaultEnabled - Profile default applied only while no switch
      * decision is persisted (tests pass it explicitly).
+     *
      * @returns Promise that settles once the store is usable.
      */
     static ready(defaultEnabled = DEBUG_LOG_DEFAULT_ENABLED): Promise<void> {
@@ -304,7 +304,7 @@ export class DebugLogStore {
      */
     static getStatus(): DebugLogStatusPayload {
         const enabled = DebugLogStore.isEnabled();
-        const index = DebugLogStore.index;
+        const { index } = DebugLogStore;
         if (index === null) {
             return {
                 enabled,
@@ -359,6 +359,7 @@ export class DebugLogStore {
      * the switch, so a later install/update can name the previous build.
      *
      * @param label - Current build label.
+     *
      * @returns Promise settled after the write attempt.
      */
     static async setLastBuildLabel(label: string): Promise<void> {
@@ -381,7 +382,7 @@ export class DebugLogStore {
      * @param tsMs - Receipt time used as the first timestamp of a new segment.
      */
     static append(lines: readonly string[], tsMs = Date.now()): void {
-        const index = DebugLogStore.index;
+        const { index } = DebugLogStore;
         if (!DebugLogStore.isEnabled() || index === null) {
             return;
         }
@@ -398,7 +399,7 @@ export class DebugLogStore {
      * @param count - Number of dropped events.
      */
     static noteDropped(reason: DebugLogDropReason, count = 1): void {
-        const index = DebugLogStore.index;
+        const { index } = DebugLogStore;
         if (index === null || count <= 0) {
             return;
         }
@@ -414,15 +415,14 @@ export class DebugLogStore {
      * @param nowMs - Enable time.
      * @param onEnabled - Invoked synchronously right after the switch flips so
      * the caller can append the `logging-enabled` marker as the first line.
+     *
      * @returns Status after the change.
      */
     static enable(
         nowMs: number,
         onEnabled?: () => void,
     ): Promise<DebugLogStatusPayload> {
-        return DebugLogStore.runSwitching(() =>
-            DebugLogStore.applyEnable(nowMs, onEnabled),
-        );
+        return DebugLogStore.runSwitching(() => DebugLogStore.applyEnable(nowMs, onEnabled));
     }
 
     /**
@@ -432,15 +432,14 @@ export class DebugLogStore {
      * @param nowMs - Disable time.
      * @param beforeDisable - Invoked synchronously right before the switch
      * flips so the caller can append the `logging-disabled` terminal marker.
+     *
      * @returns Status after the change.
      */
     static disable(
         nowMs: number,
         beforeDisable?: () => void,
     ): Promise<DebugLogStatusPayload> {
-        return DebugLogStore.runSwitching(() =>
-            DebugLogStore.applyDisable(nowMs, beforeDisable),
-        );
+        return DebugLogStore.runSwitching(() => DebugLogStore.applyDisable(nowMs, beforeDisable));
     }
 
     /**
@@ -450,9 +449,7 @@ export class DebugLogStore {
      * @returns Promise that always resolves after this write attempt.
      */
     static flush(): Promise<void> {
-        const write = DebugLogStore.persistence.then(() =>
-            DebugLogStore.writeBatch(),
-        );
+        const write = DebugLogStore.persistence.then(() => DebugLogStore.writeBatch());
         DebugLogStore.persistence = write;
         return write;
     }
@@ -468,7 +465,7 @@ export class DebugLogStore {
         await DebugLogStore.ready();
         await DebugLogStore.switching;
         await DebugLogStore.flush();
-        const index = DebugLogStore.index;
+        const { index } = DebugLogStore;
         const status = DebugLogStore.getStatus();
         if (index === null) {
             return { lines: [], status };
@@ -486,16 +483,23 @@ export class DebugLogStore {
      * Reads only the newest segments that cover the requested tail.
      *
      * @param maxBytes - Tail bound in bytes.
+     *
      * @returns Tail text, its size, the total accounted size and the revision.
      */
     static async readPreview(maxBytes: number): Promise<DebugLogPreview> {
         await DebugLogStore.ready();
         await DebugLogStore.switching;
         await DebugLogStore.flush();
-        const index = DebugLogStore.index;
+        const { index } = DebugLogStore;
         const status = DebugLogStore.getStatus();
         if (index === null) {
-            return { text: '', shownBytes: 0, totalBytes: 0, revision: 0 };
+            return {
+
+                text: '',
+                shownBytes: 0,
+                totalBytes: 0,
+                revision: 0,
+            };
         }
         const tail: DebugLogSegmentInfo[] = [];
         let bytes = 0;
@@ -506,8 +510,7 @@ export class DebugLogStore {
         }
         const collected = await DebugLogStore.collectLines(index, tail);
         const adjusted = DebugLogStore.applyLoss(status, collected);
-        const text =
-            collected.lines.length === 0 ? '' : `${collected.lines.join('\n')}\n`;
+        const text = collected.lines.length === 0 ? '' : `${collected.lines.join('\n')}\n`;
         const slice = sliceDebugLogTail(text, maxBytes);
         return {
             text: slice.text,
@@ -523,12 +526,11 @@ export class DebugLogStore {
      *
      * @param input - Desired state and approximate accounted size.
      * @param nowMs - Seed time.
+     *
      * @returns Promise settled after the seed is persisted.
      */
     static seed(input: DevSeedDebugLogPayload, nowMs: number): Promise<void> {
-        return DebugLogStore.runSwitching(() =>
-            DebugLogStore.applySeed(input, nowMs),
-        );
+        return DebugLogStore.runSwitching(() => DebugLogStore.applySeed(input, nowMs));
     }
 
     /**
@@ -554,6 +556,7 @@ export class DebugLogStore {
      * Runs one switch mutation after every earlier one has settled.
      *
      * @param task - Mutation to serialize.
+     *
      * @returns The mutation's own result.
      */
     private static runSwitching<T>(task: () => Promise<T>): Promise<T> {
@@ -571,6 +574,7 @@ export class DebugLogStore {
      *
      * @param nowMs - Enable time.
      * @param onEnabled - Marker hook invoked right after the flip.
+     *
      * @returns Status after the change.
      */
     private static async applyEnable(
@@ -612,6 +616,7 @@ export class DebugLogStore {
      *
      * @param nowMs - Disable time.
      * @param beforeDisable - Marker hook invoked right before the flip.
+     *
      * @returns Status after the change.
      */
     private static async applyDisable(
@@ -640,6 +645,7 @@ export class DebugLogStore {
      *
      * @param input - Desired state and approximate size.
      * @param nowMs - Seed time.
+     *
      * @returns Promise settled after persistence.
      */
     private static async applySeed(
@@ -721,6 +727,7 @@ export class DebugLogStore {
      *
      * @param nowMs - Seed time.
      * @param targetBytes - Requested accounted size.
+     *
      * @returns Number of lines whose accounted size first reaches the target.
      */
     private static seedLineCount(nowMs: number, targetBytes: number): number {
@@ -739,6 +746,7 @@ export class DebugLogStore {
      *
      * @param tsMs - Line timestamp.
      * @param seq - Sequence number.
+     *
      * @returns Formatted line.
      */
     private static seedLine(tsMs: number, seq: number): string {
@@ -765,8 +773,7 @@ export class DebugLogStore {
         tsMs: number,
     ): void {
         const bytes = utf8ByteLength(line) + 1;
-        const tailFull =
-            DebugLogStore.unflushedLineCount() >= DEBUG_LOG_MEMORY_TAIL_LIMIT;
+        const tailFull = DebugLogStore.unflushedLineCount() >= DEBUG_LOG_MEMORY_TAIL_LIMIT;
         if (bytes > DEBUG_LOG_MAX_LINE_BYTES || tailFull) {
             index.dropped[DEBUG_LOG_DROP_REASON.Lost] += 1;
             DebugLogStore.touchIndex(index);
@@ -808,6 +815,7 @@ export class DebugLogStore {
      * Resolves the open segment, or `null` when a new one must be started.
      *
      * @param index - Live index.
+     *
      * @returns Open segment info and buffer.
      */
     private static currentOpenSegment(index: DebugLogIndex): OpenSegment | null {
@@ -828,12 +836,19 @@ export class DebugLogStore {
      *
      * @param index - Live index.
      * @param tsMs - Timestamp of the first line.
+     *
      * @returns The new open segment.
      */
     private static openSegment(index: DebugLogIndex, tsMs: number): OpenSegment {
         const id = index.nextSegmentId;
         index.nextSegmentId += 1;
-        const info: DebugLogSegmentInfo = { id, bytes: 0, count: 0, firstTsMs: tsMs };
+        const info: DebugLogSegmentInfo = {
+
+            id,
+            bytes: 0,
+            count: 0,
+            firstTsMs: tsMs,
+        };
         const buffer: SegmentBuffer = { lines: [], persistedCount: 0 };
         index.segments.push(info);
         DebugLogStore.buffers.set(id, buffer);
@@ -927,7 +942,7 @@ export class DebugLogStore {
     private static async writeBatch(): Promise<void> {
         DebugLogStore.clearFlushTimer();
         DebugLogStore.pendingEvents = 0;
-        const index = DebugLogStore.index;
+        const { index } = DebugLogStore;
         const record = DebugLogStore.switchRecord;
         if (index === null || record === null) {
             return;
@@ -940,9 +955,8 @@ export class DebugLogStore {
                 planned.push({ id, count: buffer.lines.length });
             }
         }
-        const revision = index.revision;
-        const writeIndex =
-            planned.length > 0 || revision !== DebugLogStore.indexPersistedRevision;
+        const { revision } = index;
+        const writeIndex = planned.length > 0 || revision !== DebugLogStore.indexPersistedRevision;
         if (writeIndex) {
             items[STORAGE_KEY_DEBUG_LOG_INDEX] = structuredClone(index);
         }
@@ -978,9 +992,7 @@ export class DebugLogStore {
         const remaining = await DebugLogStore.removeSegments(retired);
         if (remaining.length !== retired.length) {
             const keep = new Set(remaining);
-            index.retiredSegmentIds = index.retiredSegmentIds.filter((id) =>
-                keep.has(id),
-            );
+            index.retiredSegmentIds = index.retiredSegmentIds.filter((id) => keep.has(id));
         }
     }
 
@@ -1004,6 +1016,7 @@ export class DebugLogStore {
      * caller keeps them retired for a later retry.
      *
      * @param ids - Segment ids to delete.
+     *
      * @returns Ids still awaiting removal.
      */
     private static async removeSegments(ids: readonly number[]): Promise<number[]> {
@@ -1027,6 +1040,7 @@ export class DebugLogStore {
      *
      * @param index - Live index.
      * @param infos - Segments to read, oldest first.
+     *
      * @returns Lines plus the loss applied to the index.
      */
     private static async collectLines(
@@ -1040,8 +1054,7 @@ export class DebugLogStore {
         const keys = infos
             .filter((_info, position) => buffered[position] === null)
             .map((info) => DebugLogStore.segmentKey(info.id));
-        const stored: Record<string, unknown> =
-            keys.length === 0 ? {} : await browser.storage.local.get(keys);
+        const stored: Record<string, unknown> = keys.length === 0 ? {} : await browser.storage.local.get(keys);
         const result: CollectedLines = { lines: [], lostCount: 0, lostBytes: 0 };
         infos.forEach((info, position) => {
             const part = buffered[position];
@@ -1094,6 +1107,7 @@ export class DebugLogStore {
      *
      * @param status - Status captured synchronously with the lines.
      * @param collected - Read result including the repair.
+     *
      * @returns Adjusted status.
      */
     private static applyLoss(
@@ -1103,7 +1117,7 @@ export class DebugLogStore {
         if (collected.lostCount === 0) {
             return status;
         }
-        const index = DebugLogStore.index;
+        const { index } = DebugLogStore;
         return {
             ...status,
             eventCount: status.eventCount - collected.lostCount,
@@ -1124,6 +1138,7 @@ export class DebugLogStore {
      * degrades to memory-only defaults without a console line.
      *
      * @param defaultEnabled - Profile default for an undecided switch.
+     *
      * @returns Promise that always resolves.
      */
     private static async hydrate(defaultEnabled: boolean): Promise<void> {
@@ -1152,11 +1167,11 @@ export class DebugLogStore {
         const index = indexParsed.success
             ? indexParsed.output
             : DebugLogStore.freshIndex(
-                    record.enabled === true ? Date.now() : null,
-                    0,
-                    0,
-                    [],
-                );
+                record.enabled === true ? Date.now() : null,
+                0,
+                0,
+                [],
+            );
         DebugLogStore.indexPersistedRevision = index.revision;
         DebugLogStore.switchGeneration = 0;
         DebugLogStore.switchPersistedGeneration = 0;
@@ -1173,6 +1188,7 @@ export class DebugLogStore {
      * is counted as lost, a size mismatch is corrected from the stored text.
      *
      * @param index - Hydrated index.
+     *
      * @returns Promise that always resolves.
      */
     private static async loadTail(index: DebugLogIndex): Promise<void> {
@@ -1212,6 +1228,7 @@ export class DebugLogStore {
      * keys from earlier evictions are removed now.
      *
      * @param index - Hydrated index.
+     *
      * @returns Promise that always resolves.
      */
     private static async repairOrphans(index: DebugLogIndex): Promise<void> {
@@ -1234,9 +1251,7 @@ export class DebugLogStore {
         const remaining = await DebugLogStore.removeSegments(retired);
         if (remaining.length !== retired.length) {
             const keep = new Set(remaining);
-            index.retiredSegmentIds = index.retiredSegmentIds.filter((id) =>
-                keep.has(id),
-            );
+            index.retiredSegmentIds = index.retiredSegmentIds.filter((id) => keep.has(id));
             DebugLogStore.touchIndex(index);
         }
     }
@@ -1248,6 +1263,7 @@ export class DebugLogStore {
      * @param revision - Revision to start from (monotonic across clears).
      * @param nextSegmentId - Continues ids so retired keys are never reused.
      * @param retiredSegmentIds - Keys still awaiting removal.
+     *
      * @returns New index.
      */
     private static freshIndex(
@@ -1291,6 +1307,7 @@ export class DebugLogStore {
      * Storage key of one segment.
      *
      * @param id - Segment id.
+     *
      * @returns Key under the debug-log prefix.
      */
     private static segmentKey(id: number): string {

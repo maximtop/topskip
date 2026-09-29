@@ -1,10 +1,16 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const fetchMock = vi.fn();
 vi.stubGlobal('fetch', fetchMock);
 
-const { callOpenAiResponse, testOpenAiApiKey } =
-    await import('@/background/openai/openai-client');
+const { callOpenAiResponse, testOpenAiApiKey } = await import('@/background/openai/openai-client');
 
 describe('openai client', () => {
     beforeEach(() => fetchMock.mockReset());
@@ -36,19 +42,18 @@ describe('openai client', () => {
     it('calls Responses API and returns output text', async () => {
         fetchMock.mockResolvedValue({
             ok: true,
-            json: () =>
-                Promise.resolve({
-                    output: [
-                        {
-                            content: [
-                                {
-                                    type: 'output_text',
-                                    text: '{"hasPromo":false}',
-                                },
-                            ],
-                        },
-                    ],
-                }),
+            json: () => Promise.resolve({
+                output: [
+                    {
+                        content: [
+                            {
+                                type: 'output_text',
+                                text: '{"hasPromo":false}',
+                            },
+                        ],
+                    },
+                ],
+            }),
         });
         const result = await callOpenAiResponse({
             apiKey: 'sk-test',

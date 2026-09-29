@@ -3,13 +3,13 @@ import { expect, vi, type MockInstance } from 'vitest';
 /**
  * Silenced spies on every console method a TopSkip module may call.
  */
-export type ConsoleSpies = {
+export interface ConsoleSpies {
     log: MockInstance<typeof console.log>;
     info: MockInstance<typeof console.info>;
     debug: MockInstance<typeof console.debug>;
     warn: MockInstance<typeof console.warn>;
     error: MockInstance<typeof console.error>;
-};
+}
 
 /**
  * The one console line FR-034 allows per worker start.

@@ -1,5 +1,5 @@
-import React from 'react';
 import { translate, type I18nInterface } from '@adguard/translate';
+import React from 'react';
 
 import { i18n } from '@/shared/i18n/i18n';
 

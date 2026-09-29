@@ -1,4 +1,5 @@
 import { MS_PER_SECOND } from '@topskip/common/constants';
+
 import { BackendPublicState } from '@topskip/backend/public-state';
 
 const LOCAL_RATE_LIMIT_WINDOW_MS = 60_000;
@@ -16,19 +17,17 @@ export const BACKEND_REQUEST_COST_CLASS = {
 /**
  * Request cost classes used by the local backend protection hook.
  */
-type BackendRequestCostClass =
-    (typeof BACKEND_REQUEST_COST_CLASS)[keyof typeof BACKEND_REQUEST_COST_CLASS];
+type BackendRequestCostClass = (typeof BACKEND_REQUEST_COST_CLASS)[keyof typeof BACKEND_REQUEST_COST_CLASS];
 
 /**
  * Protection decisions are retryable only when the cold-start bucket is full.
  */
-type BackendProtectionDecision =
-    | { allowed: true; costClass: BackendRequestCostClass }
+type BackendProtectionDecision = | { allowed: true; costClass: BackendRequestCostClass }
     | {
-          allowed: false;
-          costClass: typeof BACKEND_REQUEST_COST_CLASS.ColdJobStart;
-          retryAfterSec: number;
-      };
+        allowed: false;
+        costClass: typeof BACKEND_REQUEST_COST_CLASS.ColdJobStart;
+        retryAfterSec: number;
+    };
 
 /**
  * Owns local API cost accounting and fixed-window cold-start limits; static API only.
@@ -58,6 +57,11 @@ export class BackendApiProtection {
      * Evaluates and records a local request cost class.
      *
      * @param input - Request cost class and the time used for fixed-window accounting.
+     * @param input.costClass
+     * @param input.nowMs
+     * @param input.installationHash
+     * @param input.ipHash
+     *
      * @returns Allow/deny decision for the local backend request.
      */
     static evaluate(input: {
@@ -79,8 +83,8 @@ export class BackendApiProtection {
         }
 
         if (
-            input.installationHash !== undefined &&
-            input.ipHash !== undefined
+            input.installationHash !== undefined
+            && input.ipHash !== undefined
         ) {
             const decision = BackendPublicState.consumeColdJobQuota({
                 installationHash: input.installationHash,
@@ -144,9 +148,9 @@ export class BackendApiProtection {
      */
     private static rollWindow(nowMs: number): void {
         if (
-            BackendApiProtection.windowStartedAtMs !== 0 &&
-            nowMs - BackendApiProtection.windowStartedAtMs <
-                LOCAL_RATE_LIMIT_WINDOW_MS
+            BackendApiProtection.windowStartedAtMs !== 0
+            && nowMs - BackendApiProtection.windowStartedAtMs
+                < LOCAL_RATE_LIMIT_WINDOW_MS
         ) {
             return;
         }
@@ -161,11 +165,11 @@ export class BackendApiProtection {
      * Converts the remaining fixed-window duration into retry metadata.
      *
      * @param nowMs - Timestamp used for deterministic retry calculations.
+     *
      * @returns Positive retry delay in seconds.
      */
     private static retryAfterSec(nowMs: number): number {
-        const windowEndsAtMs =
-            BackendApiProtection.windowStartedAtMs + LOCAL_RATE_LIMIT_WINDOW_MS;
+        const windowEndsAtMs = BackendApiProtection.windowStartedAtMs + LOCAL_RATE_LIMIT_WINDOW_MS;
         const remainingSec = Math.ceil(
             (windowEndsAtMs - nowMs) / MS_PER_SECOND,
         );

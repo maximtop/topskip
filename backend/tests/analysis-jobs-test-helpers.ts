@@ -16,14 +16,14 @@ type LegacyAnalysisJobTestInput = Omit<
     ownerInstallationHash?: string;
 };
 
-type AnalysisJobTestInput =
-    | UploadAnalysisJobStartInput
+type AnalysisJobTestInput = | UploadAnalysisJobStartInput
     | LegacyAnalysisJobTestInput;
 
 /**
  * Keeps historical extraction fixtures explicit without weakening production routing.
  *
  * @param input - Upload input or legacy fixture parameters.
+ *
  * @returns Processing or terminal response from the shared scheduler.
  */
 export function startAnalysisJobForTest(

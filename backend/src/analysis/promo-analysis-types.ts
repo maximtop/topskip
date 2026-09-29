@@ -1,10 +1,10 @@
-import * as v from 'valibot';
-
-import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
 import {
     promoBlockSchema,
     youtubeVideoIdSchema,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
+import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
 
 const finiteEpochMsSchema = v.pipe(
     v.number(),
@@ -93,39 +93,39 @@ export const analysisRunArtifactSchema = v.strictObject({
 /**
  * Input passed to backend-owned analysis adapters.
  */
-export type BackendLlmAnalysisAdapterInput = {
+export interface BackendLlmAnalysisAdapterInput {
     transcriptArtifact: TranscriptArtifact;
-};
+}
 
 /**
  * Provider accounting retained without storing request credentials or reasoning text.
  */
-export type BackendLlmAnalysisUsage = {
+export interface BackendLlmAnalysisUsage {
     inputTokens: number;
     outputTokens: number;
     costUsd?: number;
-};
+}
 
 /**
  * Adapter output couples the raw assistant JSON with stable model diagnostics.
  */
-export type BackendLlmAnalysisAdapterResult = {
+export interface BackendLlmAnalysisAdapterResult {
     rawModelResponse: string;
     model: string;
     usage?: BackendLlmAnalysisUsage;
-};
+}
 
 /**
  * Backend-only adapter boundary for deterministic or future model analysis.
  */
-export type BackendLlmAnalysisAdapter = {
+export interface BackendLlmAnalysisAdapter {
     providerId: string;
     model: string;
     promptVersion: string;
     analyze: (
         input: BackendLlmAnalysisAdapterInput,
     ) => Promise<BackendLlmAnalysisAdapterResult>;
-};
+}
 
 /**
  * Parsed model result retained after raw response validation.

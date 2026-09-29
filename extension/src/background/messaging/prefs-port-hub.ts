@@ -1,8 +1,8 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
-
 import browser from '@/shared/browser';
 import { PREFS_PORT_NAME, type UserPreferences } from '@/shared/constants';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
+
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 /**
  * Manages long-lived port connections from extension pages (popup, options)

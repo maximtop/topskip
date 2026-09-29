@@ -1,5 +1,3 @@
-import * as v from 'valibot';
-
 import {
     extensionVersionSchema,
     promoBlockSchema,
@@ -7,6 +5,7 @@ import {
     serverAnalysisFailureCodeSchema,
     youtubeVideoIdSchema,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
 
 const MAX_CAPABILITY_COUNT = 16;
 const MAX_OPAQUE_ID_LENGTH = 160;
@@ -108,10 +107,9 @@ const legacyRateLimitedResponseSchema = v.pipe(
         error: legacyFailureSchema,
     }),
     v.check(
-        (response) =>
-            (response.error.code === 'rate_limited' ||
-                response.error.code === 'capacity_limited') &&
-            response.error.retryAfterSec !== undefined,
+        (response) => (response.error.code === 'rate_limited'
+                || response.error.code === 'capacity_limited')
+            && response.error.retryAfterSec !== undefined,
         'Legacy rate limits require a retryable capacity code.',
     ),
 );

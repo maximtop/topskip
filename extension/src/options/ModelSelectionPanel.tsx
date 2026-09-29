@@ -9,28 +9,29 @@ import {
     Text,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
 import type {
     ConnectionProviderId,
     DetectionModelMessage,
 } from '@/shared/messages';
+import type { ReactElement } from 'react';
 
 /**
  * Model selector state and callbacks supplied by the options container.
  */
-type ModelSelectionPanelProps = {
+interface ModelSelectionPanelProps {
     activeModelId: string;
     models: DetectionModelMessage[];
     missingConnectionProviderId: ConnectionProviderId | null;
     onModelChange(modelId: string): void;
     onOpenConnection(providerId: ConnectionProviderId): void;
-};
+}
 
 /**
  * Primary model-first detection selector for the options page.
  *
  * @param props - Available models and active model callbacks.
+ *
  * @returns Model selection panel.
  */
 export function ModelSelectionPanel(

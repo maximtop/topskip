@@ -1,14 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Runtime } from 'webextension-polyfill';
+import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi
+} from 'vitest';
+
+// ── Imports (after mocks) ──
+
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
+import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
+import { OpenAiAdapter } from '@/background/providers/openai-adapter';
+import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import { PROMO_DETECTION_SOURCE } from '@/shared/messages';
+
 import type {
     LlmProviderAdapter,
     AnalyzeTranscriptResult,
 } from '@/background/providers/llm-provider-adapter';
-import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
-import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import { PROMO_DETECTION_SOURCE } from '@/shared/messages';
-import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
+import type { Runtime } from 'webextension-polyfill';
 
 // ── Hoisted mocks (must be defined before imports) ──
 
@@ -57,10 +72,9 @@ const logMocks = vi.hoisted(() => ({
 vi.mock(
     '@/background/openrouter/log-promo-analysis',
     async (importOriginal) => {
-        const mod =
-            await importOriginal<
+        const mod = await importOriginal<
                 typeof import('@/background/openrouter/log-promo-analysis')
-            >();
+        >();
         return {
             ...mod,
             LogPromoAnalysis: { logAnalysisBundle: logMocks.logBundle },
@@ -138,12 +152,6 @@ vi.mock('@/background/openai/openai-client', () => ({
     callOpenAiResponse: providerBoundaryMocks.callOpenAiResponse,
 }));
 
-// ── Imports (after mocks) ──
-
-import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { OpenAiAdapter } from '@/background/providers/openai-adapter';
-import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
-
 // ── Test fixtures ──
 
 type Payload = Extract<
@@ -151,8 +159,7 @@ type Payload = Extract<
     { ok: true }
 >;
 
-const baseSender = (tabId = 42): Runtime.MessageSender =>
-    ({ tab: { id: tabId } }) as Runtime.MessageSender;
+const baseSender = (tabId = 42): Runtime.MessageSender => ({ tab: { id: tabId } }) as Runtime.MessageSender;
 
 const basePayload = (videoId = 'vid123'): Payload => ({
     ok: true,
@@ -198,7 +205,7 @@ function makeAdapter(
 function makePendingAnalyze(signalSpy: (signal?: AbortSignal) => void) {
     return vi.fn().mockImplementation(async (params: AnalyzeFnParams) => {
         signalSpy(params.signal);
-        return await new Promise<AnalyzeTranscriptResult>(() => {});
+        return new Promise<AnalyzeTranscriptResult>(() => {});
     }) as MockAnalyzeFn;
 }
 
@@ -280,10 +287,8 @@ describe('PromoAnalysis — adapter routing', () => {
         });
 
         it('rejects old same-video completion after a BYOK route is re-enabled', async () => {
-            let resolveOld: (result: AnalyzeTranscriptResult) => void =
-                () => undefined;
-            let resolveReplacement: (result: AnalyzeTranscriptResult) => void =
-                () => undefined;
+            let resolveOld: (result: AnalyzeTranscriptResult) => void = () => undefined;
+            let resolveReplacement: (result: AnalyzeTranscriptResult) => void = () => undefined;
             const oldResult = new Promise<AnalyzeTranscriptResult>(
                 (resolve) => {
                     resolveOld = resolve;
@@ -358,8 +363,7 @@ describe('PromoAnalysis — adapter routing', () => {
 
         it('does not let an aborted prefs read reclaim a replacement run', async () => {
             let resolveOldPrefs: (prefs: unknown) => void = () => undefined;
-            let resolveReplacement: (result: AnalyzeTranscriptResult) => void =
-                () => undefined;
+            let resolveReplacement: (result: AnalyzeTranscriptResult) => void = () => undefined;
             const oldPrefs = new Promise<unknown>((resolve) => {
                 resolveOldPrefs = resolve;
             });
@@ -521,8 +525,8 @@ describe('PromoAnalysis — adapter routing', () => {
         });
 
         it(
-            'calls analyzeTranscript exactly once when the merged transcript ' +
-                'fits a single chunk',
+            'calls analyzeTranscript exactly once when the merged transcript '
+                + 'fits a single chunk',
             () => {
                 registryMocks.get.mockReturnValue(mockAdapter);
                 PromoAnalysis.onCaptionsReady(baseSender(), basePayload());
@@ -807,10 +811,9 @@ describe('PromoAnalysis — adapter routing', () => {
                 expect(analyze).toHaveBeenCalled();
             });
 
-            const result =
-                await ProviderRuntimeMessages.handleSetActive(
-                    'chrome-prompt-api',
-                );
+            const result = await ProviderRuntimeMessages.handleSetActive(
+                'chrome-prompt-api',
+            );
 
             expect(result).toEqual({ ok: true });
             expect(capturedSignal?.aborted).toBe(true);
@@ -852,8 +855,8 @@ describe('PromoAnalysis — adapter routing', () => {
         });
 
         it(
-            'logs a stable code (not the raw error) on an unexpected ' +
-                'analysis exception',
+            'logs a stable code (not the raw error) on an unexpected '
+                + 'analysis exception',
             async () => {
                 const err = new Error(
                     'OpenRouter HTTP 500: secret provider body',

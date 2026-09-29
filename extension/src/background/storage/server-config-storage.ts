@@ -1,3 +1,7 @@
+import {
+    serverConfigResponseSchema,
+    type ServerConfigResponse,
+} from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
@@ -5,10 +9,6 @@ import {
     STORAGE_KEY_SERVER_CONFIG,
     STORAGE_KEY_SERVER_CONFIG_REFRESH_ATTEMPT,
 } from '@/shared/constants';
-import {
-    serverConfigResponseSchema,
-    type ServerConfigResponse,
-} from '@topskip/common/server-analysis-contract';
 
 const finiteEpochMsSchema = v.pipe(
     v.number(),
@@ -123,6 +123,7 @@ export class ServerConfigStorage {
      *
      * @param config - Public config accepted at the HTTP boundary.
      * @param fetchedAtMs - Epoch time of the successful request.
+     *
      * @returns Promise resolved after persistence.
      */
     static async save(
@@ -142,6 +143,7 @@ export class ServerConfigStorage {
      * Persists a refresh attempt independently from successful config fetches.
      *
      * @param attemptedAtMs - Epoch time immediately before the HTTP request.
+     *
      * @returns Promise resolved after persistence.
      */
     static async saveRefreshAttempt(attemptedAtMs = Date.now()): Promise<void> {

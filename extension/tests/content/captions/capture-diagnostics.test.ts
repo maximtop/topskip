@@ -15,8 +15,7 @@ const URL_SHAPE = {
     fmt: 'json3',
     hasPot: true,
 };
-const SENTINEL_ERROR =
-    'SENTINEL-ERROR https://www.youtube.com/api/timedtext?v=x&sig=SECRET-SIG';
+const SENTINEL_ERROR = 'SENTINEL-ERROR https://www.youtube.com/api/timedtext?v=x&sig=SECRET-SIG';
 
 describe('CaptureDiagnostics.toDebugLogEvent', () => {
     it('maps schedule-start to capture-scheduled with the trigger', () => {

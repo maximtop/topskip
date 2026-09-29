@@ -1,6 +1,5 @@
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
-import * as v from 'valibot';
 
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
@@ -8,16 +7,14 @@ import {
     SERVER_ANALYSIS_SUPPORTED_CAPABILITIES,
     serverConfigResponseSchema,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
 
 const ROOT_ENV_FILE_NAME = '.env';
 const MIN_IP_HMAC_SECRET_LENGTH = 32;
-const ALLOWED_EXTENSION_ORIGINS_ENVIRONMENT_VARIABLE =
-    'TOPSKIP_ALLOWED_EXTENSION_ORIGINS';
+const ALLOWED_EXTENSION_ORIGINS_ENVIRONMENT_VARIABLE = 'TOPSKIP_ALLOWED_EXTENSION_ORIGINS';
 const CHROME_EXTENSION_ORIGIN_PATTERN = /^chrome-extension:\/\/[a-p]{32}$/u;
-const DEFAULT_SUPPORT_ISSUE_BASE_URL =
-    'https://github.com/maximtop/topskip/issues/new';
-const SUPPORT_ISSUE_BASE_URL_ENVIRONMENT_VARIABLE =
-    'TOPSKIP_SUPPORT_ISSUE_BASE_URL';
+const DEFAULT_SUPPORT_ISSUE_BASE_URL = 'https://github.com/maximtop/topskip/issues/new';
+const SUPPORT_ISSUE_BASE_URL_ENVIRONMENT_VARIABLE = 'TOPSKIP_SUPPORT_ISSUE_BASE_URL';
 const CAPTION_SOURCE_ENVIRONMENT_VARIABLE = 'TOPSKIP_CAPTION_SOURCE';
 
 /**
@@ -31,8 +28,7 @@ export const BACKEND_CAPTION_SOURCE = {
 /**
  * Allowed startup modes keep legacy extraction explicit and fail closed.
  */
-export type BackendCaptionSource =
-    (typeof BACKEND_CAPTION_SOURCE)[keyof typeof BACKEND_CAPTION_SOURCE];
+export type BackendCaptionSource = (typeof BACKEND_CAPTION_SOURCE)[keyof typeof BACKEND_CAPTION_SOURCE];
 
 /**
  * Frozen startup configuration prevents environment mutation from changing routing.
@@ -49,6 +45,7 @@ export class BackendServerConfig {
      * Applies the optional root env file while preserving exported shell values.
      *
      * @param envPath - Explicit path used by tests, or the workspace root `.env`.
+     *
      * @returns Frozen process-wide caption source configuration.
      */
     static prepare(
@@ -63,9 +60,9 @@ export class BackendServerConfig {
             );
         }
         if (
-            process.env.NODE_ENV === 'production' &&
-            (process.env.TOPSKIP_IP_HMAC_SECRET ?? '').trim().length <
-                MIN_IP_HMAC_SECRET_LENGTH
+            process.env.NODE_ENV === 'production'
+            && (process.env.TOPSKIP_IP_HMAC_SECRET ?? '').trim().length
+                < MIN_IP_HMAC_SECRET_LENGTH
         ) {
             throw new Error(
                 'TOPSKIP_IP_HMAC_SECRET must contain at least 32 characters in production.',
@@ -73,8 +70,8 @@ export class BackendServerConfig {
         }
         const allowedOrigins = BackendServerConfig.allowedExtensionOrigins();
         if (
-            process.env.NODE_ENV === 'production' &&
-            allowedOrigins.length === 0
+            process.env.NODE_ENV === 'production'
+            && allowedOrigins.length === 0
         ) {
             throw new Error(
                 'TOPSKIP_ALLOWED_EXTENSION_ORIGINS must list at least one exact Chrome extension origin in production.',
@@ -92,19 +89,17 @@ export class BackendServerConfig {
      * @returns Unique configured `chrome-extension://<id>` origins.
      */
     static allowedExtensionOrigins(): readonly string[] {
-        const raw =
-            process.env[ALLOWED_EXTENSION_ORIGINS_ENVIRONMENT_VARIABLE] ?? '';
+        const raw = process.env[ALLOWED_EXTENSION_ORIGINS_ENVIRONMENT_VARIABLE] ?? '';
         if (raw.length === 0) {
             return [];
         }
         const origins = raw.split(',');
         if (
             origins.some(
-                (origin) =>
-                    origin !== origin.trim() ||
-                    !CHROME_EXTENSION_ORIGIN_PATTERN.test(origin),
-            ) ||
-            new Set(origins).size !== origins.length
+                (origin) => origin !== origin.trim()
+                    || !CHROME_EXTENSION_ORIGIN_PATTERN.test(origin),
+            )
+            || new Set(origins).size !== origins.length
         ) {
             throw new Error(
                 'TOPSKIP_ALLOWED_EXTENSION_ORIGINS must be a comma-separated list of unique exact chrome-extension:// origins.',
@@ -124,8 +119,8 @@ export class BackendServerConfig {
             algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
             supportedCapabilities: [...SERVER_ANALYSIS_SUPPORTED_CAPABILITIES],
             supportIssueBaseUrl:
-                process.env[SUPPORT_ISSUE_BASE_URL_ENVIRONMENT_VARIABLE] ??
-                DEFAULT_SUPPORT_ISSUE_BASE_URL,
+                process.env[SUPPORT_ISSUE_BASE_URL_ENVIRONMENT_VARIABLE]
+                ?? DEFAULT_SUPPORT_ISSUE_BASE_URL,
         }).supportIssueBaseUrl;
     }
 
@@ -137,8 +132,8 @@ export class BackendServerConfig {
     private static captionSource(): BackendCaptionSource {
         const raw = process.env[CAPTION_SOURCE_ENVIRONMENT_VARIABLE];
         if (
-            raw === undefined ||
-            raw === BACKEND_CAPTION_SOURCE.ExtensionUpload
+            raw === undefined
+            || raw === BACKEND_CAPTION_SOURCE.ExtensionUpload
         ) {
             return BACKEND_CAPTION_SOURCE.ExtensionUpload;
         }

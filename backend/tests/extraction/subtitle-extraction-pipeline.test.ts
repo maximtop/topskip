@@ -1,3 +1,4 @@
+import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 
@@ -12,7 +13,6 @@ import {
     transcriptArtifactSchema,
     type SubtitleExtractionStrategy,
 } from '@topskip/backend/extraction/subtitle-extraction-types';
-import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 
 describe('Backend subtitle extraction pipeline', () => {
     it('validates selected transcript artifacts', () => {

@@ -1,4 +1,3 @@
-import type { CapturedTimedtextUrlShape } from '@/content/captions/caption-capture-types';
 import { CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE } from '@/content/captions/caption-page-bridge-contract';
 import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-constants';
 import {
@@ -7,6 +6,8 @@ import {
     type DebugLogEventName,
     type DebugLogFields,
 } from '@/shared/debug-log-events';
+
+import type { CapturedTimedtextUrlShape } from '@/content/captions/caption-capture-types';
 
 /**
  * MAIN-bridge stage names the ISOLATED side forwards. Everything else that
@@ -40,10 +41,10 @@ export const PAGE_DIAGNOSTIC_STAGE_PREFIX = DEBUG_LOG_PAGE_STAGE_PREFIX;
 /**
  * Event plus bounded scalar fields ready for `DebugLogClient.log`.
  */
-export type CaptureDebugLogEvent = {
+export interface CaptureDebugLogEvent {
     event: DebugLogEventName;
     fields: DebugLogFields;
-};
+}
 
 /**
  * Structured capture details as passed to the ISOLATED stage logger.
@@ -143,6 +144,7 @@ export class CaptureDiagnostics {
      *
      * @param stage - Stage name as logged by `PlayerCaptionCapture`.
      * @param details - Structured stage details.
+     *
      * @returns Event and fields, or `null` for dev-console-only stages.
      */
     static toDebugLogEvent(
@@ -190,6 +192,7 @@ export class CaptureDiagnostics {
      *
      * @param details - Whitelisted page diagnostic fields.
      * @param sessionCounter - Diagnostics already accepted in this session.
+     *
      * @returns Whether the diagnostic may reach the debug log.
      */
     static acceptBridgeDiagnostic(
@@ -210,6 +213,7 @@ export class CaptureDiagnostics {
      * `pot` presence) without ever accepting parameter values.
      *
      * @param value - Untrusted value.
+     *
      * @returns Whether the value is safe URL-shape metadata.
      */
     static isUrlShape(value: unknown): value is CapturedTimedtextUrlShape {
@@ -221,11 +225,11 @@ export class CaptureDiagnostics {
         const fmt: unknown = Reflect.get(value, 'fmt');
         const hasPot: unknown = Reflect.get(value, 'hasPot');
         return (
-            typeof pathname === 'string' &&
-            Array.isArray(paramNames) &&
-            paramNames.every((item) => typeof item === 'string') &&
-            (fmt === null || typeof fmt === 'string') &&
-            typeof hasPot === 'boolean'
+            typeof pathname === 'string'
+            && Array.isArray(paramNames)
+            && paramNames.every((item) => typeof item === 'string')
+            && (fmt === null || typeof fmt === 'string')
+            && typeof hasPot === 'boolean'
         );
     }
 
@@ -246,9 +250,9 @@ export class CaptureDiagnostics {
     ): void {
         const value: unknown = details[key];
         if (
-            typeof value === 'string' ||
-            typeof value === 'boolean' ||
-            (typeof value === 'number' && Number.isFinite(value))
+            typeof value === 'string'
+            || typeof value === 'boolean'
+            || (typeof value === 'number' && Number.isFinite(value))
         ) {
             fields[targetKey] = value;
         }
@@ -277,11 +281,11 @@ export class CaptureDiagnostics {
      * URL shape's path, format, and parameter names.
      *
      * @param details - Whitelisted page diagnostic fields.
+     *
      * @returns Whether every string is within the cap.
      */
     private static hasBoundedStrings(details: CaptureStageDetails): boolean {
-        const tooLong = (text: string): boolean =>
-            text.length > MAX_PAGE_DIAGNOSTIC_STRING_LENGTH;
+        const tooLong = (text: string): boolean => text.length > MAX_PAGE_DIAGNOSTIC_STRING_LENGTH;
         for (const value of Object.values(details)) {
             if (typeof value === 'string' && tooLong(value)) {
                 return false;

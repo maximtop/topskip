@@ -1,8 +1,23 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
+import { SESSION_STORAGE_KEY_DEBUG_LOG_TABS } from '@/shared/constants';
+import {
+    DEBUG_LOG_CEILING_WINDOW_MS,
+    DEBUG_LOG_CONTENT_EVENTS_PER_TAB_PER_MINUTE,
+} from '@/shared/debug-log-constants';
 
 const storage = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
+        '../../helpers/memory-storage-area'
     );
     return { session: createMemoryStorageArea() };
 });
@@ -15,17 +30,17 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
-import { SESSION_STORAGE_KEY_DEBUG_LOG_TABS } from '@/shared/constants';
-import {
-    DEBUG_LOG_CEILING_WINDOW_MS,
-    DEBUG_LOG_CONTENT_EVENTS_PER_TAB_PER_MINUTE,
-} from '@/shared/debug-log-constants';
-
 const NOW_MS = 1_900_000_000_000;
 const PERSIST_DELAY_MS = 250;
-const NORMAL_TAB = { id: 41, incognito: false, index: 0, highlighted: false,
-    active: true, pinned: false, windowId: 1 };
+const NORMAL_TAB = {
+    id: 41,
+    incognito: false,
+    index: 0,
+    highlighted: false,
+    active: true,
+    pinned: false,
+    windowId: 1,
+};
 const INCOGNITO_TAB = { ...NORMAL_TAB, id: 42, incognito: true };
 
 /**

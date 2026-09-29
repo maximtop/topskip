@@ -6,11 +6,11 @@ export type PromoConfidence = 'low' | 'medium' | 'high';
 /**
  * One validated promo / sponsor integration block on the timeline.
  */
-export type PromoBlock = {
+export interface PromoBlock {
     startSec: number;
     endSec?: number;
     confidence?: PromoConfidence;
-};
+}
 
 /**
  * Stable promo-detection states shared across runtime packages.
@@ -27,5 +27,4 @@ export const PROMO_DETECTION_STATUS = {
 /**
  * High-level detection status for UI (spec Key Entities).
  */
-export type PromoDetectionStatus =
-    (typeof PROMO_DETECTION_STATUS)[keyof typeof PROMO_DETECTION_STATUS];
+export type PromoDetectionStatus = (typeof PROMO_DETECTION_STATUS)[keyof typeof PROMO_DETECTION_STATUS];

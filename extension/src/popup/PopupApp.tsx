@@ -1,5 +1,3 @@
-import { observer } from 'mobx-react-lite';
-import { type ReactElement, useEffect, useMemo, useState } from 'react';
 import {
     ActionIcon,
     Badge,
@@ -12,9 +10,28 @@ import {
     Switch,
     Text,
 } from '@mantine/core';
+import {
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+    type PromoDetectionStatus,
+} from '@topskip/common/promo-types';
+import { observer } from 'mobx-react-lite';
+import {
 
-import { PreferencesStore } from '@/popup/preferences-store';
+    type ReactElement,
+    useEffect,
+    useMemo,
+    useState,
+} from 'react';
+
+import {
+    POPUP_STATE_FAILURE_RETRY_MS,
+    MIN_PROMO_BLOCK_WIDTH_SEC,
+} from '@/popup/constants';
+import { requestContentScriptReattachWithTimeout } from '@/popup/content-script-reattach-request';
+import { DebugLoggingIndicator } from '@/popup/DebugLoggingIndicator';
 import { DetectionRefreshGuard } from '@/popup/detection-refresh-guard';
+import { requestDetectionStatusWithTimeout } from '@/popup/detection-status-request';
 import {
     DETECTION_REFRESH_OUTCOME,
     DETECTION_PUSH_ACTION,
@@ -28,9 +45,16 @@ import {
     isDetectionTransportKnown,
     type DetectionTransportState,
 } from '@/popup/detection-transport-state';
-import { DebugLoggingIndicator } from '@/popup/DebugLoggingIndicator';
-import { getErrorMessage } from '@/shared/error';
+import { PreferencesStore } from '@/popup/preferences-store';
 import browser from '@/shared/browser';
+import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
+import {
+    ANALYSIS_MODE,
+    PERCENT_SCALE,
+    type AnalysisMode,
+} from '@/shared/constants';
+import { getErrorMessage } from '@/shared/error';
+import { translator } from '@/shared/i18n/translator';
 import {
     PROMO_DETECTION_SOURCE,
     SERVER_ANALYSIS_PHASE,
@@ -41,26 +65,10 @@ import {
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
 import {
-    PROMO_DETECTION_STATUS,
-    type PromoBlock,
-    type PromoDetectionStatus,
-} from '@topskip/common/promo-types';
-import {
     formatPromoBlocksSummary,
     formatSecondsAsTimecode,
 } from '@/shared/promo-range-format';
-import { translator } from '@/shared/i18n/translator';
-import {
-    POPUP_STATE_FAILURE_RETRY_MS,
-    MIN_PROMO_BLOCK_WIDTH_SEC,
-} from '@/popup/constants';
-import { requestDetectionStatusWithTimeout } from '@/popup/detection-status-request';
-import { requestContentScriptReattachWithTimeout } from '@/popup/content-script-reattach-request';
-import {
-    ANALYSIS_MODE,
-    PERCENT_SCALE,
-    type AnalysisMode,
-} from '@/shared/constants';
+import { PROVIDER_ID } from '@/shared/providers';
 import {
     SERVER_FAILURE_CATEGORY,
     SERVER_FAILURE_REPORT_ACTION,
@@ -68,8 +76,6 @@ import {
     getServerFailureReportAction,
     type ServerFailureReportAction,
 } from '@/shared/server-analysis-failure';
-import { PROVIDER_ID } from '@/shared/providers';
-import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import {
     CheckIcon,
     PromoBlocksIcon,
@@ -158,6 +164,7 @@ const POPUP_TONE_STYLES: Record<
  * flag is mandatory so the popup indicator never renders from a default.
  *
  * @param res - Untyped runtime response
+ *
  * @returns Whether the payload is a successful detection status response
  */
 export function isGetDetectionOk(
@@ -168,10 +175,10 @@ export function isGetDetectionOk(
     }
     const tabId: unknown = Reflect.get(res, 'tabId');
     return (
-        Reflect.get(res, 'ok') === true &&
-        (tabId === null || typeof tabId === 'number') &&
-        'state' in res &&
-        typeof Reflect.get(res, 'debugLoggingEnabled') === 'boolean'
+        Reflect.get(res, 'ok') === true
+        && (tabId === null || typeof tabId === 'number')
+        && 'state' in res
+        && typeof Reflect.get(res, 'debugLoggingEnabled') === 'boolean'
     );
 }
 
@@ -179,6 +186,7 @@ export function isGetDetectionOk(
  * Localized short label for a promo detection status chip.
  *
  * @param s - Status enum
+ *
  * @returns Short label
  */
 function detectionLabel(s: PromoDetectionStatus): string {
@@ -205,6 +213,7 @@ function detectionLabel(s: PromoDetectionStatus): string {
  * falling back to startSec + 30 when absent.
  *
  * @param block - The promo block to inspect.
+ *
  * @returns End time in seconds.
  */
 function getPromoBlockEndSec(block: PromoBlock): number {
@@ -217,8 +226,7 @@ function getPromoBlockEndSec(block: PromoBlock): number {
 /**
  * Visual tone names used to map popup states to stable colors.
  */
-type PopupTone =
-    | 'brand'
+type PopupTone = | 'brand'
     | 'success'
     | 'warning'
     | 'danger'
@@ -228,7 +236,7 @@ type PopupTone =
 /**
  * Fully resolved display state consumed by the popup component.
  */
-type PopupStatusViewModel = {
+interface PopupStatusViewModel {
     tone: PopupTone;
     badgeLabel: string;
     badgeColor: string;
@@ -241,7 +249,7 @@ type PopupStatusViewModel = {
     providerLabel: string;
     reportAction?: ServerFailureReportAction;
     reportLabel?: string;
-};
+}
 
 /**
  * Fully resolved popup state with the selected route shown independently and
@@ -256,7 +264,7 @@ type PopupViewModel = PopupStatusViewModel & {
  * Inputs needed to derive popup mode and detection status copy.
  * `debugLoggingEnabled` is `null` while the background status is unknown.
  */
-type PopupViewModelArgs = {
+interface PopupViewModelArgs {
     enabled: boolean;
     analysisMode: AnalysisMode;
     detectionState: PromoDetectionStatePayload | null;
@@ -268,12 +276,15 @@ type PopupViewModelArgs = {
     modelDisplayName: string;
     chromeModelAvailability: ProviderAvailabilityMessage | null;
     debugLoggingEnabled: boolean | null;
-};
+}
 
 /**
  * Builds localized public-server failure copy from stable codes only.
  *
  * @param input - Typed failure state and provider label used by the popup.
+ * @param input.state
+ * @param input.providerLabel
+ *
  * @returns Safe popup view model without raw backend text.
  */
 function buildServerFailureViewModel(input: {
@@ -287,17 +298,16 @@ function buildServerFailureViewModel(input: {
     const category = classifyServerFailure(failure.code);
     const reportAction = getServerFailureReportAction(failure.code);
     const settingsLabel = translator.getMessage('popup_open_settings');
-    const reportState =
-        reportAction === SERVER_FAILURE_REPORT_ACTION.None
-            ? {}
-            : {
-                    reportAction,
-                    reportLabel: translator.getMessage(
-                        reportAction === SERVER_FAILURE_REPORT_ACTION.Primary
-                            ? 'popup_server_report_primary'
-                            : 'popup_server_report_secondary',
-                    ),
-                };
+    const reportState = reportAction === SERVER_FAILURE_REPORT_ACTION.None
+        ? {}
+        : {
+            reportAction,
+            reportLabel: translator.getMessage(
+                reportAction === SERVER_FAILURE_REPORT_ACTION.Primary
+                    ? 'popup_server_report_primary'
+                    : 'popup_server_report_secondary',
+            ),
+        };
 
     if (category === SERVER_FAILURE_CATEGORY.VideoLimitation) {
         return {
@@ -358,8 +368,8 @@ function buildServerFailureViewModel(input: {
                 failure.retryAfterSec === undefined
                     ? translator.getMessage('popup_server_temporary_body')
                     : translator.getMessage('popup_server_temporary_retry', {
-                            seconds: String(failure.retryAfterSec),
-                        }),
+                        seconds: String(failure.retryAfterSec),
+                    }),
             settingsLabel,
             providerLabel: input.providerLabel,
         };
@@ -422,6 +432,7 @@ function buildServerFailureViewModel(input: {
  * based on extension state and detection results.
  *
  * @param args - Current prefs and detection state.
+ *
  * @returns The resolved view-model.
  */
 function buildPopupStatusViewModel(
@@ -469,8 +480,8 @@ function buildPopupStatusViewModel(
             badgeColor: 'gray',
             title: 'TopSkip is paused',
             description:
-                'Auto-skip is disabled for YouTube ' +
-                'until you turn it back on.',
+                'Auto-skip is disabled for YouTube '
+                + 'until you turn it back on.',
             activityLabel: ACTIVITY_LABEL_PAUSED,
             statusHeadline: 'Automatic sponsor skipping is currently off.',
             statusBody:
@@ -487,21 +498,21 @@ function buildPopupStatusViewModel(
             badgeColor: 'gray',
             title: 'Open a YouTube video',
             description:
-                'TopSkip is ready, but this tab does not ' +
-                'have an active watch context yet.',
+                'TopSkip is ready, but this tab does not '
+                + 'have an active watch context yet.',
             activityLabel: ACTIVITY_LABEL_ACTIVE,
             statusHeadline: 'Waiting for a supported watch page.',
             statusBody:
-                'Detection details will appear here ' +
-                'when a video is available.',
+                'Detection details will appear here '
+                + 'when a video is available.',
             settingsLabel: 'Open settings',
             providerLabel,
         };
     }
 
     if (
-        detectionState.source === PROMO_DETECTION_SOURCE.Server &&
-        detectionState.serverFailure !== undefined
+        detectionState.source === PROMO_DETECTION_SOURCE.Server
+        && detectionState.serverFailure !== undefined
     ) {
         return buildServerFailureViewModel({
             state: detectionState,
@@ -510,12 +521,11 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === PROMO_DETECTION_STATUS.Analyzing &&
-        detectionState.source === PROMO_DETECTION_SOURCE.Server
+        detectionState.status === PROMO_DETECTION_STATUS.Analyzing
+        && detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
-        const isCaptionAcquisition =
-            detectionState.serverAnalysisPhase ===
-            SERVER_ANALYSIS_PHASE.CaptionAcquisition;
+        const isCaptionAcquisition = detectionState.serverAnalysisPhase
+            === SERVER_ANALYSIS_PHASE.CaptionAcquisition;
         const keyPrefix = isCaptionAcquisition
             ? 'popup_detection_server_acquisition'
             : 'popup_detection_server_pending';
@@ -534,8 +544,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === PROMO_DETECTION_STATUS.Error &&
-        detectionState.source === PROMO_DETECTION_SOURCE.Server
+        detectionState.status === PROMO_DETECTION_STATUS.Error
+        && detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
         return {
             tone: 'danger',
@@ -549,8 +559,8 @@ function buildPopupStatusViewModel(
             ),
             activityLabel: getUnavailableActivityLabel(),
             statusHeadline:
-                detectionState.error ??
-                translator.getMessage('popup_detection_server_error_headline'),
+                detectionState.error
+                ?? translator.getMessage('popup_detection_server_error_headline'),
             statusBody: translator.getMessage(
                 'popup_detection_server_error_body',
             ),
@@ -560,8 +570,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === PROMO_DETECTION_STATUS.Detected &&
-        detectionState.source === PROMO_DETECTION_SOURCE.ServerCache
+        detectionState.status === PROMO_DETECTION_STATUS.Detected
+        && detectionState.source === PROMO_DETECTION_SOURCE.ServerCache
     ) {
         return {
             tone: 'brand',
@@ -578,8 +588,8 @@ function buildPopupStatusViewModel(
                 'popup_detection_server_cache_headline',
             ),
             statusBody:
-                detectionState.promoBlocks !== undefined &&
-                detectionState.promoBlocks.length > 0
+                detectionState.promoBlocks !== undefined
+                && detectionState.promoBlocks.length > 0
                     ? formatPromoBlocksSummary(detectionState.promoBlocks)
                     : null,
             settingsLabel: translator.getMessage('popup_open_settings'),
@@ -588,8 +598,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === PROMO_DETECTION_STATUS.NoPromo &&
-        detectionState.source === PROMO_DETECTION_SOURCE.Server
+        detectionState.status === PROMO_DETECTION_STATUS.NoPromo
+        && detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
         return {
             tone: 'success',
@@ -616,8 +626,8 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        detectionState.status === PROMO_DETECTION_STATUS.Unavailable &&
-        detectionState.source === PROMO_DETECTION_SOURCE.Server
+        detectionState.status === PROMO_DETECTION_STATUS.Unavailable
+        && detectionState.source === PROMO_DETECTION_SOURCE.Server
     ) {
         return {
             tone: 'warning',
@@ -633,8 +643,8 @@ function buildPopupStatusViewModel(
             ),
             activityLabel: getUnavailableActivityLabel(),
             statusHeadline:
-                detectionState.error ??
-                translator.getMessage(
+                detectionState.error
+                ?? translator.getMessage(
                     'popup_detection_server_unavailable_headline',
                 ),
             statusBody: translator.getMessage(
@@ -646,13 +656,12 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        analysisMode === ANALYSIS_MODE.Byok &&
-        detectionState.status === PROMO_DETECTION_STATUS.NotConfigured &&
-        detectionState.source === PROMO_DETECTION_SOURCE.LocalProvider
+        analysisMode === ANALYSIS_MODE.Byok
+        && detectionState.status === PROMO_DETECTION_STATUS.NotConfigured
+        && detectionState.source === PROMO_DETECTION_SOURCE.LocalProvider
     ) {
-        const providerName =
-            providerDisplayName.trim() ||
-            translator.getMessage('popup_analysis_mode_byok');
+        const providerName = providerDisplayName.trim()
+            || translator.getMessage('popup_analysis_mode_byok');
         return {
             tone: 'warning',
             badgeLabel: translator.getMessage('popup_byok_setup_badge'),
@@ -670,9 +679,9 @@ function buildPopupStatusViewModel(
     }
 
     if (
-        providerId === PROVIDER_ID.ChromePromptApi &&
-        chromeModelAvailability !== null &&
-        chromeModelAvailability !== PROVIDER_AVAILABILITY.AVAILABLE
+        providerId === PROVIDER_ID.ChromePromptApi
+        && chromeModelAvailability !== null
+        && chromeModelAvailability !== PROVIDER_AVAILABILITY.AVAILABLE
     ) {
         if (chromeModelAvailability === PROVIDER_AVAILABILITY.DOWNLOADING) {
             return {
@@ -731,13 +740,13 @@ function buildPopupStatusViewModel(
                 badgeColor: 'warning',
                 title: 'Finish setup',
                 description:
-                    `Configure ${providerDisplayName || 'your LLM provider'} ` +
-                    'to enable transcript analysis for promo detection.',
+                    `Configure ${providerDisplayName || 'your LLM provider'} `
+                    + 'to enable transcript analysis for promo detection.',
                 activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'LLM detection is not configured yet.',
                 statusBody:
-                    'Save an API key and select a default ' +
-                    'model to activate analysis.',
+                    'Save an API key and select a default '
+                    + 'model to activate analysis.',
                 settingsLabel: 'Continue setup',
                 providerLabel,
             };
@@ -748,14 +757,14 @@ function buildPopupStatusViewModel(
                 badgeColor: 'gray',
                 title: 'Detection unavailable',
                 description:
-                    'TopSkip is enabled, but detection ' +
-                    'data is not available for this tab ' +
-                    'right now.',
+                    'TopSkip is enabled, but detection '
+                    + 'data is not available for this tab '
+                    + 'right now.',
                 activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'No detection snapshot is available.',
                 statusBody:
-                    'This can happen before captions are ' +
-                    'ready or outside supported watch states.',
+                    'This can happen before captions are '
+                    + 'ready or outside supported watch states.',
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
@@ -766,13 +775,13 @@ function buildPopupStatusViewModel(
                 badgeColor: 'brand',
                 title: 'Analyzing captions',
                 description:
-                    'TopSkip is reading the latest ' +
-                    'transcript slice for this video.',
+                    'TopSkip is reading the latest '
+                    + 'transcript slice for this video.',
                 activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'Analysis is in progress.',
                 statusBody:
-                    'Detected sponsor windows will appear ' +
-                    'here when ready.',
+                    'Detected sponsor windows will appear '
+                    + 'here when ready.',
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
@@ -784,13 +793,13 @@ function buildPopupStatusViewModel(
                 badgeColor: 'brand',
                 title: `${count} promo ${count === 1 ? 'block' : 'blocks'} found`,
                 description:
-                    'TopSkip has marked the current ' +
-                    'sponsor windows for this video.',
+                    'TopSkip has marked the current '
+                    + 'sponsor windows for this video.',
                 activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'Detected windows',
                 statusBody:
-                    detectionState.promoBlocks !== undefined &&
-                    detectionState.promoBlocks.length > 0
+                    detectionState.promoBlocks !== undefined
+                    && detectionState.promoBlocks.length > 0
                         ? formatPromoBlocksSummary(detectionState.promoBlocks)
                         : null,
                 settingsLabel: 'Open settings',
@@ -804,13 +813,13 @@ function buildPopupStatusViewModel(
                 badgeColor: 'success',
                 title: 'Watching clean',
                 description:
-                    'No sponsor segments were found ' +
-                    'in the current transcript window.',
+                    'No sponsor segments were found '
+                    + 'in the current transcript window.',
                 activityLabel: ACTIVITY_LABEL_ACTIVE,
                 statusHeadline: 'No promo blocks detected.',
                 statusBody:
-                    'TopSkip will keep monitoring the ' +
-                    'video as captions update.',
+                    'TopSkip will keep monitoring the '
+                    + 'video as captions update.',
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
@@ -826,8 +835,8 @@ function buildPopupStatusViewModel(
                 statusHeadline:
                     detectionState.error ?? 'Detection failed for this tab.',
                 statusBody:
-                    'Open settings to verify the API key ' +
-                    'and selected model.',
+                    'Open settings to verify the API key '
+                    + 'and selected model.',
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
@@ -838,6 +847,7 @@ function buildPopupStatusViewModel(
  * Adds the persisted mode label to every popup status branch.
  *
  * @param args - Current preferences, provider details, and detection state.
+ *
  * @returns Status copy with an explicit selected analysis mode.
  */
 export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
@@ -846,10 +856,10 @@ export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
         ...status,
         ...(args.detectionStale && args.prefsError === null
             ? {
-                    activityLabel: translator.getMessage(
-                        'popup_status_stale_activity',
-                    ),
-                }
+                activityLabel: translator.getMessage(
+                    'popup_status_stale_activity',
+                ),
+            }
             : {}),
         modeLabel: translator.getMessage(
             args.analysisMode === ANALYSIS_MODE.Byok
@@ -867,6 +877,9 @@ export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
  * Renders a visual timeline bar of detected promo blocks.
  *
  * @param props - Contains the blocks and authoritative video duration.
+ * @param props.blocks
+ * @param props.durationSec
+ *
  * @returns The timeline element, or null without safe scale metadata.
  */
 function PromoTimeline({
@@ -877,10 +890,10 @@ function PromoTimeline({
     durationSec?: number;
 }): ReactElement | null {
     if (
-        blocks.length === 0 ||
-        durationSec === undefined ||
-        !Number.isFinite(durationSec) ||
-        durationSec <= 0
+        blocks.length === 0
+        || durationSec === undefined
+        || !Number.isFinite(durationSec)
+        || durationSec <= 0
     ) {
         return null;
     }
@@ -902,10 +915,10 @@ function PromoTimeline({
                     height: '0.625rem',
                     borderRadius: '999px',
                     background:
-                        'repeating-linear-gradient(90deg, ' +
-                        'var(--mantine-color-slate-3) 0 1px, ' +
-                        'var(--mantine-color-slate-1) 1px 20%), ' +
-                        'var(--mantine-color-slate-1)',
+                        'repeating-linear-gradient(90deg, '
+                        + 'var(--mantine-color-slate-3) 0 1px, '
+                        + 'var(--mantine-color-slate-1) 1px 20%), '
+                        + 'var(--mantine-color-slate-1)',
                     overflow: 'hidden',
                 }}
             >
@@ -937,12 +950,12 @@ function PromoTimeline({
                                 borderRadius: '999px',
                                 background:
                                     index % 2 === 0
-                                        ? 'linear-gradient(90deg, ' +
-                                          'var(--mantine-color-brand-6), ' +
-                                          'var(--mantine-color-brand-7))'
-                                        : 'linear-gradient(90deg, ' +
-                                          'var(--mantine-color-warning-6), ' +
-                                          'var(--mantine-color-brand-6))',
+                                        ? 'linear-gradient(90deg, '
+                                          + 'var(--mantine-color-brand-6), '
+                                          + 'var(--mantine-color-brand-7))'
+                                        : 'linear-gradient(90deg, '
+                                          + 'var(--mantine-color-warning-6), '
+                                          + 'var(--mantine-color-brand-6))',
                             }}
                         />
                     );
@@ -952,11 +965,10 @@ function PromoTimeline({
     );
 }
 
-export const PopupApp = observer(function PopupApp() {
+export const PopupApp = observer(() => {
     const store = useMemo(() => new PreferencesStore(), []);
     const [prefsError, setPrefsError] = useState<string | null>(null);
-    const [detectionTransport, setDetectionTransport] =
-        useState<DetectionTransportState>(INITIAL_DETECTION_TRANSPORT_STATE);
+    const [detectionTransport, setDetectionTransport] = useState<DetectionTransportState>(INITIAL_DETECTION_TRANSPORT_STATE);
     // Last switch state read from the background; left untouched on failed
     // reads so a stale popup keeps the last known value.
     const [debugLoggingEnabled, setDebugLoggingEnabled] = useState<
@@ -1036,8 +1048,8 @@ export const PopupApp = observer(function PopupApp() {
                 return;
             }
             if (
-                completion.applyCompletion &&
-                isDetectionReadCurrent(startedPushRevision, pushRevision)
+                completion.applyCompletion
+                && isDetectionReadCurrent(startedPushRevision, pushRevision)
             ) {
                 applyCompletion();
             }
@@ -1052,12 +1064,10 @@ export const PopupApp = observer(function PopupApp() {
                 const res = await requestDetectionStatusWithTimeout();
                 handleRefreshCompletion(startedPushRevision, () => {
                     if (!isGetDetectionOk(res)) {
-                        setDetectionTransport((current) =>
-                            applyDetectionTransportFailure(
-                                current,
-                                'Detection status response was invalid.',
-                            ),
-                        );
+                        setDetectionTransport((current) => applyDetectionTransportFailure(
+                            current,
+                            'Detection status response was invalid.',
+                        ));
                         scheduleRefresh(
                             getDetectionRefreshDelay(
                                 DETECTION_REFRESH_OUTCOME.Failure,
@@ -1067,13 +1077,11 @@ export const PopupApp = observer(function PopupApp() {
                     }
                     activeTabId = res.tabId;
                     setDebugLoggingEnabled(res.debugLoggingEnabled);
-                    setDetectionTransport((current) =>
-                        applyDetectionTransportSuccess(
-                            current,
-                            res.tabId,
-                            res.state,
-                        ),
-                    );
+                    setDetectionTransport((current) => applyDetectionTransportSuccess(
+                        current,
+                        res.tabId,
+                        res.state,
+                    ));
                     scheduleRefresh(
                         getDetectionRefreshDelay(
                             DETECTION_REFRESH_OUTCOME.Healthy,
@@ -1082,12 +1090,10 @@ export const PopupApp = observer(function PopupApp() {
                 });
             } catch (e) {
                 handleRefreshCompletion(startedPushRevision, () => {
-                    setDetectionTransport((current) =>
-                        applyDetectionTransportFailure(
-                            current,
-                            getErrorMessage(e),
-                        ),
-                    );
+                    setDetectionTransport((current) => applyDetectionTransportFailure(
+                        current,
+                        getErrorMessage(e),
+                    ));
                     scheduleRefresh(
                         getDetectionRefreshDelay(
                             DETECTION_REFRESH_OUTCOME.Failure,
@@ -1125,13 +1131,11 @@ export const PopupApp = observer(function PopupApp() {
                 return;
             }
             pushRevision += 1;
-            setDetectionTransport((current) =>
-                applyDetectionTransportSuccess(
-                    current,
-                    pushed.tabId,
-                    pushed.payload,
-                ),
-            );
+            setDetectionTransport((current) => applyDetectionTransportSuccess(
+                current,
+                pushed.tabId,
+                pushed.payload,
+            ));
             scheduleRefresh(
                 getDetectionRefreshDelay(DETECTION_REFRESH_OUTCOME.Healthy),
             );
@@ -1146,12 +1150,10 @@ export const PopupApp = observer(function PopupApp() {
     }, []);
 
     const detectionState = detectionTransport.snapshot;
-    const detectionLoaded =
-        detectionTransport.status !== DETECTION_TRANSPORT_STATUS.Loading;
-    const detectionError =
-        detectionTransport.status === DETECTION_TRANSPORT_STATUS.Unavailable
-            ? detectionTransport.error
-            : null;
+    const detectionLoaded = detectionTransport.status !== DETECTION_TRANSPORT_STATUS.Loading;
+    const detectionError = detectionTransport.status === DETECTION_TRANSPORT_STATUS.Unavailable
+        ? detectionTransport.error
+        : null;
 
     const view = buildPopupViewModel({
         enabled: store.enabled,
@@ -1170,16 +1172,14 @@ export const PopupApp = observer(function PopupApp() {
             : null,
     });
 
-    const detectedBlocks =
-        detectionState?.status === PROMO_DETECTION_STATUS.Detected &&
-        detectionState.promoBlocks !== undefined
-            ? detectionState.promoBlocks
-            : [];
+    const detectedBlocks = detectionState?.status === PROMO_DETECTION_STATUS.Detected
+        && detectionState.promoBlocks !== undefined
+        ? detectionState.promoBlocks
+        : [];
     const hasDetectedBlocks = detectedBlocks.length > 0;
-    const blocksStatusHeading =
-        detectionState === null
-            ? view.title
-            : detectionLabel(detectionState.status);
+    const blocksStatusHeading = detectionState === null
+        ? view.title
+        : detectionLabel(detectionState.status);
     const toneStyle = POPUP_TONE_STYLES[view.tone];
 
     return (
@@ -1405,8 +1405,8 @@ export const PopupApp = observer(function PopupApp() {
                                     <Text fw={700} size="sm">
                                         {hasDetectedBlocks
                                             ? translator.getMessage(
-                                                    'popup_detection_detected',
-                                                )
+                                                'popup_detection_detected',
+                                            )
                                             : blocksStatusHeading}
                                     </Text>
                                 </Group>
@@ -1441,27 +1441,27 @@ export const PopupApp = observer(function PopupApp() {
                                 {view.statusBody}
                             </Text>
                         ) : null}
-                        {view.reportAction !== undefined &&
-                        view.reportLabel !== undefined ? (
-                                    <Button
-                                        data-testid="popup-report-server-issue"
-                                        mt="sm"
-                                        size="xs"
-                                        variant={
-                                            view.reportAction ===
-                                    SERVER_FAILURE_REPORT_ACTION.Primary
-                                                ? 'filled'
-                                                : 'subtle'
-                                        }
-                                        onClick={() => {
-                                            void browser.runtime.sendMessage({
-                                                type: TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE,
-                                            });
-                                        }}
-                                    >
-                                        {view.reportLabel}
-                                    </Button>
-                                ) : null}
+                        {view.reportAction !== undefined
+                        && view.reportLabel !== undefined ? (
+                                <Button
+                                    data-testid="popup-report-server-issue"
+                                    mt="sm"
+                                    size="xs"
+                                    variant={
+                                        view.reportAction
+                                    === SERVER_FAILURE_REPORT_ACTION.Primary
+                                            ? 'filled'
+                                            : 'subtle'
+                                    }
+                                    onClick={() => {
+                                        void browser.runtime.sendMessage({
+                                            type: TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE,
+                                        });
+                                    }}
+                                >
+                                    {view.reportLabel}
+                                </Button>
+                            ) : null}
                     </div>
                 )}
                 <PromoTimeline

@@ -1,7 +1,25 @@
 import { MantineProvider } from '@mantine/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DIAGNOSTICS_PHASE } from '@/options/diagnostics-state';
+import {
+    DiagnosticsPanel,
+    type DiagnosticsPanelProps,
+    type DiagnosticsPanelState,
+} from '@/options/DiagnosticsPanel';
+import { DEBUG_LOG_CAP_BYTES } from '@/shared/debug-log-constants';
+import { formatBinarySize } from '@/shared/debug-log-format';
+import { topskipTheme } from '@/shared/theme';
+
+import type { DebugLogStatusPayload } from '@/shared/messages';
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -53,17 +71,6 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-import {
-    DiagnosticsPanel,
-    type DiagnosticsPanelProps,
-    type DiagnosticsPanelState,
-} from '@/options/DiagnosticsPanel';
-import { DIAGNOSTICS_PHASE } from '@/options/diagnostics-state';
-import { DEBUG_LOG_CAP_BYTES } from '@/shared/debug-log-constants';
-import { formatBinarySize } from '@/shared/debug-log-format';
-import type { DebugLogStatusPayload } from '@/shared/messages';
-import { topskipTheme } from '@/shared/theme';
-
 const CAP_LABEL = formatBinarySize(DEBUG_LOG_CAP_BYTES);
 
 const STATUS_ON: DebugLogStatusPayload = {
@@ -76,7 +83,14 @@ const STATUS_ON: DebugLogStatusPayload = {
     capBytes: DEBUG_LOG_CAP_BYTES,
     evictedCount: 3,
     oldestRetainedMs: 1_755_856_800_000,
-    dropped: { incognito: 1, coalesced: 2, ceiling: 0, unreachable: 4, lost: 0 },
+    dropped: {
+
+        incognito: 1,
+        coalesced: 2,
+        ceiling: 0,
+        unreachable: 4,
+        lost: 0,
+    },
     revision: 7,
 };
 const STATUS_OFF_STORED: DebugLogStatusPayload = {
@@ -93,7 +107,14 @@ const STATUS_OFF_EMPTY: DebugLogStatusPayload = {
     sizeBytes: 0,
     evictedCount: 0,
     oldestRetainedMs: null,
-    dropped: { incognito: 0, coalesced: 0, ceiling: 0, unreachable: 0, lost: 0 },
+    dropped: {
+
+        incognito: 0,
+        coalesced: 0,
+        ceiling: 0,
+        unreachable: 0,
+        lost: 0,
+    },
 };
 const PREVIEW = {
     text: '2026-08-22T10:00:00.000Z w1#1 bg logging-enabled\n',
@@ -106,6 +127,7 @@ const PREVIEW = {
  *
  * @param state - Panel state under test.
  * @param overrides - Callback overrides.
+ *
  * @returns Static markup.
  */
 function render(
@@ -134,6 +156,7 @@ function render(
  *
  * @param html - Static markup.
  * @param testId - `data-testid` to find.
+ *
  * @returns Opening tag text, or `''` when absent.
  */
 function openingTag(html: string, testId: string): string {

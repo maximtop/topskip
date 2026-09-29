@@ -1,3 +1,4 @@
+import { SERVER_ANALYSIS_UNAVAILABLE_REASON } from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
 import { LocalTranscriptFixtureStrategy } from '@topskip/backend/extraction/local-transcript-fixtures';
@@ -13,19 +14,17 @@ import {
     type TranscriptArtifact,
 } from '@topskip/backend/extraction/subtitle-extraction-types';
 import { YtDlpSubtitleStrategy } from '@topskip/backend/extraction/yt-dlp-subtitle-strategy';
-import { SERVER_ANALYSIS_UNAVAILABLE_REASON } from '@topskip/common/server-analysis-contract';
 
 const SELECTED_DIAGNOSTIC_CODE = 'selected';
 
 /**
  * Internal result for one strategy attempt after pipeline validation.
  */
-type StrategyRunResult =
-    | {
-          status: 'selected';
-          artifact: TranscriptArtifact;
-          attempt: SubtitleExtractionAttempt;
-      }
+type StrategyRunResult = | {
+    status: 'selected';
+    artifact: TranscriptArtifact;
+    attempt: SubtitleExtractionAttempt;
+}
     | { status: 'failed'; attempt: SubtitleExtractionAttempt };
 
 /**
@@ -36,6 +35,11 @@ export class BackendSubtitleExtractionPipeline {
      * Runs configured strategies until one produces a valid transcript artifact.
      *
      * @param input - Video/version key, deterministic clock, and optional strategy list.
+     * @param input.videoId
+     * @param input.algorithmVersion
+     * @param input.nowMs
+     * @param input.strategies
+     *
      * @returns Selected transcript artifact or terminal unavailable diagnostics.
      */
     static async extract(input: {
@@ -44,9 +48,8 @@ export class BackendSubtitleExtractionPipeline {
         nowMs: number;
         strategies?: readonly SubtitleExtractionStrategy[];
     }): Promise<SubtitleExtractionPipelineResult> {
-        const strategies =
-            input.strategies ??
-            BackendSubtitleExtractionPipeline.defaultStrategies();
+        const strategies = input.strategies
+            ?? BackendSubtitleExtractionPipeline.defaultStrategies();
         const attempts: SubtitleExtractionAttempt[] = [];
 
         for (const strategy of strategies) {
@@ -93,6 +96,10 @@ export class BackendSubtitleExtractionPipeline {
      *
      * @param strategy - Extraction strategy to execute.
      * @param input - Video/version key and deterministic clock.
+     * @param input.videoId
+     * @param input.algorithmVersion
+     * @param input.nowMs
+     *
      * @returns Validated attempt data, plus selected artifact when available.
      */
     private static async runStrategy(
@@ -153,6 +160,7 @@ export class BackendSubtitleExtractionPipeline {
      * @param strategy - Strategy id stored on the attempt.
      * @param nowMs - Deterministic attempt timestamp.
      * @param artifact - Candidate artifact returned by the strategy.
+     *
      * @returns Selected artifact or a failed attempt with a stable reason.
      */
     private static selectArtifact(
@@ -160,10 +168,9 @@ export class BackendSubtitleExtractionPipeline {
         nowMs: number,
         artifact: TranscriptArtifact,
     ): StrategyRunResult {
-        const failureReason =
-            BackendSubtitleExtractionPipeline.findArtifactFailureReason(
-                artifact,
-            );
+        const failureReason = BackendSubtitleExtractionPipeline.findArtifactFailureReason(
+            artifact,
+        );
         if (failureReason !== null) {
             return {
                 status: 'failed',
@@ -208,14 +215,15 @@ export class BackendSubtitleExtractionPipeline {
      * Finds user-safe validation failures without reading untrusted error text.
      *
      * @param artifact - Candidate artifact returned by a strategy.
+     *
      * @returns Stable failure reason, or `null` when basic invariants pass.
      */
     private static findArtifactFailureReason(
         artifact: TranscriptArtifact,
     ): SubtitleExtractionFailureReason | null {
         if (
-            artifact.segments.length === 0 ||
-            artifact.transcriptText.trim().length === 0
+            artifact.segments.length === 0
+            || artifact.transcriptText.trim().length === 0
         ) {
             return SUBTITLE_EXTRACTION_FAILURE_REASON.EmptyTranscript;
         }
@@ -237,6 +245,7 @@ export class BackendSubtitleExtractionPipeline {
      * Converts extractor diagnostics into the public allow-listed unavailable vocabulary.
      *
      * @param attempts - Safe attempt history from all configured strategies.
+     *
      * @returns Public failure code without raw process details.
      */
     private static mapUnavailableCode(
@@ -261,8 +270,8 @@ export class BackendSubtitleExtractionPipeline {
             SERVER_ANALYSIS_UNAVAILABLE_REASON.VideoUnavailable,
         ] as const;
         return (
-            knownCodes.find((code) => codes.has(code)) ??
-            SERVER_ANALYSIS_UNAVAILABLE_REASON.CaptionExtractionFailed
+            knownCodes.find((code) => codes.has(code))
+            ?? SERVER_ANALYSIS_UNAVAILABLE_REASON.CaptionExtractionFailed
         );
     }
 
@@ -270,6 +279,11 @@ export class BackendSubtitleExtractionPipeline {
      * Builds a failed attempt with only stable diagnostic codes.
      *
      * @param input - Strategy name, timestamp, and safe failure code.
+     * @param input.strategy
+     * @param input.nowMs
+     * @param input.failureReason
+     * @param input.diagnosticCode
+     *
      * @returns Validated extraction attempt.
      */
     private static failedAttempt(input: {
@@ -293,6 +307,7 @@ export class BackendSubtitleExtractionPipeline {
      *
      * @param strategy - Strategy id stored on the attempt.
      * @param nowMs - Deterministic attempt timestamp.
+     *
      * @returns Validated timeout attempt.
      */
     private static timedOutAttempt(

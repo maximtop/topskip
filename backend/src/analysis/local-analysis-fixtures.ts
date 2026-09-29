@@ -4,8 +4,7 @@ import {
 } from '@topskip/backend/analysis/promo-analysis-types';
 import { LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS } from '@topskip/backend/extraction/local-transcript-fixtures';
 
-const PRIMARY_FIXTURE_RESPONSE =
-    '{"hasPromo":true,"promoBlocks":[{"startSec":4,"endSec":24,"confidence":"high"},{"startSec":35,"endSec":45,"confidence":"medium"}]}';
+const PRIMARY_FIXTURE_RESPONSE = '{"hasPromo":true,"promoBlocks":[{"startSec":4,"endSec":24,"confidence":"high"},{"startSec":35,"endSec":45,"confidence":"medium"}]}';
 const SECONDARY_FIXTURE_RESPONSE = '{"hasPromo":false,"confidence":"medium"}';
 const SAFE_DEFAULT_FIXTURE_RESPONSE = '{"hasPromo":false}';
 
@@ -19,13 +18,13 @@ export const LocalPromoAnalysisFixtureAdapter: BackendLlmAnalysisAdapter = {
     analyze: (input) => {
         let rawModelResponse: string;
         if (
-            input.transcriptArtifact.videoId ===
-            LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary
+            input.transcriptArtifact.videoId
+            === LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary
         ) {
             rawModelResponse = PRIMARY_FIXTURE_RESPONSE;
         } else if (
-            input.transcriptArtifact.videoId ===
-            LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Secondary
+            input.transcriptArtifact.videoId
+            === LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Secondary
         ) {
             rawModelResponse = SECONDARY_FIXTURE_RESPONSE;
         } else {

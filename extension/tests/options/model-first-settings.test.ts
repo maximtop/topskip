@@ -1,7 +1,23 @@
 import { MantineProvider } from '@mantine/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { AnalysisModePanel } from '@/options/AnalysisModePanel';
+import {
+    ConnectionsPanel,
+    type ConnectionTestState,
+} from '@/options/ConnectionsPanel';
+import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
+import { shouldShowByokSettings } from '@/options/options';
+import { ANALYSIS_MODE } from '@/shared/constants';
+import { topskipTheme } from '@/shared/theme';
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -47,8 +63,7 @@ vi.mock('@/shared/browser', () => ({
                     };
                     const message = messages[key] ?? key;
                     return Object.entries(substitutions ?? {}).reduce(
-                        (translated, [name, value]) =>
-                            translated.replaceAll(`%${name}%`, value),
+                        (translated, [name, value]) => translated.replaceAll(`%${name}%`, value),
                         message,
                     );
                 },
@@ -56,16 +71,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-import { AnalysisModePanel } from '@/options/AnalysisModePanel';
-import {
-    ConnectionsPanel,
-    type ConnectionTestState,
-} from '@/options/ConnectionsPanel';
-import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
-import { shouldShowByokSettings } from '@/options/options';
-import { ANALYSIS_MODE } from '@/shared/constants';
-import { topskipTheme } from '@/shared/theme';
 
 function render(element: ReturnType<typeof createElement>): string {
     return renderToStaticMarkup(

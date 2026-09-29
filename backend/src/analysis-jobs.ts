@@ -1,15 +1,5 @@
-import * as v from 'valibot';
 import { randomUUID } from 'node:crypto';
 
-import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
-import {
-    BackendPromoAnalysisWorker,
-    type BackendPromoAnalysisWorkerResult,
-} from '@topskip/backend/analysis/promo-analysis-worker';
-import type {
-    AnalysisRunArtifact,
-    BackendLlmAnalysisAdapter,
-} from '@topskip/backend/analysis/promo-analysis-types';
 import {
     noPromoResponseSchema,
     processingResponseSchema,
@@ -27,6 +17,13 @@ import {
     type UnavailableResponse,
     type ServerTranscriptIdentity,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
+import {
+    BackendPromoAnalysisWorker,
+    type BackendPromoAnalysisWorkerResult,
+} from '@topskip/backend/analysis/promo-analysis-worker';
+import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
 import { BackendSubtitleExtractionPipeline } from '@topskip/backend/extraction/subtitle-extraction-pipeline';
 import {
     transcriptArtifactSchema,
@@ -34,8 +31,6 @@ import {
     type SubtitleExtractionStrategy,
     type TranscriptArtifact,
 } from '@topskip/backend/extraction/subtitle-extraction-types';
-import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
-import { BackendPublicState } from '@topskip/backend/public-state';
 import {
     legacyNoPromoResponseSchema,
     legacyProcessingResponseSchema,
@@ -44,6 +39,13 @@ import {
     legacyUnavailableResponseSchema,
     type LegacyServerAnalysisResponse,
 } from '@topskip/backend/legacy/legacy-server-analysis-contract';
+import { BackendPublicState } from '@topskip/backend/public-state';
+import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
+
+import type {
+    AnalysisRunArtifact,
+    BackendLlmAnalysisAdapter,
+} from '@topskip/backend/analysis/promo-analysis-types';
 
 const DEFAULT_POLL_AFTER_SEC = 3;
 const FIXTURE_RESULT_EXPIRES_AT_MS = 4_102_444_800_000;
@@ -65,14 +67,12 @@ const ANALYSIS_JOB_STAGE = {
 /**
  * Job stages make cold-work progress inspectable without exposing internals over HTTP.
  */
-type AnalysisJobStage =
-    (typeof ANALYSIS_JOB_STAGE)[keyof typeof ANALYSIS_JOB_STAGE];
+type AnalysisJobStage = (typeof ANALYSIS_JOB_STAGE)[keyof typeof ANALYSIS_JOB_STAGE];
 
 /**
  * Terminal fixture states supported by the local deterministic completion hook.
  */
-export type FixtureCompletionStatus =
-    | 'ready'
+export type FixtureCompletionStatus = | 'ready'
     | 'no_promo'
     | 'unavailable'
     | 'error';
@@ -80,28 +80,25 @@ export type FixtureCompletionStatus =
 /**
  * Terminal response shapes that stop content-script polling.
  */
-export type BackendAnalysisTerminalResponse =
-    | ReadyResponse
+export type BackendAnalysisTerminalResponse = | ReadyResponse
     | NoPromoResponse
     | UnavailableResponse
     | TerminalErrorResponse
     | Extract<
-          LegacyServerAnalysisResponse,
-          { status: 'ready' | 'no_promo' | 'unavailable' | 'error' }
-      >;
+        LegacyServerAnalysisResponse,
+        { status: 'ready' | 'no_promo' | 'unavailable' | 'error' }
+    >;
 
 /**
  * Processing response may belong to the public upload or private legacy contract.
  */
-export type BackendAnalysisProcessingResponse =
-    | ProcessingResponse
+export type BackendAnalysisProcessingResponse = | ProcessingResponse
     | Extract<LegacyServerAnalysisResponse, { status: 'processing' }>;
 
 /**
  * Any response a stored local job can currently expose.
  */
-export type BackendAnalysisJobResponse =
-    | BackendAnalysisProcessingResponse
+export type BackendAnalysisJobResponse = | BackendAnalysisProcessingResponse
     | BackendAnalysisTerminalResponse;
 
 /**
@@ -112,7 +109,7 @@ export type ExactTranscriptIdentity = ServerTranscriptIdentity;
 /**
  * Upload jobs receive the already-validated artifact and never enter extraction.
  */
-export type UploadAnalysisJobStartInput = {
+export interface UploadAnalysisJobStartInput {
     source: 'extension_upload';
     identity: ExactTranscriptIdentity;
     transcriptArtifact: TranscriptArtifact;
@@ -123,12 +120,12 @@ export type UploadAnalysisJobStartInput = {
     durationSec?: number;
     analysisAdapter?: BackendLlmAnalysisAdapter;
     requestId?: string;
-};
+}
 
 /**
  * Explicit legacy jobs retain metadata-owned extraction for isolated operators.
  */
-export type LegacyAnalysisJobStartInput = {
+export interface LegacyAnalysisJobStartInput {
     source: 'legacy_yt_dlp';
     videoId: string;
     algorithmVersion: string;
@@ -140,35 +137,33 @@ export type LegacyAnalysisJobStartInput = {
     analysisAdapter?: BackendLlmAnalysisAdapter;
     extractionStrategies?: readonly SubtitleExtractionStrategy[];
     requestId?: string;
-};
+}
 
 /**
  * Process routing must choose one job source before calling the shared scheduler.
  */
-export type AnalysisJobStartInput =
-    | UploadAnalysisJobStartInput
+export type AnalysisJobStartInput = | UploadAnalysisJobStartInput
     | LegacyAnalysisJobStartInput;
 
 /**
  * Exact lookup is selected by startup mode before the in-memory map is consulted.
  */
-export type AnalysisJobFindInput =
+export type AnalysisJobFindInput = | {
+    source: 'extension_upload';
+    identity: ExactTranscriptIdentity;
+    installationHash: string;
+}
     | {
-          source: 'extension_upload';
-          identity: ExactTranscriptIdentity;
-          installationHash: string;
-      }
-    | {
-          source: 'legacy_yt_dlp';
-          videoId: string;
-          algorithmVersion: string;
-          installationHash: string;
-      };
+        source: 'legacy_yt_dlp';
+        videoId: string;
+        algorithmVersion: string;
+        installationHash: string;
+    };
 
 /**
  * Stable test-only diagnostics for proving extraction side effects.
  */
-type AnalysisJobDiagnostics = {
+interface AnalysisJobDiagnostics {
     stage: AnalysisJobStage;
     extractionAttempts: SubtitleExtractionAttempt[];
     selectedTranscriptArtifact: TranscriptArtifact | null;
@@ -176,12 +171,12 @@ type AnalysisJobDiagnostics = {
     completedAtMs: number | null;
     terminalStatus: BackendAnalysisTerminalResponse['status'] | null;
     joinedRequestCount: number;
-};
+}
 
 /**
  * Internal in-memory record keyed by video id and algorithm version.
  */
-type AnalysisJobRecord = {
+interface AnalysisJobRecord {
     source: 'extension_upload' | 'legacy_yt_dlp';
     identity: ExactTranscriptIdentity | null;
     jobId: string;
@@ -206,7 +201,7 @@ type AnalysisJobRecord = {
     processingResponse: BackendAnalysisProcessingResponse;
     terminalResponse: BackendAnalysisTerminalResponse | null;
     extractionPromise: Promise<void> | null;
-};
+}
 
 /**
  * Owns local cold-miss jobs for the development backend; static API only.
@@ -230,7 +225,7 @@ export class BackendAnalysisJobs {
     /**
      * Bounded queued starters avoid detached work growing without limit.
      */
-    private static readonly queuedJobStarts: Array<() => void> = [];
+    private static readonly queuedJobStarts: (() => void)[] = [];
 
     /**
      * Reports whether another cold job can be admitted without overflowing the queue.
@@ -256,12 +251,13 @@ export class BackendAnalysisJobs {
      * Starts or joins a local job for a cold server-analysis miss.
      *
      * @param input - Validated video/version key and creation timestamp.
+     *
      * @returns Existing or newly created processing/terminal response.
      */
     static start(input: AnalysisJobStartInput): BackendAnalysisJobResponse {
         BackendAnalysisJobs.pruneTerminalJobs(input.nowMs);
         const isUpload = BackendAnalysisJobs.isUploadStartInput(input);
-        const source = input.source;
+        const { source } = input;
         const identity = isUpload ? input.identity : null;
         const videoId = isUpload ? input.identity.videoId : input.videoId;
         const algorithmVersion = isUpload
@@ -270,9 +266,9 @@ export class BackendAnalysisJobs {
         const ownerInstallationHash = input.installationHash;
         const selectedTranscriptArtifact = isUpload
             ? BackendAnalysisJobs.validateUploadArtifact(
-                    input.identity,
-                    input.transcriptArtifact,
-                )
+                input.identity,
+                input.transcriptArtifact,
+            )
             : null;
         const jobKey = BackendAnalysisJobs.buildJobKey(input);
         const existingJobId = BackendAnalysisJobs.jobIdsByKey.get(jobKey);
@@ -339,6 +335,7 @@ export class BackendAnalysisJobs {
      * Looks up an existing job by the dedupe key without creating work.
      *
      * @param input - Validated video/version key.
+     *
      * @returns Current job response, or `null` when no job exists.
      */
     static findExisting(
@@ -370,6 +367,9 @@ export class BackendAnalysisJobs {
      *
      * @param jobId - Deterministic local job id returned by `start`.
      * @param options - Optional deterministic clock used by tests.
+     * @param options.nowMs
+     * @param options.ownerInstallationHash
+     *
      * @returns Current job response, or `null` when unknown.
      */
     static getStatus(
@@ -402,6 +402,10 @@ export class BackendAnalysisJobs {
      * Moves a local job to a deterministic terminal fixture state.
      *
      * @param input - Job id, requested terminal state, and completion timestamp.
+     * @param input.jobId
+     * @param input.status
+     * @param input.nowMs
+     *
      * @returns Terminal response, or `null` when the job id is unknown.
      */
     static completeFixture(input: {
@@ -417,8 +421,7 @@ export class BackendAnalysisJobs {
             return record.terminalResponse;
         }
 
-        const terminalResponse =
-            BackendAnalysisJobs.buildFixtureTerminalResponse(record, input);
+        const terminalResponse = BackendAnalysisJobs.buildFixtureTerminalResponse(record, input);
         record.completedAtMs = input.nowMs;
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         record.terminalResponse = terminalResponse;
@@ -457,6 +460,7 @@ export class BackendAnalysisJobs {
      * Exposes extraction diagnostics without adding them to the HTTP contract.
      *
      * @param jobId - Deterministic local job id returned by `start`.
+     *
      * @returns Test diagnostics for the job, or `null` when unknown.
      */
     static getDiagnosticsForTests(
@@ -482,6 +486,7 @@ export class BackendAnalysisJobs {
      * Waits for background extraction in tests without exposing work details to the HTTP API.
      *
      * @param jobId - Local job identifier returned by a processing response.
+     *
      * @returns Current job response after extraction, or `null` for an unknown job.
      */
     static async waitForExtractionForTests(
@@ -500,6 +505,7 @@ export class BackendAnalysisJobs {
      *
      * @param record - New in-memory job record to update.
      * @param nowMs - Deterministic extraction timestamp.
+     *
      * @returns Completion after analysis or a terminal legacy extraction result.
      */
     private static async runJob(
@@ -533,10 +539,9 @@ export class BackendAnalysisJobs {
             record.extractionAttempts = extraction.attempts;
 
             if (extraction.status === 'selected') {
-                const durationFailureCode =
-                    BackendAnalysisJobs.authoritativeDurationFailureCode(
-                        extraction.artifact,
-                    );
+                const durationFailureCode = BackendAnalysisJobs.authoritativeDurationFailureCode(
+                    extraction.artifact,
+                );
                 if (durationFailureCode !== null) {
                     record.selectedTranscriptArtifact = null;
                     BackendAnalysisJobs.completeUnavailable(
@@ -564,8 +569,7 @@ export class BackendAnalysisJobs {
                 });
                 record.stage = ANALYSIS_JOB_STAGE.AwaitingAnalysis;
                 record.selectedTranscriptArtifact = extraction.artifact;
-                record.durationSec =
-                    extraction.artifact.videoDurationSec ?? record.durationSec;
+                record.durationSec = extraction.artifact.videoDurationSec ?? record.durationSec;
                 await BackendAnalysisJobs.runAnalysis(record, Date.now());
                 return;
             }
@@ -599,6 +603,7 @@ export class BackendAnalysisJobs {
      *
      * @param record - In-memory job record to complete.
      * @param nowMs - Deterministic analysis timestamp.
+     *
      * @returns Terminal worker response.
      */
     private static async runAnalysis(
@@ -620,18 +625,16 @@ export class BackendAnalysisJobs {
             videoId: record.videoId,
             jobId: record.jobId,
         });
-        const reservation =
-            process.env.NODE_ENV === 'test'
-                ? { reservationId: 'test-budget', reservedUsd: 1 }
-                : BackendPublicState.reserveModelBudget({ nowMs });
+        const reservation = process.env.NODE_ENV === 'test'
+            ? { reservationId: 'test-budget', reservedUsd: 1 }
+            : BackendPublicState.reserveModelBudget({ nowMs });
         if (reservation === null) {
             record.completedAtMs = nowMs;
             record.stage = ANALYSIS_JOB_STAGE.Complete;
-            record.terminalResponse =
-                BackendAnalysisJobs.buildTerminalErrorResponse(
-                    record,
-                    SERVER_ANALYSIS_ERROR_CODE.BudgetExhausted,
-                );
+            record.terminalResponse = BackendAnalysisJobs.buildTerminalErrorResponse(
+                record,
+                SERVER_ANALYSIS_ERROR_CODE.BudgetExhausted,
+            );
             BackendAnalysisJobs.persistArtifactRecordSafely(record, nowMs);
             return record.terminalResponse;
         }
@@ -711,9 +714,9 @@ export class BackendAnalysisJobs {
             return;
         }
         if (
-            record.terminalResponse.status === 'ready' &&
-            (record.selectedTranscriptArtifact === null ||
-                record.analysisRun === null)
+            record.terminalResponse.status === 'ready'
+            && (record.selectedTranscriptArtifact === null
+                || record.analysisRun === null)
         ) {
             // Fixture ready completions are terminal test responses, not cacheable analysis artifacts.
             return;
@@ -753,10 +756,10 @@ export class BackendAnalysisJobs {
                 ...(record.identity === null
                     ? {}
                     : {
-                            languageCode: record.identity.languageCode,
-                            transcriptHash: record.identity.transcriptHash,
-                            sourceType: 'extension_caption_upload' as const,
-                        }),
+                        languageCode: record.identity.languageCode,
+                        transcriptHash: record.identity.transcriptHash,
+                        sourceType: 'extension_caption_upload' as const,
+                    }),
             },
             job: {
                 jobId: record.jobId,
@@ -811,11 +814,10 @@ export class BackendAnalysisJobs {
 
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         record.completedAtMs = completedAtMs;
-        record.terminalResponse =
-            BackendAnalysisJobs.buildTerminalErrorResponse(
-                record,
-                SERVER_ANALYSIS_ERROR_CODE.InternalError,
-            );
+        record.terminalResponse = BackendAnalysisJobs.buildTerminalErrorResponse(
+            record,
+            SERVER_ANALYSIS_ERROR_CODE.InternalError,
+        );
         BackendAnalysisJobs.attachSupportIdSafely(
             record,
             SERVER_ANALYSIS_ERROR_CODE.InternalError,
@@ -832,8 +834,8 @@ export class BackendAnalysisJobs {
     private static pruneTerminalJobs(nowMs: number): void {
         for (const [jobId, record] of BackendAnalysisJobs.jobsById) {
             if (
-                record.completedAtMs === null ||
-                nowMs - record.completedAtMs < TERMINAL_JOB_RETENTION_MS
+                record.completedAtMs === null
+                || nowMs - record.completedAtMs < TERMINAL_JOB_RETENTION_MS
             ) {
                 continue;
             }
@@ -846,6 +848,7 @@ export class BackendAnalysisJobs {
      * Derives the stable job dedupe key used by repeated cold starts.
      *
      * @param input - Validated video/version key.
+     *
      * @returns Internal map key.
      */
     private static buildJobKey(
@@ -870,6 +873,7 @@ export class BackendAnalysisJobs {
      * Derives a human-readable deterministic local job id.
      *
      * @param input - Validated video/version key.
+     *
      * @returns Stable local job id.
      */
     private static buildJobId(input: AnalysisJobStartInput): string {
@@ -885,6 +889,7 @@ export class BackendAnalysisJobs {
      * Narrows the source-tagged union before reading authoritative upload identity.
      *
      * @param input - Candidate job start input.
+     *
      * @returns Whether the input owns an uploaded transcript.
      */
     private static isUploadStartInput(
@@ -898,6 +903,7 @@ export class BackendAnalysisJobs {
      *
      * @param identity - Backend-computed canonical identity.
      * @param artifact - Validated uploaded transcript candidate.
+     *
      * @returns Parsed canonical upload artifact.
      */
     private static validateUploadArtifact(
@@ -906,11 +912,11 @@ export class BackendAnalysisJobs {
     ): TranscriptArtifact {
         const parsed = v.parse(transcriptArtifactSchema, artifact);
         if (
-            parsed.sourceType !== 'extension_caption_upload' ||
-            parsed.videoId !== identity.videoId ||
-            parsed.algorithmVersion !== identity.algorithmVersion ||
-            parsed.languageCode !== identity.languageCode ||
-            parsed.transcriptHash !== identity.transcriptHash
+            parsed.sourceType !== 'extension_caption_upload'
+            || parsed.videoId !== identity.videoId
+            || parsed.algorithmVersion !== identity.algorithmVersion
+            || parsed.languageCode !== identity.languageCode
+            || parsed.transcriptHash !== identity.transcriptHash
         ) {
             throw new Error(
                 'Uploaded transcript artifact does not match its authoritative identity.',
@@ -923,6 +929,12 @@ export class BackendAnalysisJobs {
      * Builds the mode-specific processing envelope from stored authoritative state.
      *
      * @param input - Stored source, identity, and opaque job id.
+     * @param input.source
+     * @param input.identity
+     * @param input.videoId
+     * @param input.algorithmVersion
+     * @param input.jobId
+     *
      * @returns Strict processing response for the selected process mode.
      */
     private static buildProcessingResponse(input: {
@@ -957,6 +969,7 @@ export class BackendAnalysisJobs {
      *
      * @param record - Owning job with authoritative source and identity.
      * @param response - Validated worker result containing only safe terminal data.
+     *
      * @returns Strict mode-specific terminal response.
      */
     private static mapWorkerTerminalResponse(
@@ -973,7 +986,7 @@ export class BackendAnalysisJobs {
                     return v.parse(legacyTerminalErrorResponseSchema, response);
             }
         }
-        const identity = record.identity;
+        const { identity } = record;
         if (identity === null) {
             throw new Error('Upload worker response requires identity.');
         }
@@ -1008,6 +1021,7 @@ export class BackendAnalysisJobs {
      *
      * @param record - Stored job that owns the response identity.
      * @param code - Stable safe terminal error code.
+     *
      * @returns Strict mode-specific error response.
      */
     private static buildTerminalErrorResponse(
@@ -1037,6 +1051,7 @@ export class BackendAnalysisJobs {
      * Makes missing upload identity an internal invariant failure, never a partial response.
      *
      * @param record - Upload job record expected to own complete identity.
+     *
      * @returns Stored exact transcript identity.
      */
     private static requireUploadIdentity(
@@ -1053,6 +1068,8 @@ export class BackendAnalysisJobs {
      *
      * @param record - Stored job record to complete.
      * @param input - Requested terminal fixture state.
+     * @param input.status
+     *
      * @returns Validated terminal response.
      */
     private static buildFixtureTerminalResponse(
@@ -1153,6 +1170,7 @@ export class BackendAnalysisJobs {
      * Builds the fixture result id exposed in terminal responses.
      *
      * @param record - Stored job record to identify.
+     *
      * @returns Stable source result id.
      */
     private static buildSourceResultId(record: AnalysisJobRecord): string {
@@ -1166,6 +1184,7 @@ export class BackendAnalysisJobs {
      *
      * @param record - Newly admitted job record.
      * @param nowMs - Creation timestamp forwarded to extraction.
+     *
      * @returns Promise resolved after the queued or immediate job completes.
      */
     private static scheduleJob(
@@ -1196,6 +1215,7 @@ export class BackendAnalysisJobs {
      * Rejects yt-dlp artifacts that cannot prove an ordinary VOD duration.
      *
      * @param artifact - Selected transcript candidate from the extraction pipeline.
+     *
      * @returns Stable duration failure or `null` when authoritative metadata is usable.
      */
     private static authoritativeDurationFailureCode(
@@ -1206,9 +1226,9 @@ export class BackendAnalysisJobs {
         }
         const durationSec = artifact.videoDurationSec;
         if (
-            durationSec === undefined ||
-            !Number.isFinite(durationSec) ||
-            durationSec <= 0
+            durationSec === undefined
+            || !Number.isFinite(durationSec)
+            || durationSec <= 0
         ) {
             return SERVER_ANALYSIS_UNAVAILABLE_REASON.VideoUnavailable;
         }
@@ -1232,19 +1252,18 @@ export class BackendAnalysisJobs {
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         record.selectedTranscriptArtifact = null;
         record.completedAtMs = completedAtMs;
-        record.terminalResponse =
-            record.source === 'legacy_yt_dlp'
-                ? v.parse(legacyUnavailableResponseSchema, {
-                        status: 'unavailable',
-                        videoId: record.videoId,
-                        algorithmVersion: record.algorithmVersion,
-                        error: { code },
-                    })
-                : v.parse(unavailableResponseSchema, {
-                        status: 'unavailable',
-                        ...BackendAnalysisJobs.requireUploadIdentity(record),
-                        error: { code },
-                    });
+        record.terminalResponse = record.source === 'legacy_yt_dlp'
+            ? v.parse(legacyUnavailableResponseSchema, {
+                status: 'unavailable',
+                videoId: record.videoId,
+                algorithmVersion: record.algorithmVersion,
+                error: { code },
+            })
+            : v.parse(unavailableResponseSchema, {
+                status: 'unavailable',
+                ...BackendAnalysisJobs.requireUploadIdentity(record),
+                error: { code },
+            });
         if (
             code === SERVER_ANALYSIS_UNAVAILABLE_REASON.CaptionExtractionFailed
         ) {
@@ -1269,11 +1288,11 @@ export class BackendAnalysisJobs {
         code: string,
         nowMs: number,
     ): void {
-        const terminalResponse = record.terminalResponse;
+        const { terminalResponse } = record;
         if (
-            terminalResponse === null ||
-            (terminalResponse.status !== 'error' &&
-                terminalResponse.status !== 'unavailable')
+            terminalResponse === null
+            || (terminalResponse.status !== 'error'
+                && terminalResponse.status !== 'unavailable')
         ) {
             return;
         }
@@ -1295,14 +1314,15 @@ export class BackendAnalysisJobs {
      * Reads optional support correlation after a best-effort terminal write.
      *
      * @param record - Completed job record.
+     *
      * @returns Persisted support identifier when one was attached.
      */
     private static readTerminalSupportId(
         record: AnalysisJobRecord,
     ): string | undefined {
-        const terminalResponse = record.terminalResponse;
-        return terminalResponse?.status === 'error' ||
-            terminalResponse?.status === 'unavailable'
+        const { terminalResponse } = record;
+        return terminalResponse?.status === 'error'
+            || terminalResponse?.status === 'unavailable'
             ? terminalResponse.error.supportId
             : undefined;
     }
@@ -1313,6 +1333,7 @@ export class BackendAnalysisJobs {
      * @param code - Stable public failure code.
      * @param record - Owning job metadata.
      * @param nowMs - Failure timestamp.
+     *
      * @returns Opaque support identifier only when persistence succeeded.
      */
     private static recordSupportFailureSafely(

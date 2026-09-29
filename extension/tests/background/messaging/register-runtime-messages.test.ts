@@ -1,4 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+} from '@/shared/messages';
+
+import { makeContentSender, makeOptionsSender } from '../../helpers/runtime-senders';
 
 // The real sender-trust check runs inside the dispatcher, so the mocked
 // runtime id must match the id the sender helpers stamp on their senders.
@@ -98,14 +114,6 @@ vi.mock('@/background/messaging/server-analysis-runtime-messages', () => ({
 vi.mock('@/background/server-analysis-issue-report', () => ({
     ServerAnalysisIssueReport: {},
 }));
-
-import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    TOPSKIP_MESSAGE,
-} from '@/shared/messages';
-import { makeContentSender, makeOptionsSender } from '../../helpers/runtime-senders';
 
 type Listener = (message: unknown, sender: unknown) => Promise<unknown> | undefined;
 

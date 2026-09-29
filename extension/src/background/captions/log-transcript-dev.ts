@@ -1,5 +1,6 @@
-import type { CaptionSegment } from '@topskip/common/caption-types';
 import { LOG_PREFIX_CAPTIONS } from '@/shared/constants';
+
+import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * Exposes capture timing without copying user-visible captions into logs.
@@ -20,10 +21,9 @@ export function logTranscriptForDeveloper(
     }
 
     const firstStartSec = segments.reduce<number | undefined>(
-        (earliest, segment) =>
-            earliest === undefined
-                ? segment.startSec
-                : Math.min(earliest, segment.startSec),
+        (earliest, segment) => (earliest === undefined
+            ? segment.startSec
+            : Math.min(earliest, segment.startSec)),
         undefined,
     );
     const lastEndSec = segments.reduce<number | undefined>(

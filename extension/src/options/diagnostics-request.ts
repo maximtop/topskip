@@ -60,21 +60,21 @@ const okBundleReplySchema = v.object({
 /**
  * Most recent part of the bundle plus the store revision it was read at.
  */
-export type DebugLogPreviewResult = {
+export interface DebugLogPreviewResult {
     text: string;
     shownBytes: number;
     totalBytes: number;
     revision: number;
-};
+}
 
 /**
  * Full bundle snapshot; `exportedAtMs` is the instant written in its header
  * and used for the download file name.
  */
-export type DebugLogBundleResult = {
+export interface DebugLogBundleResult {
     text: string;
     exportedAtMs: number;
-};
+}
 
 /**
  * Narrows an `{ ok: true, … }` reply or throws, so refusal, malformed shape
@@ -83,6 +83,7 @@ export type DebugLogBundleResult = {
  *
  * @param schema - Reply schema.
  * @param reply - Untyped worker reply.
+ *
  * @returns Parsed reply.
  */
 function parseOkReply<TSchema extends v.GenericSchema>(
@@ -147,6 +148,7 @@ export async function requestDebugLogBundle(): Promise<DebugLogBundleResult> {
  * Turns the switch on or off; the background reply is authoritative.
  *
  * @param enabled - Requested switch state.
+ *
  * @returns Status after the change.
  */
 export async function requestSetDebugLogging(

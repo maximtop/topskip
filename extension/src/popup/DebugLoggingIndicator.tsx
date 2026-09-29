@@ -1,13 +1,14 @@
 import { Text } from '@mantine/core';
+
 import type { ReactElement } from 'react';
 
 /**
  * Label resolved by the popup view model; `null` means nothing renders
  * (switch off, or background status not yet known).
  */
-type DebugLoggingIndicatorProps = {
+interface DebugLoggingIndicatorProps {
     label: string | null;
-};
+}
 
 /**
  * Non-interactive status line telling the user a persistent, id-bearing log
@@ -17,6 +18,7 @@ type DebugLoggingIndicatorProps = {
  * unaffected; the label wraps rather than overflowing.
  *
  * @param props - Localized label or `null`.
+ *
  * @returns Status text, or `null` when there is nothing to announce.
  */
 export function DebugLoggingIndicator(

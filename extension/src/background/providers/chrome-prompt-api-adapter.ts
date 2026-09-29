@@ -146,10 +146,8 @@ export class ChromePromptApiAdapter implements LlmProviderAdapter {
         }
         const { session: s } = session;
         try {
-            const sessionContextUsage: number =
-                typeof s.contextUsage === 'number' ? s.contextUsage : 0;
-            const transcriptBudget =
-                s.contextWindow - sessionContextUsage - RESPONSE_TOKEN_RESERVE;
+            const sessionContextUsage: number = typeof s.contextUsage === 'number' ? s.contextUsage : 0;
+            const transcriptBudget = s.contextWindow - sessionContextUsage - RESPONSE_TOKEN_RESERVE;
             if (transcriptBudget <= 0) {
                 return 0;
             }
@@ -174,6 +172,7 @@ export class ChromePromptApiAdapter implements LlmProviderAdapter {
      * Creates a Chrome Built-in AI session with the promo system prompt.
      *
      * @param signal - Optional abort signal
+     *
      * @returns Session or error
      */
     private async createLanguageModelSession(
@@ -223,6 +222,7 @@ export class ChromePromptApiAdapter implements LlmProviderAdapter {
      * the transcript; returns `tooLarge` when it does not fit.
      *
      * @param params - Transcript and context for the analysis.
+     *
      * @returns Detection result or error.
      */
     async analyzeTranscript(
@@ -232,19 +232,17 @@ export class ChromePromptApiAdapter implements LlmProviderAdapter {
         if (!created.ok) {
             return { ok: false, error: created.error };
         }
-        const session = created.session;
+        const { session } = created;
 
         try {
-            const sessionContextUsage: number =
-                typeof session.contextUsage === 'number'
-                    ? session.contextUsage
-                    : 0;
-            const transcriptBudget =
-                session.contextWindow -
-                sessionContextUsage -
-                RESPONSE_TOKEN_RESERVE;
+            const sessionContextUsage: number = typeof session.contextUsage === 'number'
+                ? session.contextUsage
+                : 0;
+            const transcriptBudget = session.contextWindow
+                - sessionContextUsage
+                - RESPONSE_TOKEN_RESERVE;
 
-            const transcript = params.transcript;
+            const { transcript } = params;
             if (transcript.length === 0) {
                 return {
                     ok: true,

@@ -1,8 +1,9 @@
 import { ChromePromptApiAdapter } from '@/background/providers/chrome-prompt-api-adapter';
-import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
 import { OpenAiAdapter } from '@/background/providers/openai-adapter';
 import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
 import { ProviderRegistry } from '@/background/providers/provider-registry';
+
+import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
 
 /**
  * Adapters that are always selectable.

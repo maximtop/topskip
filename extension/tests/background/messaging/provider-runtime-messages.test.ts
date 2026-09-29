@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     PROVIDER_AVAILABILITY,
@@ -54,8 +61,7 @@ vi.mock('@/background/providers/default-registry', () => ({
     defaultRegistry: new ProviderRegistry([]),
 }));
 
-const { ProviderRuntimeMessages } =
-    await import('@/background/messaging/provider-runtime-messages');
+const { ProviderRuntimeMessages } = await import('@/background/messaging/provider-runtime-messages');
 
 function stubAdapter(
     id: 'openrouter' | 'chrome-prompt-api',
@@ -70,11 +76,10 @@ function stubAdapter(
         analyzeTranscript: vi.fn(
             (
                 _params: AnalyzeTranscriptParams,
-            ): Promise<AnalyzeTranscriptResult> =>
-                Promise.resolve({
-                    ok: false,
-                    error: 'unused',
-                }),
+            ): Promise<AnalyzeTranscriptResult> => Promise.resolve({
+                ok: false,
+                error: 'unused',
+            }),
         ),
     };
 }
@@ -156,8 +161,8 @@ describe('ProviderRuntimeMessages', () => {
     });
 
     it(
-        'GET_ACTIVE_PROVIDER returns "Gemini Nano" as modelName ' +
-            'for chrome-prompt-api',
+        'GET_ACTIVE_PROVIDER returns "Gemini Nano" as modelName '
+            + 'for chrome-prompt-api',
         async () => {
             mocks.prefsLoad.mockResolvedValueOnce({
                 enabled: true,
@@ -176,8 +181,7 @@ describe('ProviderRuntimeMessages', () => {
     );
 
     it('SET_ACTIVE_PROVIDER writes prefs and broadcasts updates', async () => {
-        const res =
-            await ProviderRuntimeMessages.handleSetActive('chrome-prompt-api');
+        const res = await ProviderRuntimeMessages.handleSetActive('chrome-prompt-api');
 
         expect(res).toEqual({ ok: true });
         expect(mocks.prefsSave).toHaveBeenCalledWith({
@@ -198,8 +202,7 @@ describe('ProviderRuntimeMessages', () => {
     });
 
     it('SET_ACTIVE_PROVIDER rejects an unknown provider id', async () => {
-        const res =
-            await ProviderRuntimeMessages.handleSetActive('does-not-exist');
+        const res = await ProviderRuntimeMessages.handleSetActive('does-not-exist');
 
         expect(res).toEqual({
             ok: false,

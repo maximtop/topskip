@@ -1,5 +1,5 @@
-import http from 'node:http';
 import fs from 'node:fs';
+import http from 'node:http';
 
 const PORT = 9222;
 const LOG_FILE = 'debug.log';
@@ -26,11 +26,10 @@ const server = http.createServer(
             });
             req.on('end', () => {
                 try {
-                    const data: { source: string; message: string } =
-                        JSON.parse(body) as {
-                            source: string;
-                            message: string;
-                        };
+                    const data: { source: string; message: string } = JSON.parse(body) as {
+                        source: string;
+                        message: string;
+                    };
                     const ts = new Date().toISOString();
                     const line = `[${ts}] [${data.source}] ${data.message}\n`;
                     fs.appendFileSync(LOG_FILE, line);

@@ -1,36 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import * as v from 'valibot';
 
-import {
-    BACKEND_REQUEST_COST_CLASS,
-    BackendApiProtection,
-} from '@topskip/backend/api-protection';
-import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
-import {
-    BackendAnalysisJobs,
-    type BackendAnalysisJobResponse,
-    type BackendAnalysisTerminalResponse,
-    type ExactTranscriptIdentity,
-} from '@topskip/backend/analysis-jobs';
-import {
-    BackendLegacyServerAnalysis,
-    type BackendLegacyAnalysisResult,
-} from '@topskip/backend/legacy/legacy-server-analysis';
-import {
-    legacyServerAnalysisResponseSchema,
-    type LegacyServerAnalysisResponse,
-} from '@topskip/backend/legacy/legacy-server-analysis-contract';
-import { BackendServerAnalysisBoundary } from '@topskip/backend/server-analysis-boundary';
-import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
-import {
-    BACKEND_CAPTION_SOURCE,
-    type BackendCaptionSource,
-} from '@topskip/backend/server-config';
-import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
-import {
-    transcriptArtifactSchema,
-    type TranscriptArtifact,
-} from '@topskip/backend/extraction/subtitle-extraction-types';
 import {
     CaptionTranscriptCanonicalizer,
     type CanonicalTranscriptFailureCode,
@@ -46,6 +15,38 @@ import {
     type ServerAnalysisRequest,
     type ServerAnalysisResponse,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
+import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
+import {
+    BackendAnalysisJobs,
+    type BackendAnalysisJobResponse,
+    type BackendAnalysisTerminalResponse,
+    type ExactTranscriptIdentity,
+} from '@topskip/backend/analysis-jobs';
+import {
+    BACKEND_REQUEST_COST_CLASS,
+    BackendApiProtection,
+} from '@topskip/backend/api-protection';
+import {
+    transcriptArtifactSchema,
+    type TranscriptArtifact,
+} from '@topskip/backend/extraction/subtitle-extraction-types';
+import {
+    BackendLegacyServerAnalysis,
+    type BackendLegacyAnalysisResult,
+} from '@topskip/backend/legacy/legacy-server-analysis';
+import {
+    legacyServerAnalysisResponseSchema,
+    type LegacyServerAnalysisResponse,
+} from '@topskip/backend/legacy/legacy-server-analysis-contract';
+import { BackendServerAnalysisBoundary } from '@topskip/backend/server-analysis-boundary';
+import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
+import {
+    BACKEND_CAPTION_SOURCE,
+    type BackendCaptionSource,
+} from '@topskip/backend/server-config';
+import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
 
 const LOCAL_INSTALLATION_HASH = 'local-development';
 const LOCAL_IP_HASH = 'local-development';
@@ -58,21 +59,20 @@ const fixtureCompletionRequestSchema = v.strictObject({
 /**
  * HTTP result shape returned before or during asynchronous backend analysis.
  */
-export type BackendApiResult =
-    | {
-          statusCode: 200 | 202 | 400 | 403 | 404 | 422 | 429;
-          body: ServerAnalysisResponse | LegacyServerAnalysisResponse;
-      }
+export type BackendApiResult = | {
+    statusCode: 200 | 202 | 400 | 403 | 404 | 422 | 429;
+    body: ServerAnalysisResponse | LegacyServerAnalysisResponse;
+}
     | BackendLegacyAnalysisResult;
 
 /**
  * Hashed request identities connect public quota and ownership checks without raw credentials.
  */
-export type BackendAnalysisRequestContext = {
+export interface BackendAnalysisRequestContext {
     installationHash: string;
     ipHash: string;
     requestId?: string;
-};
+}
 
 /**
  * Owns process-selected analysis routing while keeping upload and legacy paths isolated; static API only.
@@ -92,6 +92,10 @@ export class BackendAnalysisApi {
      *
      * @param raw - Untrusted JSON body from the HTTP server.
      * @param options - Deterministic clock, ownership context, and immutable source mode.
+     * @param options.nowMs
+     * @param options.context
+     * @param options.captionSource
+     *
      * @returns Typed API result for the HTTP layer.
      */
     static handleAnalysisRequest(
@@ -103,8 +107,7 @@ export class BackendAnalysisApi {
         } = {},
     ): BackendApiResult {
         const nowMs = options.nowMs ?? Date.now();
-        const captionSource =
-            options.captionSource ?? BACKEND_CAPTION_SOURCE.ExtensionUpload;
+        const captionSource = options.captionSource ?? BACKEND_CAPTION_SOURCE.ExtensionUpload;
 
         if (BackendAnalysisApi.hasInvalidVideoId(raw)) {
             return {
@@ -115,10 +118,9 @@ export class BackendAnalysisApi {
             };
         }
 
-        const parsed =
-            BackendServerAnalysisBoundary.forSource(captionSource).parseRequest(
-                raw,
-            );
+        const parsed = BackendServerAnalysisBoundary.forSource(captionSource).parseRequest(
+            raw,
+        );
         if (!parsed.success) {
             return {
                 statusCode: 400,
@@ -170,6 +172,9 @@ export class BackendAnalysisApi {
      *
      * @param jobId - Opaque job id from a previous processing response.
      * @param options - Optional deterministic clock and installation ownership hash.
+     * @param options.nowMs
+     * @param options.installationHash
+     *
      * @returns Current job state or typed not-found error.
      */
     static handleJobStatusRequest(
@@ -200,6 +205,7 @@ export class BackendAnalysisApi {
      *
      * @param jobId - Opaque job id from a previous processing response.
      * @param raw - Untrusted fixture completion request body.
+     *
      * @returns Terminal job response or typed request/not-found error.
      */
     static handleFixtureCompletionRequest(
@@ -237,6 +243,10 @@ export class BackendAnalysisApi {
      *
      * @param request - Strict public upload request.
      * @param options - Hashed ownership and deterministic request metadata.
+     * @param options.nowMs
+     * @param options.context
+     * @param options.publicContext
+     *
      * @returns Exact cache, join, admission, or new-job response.
      */
     private static handleUpload(
@@ -271,8 +281,7 @@ export class BackendAnalysisApi {
             nowMs: options.nowMs,
         });
 
-        const artifact =
-            AnalysisArtifactStore.findLatestCacheableExact(identity);
+        const artifact = AnalysisArtifactStore.findLatestCacheableExact(identity);
         if (artifact !== null) {
             BackendServerAnalysisLog.info('backend-cache-hit', {
                 requestId: options.context.requestId,
@@ -331,9 +340,9 @@ export class BackendAnalysisApi {
             nowMs: options.nowMs,
             ...(options.publicContext
                 ? {
-                        installationHash: options.context.installationHash,
-                        ipHash: options.context.ipHash,
-                    }
+                    installationHash: options.context.installationHash,
+                    ipHash: options.context.ipHash,
+                }
                 : {}),
         });
         if (!protection.allowed) {
@@ -375,6 +384,14 @@ export class BackendAnalysisApi {
      * Builds the only transcript artifact allowed to enter default-mode model analysis.
      *
      * @param input - Canonical request data and its authoritative identity.
+     * @param input.request
+     * @param input.identity
+     * @param input.canonical
+     * @param input.canonical.languageCode
+     * @param input.canonical.segments
+     * @param input.canonical.timelineEndSec
+     * @param input.nowMs
+     *
      * @returns Strict canonical extension-caption artifact.
      */
     private static buildUploadArtifact(input: {
@@ -410,6 +427,7 @@ export class BackendAnalysisApi {
      * @param identity - Exact identity computed from canonical server input.
      * @param response - Candidate cache or in-memory job response.
      * @param statusCode - HTTP status selected by the orchestration state.
+     *
      * @returns Strict public response with no request-echo identity fields.
      */
     private static uploadResponseResult(
@@ -419,13 +437,13 @@ export class BackendAnalysisApi {
     ): BackendApiResult {
         const body = v.parse(serverAnalysisResponseEmissionSchema, response);
         if (
-            !('videoId' in body) ||
-            !('languageCode' in body) ||
-            !('transcriptHash' in body) ||
-            body.videoId !== identity.videoId ||
-            body.algorithmVersion !== identity.algorithmVersion ||
-            body.languageCode !== identity.languageCode ||
-            body.transcriptHash !== identity.transcriptHash
+            !('videoId' in body)
+            || !('languageCode' in body)
+            || !('transcriptHash' in body)
+            || body.videoId !== identity.videoId
+            || body.algorithmVersion !== identity.algorithmVersion
+            || body.languageCode !== identity.languageCode
+            || body.transcriptHash !== identity.transcriptHash
         ) {
             throw new Error(
                 'Upload response does not match its authoritative transcript identity.',
@@ -438,15 +456,15 @@ export class BackendAnalysisApi {
      * Parses source-tagged polling output without allowing one contract into the other mode.
      *
      * @param response - Current response from an owner-authorized job.
+     *
      * @returns Strict response and matching asynchronous HTTP status.
      */
     private static jobResponseResult(
         response: BackendAnalysisJobResponse | BackendAnalysisTerminalResponse,
     ): BackendApiResult {
-        const body =
-            'languageCode' in response && 'transcriptHash' in response
-                ? v.parse(serverAnalysisResponseEmissionSchema, response)
-                : v.parse(legacyServerAnalysisResponseSchema, response);
+        const body = 'languageCode' in response && 'transcriptHash' in response
+            ? v.parse(serverAnalysisResponseEmissionSchema, response)
+            : v.parse(legacyServerAnalysisResponseSchema, response);
         return {
             statusCode: body.status === 'processing' ? 202 : 200,
             body,
@@ -460,6 +478,7 @@ export class BackendAnalysisApi {
      * @param code - Stable quota or capacity outcome.
      * @param retryAfterSec - Positive whole-second retry delay.
      * @param requestId - Safe request correlation identifier.
+     *
      * @returns Strict identified retry result.
      */
     private static identifiedRateLimited(
@@ -490,6 +509,7 @@ export class BackendAnalysisApi {
      * Maps canonical validation limits before any reusable identity or model work exists.
      *
      * @param code - Stable canonicalization failure.
+     *
      * @returns Safe pre-identity validation response.
      */
     private static canonicalFailure(
@@ -506,6 +526,7 @@ export class BackendAnalysisApi {
      * Builds safe failures that occur before a transcript identity can be trusted.
      *
      * @param code - Stable public failure code allowed before identity construction.
+     *
      * @returns Strict pre-identity error response.
      */
     private static error(
@@ -528,15 +549,16 @@ export class BackendAnalysisApi {
      * Preserves the specific invalid-video outcome without reading other untrusted fields.
      *
      * @param raw - Untrusted request candidate.
+     *
      * @returns Whether a present string video id violates the public identifier shape.
      */
     private static hasInvalidVideoId(raw: unknown): boolean {
         return (
-            raw !== null &&
-            typeof raw === 'object' &&
-            'videoId' in raw &&
-            typeof raw.videoId === 'string' &&
-            !isValidYouTubeVideoId(raw.videoId)
+            raw !== null
+            && typeof raw === 'object'
+            && 'videoId' in raw
+            && typeof raw.videoId === 'string'
+            && !isValidYouTubeVideoId(raw.videoId)
         );
     }
 }

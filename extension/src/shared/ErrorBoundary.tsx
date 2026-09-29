@@ -1,5 +1,11 @@
+import {
+
+    Alert,
+    Button,
+    Stack,
+    Text,
+} from '@mantine/core';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { Alert, Button, Stack, Text } from '@mantine/core';
 
 interface ErrorBoundaryProps {
     children: ReactNode;
@@ -29,6 +35,7 @@ export class ErrorBoundary extends Component<
      * Derives error state from a caught render error.
      *
      * @param error - The thrown error.
+     *
      * @returns Updated state with the captured error.
      */
     static getDerivedStateFromError(error: Error): ErrorBoundaryState {

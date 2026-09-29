@@ -7,27 +7,26 @@ export const BENCHMARK_REASONING_LEVELS = [
     'xhigh',
 ] as const;
 
-export type BenchmarkReasoning =
-    (typeof BENCHMARK_REASONING_LEVELS)[number];
+export type BenchmarkReasoning = (typeof BENCHMARK_REASONING_LEVELS)[number];
 
 export type ExplicitBenchmarkReasoning = Exclude<
     BenchmarkReasoning,
     'default'
 >;
 
-export type BenchmarkPricing = {
+export interface BenchmarkPricing {
     inputPerMillion: number;
     outputPerMillion: number;
     cacheReadPerMillion: number;
     cacheWritePerMillion: number;
     reasoningPerMillion: number;
-};
+}
 
-export type BenchmarkModel = {
+export interface BenchmarkModel {
     id: string;
     supportedReasoning: readonly ExplicitBenchmarkReasoning[];
     pricing: BenchmarkPricing;
-};
+}
 
 export const PROMO_BENCHMARK_MODELS: readonly BenchmarkModel[] = [
     {

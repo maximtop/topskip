@@ -1,29 +1,26 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 import * as v from 'valibot';
-
-import browser from '@/shared/browser';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
+import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
+import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { ChromePromptApiRuntimeMessages } from '@/background/messaging/chrome-prompt-api-runtime-messages';
 import { DebugLogRuntimeMessages } from '@/background/messaging/debug-log-runtime-messages';
 import {
     ContentLogMessages,
     PromoDetectionRuntimeMessages,
 } from '@/background/messaging/misc-runtime-messages';
-import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
-import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
-import { ChromePromptApiRuntimeMessages } from '@/background/messaging/chrome-prompt-api-runtime-messages';
 import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { ProviderRuntimeMessages } from '@/background/messaging/provider-runtime-messages';
-import type { ProviderRegistry } from '@/background/providers/provider-registry';
 import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
 import { RuntimeSenderTrust } from '@/background/messaging/runtime-sender-trust';
 import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
 import { ServerAnalysisIssueReport } from '@/background/server-analysis-issue-report';
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
+import browser from '@/shared/browser';
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     CONTENT_SCRIPT_PROTOCOL_VERSION,
@@ -35,19 +32,27 @@ import {
     type TopSkipRuntimeMessage,
 } from '@/shared/messages';
 
+import type { ProviderRegistry } from '@/background/providers/provider-registry';
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+
 /**
  * Coerces an unknown runtime message to a `TopSkipRuntimeMessage` when the
  * `type` field is a non-empty string. The caller is responsible for narrowing
  * further (via `switch`) before accessing any other fields.
  *
  * @param message - Opaque value received by `runtime.onMessage`
+ *
  * @returns Narrowed message union member, or `undefined` when the value is not
  * a valid message object
  */
 function toRuntimeMessage(message: unknown): TopSkipRuntimeMessage | undefined {
-    if (message === null || typeof message !== 'object') return undefined;
+    if (message === null || typeof message !== 'object') {
+        return undefined;
+    }
     const t: unknown = Reflect.get(message, 'type');
-    if (typeof t !== 'string') return undefined;
+    if (typeof t !== 'string') {
+        return undefined;
+    }
     return message as TopSkipRuntimeMessage;
 }
 
@@ -57,6 +62,7 @@ function toRuntimeMessage(message: unknown): TopSkipRuntimeMessage | undefined {
  *
  * @param msg - Narrowed runtime message.
  * @param sender - Browser-provided sender metadata.
+ *
  * @returns Handler response after the storage boundary is active.
  */
 async function dispatchRuntimeMessage(
@@ -229,7 +235,9 @@ export function registerRuntimeMessages(registry: ProviderRegistry): void {
     browser.runtime.onMessage.addListener(
         (message: unknown, sender: Runtime.MessageSender) => {
             const msg = toRuntimeMessage(message);
-            if (!msg) return undefined;
+            if (!msg) {
+                return undefined;
+            }
             return dispatchRuntimeMessage(msg, sender);
         },
     );

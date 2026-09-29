@@ -11,6 +11,7 @@ import { topskipTheme } from '@/shared/theme';
  * so the empty case below renders the bare component instead).
  *
  * @param label - Indicator label.
+ *
  * @returns Static markup.
  */
 function renderWithTheme(label: string): string {

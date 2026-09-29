@@ -1,3 +1,9 @@
+import {
+    serverAnalysisRequestSchema,
+    serverAnalysisResponseEmissionSchema,
+    type ServerAnalysisRequest,
+    type ServerAnalysisResponse,
+} from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
 import {
@@ -10,32 +16,23 @@ import {
     BACKEND_CAPTION_SOURCE,
     type BackendCaptionSource,
 } from '@topskip/backend/server-config';
-import {
-    serverAnalysisRequestSchema,
-    serverAnalysisResponseEmissionSchema,
-    type ServerAnalysisRequest,
-    type ServerAnalysisResponse,
-} from '@topskip/common/server-analysis-contract';
 
 /**
  * Parsed requests remain tagged by the immutable process-selected contract.
  */
-export type BackendServerAnalysisRequest =
-    | ServerAnalysisRequest
+export type BackendServerAnalysisRequest = | ServerAnalysisRequest
     | LegacyServerAnalysisRequest;
 
 /**
  * Strict server output may belong only to the selected public or private contract.
  */
-export type BackendServerAnalysisResponse =
-    | ServerAnalysisResponse
+export type BackendServerAnalysisResponse = | ServerAnalysisResponse
     | LegacyServerAnalysisResponse;
 
 /**
  * Boundary parsing intentionally omits validation details from HTTP diagnostics.
  */
-export type BackendServerAnalysisRequestParseResult =
-    | Readonly<{ success: true; output: BackendServerAnalysisRequest }>
+export type BackendServerAnalysisRequestParseResult = | Readonly<{ success: true; output: BackendServerAnalysisRequest }>
     | Readonly<{ success: false }>;
 
 /**
@@ -53,8 +50,7 @@ const PUBLIC_UPLOAD_CONTRACT: BackendServerAnalysisContract = Object.freeze({
             ? { success: true, output: parsed.output }
             : { success: false };
     },
-    serializeResponse: (raw: unknown): BackendServerAnalysisResponse =>
-        v.parse(serverAnalysisResponseEmissionSchema, raw),
+    serializeResponse: (raw: unknown): BackendServerAnalysisResponse => v.parse(serverAnalysisResponseEmissionSchema, raw),
 });
 
 const PRIVATE_LEGACY_CONTRACT: BackendServerAnalysisContract = Object.freeze({
@@ -64,8 +60,7 @@ const PRIVATE_LEGACY_CONTRACT: BackendServerAnalysisContract = Object.freeze({
             ? { success: true, output: parsed.output }
             : { success: false };
     },
-    serializeResponse: (raw: unknown): BackendServerAnalysisResponse =>
-        v.parse(legacyServerAnalysisResponseSchema, raw),
+    serializeResponse: (raw: unknown): BackendServerAnalysisResponse => v.parse(legacyServerAnalysisResponseSchema, raw),
 });
 
 const CONTRACT_BY_CAPTION_SOURCE: Readonly<
@@ -84,6 +79,7 @@ export class BackendServerAnalysisBoundary {
      * Resolves the exact contract without consulting mutable process environment.
      *
      * @param source - Validated process-wide caption source.
+     *
      * @returns Frozen parser and serializer for that source.
      */
     static forSource(

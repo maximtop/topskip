@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
     chmod,
     mkdir,
@@ -6,7 +7,6 @@ import {
     rm,
     writeFile,
 } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
 import {
@@ -102,6 +102,7 @@ class YtDlpManager {
      * Uses the executable's version command as the readiness boundary.
      *
      * @param executablePath - Candidate executable path.
+     *
      * @returns Whether the command starts and exits successfully.
      */
     private static isWorking(executablePath: string): boolean {
@@ -120,6 +121,7 @@ class YtDlpManager {
      *
      * @param executablePath - Managed binary path.
      * @param expectedSha256 - Repository-reviewed digest for this platform.
+     *
      * @returns Whether checksum and executable readiness both pass.
      */
     private static async isPinnedWorking(
@@ -129,8 +131,8 @@ class YtDlpManager {
         try {
             const contents = await readFile(executablePath);
             return (
-                verifyYtDlpAssetChecksum(contents, expectedSha256) &&
-                YtDlpManager.isWorking(executablePath)
+                verifyYtDlpAssetChecksum(contents, expectedSha256)
+                && YtDlpManager.isWorking(executablePath)
             );
         } catch {
             return false;

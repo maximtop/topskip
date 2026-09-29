@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
 import * as v from 'valibot';
+import { describe, expect, it } from 'vitest';
 
 import {
     DEBUG_LOG_APPEND_MAX_EVENTS,
@@ -32,6 +32,8 @@ const VIDEO_ID = 'dQw4w9WgXcQ';
 
 /**
  * Minimal valid content event.
+ *
+ * @param fields
  */
 function event(fields: Record<string, unknown> = {}): Record<string, unknown> {
     return { event: DEBUG_LOG_EVENT.SkipApplied, ageMs: 0, fields };
@@ -39,6 +41,8 @@ function event(fields: Record<string, unknown> = {}): Record<string, unknown> {
 
 /**
  * Minimal valid append payload around the given events.
+ *
+ * @param events
  */
 function payload(events: unknown[]): unknown {
     return { events };
@@ -67,8 +71,14 @@ describe('debugLogAppendPayloadSchema', () => {
                     ageMs: 120,
                     video: VIDEO_ID,
                     session: SESSION_ID,
-                    job: 'job-' + SESSION_ID,
-                    fields: { polls: 3, lastStatus: 'ready', terminal: true, reason: null },
+                    job: `job-${SESSION_ID}`,
+                    fields: {
+
+                        polls: 3,
+                        lastStatus: 'ready',
+                        terminal: true,
+                        reason: null,
+                    },
                 },
             ],
             dropped: { coalesced: 1, ceiling: 0, unreachable: 2 },
@@ -90,7 +100,16 @@ describe('debugLogAppendPayloadSchema', () => {
         ['a malformed session id', payload([{ ...event(), session: 'not-a-uuid' }])],
         ['a job id with spaces', payload([{ ...event(), job: 'job x' }])],
         ['too many events', payload(Array.from({ length: DEBUG_LOG_APPEND_MAX_EVENTS + 1 }, () => event()))],
-        ['an unknown drop counter', { events: [], dropped: { coalesced: 0, ceiling: 0, unreachable: 0, lost: 1 } }],
+        ['an unknown drop counter', {
+            events: [],
+            dropped: {
+
+                coalesced: 0,
+                ceiling: 0,
+                unreachable: 0,
+                lost: 1,
+            },
+        }],
         ['an extra payload key', { events: [], tabId: 4 }],
     ])('rejects %s', (_name, candidate) => {
         expect(v.safeParse(debugLogAppendPayloadSchema, candidate).success).toBe(false);
@@ -121,7 +140,14 @@ describe('status, switch and seed schemas', () => {
         capBytes: DEBUG_LOG_CAP_BYTES,
         evictedCount: 0,
         oldestRetainedMs: 1_900_000_000_000,
-        dropped: { incognito: 0, coalesced: 0, ceiling: 0, unreachable: 0, lost: 0 },
+        dropped: {
+
+            incognito: 0,
+            coalesced: 0,
+            ceiling: 0,
+            unreachable: 0,
+            lost: 0,
+        },
         revision: 7,
     };
 
@@ -189,8 +215,7 @@ describe('type-level additions', () => {
         // These assignments only compile when the ok variants carry the new
         // fields (the literal key must be a key of the narrowed type).
         const prefsField: keyof Extract<GetPrefsResponse, { ok: true }> = 'debugLogEnabled';
-        const detectionField: keyof Extract<GetDetectionStatusResponse, { ok: true }> =
-            'debugLoggingEnabled';
+        const detectionField: keyof Extract<GetDetectionStatusResponse, { ok: true }> = 'debugLoggingEnabled';
         const detection: GetDetectionStatusResponse = {
             ok: true,
             tabId: null,

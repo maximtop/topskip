@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import type { CaptionSegment } from '@topskip/common/caption-types';
 import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
+
+import type { CaptionSegment } from '@topskip/common/caption-types';
 
 describe('mergeCaptionSegmentsToTranscript', () => {
     it('returns empty string for empty segments', () => {

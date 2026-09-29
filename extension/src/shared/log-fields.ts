@@ -13,6 +13,7 @@ const UNSERIALIZABLE_LOG_VALUE = '[unserializable]';
  * Keeps one diagnostic value readable on a single console line.
  *
  * @param value - Field value of any shape.
+ *
  * @returns Bare scalar, JSON-quoted string, or JSON for nested values.
  */
 function formatLogValue(value: unknown): string {
@@ -20,9 +21,9 @@ function formatLogValue(value: unknown): string {
         return INLINE_SAFE_STRING.test(value) ? value : JSON.stringify(value);
     }
     if (
-        typeof value === 'number' ||
-        typeof value === 'boolean' ||
-        value === null
+        typeof value === 'number'
+        || typeof value === 'boolean'
+        || value === null
     ) {
         return String(value);
     }
@@ -42,6 +43,7 @@ function formatLogValue(value: unknown): string {
  * fields are skipped because they carry no information on a single line.
  *
  * @param fields - Diagnostic fields in insertion order.
+ *
  * @returns Space-separated pairs, or an empty string without fields.
  */
 export function formatLogFields(
@@ -62,6 +64,7 @@ export function formatLogFields(
  *
  * @param event - Stable stage identifier.
  * @param fields - Diagnostic fields in insertion order.
+ *
  * @returns Arguments to spread after the log prefix.
  */
 export function formatLogStage(

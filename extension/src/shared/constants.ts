@@ -1,13 +1,13 @@
 import * as v from 'valibot';
 
+import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
+import { PROVIDER_ID } from '@/shared/providers';
+
 export {
     MIME_APPLICATION_JSON,
     MS_PER_SECOND,
     SECONDS_PER_HOUR,
 } from '@topskip/common/constants';
-
-import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
-import { PROVIDER_ID } from '@/shared/providers';
 
 export {
     YOUTUBE_ORIGIN as YOUTUBE_BASE_URL,
@@ -61,16 +61,14 @@ export const STORAGE_KEY_SERVER_CONFIG = 'topskip:server-config';
  * Background-only timestamp that throttles public config refresh attempts even
  * when the server is unavailable.
  */
-export const STORAGE_KEY_SERVER_CONFIG_REFRESH_ATTEMPT =
-    'topskip:server-config-refresh-attempt';
+export const STORAGE_KEY_SERVER_CONFIG_REFRESH_ATTEMPT = 'topskip:server-config-refresh-attempt';
 
 /**
  * Background-only index of result-cache record keys so cache cleanup reads
  * its own rows instead of scanning every key in `storage.local` (and never
  * loads debug-log segments).
  */
-export const STORAGE_KEY_SERVER_RESULT_CACHE_INDEX =
-    'topskip:server-result-cache:index';
+export const STORAGE_KEY_SERVER_RESULT_CACHE_INDEX = 'topskip:server-result-cache:index';
 
 /**
  * Common prefix of every debug-log key in `browser.storage.local`; disjoint
@@ -91,8 +89,7 @@ export const STORAGE_KEY_DEBUG_LOG_INDEX = `${STORAGE_KEY_DEBUG_LOG_PREFIX}index
 /**
  * Prefix of the per-segment debug-log keys; the numeric segment id follows.
  */
-export const STORAGE_KEY_DEBUG_LOG_SEGMENT_PREFIX =
-    `${STORAGE_KEY_DEBUG_LOG_PREFIX}segment:`;
+export const STORAGE_KEY_DEBUG_LOG_SEGMENT_PREFIX = `${STORAGE_KEY_DEBUG_LOG_PREFIX}segment:`;
 
 /**
  * `browser.storage.session` marker proving a previous worker of this browser
@@ -163,9 +160,8 @@ export const CAPTION_TRANSCRIPT_DEV_ENABLED = true;
  * Emits safe stage-by-stage caption capture diagnostics only in development
  * builds without gating the production caption acquisition path.
  */
-export const CAPTION_CAPTURE_VERBOSE_LOGS =
-    typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined' &&
-    __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
+export const CAPTION_CAPTURE_VERBOSE_LOGS = typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined'
+    && __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
 
 /**
  * Well-known port name for long-lived preference-sync connections

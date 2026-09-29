@@ -4,32 +4,32 @@ import {
     type ReferenceBundle,
 } from './promo-reference-compare';
 
-export type CompareBlock = {
+export interface CompareBlock {
     startSec: number;
     endSec?: number;
     confidence?: string;
-};
+}
 
-export type CompareUsagePromptTokensDetails = {
+export interface CompareUsagePromptTokensDetails {
     cachedTokens?: number;
     cacheWriteTokens?: number;
     audioTokens?: number;
     videoTokens?: number;
-};
+}
 
-export type CompareUsageCompletionTokensDetails = {
+export interface CompareUsageCompletionTokensDetails {
     reasoningTokens?: number;
     audioTokens?: number;
     imageTokens?: number;
-};
+}
 
-export type CompareUsageCostDetails = {
+export interface CompareUsageCostDetails {
     upstreamInferenceCost?: number;
     upstreamInferencePromptCost?: number;
     upstreamInferenceCompletionsCost?: number;
-};
+}
 
-export type CompareUsage = {
+export interface CompareUsage {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
@@ -38,9 +38,9 @@ export type CompareUsage = {
     cost?: number;
     isByok?: boolean;
     costDetails?: CompareUsageCostDetails;
-};
+}
 
-export type ComparePricing = {
+export interface ComparePricing {
     prompt?: number;
     completion?: number;
     request?: number;
@@ -48,9 +48,9 @@ export type ComparePricing = {
     internalReasoning?: number;
     inputCacheRead?: number;
     inputCacheWrite?: number;
-};
+}
 
-export type CompareCostAnalysis = {
+export interface CompareCostAnalysis {
     reportedCost?: number;
     estimatedCostUsd?: number;
     promptCostUsd?: number;
@@ -59,15 +59,15 @@ export type CompareCostAnalysis = {
     cacheWriteCostUsd?: number;
     internalReasoningCostUsd?: number;
     requestCostUsd?: number;
-};
+}
 
-export type CompareSource = {
+export interface CompareSource {
     fixture?: string;
     reference?: string | null;
     out?: string | null;
-};
+}
 
-export type CompareRow = {
+export interface CompareRow {
     model: string;
     responseModel?: string;
     ms: number;
@@ -79,9 +79,9 @@ export type CompareRow = {
     blocks?: CompareBlock[];
     vsHuman?: AlignedBlockMetric[];
     vsHumanNote?: string;
-};
+}
 
-export type CompareReport = {
+export interface CompareReport {
     generatedAt?: string;
     source?: CompareSource;
     presetCount: number;
@@ -89,39 +89,39 @@ export type CompareReport = {
     reference?: ReferenceBundle;
     firstRunVsHuman?: AlignedBlockMetric[];
     firstRunVsHumanNote?: string;
-};
+}
 
-type MetricSummary = {
+interface MetricSummary {
     matchedBlocks: number;
     avgIou?: number;
     avgAbsStartDelta?: number;
     avgAbsEndDelta?: number;
-};
+}
 
 type CostKind = 'reported' | 'estimated' | 'none';
 
-type CostInfo = {
+interface CostInfo {
     effectiveCost?: number;
     reportedCost?: number;
     estimatedCostUsd?: number;
     kind: CostKind;
-};
+}
 
-type RankedRow = {
+interface RankedRow {
     row: CompareRow;
     summary: MetricSummary;
     cost: CostInfo;
-};
+}
 
 type LaneRole = 'human' | 'baseline' | 'model';
 
-type LaneSegment = {
+interface LaneSegment {
     startSec: number;
     endSec: number;
     className: string;
-};
+}
 
-type RenderLane = {
+interface RenderLane {
     role: LaneRole;
     model?: string;
     label: string;
@@ -129,12 +129,12 @@ type RenderLane = {
     segments: LaneSegment[];
     confidence?: string;
     showHumanShadow?: boolean;
-};
+}
 
-type HtmlOptions = {
+interface HtmlOptions {
     title?: string;
     sourceLabel?: string;
-};
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -281,7 +281,7 @@ function parseCompareUsage(
         value.totalTokens,
         `${path}.totalTokens`,
     );
-    const isByok = value.isByok;
+    const { isByok } = value;
     if (isByok !== undefined && typeof isByok !== 'boolean') {
         throw new Error(`${path}.isByok must be a boolean`);
     }
@@ -412,17 +412,16 @@ function parseCompareBlock(value: unknown, path: string): CompareBlock {
     if (!isRecord(value)) {
         throw new Error(`${path} must be an object`);
     }
-    const startSec = value.startSec;
-    const endSec = value.endSec;
-    const confidence = value.confidence;
+    const { startSec } = value;
+    const { endSec } = value;
+    const { confidence } = value;
     if (typeof startSec !== 'number' || !Number.isFinite(startSec)) {
         throw new Error(`${path}.startSec must be a finite number`);
     }
     if (endSec !== undefined) {
-        const invalidEnd =
-            typeof endSec !== 'number' ||
-            !Number.isFinite(endSec) ||
-            endSec <= startSec;
+        const invalidEnd = typeof endSec !== 'number'
+            || !Number.isFinite(endSec)
+            || endSec <= startSec;
         if (invalidEnd) {
             throw new Error(`${path}.endSec is invalid`);
         }
@@ -437,15 +436,15 @@ function parseAlignedMetric(value: unknown, path: string): AlignedBlockMetric {
     if (!isRecord(value)) {
         throw new Error(`${path} must be an object`);
     }
-    const id = value.id;
-    const humanStartSec = value.humanStartSec;
-    const humanEndSec = value.humanEndSec;
-    const predStartSec = value.predStartSec;
-    const predEndSec = value.predEndSec;
-    const predEndAssumed = value.predEndAssumed;
-    const startDeltaSec = value.startDeltaSec;
-    const endDeltaSec = value.endDeltaSec;
-    const iouWithHuman = value.iouWithHuman;
+    const { id } = value;
+    const { humanStartSec } = value;
+    const { humanEndSec } = value;
+    const { predStartSec } = value;
+    const { predEndSec } = value;
+    const { predEndAssumed } = value;
+    const { startDeltaSec } = value;
+    const { endDeltaSec } = value;
+    const { iouWithHuman } = value;
     if (typeof id !== 'string' || id.length === 0) {
         throw new Error(`${path}.id must be a non-empty string`);
     }
@@ -475,12 +474,12 @@ function parseCompareRow(value: unknown, index: number): CompareRow {
     if (!isRecord(value)) {
         throw new Error(`rows[${String(index)}] must be an object`);
     }
-    const model = value.model;
-    const responseModel = value.responseModel;
-    const ms = value.ms;
-    const ok = value.ok;
-    const error = value.error;
-    const vsHumanNote = value.vsHumanNote;
+    const { model } = value;
+    const { responseModel } = value;
+    const { ms } = value;
+    const { ok } = value;
+    const { error } = value;
+    const { vsHumanNote } = value;
     if (typeof model !== 'string' || model.length === 0) {
         throw new Error(`rows[${String(index)}].model must be a string`);
     }
@@ -517,20 +516,16 @@ function parseCompareRow(value: unknown, index: number): CompareRow {
             `rows[${String(index)}].costAnalysis`,
         ),
         blocks: Array.isArray(value.blocks)
-            ? value.blocks.map((item, blockIndex) =>
-                    parseCompareBlock(
-                        item,
-                        `rows[${String(index)}].blocks[${String(blockIndex)}]`,
-                    ),
-                )
+            ? value.blocks.map((item, blockIndex) => parseCompareBlock(
+                item,
+                `rows[${String(index)}].blocks[${String(blockIndex)}]`,
+            ))
             : undefined,
         vsHuman: Array.isArray(value.vsHuman)
-            ? value.vsHuman.map((item, metricIndex) =>
-                    parseAlignedMetric(
-                        item,
-                        `rows[${String(index)}].vsHuman[${String(metricIndex)}]`,
-                    ),
-                )
+            ? value.vsHuman.map((item, metricIndex) => parseAlignedMetric(
+                item,
+                `rows[${String(index)}].vsHuman[${String(metricIndex)}]`,
+            ))
             : undefined,
         vsHumanNote,
     };
@@ -581,9 +576,9 @@ export function extractJsonObjectFromMixedLog(rawText: string): string {
             try {
                 const parsed = JSON.parse(candidate) as unknown;
                 if (
-                    isRecord(parsed) &&
-                    typeof parsed.presetCount === 'number' &&
-                    Array.isArray(parsed.rows)
+                    isRecord(parsed)
+                    && typeof parsed.presetCount === 'number'
+                    && Array.isArray(parsed.rows)
                 ) {
                     return candidate;
                 }
@@ -604,21 +599,21 @@ export function parseOpenRouterComparePresetsLog(
     if (!isRecord(parsed)) {
         throw new Error('Compare report root must be an object');
     }
-    const generatedAt = parsed.generatedAt;
+    const { generatedAt } = parsed;
     if (generatedAt !== undefined && typeof generatedAt !== 'string') {
         throw new Error('generatedAt must be a string');
     }
-    const presetCount = parsed.presetCount;
+    const { presetCount } = parsed;
     if (typeof presetCount !== 'number' || !Number.isFinite(presetCount)) {
         throw new Error('presetCount must be a finite number');
     }
     if (!Array.isArray(parsed.rows)) {
         throw new Error('rows must be an array');
     }
-    const firstRunVsHumanNote = parsed.firstRunVsHumanNote;
+    const { firstRunVsHumanNote } = parsed;
     if (
-        firstRunVsHumanNote !== undefined &&
-        typeof firstRunVsHumanNote !== 'string'
+        firstRunVsHumanNote !== undefined
+        && typeof firstRunVsHumanNote !== 'string'
     ) {
         throw new Error('firstRunVsHumanNote must be a string');
     }
@@ -632,9 +627,7 @@ export function parseOpenRouterComparePresetsLog(
                 ? undefined
                 : parseReferenceBundleJson(JSON.stringify(parsed.reference)),
         firstRunVsHuman: Array.isArray(parsed.firstRunVsHuman)
-            ? parsed.firstRunVsHuman.map((item, index) =>
-                    parseAlignedMetric(item, `firstRunVsHuman[${String(index)}]`),
-                )
+            ? parsed.firstRunVsHuman.map((item, index) => parseAlignedMetric(item, `firstRunVsHuman[${String(index)}]`))
             : undefined,
         firstRunVsHumanNote,
     };
@@ -832,7 +825,7 @@ function formatGeneratedAt(value: string): string {
     return `${match[1]} ${match[2]} UTC`;
 }
 
-function joinDefined(parts: Array<string | undefined>): string {
+function joinDefined(parts: (string | undefined)[]): string {
     return parts
         .filter((part): part is string => part !== undefined && part.length > 0)
         .join(' | ');
@@ -843,8 +836,8 @@ function buildUsageMainLabel(usage: CompareUsage | undefined): string {
         return 'n/a';
     }
     return (
-        `${formatCompactInteger(usage.promptTokens)}/` +
-        `${formatCompactInteger(usage.completionTokens)}`
+        `${formatCompactInteger(usage.promptTokens)}/${
+            formatCompactInteger(usage.completionTokens)}`
     );
 }
 
@@ -863,16 +856,14 @@ function buildUsageNote(usage: CompareUsage | undefined): string {
 }
 
 function buildModelNote(item: RankedRow): string {
-    const responseLabel =
-        item.row.responseModel !== undefined &&
-        item.row.responseModel !== item.row.model
-            ? `response ${item.row.responseModel}`
-            : undefined;
-    const confidenceLabel =
-        item.row.blocks
-            ?.map((block) => block.confidence)
-            .filter((value): value is string => value !== undefined)
-            .join(', ') || undefined;
+    const responseLabel = item.row.responseModel !== undefined
+        && item.row.responseModel !== item.row.model
+        ? `response ${item.row.responseModel}`
+        : undefined;
+    const confidenceLabel = item.row.blocks
+        ?.map((block) => block.confidence)
+        .filter((value): value is string => value !== undefined)
+        .join(', ') || undefined;
     return joinDefined([
         responseLabel,
         item.row.error,
@@ -895,9 +886,9 @@ function buildCostNote(item: RankedRow): string {
     }
     return joinDefined([
         item.cost.kind,
-        item.cost.kind === 'reported' &&
-        item.cost.estimatedCostUsd !== undefined &&
-        item.cost.estimatedCostUsd !== item.cost.reportedCost
+        item.cost.kind === 'reported'
+        && item.cost.estimatedCostUsd !== undefined
+        && item.cost.estimatedCostUsd !== item.cost.reportedCost
             ? `est ${formatUsd(item.cost.estimatedCostUsd)}`
             : undefined,
     ]);
@@ -1054,82 +1045,82 @@ function renderHighlights(
     return [
         bestOverlap === undefined
             ? renderStatCard(
-                    'Best overlap',
-                    'n/a',
-                    'No human reference metrics',
-                )
+                'Best overlap',
+                'n/a',
+                'No human reference metrics',
+            )
             : renderStatCard(
-                    'Best overlap',
-                    bestOverlap.row.model,
-                    joinDefined([
-                        `avg IoU ${formatPercent(bestOverlap.summary.avgIou ?? 0)}`,
-                        bestOverlap.cost.effectiveCost !== undefined
-                            ? buildCostDisplay(bestOverlap)
-                            : undefined,
-                        `latency ${formatMs(bestOverlap.row.ms)}`,
-                    ]),
-                ),
+                'Best overlap',
+                bestOverlap.row.model,
+                joinDefined([
+                    `avg IoU ${formatPercent(bestOverlap.summary.avgIou ?? 0)}`,
+                    bestOverlap.cost.effectiveCost !== undefined
+                        ? buildCostDisplay(bestOverlap)
+                        : undefined,
+                    `latency ${formatMs(bestOverlap.row.ms)}`,
+                ]),
+            ),
         fastest === undefined
             ? renderStatCard(
-                    'Fastest response',
-                    'n/a',
-                    'No successful model call',
-                )
+                'Fastest response',
+                'n/a',
+                'No successful model call',
+            )
             : renderStatCard(
-                    'Fastest response',
-                    fastest.row.model,
-                    joinDefined([
-                        `completed in ${formatMs(fastest.row.ms)}`,
-                        fastest.cost.effectiveCost !== undefined
-                            ? buildCostDisplay(fastest)
-                            : 'cost n/a',
-                    ]),
-                ),
+                'Fastest response',
+                fastest.row.model,
+                joinDefined([
+                    `completed in ${formatMs(fastest.row.ms)}`,
+                    fastest.cost.effectiveCost !== undefined
+                        ? buildCostDisplay(fastest)
+                        : 'cost n/a',
+                ]),
+            ),
         cheapest === undefined
             ? renderStatCard(
-                    'Cheapest response',
-                    'n/a',
-                    'No cost data in this log',
-                )
+                'Cheapest response',
+                'n/a',
+                'No cost data in this log',
+            )
             : renderStatCard(
-                    'Cheapest response',
-                    cheapest.row.model,
-                    joinDefined([
-                        buildCostDisplay(cheapest),
-                        cheapest.cost.kind,
-                        `latency ${formatMs(cheapest.row.ms)}`,
-                    ]),
-                ),
+                'Cheapest response',
+                cheapest.row.model,
+                joinDefined([
+                    buildCostDisplay(cheapest),
+                    cheapest.cost.kind,
+                    `latency ${formatMs(cheapest.row.ms)}`,
+                ]),
+            ),
         tightestStart === undefined
             ? renderStatCard(
-                    'Smallest start drift',
-                    'n/a',
-                    'No human reference',
-                )
+                'Smallest start drift',
+                'n/a',
+                'No human reference',
+            )
             : renderStatCard(
-                    'Smallest start drift',
-                    tightestStart.row.model,
-                    `avg |start delta| ${formatSeconds(
-                        tightestStart.summary.avgAbsStartDelta ?? 0,
-                    )}`,
-                ),
-        baselineSummary.avgIou === undefined ||
-        report.reference?.firstRunModel === undefined
+                'Smallest start drift',
+                tightestStart.row.model,
+                `avg |start delta| ${formatSeconds(
+                    tightestStart.summary.avgAbsStartDelta ?? 0,
+                )}`,
+            ),
+        baselineSummary.avgIou === undefined
+        || report.reference?.firstRunModel === undefined
             ? renderStatCard(
-                    'Original first run',
-                    'not included',
-                    'Reference bundle has no baseline comparison',
-                )
+                'Original first run',
+                'not included',
+                'Reference bundle has no baseline comparison',
+            )
             : renderStatCard(
-                    'Original first run',
-                    report.reference.firstRunModel.model,
-                    joinDefined([
-                        `avg IoU ${formatPercent(baselineSummary.avgIou)}`,
-                        `avg |start delta| ${formatSeconds(
-                            baselineSummary.avgAbsStartDelta ?? 0,
-                        )}`,
-                    ]),
-                ),
+                'Original first run',
+                report.reference.firstRunModel.model,
+                joinDefined([
+                    `avg IoU ${formatPercent(baselineSummary.avgIou)}`,
+                    `avg |start delta| ${formatSeconds(
+                        baselineSummary.avgAbsStartDelta ?? 0,
+                    )}`,
+                ]),
+            ),
     ].join('\n');
 }
 
@@ -1171,9 +1162,9 @@ function renderControls(rankedRows: readonly RankedRow[]): string {
         'Reset',
         '</button>',
         '<div id="report-results" class="controls-meta">',
-        `${String(rankedRows.length)} models | ` +
-            `${String(successfulCount)} successful | ` +
-            `${escapeHtml(buildCostCoverageLabel(rankedRows))}`,
+        `${String(rankedRows.length)} models | `
+            + `${String(successfulCount)} successful | ${
+                escapeHtml(buildCostCoverageLabel(rankedRows))}`,
         '</div>',
         '</div>',
         '</section>',
@@ -1185,18 +1176,15 @@ function renderLeaderboard(rankedRows: readonly RankedRow[]): string {
         .map((item, index) => {
             const blockCount = item.row.blocks?.length ?? 0;
             const metricTone = metricClass(item.summary.avgIou);
-            const iouLabel =
-                item.summary.avgIou === undefined
-                    ? 'n/a'
-                    : formatPercent(item.summary.avgIou);
-            const startLabel =
-                item.summary.avgAbsStartDelta === undefined
-                    ? 'n/a'
-                    : formatSeconds(item.summary.avgAbsStartDelta);
-            const endLabel =
-                item.summary.avgAbsEndDelta === undefined
-                    ? 'n/a'
-                    : formatSeconds(item.summary.avgAbsEndDelta);
+            const iouLabel = item.summary.avgIou === undefined
+                ? 'n/a'
+                : formatPercent(item.summary.avgIou);
+            const startLabel = item.summary.avgAbsStartDelta === undefined
+                ? 'n/a'
+                : formatSeconds(item.summary.avgAbsStartDelta);
+            const endLabel = item.summary.avgAbsEndDelta === undefined
+                ? 'n/a'
+                : formatSeconds(item.summary.avgAbsEndDelta);
             return [
                 '<tr class="leaderboard-row"',
                 ` data-model="${escapeHtml(item.row.model)}"`,
@@ -1225,8 +1213,8 @@ function renderLeaderboard(rankedRows: readonly RankedRow[]): string {
                     `<div class="subtle">${escapeHtml(buildCostNote(item))}</div>`,
                     '</td>',
                 ].join(''),
-                `<td><span class="score ${metricTone}">${escapeHtml(iouLabel)}` +
-                    '</span></td>',
+                `<td><span class="score ${metricTone}">${escapeHtml(iouLabel)}`
+                    + '</span></td>',
                 `<td>${escapeHtml(startLabel)}</td>`,
                 `<td>${escapeHtml(endLabel)}</td>`,
                 [
@@ -1284,14 +1272,12 @@ function renderLane(
     humanStyle?: string,
 ): string {
     const laneClass = variant === 'timeline' ? 'timeline-lane' : 'focus-lane';
-    const trackClass =
-        variant === 'timeline'
-            ? 'timeline-track'
-            : 'timeline-track timeline-track-focus';
-    const modelAttr =
-        lane.model === undefined
-            ? ''
-            : ` data-model="${escapeHtml(lane.model)}"`;
+    const trackClass = variant === 'timeline'
+        ? 'timeline-track'
+        : 'timeline-track timeline-track-focus';
+    const modelAttr = lane.model === undefined
+        ? ''
+        : ` data-model="${escapeHtml(lane.model)}"`;
     return [
         `<div class="${laneClass}" data-role="${lane.role}"${modelAttr}>`,
         '<div class="timeline-meta">',
@@ -1299,20 +1285,19 @@ function renderLane(
         `<div class="subtle">${escapeHtml(lane.note)}</div>`,
         '</div>',
         `<div class="${trackClass}">`,
-        variant === 'focus' &&
-        lane.showHumanShadow === true &&
-        humanStyle !== undefined
+        variant === 'focus'
+        && lane.showHumanShadow === true
+        && humanStyle !== undefined
             ? `<div class="human-shadow" style="${humanStyle}"></div>`
             : '',
         lane.segments
             .map(
-                (segment) =>
-                    `<div class="${segment.className}" style="${styleForRange(
-                        segment.startSec,
-                        segment.endSec,
-                        domainStart,
-                        domainEnd,
-                    )}"></div>`,
+                (segment) => `<div class="${segment.className}" style="${styleForRange(
+                    segment.startSec,
+                    segment.endSec,
+                    domainStart,
+                    domainEnd,
+                )}"></div>`,
             )
             .join(''),
         '</div>',
@@ -1331,14 +1316,8 @@ function renderTimeline(
     const baselineBlocks = report.reference?.firstRunModel?.blocks ?? [];
     const allEnds = [
         ...humanBlocks.map((block) => block.endSec),
-        ...baselineBlocks.map((block) =>
-            rangeEnd(block.startSec, block.endSec),
-        ),
-        ...rankedRows.flatMap((item) =>
-            (item.row.blocks ?? []).map((block) =>
-                rangeEnd(block.startSec, block.endSec),
-            ),
-        ),
+        ...baselineBlocks.map((block) => rangeEnd(block.startSec, block.endSec)),
+        ...rankedRows.flatMap((item) => (item.row.blocks ?? []).map((block) => rangeEnd(block.startSec, block.endSec))),
     ];
     const domainEnd = Math.max(1, ...allEnds);
 
@@ -1363,8 +1342,8 @@ function renderTimeline(
         );
     }
     if (
-        baselineBlocks.length > 0 &&
-        report.reference?.firstRunModel !== undefined
+        baselineBlocks.length > 0
+        && report.reference?.firstRunModel !== undefined
     ) {
         staticLanes.push(
             renderLane(
@@ -1392,24 +1371,22 @@ function renderTimeline(
     }
 
     const modelLanes = rankedRows
-        .map((item) =>
-            renderLane(
-                {
-                    role: 'model',
-                    model: item.row.model,
-                    label: item.row.model,
-                    note: buildTimelineNote(item),
-                    segments: (item.row.blocks ?? []).map((block) => ({
-                        startSec: block.startSec,
-                        endSec: rangeEnd(block.startSec, block.endSec),
-                        className: `segment ${metricClass(item.summary.avgIou)}`,
-                    })),
-                },
-                0,
-                domainEnd,
-                'timeline',
-            ),
-        )
+        .map((item) => renderLane(
+            {
+                role: 'model',
+                model: item.row.model,
+                label: item.row.model,
+                note: buildTimelineNote(item),
+                segments: (item.row.blocks ?? []).map((block) => ({
+                    startSec: block.startSec,
+                    endSec: rangeEnd(block.startSec, block.endSec),
+                    className: `segment ${metricClass(item.summary.avgIou)}`,
+                })),
+            },
+            0,
+            domainEnd,
+            'timeline',
+        ))
         .join('\n');
 
     return [
@@ -1467,17 +1444,17 @@ function renderFocusCard(
                 baselineMetric === undefined
                     ? 'No aligned metric'
                     : joinDefined([
-                            `IoU ${formatPercent(baselineMetric.iouWithHuman)}`,
-                            `start ${formatDelta(baselineMetric.startDeltaSec)}`,
-                            `end ${formatDelta(baselineMetric.endDeltaSec)}`,
-                        ]),
+                        `IoU ${formatPercent(baselineMetric.iouWithHuman)}`,
+                        `start ${formatDelta(baselineMetric.startDeltaSec)}`,
+                        `end ${formatDelta(baselineMetric.endDeltaSec)}`,
+                    ]),
             segments: [
                 {
                     startSec:
                         baselineMetric?.predStartSec ?? baselineBlock.startSec,
                     endSec:
-                        baselineMetric?.predEndSec ??
-                        rangeEnd(baselineBlock.startSec, baselineBlock.endSec),
+                        baselineMetric?.predEndSec
+                        ?? rangeEnd(baselineBlock.startSec, baselineBlock.endSec),
                     className: `segment ${metricClass(baselineMetric?.iouWithHuman)}`,
                 },
             ],
@@ -1501,8 +1478,8 @@ function renderFocusCard(
                 {
                     startSec: metric?.predStartSec ?? block.startSec,
                     endSec:
-                        metric?.predEndSec ??
-                        rangeEnd(block.startSec, block.endSec),
+                        metric?.predEndSec
+                        ?? rangeEnd(block.startSec, block.endSec),
                     className: `segment ${metricClass(metric?.iouWithHuman)}`,
                 },
             ],
@@ -1511,12 +1488,8 @@ function renderFocusCard(
         });
     }
 
-    const starts = [...staticLanes, ...modelLanes].flatMap((lane) =>
-        lane.segments.map((segment) => segment.startSec),
-    );
-    const ends = [...staticLanes, ...modelLanes].flatMap((lane) =>
-        lane.segments.map((segment) => segment.endSec),
-    );
+    const starts = [...staticLanes, ...modelLanes].flatMap((lane) => lane.segments.map((segment) => segment.startSec));
+    const ends = [...staticLanes, ...modelLanes].flatMap((lane) => lane.segments.map((segment) => segment.endSec));
     const minSec = Math.min(...starts);
     const maxSec = Math.max(...ends);
     const pad = Math.max(4, (maxSec - minSec) * 0.12);
@@ -1542,15 +1515,11 @@ function renderFocusCard(
         `<span>${escapeHtml(formatClock(domainEnd))}</span>`,
         '</div>',
         staticLanes
-            .map((lane) =>
-                renderLane(lane, domainStart, domainEnd, 'focus', humanStyle),
-            )
+            .map((lane) => renderLane(lane, domainStart, domainEnd, 'focus', humanStyle))
             .join('\n'),
         '<div class="focus-model-lanes">',
         modelLanes
-            .map((lane) =>
-                renderLane(lane, domainStart, domainEnd, 'focus', humanStyle),
-            )
+            .map((lane) => renderLane(lane, domainStart, domainEnd, 'focus', humanStyle))
             .join('\n'),
         '</div>',
         '</article>',
@@ -1562,9 +1531,7 @@ function renderFocusBlocks(
     rankedRows: readonly RankedRow[],
 ): string {
     const count = report.reference?.humanBlocks.length ?? 0;
-    const cards = Array.from({ length: count }, (_value, index) =>
-        renderFocusCard(report, rankedRows, index),
-    ).join('\n');
+    const cards = Array.from({ length: count }, (_value, index) => renderFocusCard(report, rankedRows, index)).join('\n');
     return [
         '<section class="panel">',
         '<div class="panel-head">',
@@ -1585,8 +1552,8 @@ function renderNotes(report: CompareReport, rankedRows: readonly RankedRow[]) {
             .map((item) => `${item.row.model}: ${item.row.vsHumanNote ?? ''}`)
             .filter((note) => !note.endsWith(': ')),
         rankedRows.every((item) => item.cost.effectiveCost === undefined)
-            ? 'This log has no cost data. Render a newer compare JSON to use the ' +
-              'cost column and cost sorting.'
+            ? 'This log has no cost data. Render a newer compare JSON to use the '
+              + 'cost column and cost sorting.'
             : undefined,
     ].filter((note): note is string => note !== undefined);
     if (notes.length === 0) {
@@ -2059,9 +2026,8 @@ export function renderOpenRouterCompareHtml(
 ): string {
     const rankedRows = buildRankedRows(report.rows);
     const successfulCount = rankedRows.filter((item) => item.row.ok).length;
-    const title =
-        options.title ??
-        (report.reference?.videoId === undefined
+    const title = options.title
+        ?? (report.reference?.videoId === undefined
             ? 'OpenRouter preset comparison'
             : `OpenRouter preset comparison: ${report.reference.videoId}`);
     const sourceLabel = options.sourceLabel ?? 'inline data';

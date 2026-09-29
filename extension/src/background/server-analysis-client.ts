@@ -1,11 +1,4 @@
-import * as v from 'valibot';
-
-import { DebugLog } from '@/background/debug-log/debug-log';
-import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
-import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
-import { ServerInstallationStorage } from '@/background/storage/server-installation-storage';
-import { MIME_APPLICATION_JSON } from '@/shared/constants';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
     SERVER_ANALYSIS_FAILURE_CODE,
@@ -21,12 +14,19 @@ import {
     type ServerConfigResponse,
     type ServerTranscriptIdentity,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
+import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
+import { ServerInstallationStorage } from '@/background/storage/server-installation-storage';
+import { MIME_APPLICATION_JSON } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
-import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 
 const SERVER_ANALYSIS_REQUEST_TIMEOUT_MS = 15_000;
-const SERVER_ANALYSIS_CAPABILITIES_HEADER_VALUE =
-    SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
+const SERVER_ANALYSIS_CAPABILITIES_HEADER_VALUE = SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
 const SERVER_ANALYSIS_BASE_URL = __TOPSKIP_SERVER_BASE_URL__;
 
 /**
@@ -45,10 +45,10 @@ const SERVER_OPERATION_MAX_ATTEMPTS = {
 /**
  * Minimal decoded HTTP result passed to endpoint-specific validators.
  */
-type BackendJsonResult = {
+interface BackendJsonResult {
     ok: boolean;
     json: unknown;
-};
+}
 
 /**
  * Parsed responses carrying an authoritative transcript identity.
@@ -109,7 +109,14 @@ export class ServerAnalysisClient {
      * raw provider or backend error bodies.
      *
      * @param input - Safe operation metadata and fetch configuration.
+     * @param input.operation
+     * @param input.videoId
+     * @param input.jobId
+     * @param input.tabId
+     * @param input.path
+     * @param input.init
      * @param attempt - One-based transport attempt for safe diagnostics.
+     *
      * @returns HTTP success flag and opaque decoded JSON.
      */
     private static async fetchBackendJsonAttempt(
@@ -241,6 +248,13 @@ export class ServerAnalysisClient {
      * single-shot and keeping HTTP or malformed JSON outcomes authoritative.
      *
      * @param input - Safe operation metadata and fetch configuration.
+     * @param input.operation
+     * @param input.videoId
+     * @param input.jobId
+     * @param input.tabId
+     * @param input.path
+     * @param input.init
+     *
      * @returns HTTP success flag and opaque decoded JSON.
      */
     private static async fetchBackendJson(input: {
@@ -272,6 +286,7 @@ export class ServerAnalysisClient {
      * extension-safe code.
      *
      * @param json - Opaque decoded response.
+     *
      * @returns Validated analysis response.
      */
     private static parseAnalysisResponse(
@@ -288,6 +303,7 @@ export class ServerAnalysisClient {
      * Extracts typed failure details from a non-success endpoint response.
      *
      * @param json - Opaque decoded response.
+     *
      * @returns Safe failure error.
      */
     private static parseEndpointFailure(
@@ -295,9 +311,9 @@ export class ServerAnalysisClient {
     ): ServerAnalysisClientError {
         const response = ServerAnalysisClient.parseAnalysisResponse(json);
         if (
-            response.status === 'error' ||
-            response.status === 'unavailable' ||
-            response.status === 'rate_limited'
+            response.status === 'error'
+            || response.status === 'unavailable'
+            || response.status === 'rate_limited'
         ) {
             return new ServerAnalysisClientError(response.error);
         }
@@ -309,6 +325,7 @@ export class ServerAnalysisClient {
      * than accepting a forged or broken success body.
      *
      * @param result - Decoded HTTP result with its success flag.
+     *
      * @returns Validated analysis response.
      */
     private static parseAuthenticatedResult(
@@ -318,10 +335,10 @@ export class ServerAnalysisClient {
             result.json,
         );
         if (
-            !result.ok &&
-            response.status !== 'error' &&
-            response.status !== 'unavailable' &&
-            response.status !== 'rate_limited'
+            !result.ok
+            && response.status !== 'error'
+            && response.status !== 'unavailable'
+            && response.status !== 'rate_limited'
         ) {
             throw ServerAnalysisClient.invalidResponseError();
         }
@@ -332,15 +349,16 @@ export class ServerAnalysisClient {
      * Narrows validated responses that are bound to an accepted transcript.
      *
      * @param response - Parsed response with additive fields already stripped.
+     *
      * @returns Whether every authoritative identity field is present.
      */
     private static hasTranscriptIdentity(
         response: ServerAnalysisResponse,
     ): response is IdentifiedServerAnalysisResponse {
         return (
-            'languageCode' in response &&
-            'transcriptHash' in response &&
-            'videoId' in response
+            'languageCode' in response
+            && 'transcriptHash' in response
+            && 'videoId' in response
         );
     }
 
@@ -349,6 +367,7 @@ export class ServerAnalysisClient {
      *
      * @param response - Parsed initial analysis response.
      * @param expected - Browser-computed identity excluding server algorithm.
+     *
      * @returns The unchanged known response fields.
      */
     private static validateInitialIdentity(
@@ -359,9 +378,9 @@ export class ServerAnalysisClient {
             return response;
         }
         if (
-            response.videoId !== expected.videoId ||
-            response.languageCode !== expected.languageCode ||
-            response.transcriptHash !== expected.transcriptHash
+            response.videoId !== expected.videoId
+            || response.languageCode !== expected.languageCode
+            || response.transcriptHash !== expected.transcriptHash
         ) {
             throw ServerAnalysisClient.invalidResponseError();
         }
@@ -373,6 +392,7 @@ export class ServerAnalysisClient {
      *
      * @param response - Parsed polling response.
      * @param expected - Full identity from the validated processing response.
+     *
      * @returns The unchanged known response fields.
      */
     private static validatePolledIdentity(
@@ -386,9 +406,9 @@ export class ServerAnalysisClient {
             return response;
         }
         if (
-            response.videoId !== expected.videoId ||
-            response.languageCode !== expected.languageCode ||
-            response.transcriptHash !== expected.transcriptHash
+            response.videoId !== expected.videoId
+            || response.languageCode !== expected.languageCode
+            || response.transcriptHash !== expected.transcriptHash
         ) {
             throw ServerAnalysisClient.invalidResponseError();
         }
@@ -449,6 +469,7 @@ export class ServerAnalysisClient {
      * Loads a fresh credential or lazily creates one for server mode.
      *
      * @param forceRegistration - Skips storage after the server rejects a token.
+     *
      * @returns Bearer token retained only in background memory/storage.
      */
     private static async getInstallationToken(
@@ -471,6 +492,7 @@ export class ServerAnalysisClient {
      * a second one minted.
      *
      * @param rejectedToken - Bearer credential the server just rejected.
+     *
      * @returns Replacement bearer token.
      */
     private static async replaceRejectedToken(
@@ -499,7 +521,15 @@ export class ServerAnalysisClient {
      * server reports an expired installation credential.
      *
      * @param input - Operation metadata and token-aware request factory.
+     * @param input.operation
+     * @param input.videoId
+     * @param input.jobId
+     * @param input.tabId
+     * @param input.path
+     * @param input.method
+     * @param input.body
      * @param canRetryToken - Whether the one safe auth retry remains.
+     *
      * @returns Validated analysis response.
      */
     private static async requestAuthenticated(
@@ -538,15 +568,14 @@ export class ServerAnalysisClient {
         });
         const response = ServerAnalysisClient.parseAuthenticatedResult(result);
         if (
-            canRetryToken &&
-            response.status === 'error' &&
-            (response.error.code ===
-                SERVER_ANALYSIS_FAILURE_CODE.TokenExpired ||
-                response.error.code ===
-                    SERVER_ANALYSIS_FAILURE_CODE.TokenInvalid)
+            canRetryToken
+            && response.status === 'error'
+            && (response.error.code
+                === SERVER_ANALYSIS_FAILURE_CODE.TokenExpired
+                || response.error.code
+                    === SERVER_ANALYSIS_FAILURE_CODE.TokenInvalid)
         ) {
-            const replacementToken =
-                await ServerAnalysisClient.replaceRejectedToken(token);
+            const replacementToken = await ServerAnalysisClient.replaceRejectedToken(token);
             const retryResult = await ServerAnalysisClient.fetchBackendJson({
                 operation: input.operation,
                 videoId: input.videoId,
@@ -595,6 +624,13 @@ export class ServerAnalysisClient {
      * Requests the current server analysis state for a video.
      *
      * @param input - Current video metadata, extension version, and timed captions.
+     * @param input.videoId
+     * @param input.durationSec
+     * @param input.extensionVersion
+     * @param input.languageCode
+     * @param input.segments
+     * @param input.tabId
+     *
      * @returns Validated server analysis response.
      */
     static async requestAnalysis(input: {
@@ -626,8 +662,8 @@ export class ServerAnalysisClient {
         }
         const body = JSON.stringify(request);
         if (
-            new TextEncoder().encode(body).byteLength >
-            SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES
+            new TextEncoder().encode(body).byteLength
+            > SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES
         ) {
             throw new ServerAnalysisClientError({
                 code: SERVER_ANALYSIS_FAILURE_CODE.InvalidRequest,
@@ -652,6 +688,10 @@ export class ServerAnalysisClient {
      * Requests the latest state for an existing backend analysis job.
      *
      * @param input - Poll handle plus authoritative identity retained by content.
+     * @param input.jobId
+     * @param input.identity
+     * @param input.tabId
+     *
      * @returns Validated server analysis response.
      */
     static async requestJobStatus(input: {

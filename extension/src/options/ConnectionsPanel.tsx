@@ -8,24 +8,24 @@ import {
     Text,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
-import type {
-    ConnectionEntryMessage,
-    ConnectionProviderId,
-} from '@/shared/messages';
-import { CONNECTION_STATUS } from '@/shared/messages';
 import { translator } from '@/shared/i18n/translator';
+import { CONNECTION_STATUS } from '@/shared/messages';
 import {
     PROVIDER_HOST_ACCESS_STATUS,
     PROVIDER_HOST_PERMISSION,
 } from '@/shared/provider-host-permissions';
 
+import type {
+    ConnectionEntryMessage,
+    ConnectionProviderId,
+} from '@/shared/messages';
+import type { ReactElement } from 'react';
+
 /**
  * Last visible validation state for a cloud provider key test.
  */
-export type ConnectionTestState =
-    | { kind: 'idle' }
+export type ConnectionTestState = | { kind: 'idle' }
     | { kind: 'valid' }
     | { kind: 'invalid' }
     | { kind: 'key_required' }
@@ -39,6 +39,7 @@ export type ConnectionTestState =
  * entering the rendered options page.
  *
  * @param state - Last classified test or access outcome.
+ *
  * @returns Localized feedback, or `null` while idle.
  */
 function getConnectionFeedback(
@@ -97,7 +98,7 @@ function getConnectionFeedback(
 /**
  * Connection rows, draft keys, and actions for the API key section.
  */
-type ConnectionsPanelProps = {
+interface ConnectionsPanelProps {
     connections: ConnectionEntryMessage[];
     drafts: Record<ConnectionProviderId, string>;
     busyProviderId: ConnectionProviderId | null;
@@ -106,12 +107,13 @@ type ConnectionsPanelProps = {
     onSave(providerId: ConnectionProviderId): void;
     onTest(providerId: ConnectionProviderId): void;
     onGrantHostAccess(providerId: ConnectionProviderId): void;
-};
+}
 
 /**
  * Dedicated provider API-key section, separate from model selection.
  *
  * @param props - Connection rows and key actions.
+ *
  * @returns Connections management panel.
  */
 export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
@@ -132,11 +134,9 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                     const testState = props.testStates[connection.providerId];
                     const testFeedback = getConnectionFeedback(testState);
                     const busy = props.busyProviderId === connection.providerId;
-                    const hostPermission =
-                        PROVIDER_HOST_PERMISSION[connection.providerId];
-                    const hasHostAccess =
-                        connection.hostAccessStatus ===
-                        PROVIDER_HOST_ACCESS_STATUS.Granted;
+                    const hostPermission = PROVIDER_HOST_PERMISSION[connection.providerId];
+                    const hasHostAccess = connection.hostAccessStatus
+                        === PROVIDER_HOST_ACCESS_STATUS.Granted;
                     return (
                         <Paper
                             key={connection.providerId}
@@ -163,21 +163,21 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                                     </Group>
                                     <Badge
                                         color={
-                                            connection.status ===
-                                            CONNECTION_STATUS.Saved
+                                            connection.status
+                                            === CONNECTION_STATUS.Saved
                                                 ? 'green'
                                                 : 'gray'
                                         }
                                         variant="light"
                                     >
-                                        {connection.status ===
-                                        CONNECTION_STATUS.Saved
+                                        {connection.status
+                                        === CONNECTION_STATUS.Saved
                                             ? translator.getMessage(
-                                                    'options_connection_key_saved',
-                                                )
+                                                'options_connection_key_saved',
+                                            )
                                             : translator.getMessage(
-                                                    'options_connection_key_missing',
-                                                )}
+                                                'options_connection_key_missing',
+                                            )}
                                     </Badge>
                                 </Group>
                                 <Group align="flex-end" wrap="nowrap" gap="sm">
@@ -185,8 +185,8 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                                         style={{ flex: 1 }}
                                         label={`${connection.providerLabel} API key`}
                                         placeholder={
-                                            connection.apiKeyMasked ??
-                                            translator.getMessage(
+                                            connection.apiKeyMasked
+                                            ?? translator.getMessage(
                                                 'options_connection_key_placeholder',
                                             )
                                         }
@@ -230,11 +230,11 @@ export function ConnectionsPanel(props: ConnectionsPanelProps): ReactElement {
                                         >
                                             {hasHostAccess
                                                 ? translator.getMessage(
-                                                        'options_connection_host_access_granted_badge',
-                                                    )
+                                                    'options_connection_host_access_granted_badge',
+                                                )
                                                 : translator.getMessage(
-                                                        'options_connection_host_access_required_badge',
-                                                    )}
+                                                    'options_connection_host_access_required_badge',
+                                                )}
                                         </Badge>
                                         <Text size="xs" c="dimmed">
                                             {translator.getMessage(

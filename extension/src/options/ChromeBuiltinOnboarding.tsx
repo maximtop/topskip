@@ -7,19 +7,20 @@ import {
     Text,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
+
+import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 
 import type { ProviderAvailabilityMessage } from '@/shared/messages';
-import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
+import type { ReactElement } from 'react';
 
 /**
  * Prompt API onboarding state and download action passed from options.
  */
-type ChromeBuiltinOnboardingProps = {
+interface ChromeBuiltinOnboardingProps {
     availability: ProviderAvailabilityMessage;
     downloadProgress: number | null;
     onDownload: () => void;
-};
+}
 
 /**
  * Multi-state onboarding widget for the Chrome Built-in AI provider.
@@ -27,6 +28,7 @@ type ChromeBuiltinOnboardingProps = {
  * unavailable → downloadable → downloading → available.
  *
  * @param props - Current availability, download progress, and callback
+ *
  * @returns Onboarding UI for Chrome Built-in
  */
 export function ChromeBuiltinOnboarding(

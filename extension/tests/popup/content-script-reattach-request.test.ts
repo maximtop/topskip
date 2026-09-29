@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { POPUP_REATTACH_REQUEST_TIMEOUT_MS } from '@/popup/constants';
 import { requestContentScriptReattachWithTimeout } from '@/popup/content-script-reattach-request';
@@ -41,10 +49,9 @@ describe('content script re-attach request', () => {
 
     it('rejects a lost reply only after the bounded timeout', async () => {
         mocks.sendMessage.mockImplementation(
-            () =>
-                new Promise<unknown>(() => {
-                    // A killed service worker may never deliver its reply.
-                }),
+            () => new Promise<unknown>(() => {
+                // A killed service worker may never deliver its reply.
+            }),
         );
         let settled = false;
         const request = requestContentScriptReattachWithTimeout();

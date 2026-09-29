@@ -1,4 +1,3 @@
-import type { Tabs } from 'webextension-polyfill/namespaces/tabs';
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
@@ -12,6 +11,8 @@ import {
     type ContentScriptReadyResponse,
 } from '@/shared/messages';
 
+import type { Tabs } from 'webextension-polyfill/namespaces/tabs';
+
 /**
  * Tab whose id the browser exposed; only those can be probed.
  */
@@ -21,6 +22,7 @@ type IdentifiedTab = Tabs.Tab & { id: number };
  * Keeps tabs without an id out of the probe list with a narrowing filter.
  *
  * @param tab - Tab from `tabs.query`.
+ *
  * @returns Whether the tab carries an id.
  */
 function hasTabId(tab: Tabs.Tab): tab is IdentifiedTab {
@@ -91,6 +93,7 @@ export class ContentScriptWakeup {
      * then is the tab noted for attribution and its readiness logged.
      *
      * @param tab - Identified browser tab; its URL is deliberately not read.
+     *
      * @returns Whether the current bundle acknowledged the wake notification.
      */
     private static async notifyTab(tab: IdentifiedTab): Promise<boolean> {
@@ -107,8 +110,7 @@ export class ContentScriptWakeup {
                 // A tab whose first runtime message already reached the
                 // dispatcher is known here; it logged content-ready there,
                 // so the wake ack must not log it a second time.
-                const firstSeen =
-                    TabAttributionRegistry.isIncognitoSync(tab.id) === null;
+                const firstSeen = TabAttributionRegistry.isIncognitoSync(tab.id) === null;
                 TabAttributionRegistry.noteTab(tab);
                 if (firstSeen) {
                     DebugLog.record(
@@ -122,8 +124,7 @@ export class ContentScriptWakeup {
                 }
                 return true;
             }
-            const hasAnotherAttempt =
-                attempt + 1 < CONTENT_SCRIPT_WAKE_ATTEMPTS;
+            const hasAnotherAttempt = attempt + 1 < CONTENT_SCRIPT_WAKE_ATTEMPTS;
             if (hasAnotherAttempt) {
                 await ContentScriptWakeup.waitBeforeRetry();
             }
@@ -140,6 +141,7 @@ export class ContentScriptWakeup {
      * @param timeoutMs - Bound for this single attempt; startup wakes use a
      * tight bound, while a user-driven re-attach can afford to wait longer
      * before deciding the tab needs a fresh bundle.
+     *
      * @returns Whether this single bounded attempt was acknowledged.
      */
     static async probeTab(
@@ -156,6 +158,7 @@ export class ContentScriptWakeup {
      *
      * @param tabId - Tab receiving the readiness notification.
      * @param timeoutMs - Bound for this single attempt.
+     *
      * @returns Validated current-bundle acknowledgement, or `null`.
      */
     private static async probeTabAck(
@@ -183,9 +186,8 @@ export class ContentScriptWakeup {
             if (!parsed.success) {
                 return null;
             }
-            const isCurrentBundle =
-                parsed.output.extensionVersion ===
-                browser.runtime.getManifest().version;
+            const isCurrentBundle = parsed.output.extensionVersion
+                === browser.runtime.getManifest().version;
             return isCurrentBundle ? parsed.output : null;
         } catch {
             return null;

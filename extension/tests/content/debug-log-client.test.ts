@@ -1,17 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
-const { contentLogInfo, sendMessage } = vi.hoisted(() => ({
-    contentLogInfo: vi.fn(),
-    sendMessage: vi.fn<(message: unknown) => Promise<unknown>>(),
-}));
-
-vi.mock('@/shared/browser', () => ({
-    default: { runtime: { sendMessage } },
-}));
-
-vi.mock('@/content/content-log', () => ({
-    contentLog: { info: contentLogInfo, warn: vi.fn(), error: vi.fn() },
-}));
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     DEBUG_LOG_SEEK_KIND,
@@ -32,6 +27,19 @@ import {
 import { DEBUG_LOG_EVENT, roundLogSeconds } from '@/shared/debug-log-events';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
+const { contentLogInfo, sendMessage } = vi.hoisted(() => ({
+    contentLogInfo: vi.fn(),
+    sendMessage: vi.fn<(message: unknown) => Promise<unknown>>(),
+}));
+
+vi.mock('@/shared/browser', () => ({
+    default: { runtime: { sendMessage } },
+}));
+
+vi.mock('@/content/content-log', () => ({
+    contentLog: { info: contentLogInfo, warn: vi.fn(), error: vi.fn() },
+}));
+
 const VIDEO_ID = 'dQw4w9WgXcQ';
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const DEV_CONSOLE_PREFIX = '[TopSkip debug-log]';
@@ -39,10 +47,10 @@ const DEV_CONSOLE_PREFIX = '[TopSkip debug-log]';
 // payload literal free of unsafe-assignment errors.
 const ANY_NUMBER: unknown = expect.any(Number);
 
-type SentBatch = {
-    events: Array<Record<string, unknown>>;
+interface SentBatch {
+    events: Record<string, unknown>[];
     dropped: Record<string, unknown>;
-};
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -64,7 +72,7 @@ function sentBatches(): SentBatch[] {
     });
 }
 
-function sentEvents(): Array<Record<string, unknown>> {
+function sentEvents(): Record<string, unknown>[] {
     return sentBatches().flatMap((batch) => batch.events);
 }
 

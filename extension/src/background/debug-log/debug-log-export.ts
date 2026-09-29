@@ -1,12 +1,13 @@
 import * as v from 'valibot';
 
-import type { DebugLogSnapshot } from '@/background/debug-log/debug-log-store';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import browser from '@/shared/browser';
 import { ANALYSIS_MODE, type UserPreferences } from '@/shared/constants';
 import { toDebugLogModelId } from '@/shared/detection-models';
 import { getExtensionBuildLabel } from '@/shared/extension-build';
 import { formatLogFields } from '@/shared/log-fields';
+
+import type { DebugLogSnapshot } from '@/background/debug-log/debug-log-store';
 
 /**
  * Written when a fact could not be read; never a free-form error.
@@ -48,12 +49,11 @@ export const DEBUG_LOG_BUNDLE_TITLE = 'TopSkip debug log';
 /**
  * Content notice carried by every export (English, not localized).
  */
-export const DEBUG_LOG_BUNDLE_NOTICE =
-    'Notice: this log lists the YouTube video IDs you watched while Debug ' +
-    'logging was on, with times and tab numbers, plus your extension and ' +
-    'browser version, OS family, UI language, analysis mode and model. It ' +
-    'never contains captions, transcripts, keys, tokens, cookies or URLs. ' +
-    'Incognito windows are not logged. Review it before sharing.';
+export const DEBUG_LOG_BUNDLE_NOTICE = 'Notice: this log lists the YouTube video IDs you watched while Debug '
+    + 'logging was on, with times and tab numbers, plus your extension and '
+    + 'browser version, OS family, UI language, analysis mode and model. It '
+    + 'never contains captions, transcripts, keys, tokens, cookies or URLs. '
+    + 'Incognito windows are not logged. Review it before sharing.';
 
 /**
  * Separates the header from the event lines.
@@ -63,7 +63,7 @@ export const DEBUG_LOG_BUNDLE_EVENTS_MARKER = '--- events ---';
 /**
  * Facts written into the export header and the enable snapshot.
  */
-export type DebugLogEnvironment = {
+export interface DebugLogEnvironment {
     extensionBuild: string;
     browserMajor: number | null;
     osFamily: string;
@@ -71,7 +71,7 @@ export type DebugLogEnvironment = {
     analysisMode: string;
     providerId: string;
     modelId: string;
-};
+}
 
 /**
  * Collects the bounded environment facts; every read degrades to
@@ -156,6 +156,7 @@ export class EnvironmentProbe {
      * Picks the Chromium brand's major from `userAgentData.brands`.
      *
      * @param userAgentData - Raw `navigator.userAgentData` value.
+     *
      * @returns Major version or `null`.
      */
     private static majorFromBrands(userAgentData: unknown): number | null {
@@ -217,6 +218,7 @@ export class DebugLogExport {
      * @param snapshot - Immutable store snapshot.
      * @param env - Environment facts.
      * @param exportedAtMs - Snapshot timestamp (also the file-name instant).
+     *
      * @returns Bundle text ending with a newline.
      */
     static buildBundle(
@@ -269,6 +271,7 @@ export class DebugLogExport {
      * UTC timestamp or the `none` token.
      *
      * @param ms - Epoch milliseconds or `null`.
+     *
      * @returns ISO string or `none`.
      */
     private static isoOrNone(ms: number | null): string {

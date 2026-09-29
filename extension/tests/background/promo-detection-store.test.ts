@@ -1,6 +1,23 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
-const { notify, sessionStorageData, sessionGet, sessionSet } = vi.hoisted(
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { PromoDetectionStore } from '@/background/promo-detection-store';
+
+import type { PromoDetectionStatePayload } from '@/shared/messages';
+
+const {
+
+    notify,
+    sessionStorageData,
+    sessionGet,
+    sessionSet,
+} = vi.hoisted(
     () => {
         const data: Record<string, unknown> = {};
         return {
@@ -24,9 +41,6 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-import { PromoDetectionStore } from '@/background/promo-detection-store';
-import type { PromoDetectionStatePayload } from '@/shared/messages';
-
 const SESSION_STORAGE_KEY = 'topskipPromoDetectionStore';
 const TAB_ID = 42;
 const OTHER_TAB_ID = 84;
@@ -41,13 +55,11 @@ const SESSION_B = '00000000-0000-4000-8000-000000000002';
  * @returns Nothing.
  */
 function restoreSessionStorageMocks(): void {
-    sessionGet.mockImplementation((key: string) =>
-        Promise.resolve(
-            key in sessionStorageData
-                ? { [key]: sessionStorageData[key] }
-                : {},
-        ),
-    );
+    sessionGet.mockImplementation((key: string) => Promise.resolve(
+        key in sessionStorageData
+            ? { [key]: sessionStorageData[key] }
+            : {},
+    ));
     sessionSet.mockImplementation((items: Record<string, unknown>) => {
         Object.assign(sessionStorageData, items);
         return Promise.resolve();
@@ -142,16 +154,14 @@ describe('PromoDetectionStore Server sessions', () => {
         // (32): each caption_acquisition message for a new session retires the
         // previous active session, so 33 replacements retire 33 sessions and
         // must evict the single oldest one.
-        const sessionIdFor = (n: number): string =>
-            `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-        const acquisitionFor = (n: number) =>
-            ({
-                videoId: VIDEO_ID,
-                status: 'analyzing',
-                source: 'server',
-                sessionId: sessionIdFor(n),
-                serverAnalysisPhase: 'caption_acquisition',
-            }) as const;
+        const sessionIdFor = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+        const acquisitionFor = (n: number) => ({
+            videoId: VIDEO_ID,
+            status: 'analyzing',
+            source: 'server',
+            sessionId: sessionIdFor(n),
+            serverAnalysisPhase: 'caption_acquisition',
+        }) as const;
 
         await PromoDetectionStore.set(TAB_ID, acquisitionFor(0));
         for (let n = 1; n <= 33; n++) {
@@ -454,12 +464,11 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
         sessionStorageData[SESSION_STORAGE_KEY] = persisted;
         let resolveHydration = (): void => undefined;
         sessionGet.mockImplementationOnce(
-            () =>
-                new Promise<Record<string, unknown>>((resolve) => {
-                    resolveHydration = (): void => {
-                        resolve({ [SESSION_STORAGE_KEY]: persisted });
-                    };
-                }),
+            () => new Promise<Record<string, unknown>>((resolve) => {
+                resolveHydration = (): void => {
+                    resolve({ [SESSION_STORAGE_KEY]: persisted });
+                };
+            }),
         );
         const FreshStore = await restartWorker();
         let clearSettled = false;
@@ -492,10 +501,9 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
         };
         let releaseWrite = (): void => undefined;
         sessionSet.mockImplementationOnce(
-            () =>
-                new Promise<void>((resolve) => {
-                    releaseWrite = resolve;
-                }),
+            () => new Promise<void>((resolve) => {
+                releaseWrite = resolve;
+            }),
         );
         const FreshStore = await restartWorker();
         const pending = FreshStore.set(TAB_ID, {
@@ -573,13 +581,12 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
         vi.clearAllMocks();
         let releaseWrite = (): void => undefined;
         sessionSet.mockImplementationOnce(
-            (items: Record<string, unknown>) =>
-                new Promise<void>((resolve) => {
-                    releaseWrite = (): void => {
-                        Object.assign(sessionStorageData, items);
-                        resolve();
-                    };
-                }),
+            (items: Record<string, unknown>) => new Promise<void>((resolve) => {
+                releaseWrite = (): void => {
+                    Object.assign(sessionStorageData, items);
+                    resolve();
+                };
+            }),
         );
         const terminal = {
             videoId: VIDEO_ID,
@@ -622,13 +629,12 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
         vi.clearAllMocks();
         let releaseWrite = (): void => undefined;
         sessionSet.mockImplementationOnce(
-            (items: Record<string, unknown>) =>
-                new Promise<void>((resolve) => {
-                    releaseWrite = (): void => {
-                        Object.assign(sessionStorageData, items);
-                        resolve();
-                    };
-                }),
+            (items: Record<string, unknown>) => new Promise<void>((resolve) => {
+                releaseWrite = (): void => {
+                    Object.assign(sessionStorageData, items);
+                    resolve();
+                };
+            }),
         );
 
         const firstClear = PromoDetectionStore.clear(TAB_ID);

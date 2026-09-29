@@ -90,12 +90,10 @@ describe('promo benchmark preflight', () => {
     });
 
     it('rejects an unsupported effort before inference', () => {
-        expect(() =>
-            runBenchmarkPreflight({
-                repoRoot: REPO_ROOT,
-                requestedModelIds: ['kimi-k3'],
-                reasoning: 'none',
-            }),
-        ).toThrow('Requested reasoning is unsupported.');
+        expect(() => runBenchmarkPreflight({
+            repoRoot: REPO_ROOT,
+            requestedModelIds: ['kimi-k3'],
+            reasoning: 'none',
+        })).toThrow('Requested reasoning is unsupported.');
     });
 });

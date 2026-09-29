@@ -1,3 +1,5 @@
+import { parseTranscriptJson3 } from '@topskip/common/captions/transcript-json3';
+
 import {
     createCaptureSession,
     shouldIgnoreCapturedTimedtext,
@@ -14,9 +16,17 @@ import {
     CaptureDiagnostics,
     PAGE_DIAGNOSTIC_STAGE_PREFIX,
 } from '@/content/captions/capture-diagnostics';
-import { DebugLogClient } from '@/content/debug-log-client';
 import { contentLog } from '@/content/content-log';
+import { DebugLogClient } from '@/content/debug-log-client';
+import browser from '@/shared/browser';
+import { CAPTION_CAPTURE_VERBOSE_LOGS } from '@/shared/constants';
 import { formatLogStage } from '@/shared/log-fields';
+import {
+    CAPTION_CAPTURE_FAILURE_REASON,
+    TOPSKIP_MESSAGE,
+    type CaptionCaptureFailureReason,
+} from '@/shared/messages';
+
 import type {
     CaptionCaptureFailure,
     CaptionCaptureInput,
@@ -25,14 +35,6 @@ import type {
     CapturedTimedtextUrlShape,
     CapturedTimedtextPayload,
 } from '@/content/captions/caption-capture-types';
-import browser from '@/shared/browser';
-import { parseTranscriptJson3 } from '@topskip/common/captions/transcript-json3';
-import { CAPTION_CAPTURE_VERBOSE_LOGS } from '@/shared/constants';
-import {
-    CAPTION_CAPTURE_FAILURE_REASON,
-    TOPSKIP_MESSAGE,
-    type CaptionCaptureFailureReason,
-} from '@/shared/messages';
 
 /**
  * Default capture budget when a caller does not override it. Kept well
@@ -96,8 +98,7 @@ export const EMPTY_BODY_RELOAD_MAX_DELAY_MS = 2_000;
  */
 const RELOAD_BUDGET_SKIP_REASON = 'budget';
 
-const EMPTY_TIMEDTEXT_BODY_STAGE =
-    CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody;
+const EMPTY_TIMEDTEXT_BODY_STAGE = CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE.TimedtextEmptyBody;
 const PAGE_SOURCE = CAPTION_PAGE_BRIDGE_SOURCE.Main;
 const PAGE_EVENT = CAPTION_PAGE_BRIDGE_EVENT.PageMessage;
 const MAX_RECENT_PAGE_BRIDGE_MESSAGES = 256;
@@ -113,9 +114,9 @@ const BRIDGE_UNAVAILABLE_RESULT = Object.freeze({
 /**
  * Optional timing knobs for caption capture tests and runtime calls.
  */
-type CaptureOptions = {
+interface CaptureOptions {
     captureTimeoutMs?: number;
-};
+}
 
 /**
  * Pending capture promise, timeout and per-session counters, all tied to one
@@ -129,7 +130,7 @@ type CaptureOptions = {
  * successor: every writer reaches them through the current `activeWait`,
  * which is the same identity every other ownership check uses.
  */
-type ActiveCaptureWait = {
+interface ActiveCaptureWait {
     session: CaptionCaptureSession;
     timeoutId: ReturnType<typeof setTimeout> | null;
     signal: AbortSignal;
@@ -171,19 +172,18 @@ type ActiveCaptureWait = {
      * pot-bearing empties still costs the log exactly one entry.
      */
     reloadBudgetSkipLogged: boolean;
-};
+}
 
 /**
  * Local lifecycle commands used by the content orchestrator.
  */
-type BridgeCommandName =
-    | typeof CAPTION_PAGE_BRIDGE_COMMAND.Activate
+type BridgeCommandName = | typeof CAPTION_PAGE_BRIDGE_COMMAND.Activate
     | typeof CAPTION_PAGE_BRIDGE_COMMAND.Deactivate;
 
 /**
  * Safe diagnostic fields forwarded from page-world capture.
  */
-type PageDiagnosticDetails = {
+interface PageDiagnosticDetails {
     stage: string;
     videoId?: string | null;
     languageCode?: string | null;
@@ -200,27 +200,27 @@ type PageDiagnosticDetails = {
     hideStylePresent?: boolean;
     hasTracks?: number | null;
     actions?: string[];
-};
+}
 
 /**
  * Failure payload returned by bridge command handlers.
  */
-type BridgeCommandFailure = {
+interface BridgeCommandFailure {
     ok: false;
     reason: CaptionCaptureFailureReason;
     error: string;
-};
+}
 
 /**
  * Optional bridge command details used for cleanup diagnostics.
  */
-type BridgeCommandDetails = {
+interface BridgeCommandDetails {
     ok?: boolean;
     wasOn?: boolean | null;
     userIntervened?: boolean;
     hasTracks?: number | null;
     actions?: string[];
-};
+}
 
 /**
  * Coordinates player-mediated caption capture from the content script.
@@ -281,8 +281,7 @@ export class PlayerCaptionCapture {
     /**
      * Chrome world bridging uses a second detachable DOM-event transport.
      */
-    private static documentMessageListener: ((event: Event) => void) | null =
-        null;
+    private static documentMessageListener: ((event: Event) => void) | null = null;
 
     /**
      * Shared cleanup promise keeps disposal behind an already-running local
@@ -329,8 +328,8 @@ export class PlayerCaptionCapture {
             return;
         }
         if (
-            PlayerCaptionCapture.scheduledVideoId === videoId ||
-            PlayerCaptionCapture.completedScheduledVideoId === videoId
+            PlayerCaptionCapture.scheduledVideoId === videoId
+            || PlayerCaptionCapture.completedScheduledVideoId === videoId
         ) {
             PlayerCaptionCapture.log('schedule-duplicate', { videoId, source });
             return;
@@ -345,8 +344,7 @@ export class PlayerCaptionCapture {
         }
         PlayerCaptionCapture.log('schedule-start', { videoId, source });
         PlayerCaptionCapture.nextScheduledCaptureId += 1;
-        const scheduledCaptureId =
-            PlayerCaptionCapture.nextScheduledCaptureId;
+        const scheduledCaptureId = PlayerCaptionCapture.nextScheduledCaptureId;
         PlayerCaptionCapture.activeScheduledCaptureId = scheduledCaptureId;
         PlayerCaptionCapture.scheduledVideoId = videoId;
         void PlayerCaptionCapture.runScheduledCapture(
@@ -380,8 +378,8 @@ export class PlayerCaptionCapture {
      */
     static getScheduledVideoIdForTest(): string | null {
         return (
-            PlayerCaptionCapture.scheduledVideoId ??
-            PlayerCaptionCapture.completedScheduledVideoId
+            PlayerCaptionCapture.scheduledVideoId
+            ?? PlayerCaptionCapture.completedScheduledVideoId
         );
     }
 
@@ -475,6 +473,7 @@ export class PlayerCaptionCapture {
      *
      * @param videoId Current YouTube watch video id.
      * @param options Capture timing overrides used by focused tests.
+     *
      * @returns Terminal capture result after legacy message delivery.
      */
     static async captureForVideoId(
@@ -496,6 +495,7 @@ export class PlayerCaptionCapture {
      *
      * @param videoId Video identity owned by the capture.
      * @param result Terminal capture result to deliver when applicable.
+     *
      * @returns Resolves after the existing caption channel settles.
      */
     private static async deliverCaptureResult(
@@ -520,6 +520,7 @@ export class PlayerCaptionCapture {
      * @param scheduledCaptureId Monotonic ownership for this scheduled run.
      * @param videoId Scheduled watch video.
      * @param options Capture timeout override used by focused tests.
+     *
      * @returns Promise settled after dedupe state reflects the terminal result.
      */
     private static async runScheduledCapture(
@@ -553,18 +554,17 @@ export class PlayerCaptionCapture {
                 return;
             }
             await PlayerCaptionCapture.deliverCaptureResult(videoId, result);
-            const retryable =
-                result.status === 'cancelled' ||
-                (result.status === 'failed' &&
-                    (result.failure.reason ===
-                        CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady ||
-                        result.failure.reason ===
-                            CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout ||
-                        result.failure.reason ===
-                            CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed));
+            const retryable = result.status === 'cancelled'
+                || (result.status === 'failed'
+                    && (result.failure.reason
+                        === CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady
+                        || result.failure.reason
+                            === CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout
+                        || result.failure.reason
+                            === CAPTION_CAPTURE_FAILURE_REASON.BridgeInstallFailed));
             if (
-                !retryable &&
-                PlayerCaptionCapture.isScheduledCaptureCurrent(
+                !retryable
+                && PlayerCaptionCapture.isScheduledCaptureCurrent(
                     scheduledCaptureId,
                     videoId,
                 )
@@ -592,6 +592,7 @@ export class PlayerCaptionCapture {
      *
      * @param scheduledCaptureId Operation identity captured at scheduling.
      * @param videoId Video identity captured at scheduling.
+     *
      * @returns Whether the operation still owns scheduled delivery.
      */
     private static isScheduledCaptureCurrent(
@@ -599,9 +600,9 @@ export class PlayerCaptionCapture {
         videoId: string,
     ): boolean {
         return (
-            PlayerCaptionCapture.activeScheduledCaptureId ===
-                scheduledCaptureId &&
-            PlayerCaptionCapture.scheduledVideoId === videoId
+            PlayerCaptionCapture.activeScheduledCaptureId
+                === scheduledCaptureId
+            && PlayerCaptionCapture.scheduledVideoId === videoId
         );
     }
 
@@ -609,6 +610,7 @@ export class PlayerCaptionCapture {
      * Runs one bounded player-mediated caption acquisition for its caller.
      *
      * @param input Video identity, cancellation signal, and optional test timeout.
+     *
      * @returns A ready, failed, or explicitly cancelled terminal result.
      */
     static async capture(
@@ -683,8 +685,7 @@ export class PlayerCaptionCapture {
             }
             const activationFailure = activationStage.failure;
             if (activationFailure !== null) {
-                const failedWait =
-                    PlayerCaptionCapture.getWaitForSession(session);
+                const failedWait = PlayerCaptionCapture.getWaitForSession(session);
                 return PlayerCaptionCapture.resolveFailure(
                     activationFailure,
                     failedWait === null
@@ -695,9 +696,9 @@ export class PlayerCaptionCapture {
             PlayerCaptionCapture.armCaptureTimeout(session);
             const result = await waitForCapture;
             if (
-                result.status === 'failed' &&
-                result.failure.reason ===
-                    CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout
+                result.status === 'failed'
+                && result.failure.reason
+                    === CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout
             ) {
                 PlayerCaptionCapture.log('capture-timeout', {
                     videoId: input.videoId,
@@ -734,8 +735,7 @@ export class PlayerCaptionCapture {
             const documentMessageListener = (event: Event): void => {
                 PlayerCaptionCapture.onDocumentMessage(event);
             };
-            PlayerCaptionCapture.documentMessageListener =
-                documentMessageListener;
+            PlayerCaptionCapture.documentMessageListener = documentMessageListener;
             document.addEventListener(PAGE_EVENT, documentMessageListener);
         }
     }
@@ -745,8 +745,8 @@ export class PlayerCaptionCapture {
      */
     private static removeMessageListeners(): void {
         if (
-            typeof window !== 'undefined' &&
-            PlayerCaptionCapture.windowMessageListener !== null
+            typeof window !== 'undefined'
+            && PlayerCaptionCapture.windowMessageListener !== null
         ) {
             window.removeEventListener(
                 'message',
@@ -754,8 +754,8 @@ export class PlayerCaptionCapture {
             );
         }
         if (
-            typeof document !== 'undefined' &&
-            PlayerCaptionCapture.documentMessageListener !== null
+            typeof document !== 'undefined'
+            && PlayerCaptionCapture.documentMessageListener !== null
         ) {
             document.removeEventListener(
                 PAGE_EVENT,
@@ -784,8 +784,8 @@ export class PlayerCaptionCapture {
                 ? result
                 : PlayerCaptionCapture.normalizeBridgeUnavailable(result);
             if (
-                !PlayerCaptionCapture.isBridgeReady(normalizedResult) &&
-                PlayerCaptionCapture.bridgeReadyPromise === trackedProbe
+                !PlayerCaptionCapture.isBridgeReady(normalizedResult)
+                && PlayerCaptionCapture.bridgeReadyPromise === trackedProbe
             ) {
                 PlayerCaptionCapture.bridgeReadyPromise = null;
             }
@@ -799,13 +799,14 @@ export class PlayerCaptionCapture {
      * Accepts only the explicit acknowledgement emitted by the Probe command.
      *
      * @param result Untrusted local command result.
+     *
      * @returns Whether readiness may be cached for the document lifetime.
      */
     private static isBridgeReady(result: unknown): boolean {
         return (
-            result !== null &&
-            typeof result === 'object' &&
-            Reflect.get(result, 'ok') === true
+            result !== null
+            && typeof result === 'object'
+            && Reflect.get(result, 'ok') === true
         );
     }
 
@@ -814,6 +815,7 @@ export class PlayerCaptionCapture {
      * rejected probes without exposing runtime error text.
      *
      * @param result Untrusted local probe result.
+     *
      * @returns Safe bridge-unavailable result for capture control flow.
      */
     private static normalizeBridgeUnavailable(result: unknown): unknown {
@@ -849,6 +851,7 @@ export class PlayerCaptionCapture {
      * Converts event detail back to untrusted bridge data.
      *
      * @param value DOM event detail.
+     *
      * @returns Parsed bridge data, or `null` when malformed.
      */
     private static parseBridgeEventDetail(value: unknown): unknown {
@@ -896,6 +899,7 @@ export class PlayerCaptionCapture {
      * suppress an asynchronous window copy after the capture waiter has settled.
      *
      * @param data Untrusted page bridge message.
+     *
      * @returns Whether the message should be handled by the content script.
      */
     private static shouldAcceptPageBridgeMessage(data: object): boolean {
@@ -904,9 +908,9 @@ export class PlayerCaptionCapture {
             return true;
         }
         if (
-            typeof messageId !== 'string' ||
-            messageId.length === 0 ||
-            messageId.length > MAX_PAGE_BRIDGE_MESSAGE_ID_LENGTH
+            typeof messageId !== 'string'
+            || messageId.length === 0
+            || messageId.length > MAX_PAGE_BRIDGE_MESSAGE_ID_LENGTH
         ) {
             return false;
         }
@@ -916,13 +920,12 @@ export class PlayerCaptionCapture {
         PlayerCaptionCapture.recentPageBridgeMessageIds.add(messageId);
         PlayerCaptionCapture.recentPageBridgeMessageOrder.push(messageId);
         if (
-            PlayerCaptionCapture.recentPageBridgeMessageOrder.length <=
-            MAX_RECENT_PAGE_BRIDGE_MESSAGES
+            PlayerCaptionCapture.recentPageBridgeMessageOrder.length
+            <= MAX_RECENT_PAGE_BRIDGE_MESSAGES
         ) {
             return true;
         }
-        const expiredMessageId =
-            PlayerCaptionCapture.recentPageBridgeMessageOrder.shift();
+        const expiredMessageId = PlayerCaptionCapture.recentPageBridgeMessageOrder.shift();
         if (expiredMessageId !== undefined) {
             PlayerCaptionCapture.recentPageBridgeMessageIds.delete(
                 expiredMessageId,
@@ -938,7 +941,7 @@ export class PlayerCaptionCapture {
      */
     private static handleTimedtextCapture(data: object): void {
         const session = PlayerCaptionCapture.activeSession;
-        const activeWait = PlayerCaptionCapture.activeWait;
+        const { activeWait } = PlayerCaptionCapture;
         if (session === null || activeWait === null) {
             PlayerCaptionCapture.log('capture-event-ignored', {
                 reason:
@@ -953,12 +956,12 @@ export class PlayerCaptionCapture {
         const bodyLength: unknown = Reflect.get(data, 'bodyLength');
         const urlShape: unknown = Reflect.get(data, 'urlShape');
         if (
-            typeof videoId !== 'string' ||
-            typeof languageCode !== 'string' ||
-            typeof body !== 'string' ||
-            (contentType !== null && typeof contentType !== 'string') ||
-            typeof bodyLength !== 'number' ||
-            !CaptureDiagnostics.isUrlShape(urlShape)
+            typeof videoId !== 'string'
+            || typeof languageCode !== 'string'
+            || typeof body !== 'string'
+            || (contentType !== null && typeof contentType !== 'string')
+            || typeof bodyLength !== 'number'
+            || !CaptureDiagnostics.isUrlShape(urlShape)
         ) {
             PlayerCaptionCapture.log('capture-event-ignored', {
                 videoId: session.videoId,
@@ -1000,10 +1003,9 @@ export class PlayerCaptionCapture {
                 urlShape,
                 error: parsed.error,
             });
-            const reason =
-                parsed.error === EMPTY_TRANSCRIPT_PARSE_ERROR
-                    ? CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable
-                    : CAPTION_CAPTURE_FAILURE_REASON.ParseFailed;
+            const reason = parsed.error === EMPTY_TRANSCRIPT_PARSE_ERROR
+                ? CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable
+                : CAPTION_CAPTURE_FAILURE_REASON.ParseFailed;
             PlayerCaptionCapture.resolveFailure({
                 reason,
                 message: parsed.error,
@@ -1050,6 +1052,7 @@ export class PlayerCaptionCapture {
      *
      * @param session Current bounded capture session.
      * @param signal Route-owned cancellation signal.
+     *
      * @returns A bounded failure, or `null` when activation was accepted or
      *   this session no longer owns the capture.
      */
@@ -1069,14 +1072,13 @@ export class PlayerCaptionCapture {
                 videoId: session.videoId,
                 attempt: wait.activationAttempts,
             });
-            const result =
-                await PlayerCaptionCapture.runBridgeCommand(
-                    CAPTION_PAGE_BRIDGE_COMMAND.Activate,
-                    signal,
-                );
+            const result = await PlayerCaptionCapture.runBridgeCommand(
+                CAPTION_PAGE_BRIDGE_COMMAND.Activate,
+                signal,
+            );
             if (
-                signal.aborted ||
-                PlayerCaptionCapture.activeWait?.session !== session
+                signal.aborted
+                || PlayerCaptionCapture.activeWait?.session !== session
             ) {
                 return null;
             }
@@ -1089,9 +1091,8 @@ export class PlayerCaptionCapture {
                 });
                 return null;
             }
-            const canRetry =
-                failure.reason ===
-                CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady;
+            const canRetry = failure.reason
+                === CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady;
             const hidden = canRetry && PlayerCaptionCapture.isTabHidden();
             // Charge the round trip that just ended, plus the gap that
             // preceded it, to the visible budget only while the tab is
@@ -1104,8 +1105,7 @@ export class PlayerCaptionCapture {
                 visibleElapsedMs += now - visibleSince;
             }
             visibleSince = now;
-            const budgetSpent =
-                !hidden && visibleElapsedMs >= ACTIVATION_VISIBLE_BUDGET_MS;
+            const budgetSpent = !hidden && visibleElapsedMs >= ACTIVATION_VISIBLE_BUDGET_MS;
             const retrying = canRetry && !budgetSpent;
             PlayerCaptionCapture.log('activation-failed', {
                 videoId: session.videoId,
@@ -1157,12 +1157,13 @@ export class PlayerCaptionCapture {
      * counters are never read or written through a wait a newer capture owns.
      *
      * @param session Session whose waiter is wanted.
+     *
      * @returns The session's own waiter, or `null` once it was replaced.
      */
     private static getWaitForSession(
         session: CaptionCaptureSession,
     ): ActiveCaptureWait | null {
-        const activeWait = PlayerCaptionCapture.activeWait;
+        const { activeWait } = PlayerCaptionCapture;
         return activeWait !== null && activeWait.session === session
             ? activeWait
             : null;
@@ -1188,6 +1189,7 @@ export class PlayerCaptionCapture {
      *
      * @param session Session that must still own the capture on resume.
      * @param signal Route-owned cancellation signal.
+     *
      * @returns Whether the tab became visible while this session still owns
      *   the capture.
      */
@@ -1196,8 +1198,7 @@ export class PlayerCaptionCapture {
         signal: AbortSignal,
     ): Promise<boolean> {
         return new Promise<boolean>((resolve) => {
-            const visibilityTarget =
-                typeof document === 'undefined' ? null : document;
+            const visibilityTarget = typeof document === 'undefined' ? null : document;
             const removals: (() => void)[] = [];
             const settle = (): void => {
                 for (const remove of removals) {
@@ -1208,8 +1209,8 @@ export class PlayerCaptionCapture {
                     settle,
                 );
                 resolve(
-                    !signal.aborted &&
-                        PlayerCaptionCapture.activeWait?.session === session,
+                    !signal.aborted
+                        && PlayerCaptionCapture.activeWait?.session === session,
                 );
             };
             const onVisibilityChange = (): void => {
@@ -1235,9 +1236,9 @@ export class PlayerCaptionCapture {
                 });
             }
             if (
-                signal.aborted ||
-                PlayerCaptionCapture.activeWait?.session !== session ||
-                !PlayerCaptionCapture.isTabHidden()
+                signal.aborted
+                || PlayerCaptionCapture.activeWait?.session !== session
+                || !PlayerCaptionCapture.isTabHidden()
             ) {
                 settle();
             }
@@ -1267,6 +1268,7 @@ export class PlayerCaptionCapture {
      *
      * @param session Active capture session.
      * @param signal Route-owned cancellation signal.
+     *
      * @returns Capture terminal result.
      */
     private static waitForCapture(
@@ -1319,11 +1321,11 @@ export class PlayerCaptionCapture {
      * @param session Session whose waiter owns the timer.
      */
     private static armCaptureTimeout(session: CaptionCaptureSession): void {
-        const activeWait = PlayerCaptionCapture.activeWait;
+        const { activeWait } = PlayerCaptionCapture;
         if (
-            activeWait === null ||
-            activeWait.session !== session ||
-            activeWait.timeoutId !== null
+            activeWait === null
+            || activeWait.session !== session
+            || activeWait.timeoutId !== null
         ) {
             return;
         }
@@ -1348,7 +1350,7 @@ export class PlayerCaptionCapture {
      * @param result Capture result to return to the owning route.
      */
     private static resolveActiveWait(result: CaptionCaptureResult): void {
-        const activeWait = PlayerCaptionCapture.activeWait;
+        const { activeWait } = PlayerCaptionCapture;
         if (activeWait === null) {
             return;
         }
@@ -1375,6 +1377,7 @@ export class PlayerCaptionCapture {
      * @param logDetails Extra allow-listed fields for the single
      *   `capture-failed` line, such as the activation `attempts` that explain
      *   a readiness or timeout failure.
+     *
      * @returns The same terminal result for immediate control flow.
      */
     private static resolveFailure(
@@ -1415,6 +1418,7 @@ export class PlayerCaptionCapture {
      *
      * @param command Page bridge command name.
      * @param signal Optional owner cancellation for activation.
+     *
      * @returns Bridge command result, or a bounded failure.
      */
     private static async runBridgeCommand(
@@ -1439,6 +1443,7 @@ export class PlayerCaptionCapture {
      * Extracts bounded bridge failure details from an untrusted reply.
      *
      * @param result Page bridge command reply payload.
+     *
      * @returns Normalized bridge failure, or `null` for successful replies.
      */
     private static getBridgeFailure(
@@ -1463,6 +1468,7 @@ export class PlayerCaptionCapture {
      * Detects local bridge-unavailable failures without trusting extra fields.
      *
      * @param result Local command response.
+     *
      * @returns Whether bridge readiness failed with a safe message.
      */
     private static isBridgeUnavailable(
@@ -1472,8 +1478,8 @@ export class PlayerCaptionCapture {
             return false;
         }
         return (
-            Reflect.get(result, 'ok') === false &&
-            typeof Reflect.get(result, 'error') === 'string'
+            Reflect.get(result, 'ok') === false
+            && typeof Reflect.get(result, 'error') === 'string'
         );
     }
 
@@ -1481,6 +1487,7 @@ export class PlayerCaptionCapture {
      * Converts page bridge reason strings to the shared safe reason enum.
      *
      * @param reason Untrusted page bridge reason.
+     *
      * @returns Shared caption capture failure reason.
      */
     private static normalizeFailureReason(
@@ -1514,6 +1521,7 @@ export class PlayerCaptionCapture {
      * Keeps page bridge error text bounded and non-sensitive.
      *
      * @param result Untrusted page bridge result.
+     *
      * @returns Human-readable failure text.
      */
     private static getFailureError(result: object): string {
@@ -1528,6 +1536,7 @@ export class PlayerCaptionCapture {
      * Waits between bounded activation attempts.
      *
      * @param delayMs Delay duration in milliseconds.
+     *
      * @returns Resolves after the timer fires.
      */
     private static delay(delayMs: number): Promise<void> {
@@ -1541,6 +1550,7 @@ export class PlayerCaptionCapture {
      *
      * @param videoId Current YouTube watch video id.
      * @param failure Safe failure returned by the reusable capture API.
+     *
      * @returns Resolves after the message send settles.
      */
     private static async sendFailure(
@@ -1659,10 +1669,9 @@ export class PlayerCaptionCapture {
         if (wait === null || wait.timeoutId === null) {
             return;
         }
-        const session = wait.session;
+        const { session } = wait;
         const urlShape: unknown = Reflect.get(data, 'urlShape');
-        const hasPot =
-            !CaptureDiagnostics.isUrlShape(urlShape) || urlShape.hasPot;
+        const hasPot = !CaptureDiagnostics.isUrlShape(urlShape) || urlShape.hasPot;
         if (hasPot) {
             wait.emptyPotCount += 1;
         } else {
@@ -1671,8 +1680,7 @@ export class PlayerCaptionCapture {
         if (wait.reloadTimeoutId !== null) {
             return;
         }
-        const budgetLeft =
-            MAX_POT_EMPTY_BODY_RELOADS - wait.potEmptyBodyReloads;
+        const budgetLeft = MAX_POT_EMPTY_BODY_RELOADS - wait.potEmptyBodyReloads;
         if (hasPot) {
             if (budgetLeft <= 0) {
                 PlayerCaptionCapture.logReloadBudgetSpent(wait);
@@ -1724,6 +1732,7 @@ export class PlayerCaptionCapture {
      * body settles the capture — so their total is the exponent.
      *
      * @param wait Waiter holding the session's empty-body counts.
+     *
      * @returns Delay in milliseconds for the reload being scheduled.
      */
     private static getEmptyBodyReloadDelayMs(wait: ActiveCaptureWait): number {
@@ -1756,6 +1765,7 @@ export class PlayerCaptionCapture {
      * had the token and still sent nothing". Zero counts are omitted.
      *
      * @param wait Waiter holding the session's empty-body counts.
+     *
      * @returns Allow-listed log fields for the `capture-failed` line.
      */
     private static getEmptyBodyLogFields(
@@ -1795,9 +1805,9 @@ export class PlayerCaptionCapture {
         }
         const session = PlayerCaptionCapture.activeSession;
         if (
-            session === null ||
-            DebugLogClient.isEnabled() !== true ||
-            !CaptureDiagnostics.acceptBridgeDiagnostic(
+            session === null
+            || DebugLogClient.isEnabled() !== true
+            || !CaptureDiagnostics.acceptBridgeDiagnostic(
                 details,
                 PlayerCaptionCapture.bridgeDiagnosticCount,
             )
@@ -1818,6 +1828,7 @@ export class PlayerCaptionCapture {
      * Whitelists page diagnostic fields so raw URLs and caption bodies stay out.
      *
      * @param data Untrusted page bridge diagnostic message.
+     *
      * @returns Safe diagnostic fields, or `null` for malformed messages.
      */
     private static getPageDiagnosticDetails(
@@ -1871,8 +1882,8 @@ export class PlayerCaptionCapture {
         }
         const actions: unknown = Reflect.get(data, 'actions');
         if (
-            Array.isArray(actions) &&
-            actions.every((item) => typeof item === 'string')
+            Array.isArray(actions)
+            && actions.every((item) => typeof item === 'string')
         ) {
             details.actions = actions;
         }
@@ -1883,6 +1894,7 @@ export class PlayerCaptionCapture {
      * Whitelists safe result fields returned by page bridge commands.
      *
      * @param result Untrusted page bridge command result.
+     *
      * @returns Safe fields that help prove manual activation behavior.
      */
     private static getBridgeCommandDetails(
@@ -1910,8 +1922,8 @@ export class PlayerCaptionCapture {
         }
         const actions: unknown = Reflect.get(result, 'actions');
         if (
-            Array.isArray(actions) &&
-            actions.every((item) => typeof item === 'string')
+            Array.isArray(actions)
+            && actions.every((item) => typeof item === 'string')
         ) {
             details.actions = actions;
         }

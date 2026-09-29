@@ -10,32 +10,30 @@ const HTTP_SERVER_ERROR_MIN = 500;
 /**
  * Request values needed to call the OpenAI Responses API.
  */
-export type CallOpenAiResponseParams = {
+export interface CallOpenAiResponseParams {
     apiKey: string;
     model: string;
     instructions: string;
     input: string;
     signal?: AbortSignal;
-};
+}
 
 /**
  * Result of a Responses API call after extracting assistant text.
  */
-export type CallOpenAiResponseResult =
-    | { ok: true; rawContent: string }
+export type CallOpenAiResponseResult = | { ok: true; rawContent: string }
     | {
-          ok: false;
-          error: string;
-          retryable?: boolean;
-          status: number | null;
-          kind: 'http' | 'network' | 'timeout' | 'parse' | 'aborted';
-      };
+        ok: false;
+        error: string;
+        retryable?: boolean;
+        status: number | null;
+        kind: 'http' | 'network' | 'timeout' | 'parse' | 'aborted';
+    };
 
 /**
  * Result of checking whether an OpenAI key can access the models endpoint.
  */
-export type TestOpenAiApiKeyResult =
-    | { ok: true; valid: true }
+export type TestOpenAiApiKeyResult = | { ok: true; valid: true }
     | { ok: true; valid: false; error: string }
     | { ok: false; error: string; retryable?: boolean };
 
@@ -43,6 +41,7 @@ export type TestOpenAiApiKeyResult =
  * Narrows unknown JSON values to object records.
  *
  * @param value - Unknown JSON value.
+ *
  * @returns Whether value is a non-array object.
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -53,13 +52,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Extracts first `output_text` item from OpenAI Responses API JSON.
  *
  * @param value - Untyped Responses API JSON.
+ *
  * @returns Output text or `undefined` when shape is not usable.
  */
 function extractOutputText(value: unknown): string | undefined {
     if (!isRecord(value)) {
         return undefined;
     }
-    const output = value.output;
+    const { output } = value;
     if (!Array.isArray(output)) {
         return undefined;
     }
@@ -67,21 +67,21 @@ function extractOutputText(value: unknown): string | undefined {
         if (!isRecord(item)) {
             continue;
         }
-        const content = item.content;
+        const { content } = item;
         if (!Array.isArray(content)) {
             continue;
         }
         const textItem = content.find(
             (entry): entry is Record<string, unknown> => {
                 return (
-                    isRecord(entry) &&
-                    entry.type === 'output_text' &&
-                    typeof entry.text === 'string'
+                    isRecord(entry)
+                    && entry.type === 'output_text'
+                    && typeof entry.text === 'string'
                 );
             },
         );
         if (textItem) {
-            const text = textItem.text;
+            const { text } = textItem;
             return typeof text === 'string' ? text : undefined;
         }
     }
@@ -92,6 +92,7 @@ function extractOutputText(value: unknown): string | undefined {
  * Determines whether an OpenAI HTTP failure may succeed if retried later.
  *
  * @param status - HTTP status code.
+ *
  * @returns Whether the failure is retryable.
  */
 function isRetryableStatus(status: number): boolean {
@@ -102,6 +103,7 @@ function isRetryableStatus(status: number): boolean {
  * Calls OpenAI Responses API and extracts the assistant text.
  *
  * @param params - OpenAI request parameters.
+ *
  * @returns Assistant output text or error.
  */
 export async function callOpenAiResponse(
@@ -145,9 +147,8 @@ export async function callOpenAiResponse(
         }
         return { ok: true, rawContent };
     } catch (e) {
-        const aborted =
-            params.signal?.aborted === true ||
-            (e instanceof DOMException && e.name === 'AbortError');
+        const aborted = params.signal?.aborted === true
+            || (e instanceof DOMException && e.name === 'AbortError');
         return {
             ok: false,
             error: getErrorMessage(e),
@@ -162,6 +163,7 @@ export async function callOpenAiResponse(
  * Validates an OpenAI API key without spending completion tokens.
  *
  * @param apiKey - Draft or saved OpenAI API key.
+ *
  * @returns Validation result.
  */
 export async function testOpenAiApiKey(

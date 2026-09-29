@@ -21,14 +21,14 @@ export const LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS = {
 /**
  * Minimal fixture transcript shape before strategy output validation.
  */
-type LocalTranscriptFixture = {
+interface LocalTranscriptFixture {
     languageCode: string;
-    segments: Array<{
+    segments: {
         startSec: number;
         durationSec: number;
         text: string;
-    }>;
-};
+    }[];
+}
 
 const LOCAL_TRANSCRIPT_FIXTURES = new Map<string, LocalTranscriptFixture>([
     [

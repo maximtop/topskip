@@ -16,8 +16,7 @@ export const DIAGNOSTICS_PHASE = {
 /**
  * One row of the Diagnostics state matrix.
  */
-export type DiagnosticsPhase =
-    (typeof DIAGNOSTICS_PHASE)[keyof typeof DIAGNOSTICS_PHASE];
+export type DiagnosticsPhase = (typeof DIAGNOSTICS_PHASE)[keyof typeof DIAGNOSTICS_PHASE];
 
 /**
  * Resolves the section phase from the last status read and transport
@@ -26,6 +25,7 @@ export type DiagnosticsPhase =
  *
  * @param status - Last validated status, or `null` before the first read.
  * @param unavailable - Whether the latest read failed or timed out.
+ *
  * @returns Phase to render.
  */
 export function toDiagnosticsPhase(
@@ -52,6 +52,7 @@ export function toDiagnosticsPhase(
  *
  * @param prevRevision - Revision of the last preview shown, or `null`.
  * @param nextRevision - Revision reported by the latest status read.
+ *
  * @returns Whether to request the preview tail.
  */
 export function shouldRefetchPreview(
@@ -66,13 +67,14 @@ export function shouldRefetchPreview(
  * reachable; otherwise a flip could act on stale state.
  *
  * @param phase - Current phase.
+ *
  * @returns Whether the switch may be toggled.
  */
 export function canToggleDebugLogging(phase: DiagnosticsPhase): boolean {
     return (
-        phase === DIAGNOSTICS_PHASE.On ||
-        phase === DIAGNOSTICS_PHASE.OffStored ||
-        phase === DIAGNOSTICS_PHASE.OffEmpty
+        phase === DIAGNOSTICS_PHASE.On
+        || phase === DIAGNOSTICS_PHASE.OffStored
+        || phase === DIAGNOSTICS_PHASE.OffEmpty
     );
 }
 
@@ -80,6 +82,7 @@ export function canToggleDebugLogging(phase: DiagnosticsPhase): boolean {
  * Copy/Download, counters and the preview exist only while a log is stored.
  *
  * @param phase - Current phase.
+ *
  * @returns Whether export controls are available.
  */
 export function canExportDebugLog(phase: DiagnosticsPhase): boolean {

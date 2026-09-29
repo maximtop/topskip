@@ -1,5 +1,21 @@
 import { createHash } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+    type PromoDetectionStatePayload,
+} from '@/shared/messages';
 
 const prefsMocks = vi.hoisted(() => ({
     ready: vi.fn().mockResolvedValue(undefined),
@@ -73,14 +89,6 @@ const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
 
 vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
 
-import { ServerAnalysisRuntimeMessages } from '@/background/messaging/server-analysis-runtime-messages';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    TOPSKIP_MESSAGE,
-    type PromoDetectionStatePayload,
-} from '@/shared/messages';
-
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const VIDEO_ID = 'dQw4w9WgXcQ';
 const LANGUAGE_CODE = 'en';
@@ -147,12 +155,11 @@ describe('ServerAnalysisRuntimeMessages', () => {
         cacheMocks.loadExact.mockResolvedValue(null);
         cacheMocks.saveTerminalResponse.mockResolvedValue(undefined);
         browserMocks.tabsSendMessage.mockImplementation(
-            (_tabId: number, message: { type?: string }) =>
-                Promise.resolve(
-                    message.type === TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS
-                        ? currentRouteStatus()
-                        : undefined,
-                ),
+            (_tabId: number, message: { type?: string }) => Promise.resolve(
+                message.type === TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS
+                    ? currentRouteStatus()
+                    : undefined,
+            ),
         );
         clientMocks.requestAnalysis.mockResolvedValue({
             status: 'processing',
@@ -253,10 +260,9 @@ describe('ServerAnalysisRuntimeMessages', () => {
     it('acknowledges acquisition only after its detection snapshot persists', async () => {
         let releaseWrite = (): void => undefined;
         detectionMocks.set.mockImplementationOnce(
-            () =>
-                new Promise<void>((resolve) => {
-                    releaseWrite = resolve;
-                }),
+            () => new Promise<void>((resolve) => {
+                releaseWrite = resolve;
+            }),
         );
         let settled = false;
 

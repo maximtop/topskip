@@ -1,11 +1,14 @@
-import { SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from '@/shared/constants';
-import type { PromoBlock } from '@topskip/common/promo-types';
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
+
+import { SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from '@/shared/constants';
+
+import type { PromoBlock } from '@topskip/common/promo-types';
 
 /**
  * Formats seconds as `m:ss` or `h:mm:ss` for popup display.
  *
  * @param sec - Time in seconds (non-negative)
+ *
  * @returns Compact timecode string
  */
 export function formatSecondsAsTimecode(sec: number): string {
@@ -26,6 +29,7 @@ export function formatSecondsAsTimecode(sec: number): string {
  * Human-readable list of promo block spans for the toolbar popup.
  *
  * @param blocks - Validated blocks for the current video
+ *
  * @returns Semicolon-separated ranges (e.g. `0:45–2:00` and `5:00–~5:30`)
  */
 export function formatPromoBlocksSummary(

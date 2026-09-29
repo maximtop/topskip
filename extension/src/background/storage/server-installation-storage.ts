@@ -35,6 +35,7 @@ export class ServerInstallationStorage {
      * Loads the current credential when it remains valid.
      *
      * @param nowMs - Current epoch time, injectable for tests.
+     *
      * @returns Fresh credential or `null` when registration is required.
      */
     static async loadFresh(
@@ -66,6 +67,7 @@ export class ServerInstallationStorage {
      * Persists a freshly registered credential after boundary validation.
      *
      * @param installation - Token and server-issued expiry.
+     *
      * @returns Promise resolved after storage completes.
      */
     static async save(installation: ServerInstallation): Promise<void> {

@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { PROVIDER_ID } from '@/shared/providers';
@@ -111,8 +118,7 @@ const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
 
 vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
 
-const { ModelRuntimeMessages } =
-    await import('@/background/messaging/model-runtime-messages');
+const { ModelRuntimeMessages } = await import('@/background/messaging/model-runtime-messages');
 
 describe('ModelRuntimeMessages', () => {
     beforeEach(() => {
@@ -236,8 +242,7 @@ describe('ModelRuntimeMessages', () => {
         });
         openAiLoad.mockResolvedValue({ apiKey: '', model: '' });
 
-        const response =
-            await ModelRuntimeMessages.handleSetActiveModel('openai:gpt-5.2');
+        const response = await ModelRuntimeMessages.handleSetActiveModel('openai:gpt-5.2');
 
         expect(response).toEqual({ ok: true });
         expect(prefsSave).toHaveBeenCalledWith(
@@ -271,15 +276,20 @@ describe('ModelRuntimeMessages', () => {
         },
     ])(
         'requires the $providerId host grant before testing a saved key',
-        async ({ providerId, load, test, config }) => {
+        async ({
+
+            providerId,
+            load,
+            test,
+            config,
+        }) => {
             load.mockResolvedValue(config);
             providerHostAccessIsGranted.mockResolvedValue(false);
 
-            const response =
-                await ModelRuntimeMessages.handleTestConnectionKey(
-                    providerId,
-                    undefined,
-                );
+            const response = await ModelRuntimeMessages.handleTestConnectionKey(
+                providerId,
+                undefined,
+            );
 
             expect(response).toEqual({
                 ok: false,

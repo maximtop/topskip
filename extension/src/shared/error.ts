@@ -7,6 +7,7 @@ import { extractMessageFromValiError } from '@/shared/valibot';
  * If `error` is a {@link ValiError}, uses {@link extractMessageFromValiError}.
  *
  * @param error Thrown value (typically from `catch`).
+ *
  * @returns Message suitable for logging or API error fields.
  */
 export function getErrorMessage(error: unknown): string {

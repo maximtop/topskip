@@ -1,5 +1,12 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, rmSync, statfsSync } from 'node:fs';
+import {
+
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    rmSync,
+    statfsSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -37,54 +44,51 @@ const INCREMENTAL_VACUUM_PAGE_COUNT = 256;
 /**
  * Successful anonymous credential issuance returns the raw token only to its caller.
  */
-type InstallationRegistrationSuccess = {
+interface InstallationRegistrationSuccess {
     ok: true;
     token: string;
     installationHash: string;
     expiresAtMs: number;
-};
+}
 
 /**
  * Registration denials expose only bounded retry metadata.
  */
-type InstallationRegistrationFailure = {
+interface InstallationRegistrationFailure {
     ok: false;
     retryAfterSec: number;
-};
+}
 
 /**
  * Installation registration result keeps raw credentials out of persistence.
  */
-export type InstallationRegistrationResult =
-    | InstallationRegistrationSuccess
+export type InstallationRegistrationResult = | InstallationRegistrationSuccess
     | InstallationRegistrationFailure;
 
 /**
  * Successful auth resolves the stored credential hash used for ownership and quotas.
  */
-export type InstallationAuthenticationResult =
-    | { ok: true; installationHash: string }
+export type InstallationAuthenticationResult = | { ok: true; installationHash: string }
     | { ok: false; code: 'token_invalid' | 'token_expired' };
 
 /**
  * Quota decisions are retryable without exposing counter internals.
  */
-export type PublicQuotaDecision =
-    | { allowed: true }
+export type PublicQuotaDecision = | { allowed: true }
     | { allowed: false; retryAfterSec: number };
 
 /**
  * Reservations prevent parallel model calls from overspending a shared period.
  */
-export type ModelBudgetReservation = {
+export interface ModelBudgetReservation {
     reservationId: string;
     reservedUsd: number;
-};
+}
 
 /**
  * Safe retained failures correlate user reports without retaining provider details.
  */
-export type RetainedPublicFailure = {
+export interface RetainedPublicFailure {
     supportId: string;
     code: string;
     videoId?: string;
@@ -94,7 +98,7 @@ export type RetainedPublicFailure = {
     extensionVersion?: string;
     createdAtMs: number;
     expiresAtMs: number;
-};
+}
 
 /**
  * Legacy rows may predate safe version retention while new writes always carry server versions.
@@ -152,6 +156,9 @@ export class BackendPublicState {
      * Issues a random installation credential after enforcing the IP registration quota.
      *
      * @param input - HMAC IP identity and deterministic registration timestamp.
+     * @param input.ipHash
+     * @param input.nowMs
+     *
      * @returns Raw one-time credential or retry metadata.
      */
     static registerInstallation(input: {
@@ -201,7 +208,13 @@ export class BackendPublicState {
                 nowMs: input.nowMs,
             });
             database.exec('COMMIT');
-            return { ok: true, token, installationHash, expiresAtMs };
+            return {
+
+                ok: true,
+                token,
+                installationHash,
+                expiresAtMs,
+            };
         } catch (error) {
             BackendPublicState.rollbackSafely(database);
             throw error;
@@ -212,6 +225,9 @@ export class BackendPublicState {
      * Resolves a bearer credential to its hash without ever storing the raw token.
      *
      * @param input - Raw credential and deterministic auth timestamp.
+     * @param input.token
+     * @param input.nowMs
+     *
      * @returns Authenticated installation identity or a stable failure code.
      */
     static authenticateInstallation(input: {
@@ -241,6 +257,9 @@ export class BackendPublicState {
      * Applies the minute-level request ceiling to all authenticated analysis traffic.
      *
      * @param input - Installation identity and request timestamp.
+     * @param input.installationHash
+     * @param input.nowMs
+     *
      * @returns Allow or bounded retry decision.
      */
     static consumeAuthenticatedRequest(input: {
@@ -261,6 +280,10 @@ export class BackendPublicState {
      * Atomically spends both installation and IP cold-work quota only after cache/join misses.
      *
      * @param input - Hashed installation/IP identities and cold-start timestamp.
+     * @param input.installationHash
+     * @param input.ipHash
+     * @param input.nowMs
+     *
      * @returns Allow or the longest relevant retry delay.
      */
     static consumeColdJobQuota(input: {
@@ -301,22 +324,19 @@ export class BackendPublicState {
         try {
             const retryDelays = checks
                 .filter(
-                    (check) =>
-                        BackendPublicState.countEvents(database, {
-                            kind: check.kind,
-                            subjectHash: check.subjectHash,
-                            sinceMs: input.nowMs - check.windowMs,
-                        }) >= check.limit,
-                )
-                .map((check) =>
-                    BackendPublicState.retryAfterOldestEvent(database, {
+                    (check) => BackendPublicState.countEvents(database, {
                         kind: check.kind,
                         subjectHash: check.subjectHash,
                         sinceMs: input.nowMs - check.windowMs,
-                        windowMs: check.windowMs,
-                        nowMs: input.nowMs,
-                    }),
-                );
+                    }) >= check.limit,
+                )
+                .map((check) => BackendPublicState.retryAfterOldestEvent(database, {
+                    kind: check.kind,
+                    subjectHash: check.subjectHash,
+                    sinceMs: input.nowMs - check.windowMs,
+                    windowMs: check.windowMs,
+                    nowMs: input.nowMs,
+                }));
             if (retryDelays.length > 0) {
                 database.exec('ROLLBACK');
                 return {
@@ -347,6 +367,8 @@ export class BackendPublicState {
      * Reserves provider spend in both current UTC periods before a model call begins.
      *
      * @param input - Deterministic reservation timestamp.
+     * @param input.nowMs
+     *
      * @returns Reservation identity, or `null` when either budget is exhausted.
      */
     static reserveModelBudget(input: {
@@ -366,10 +388,10 @@ export class BackendPublicState {
                 periods.month,
             );
             if (
-                daily.spentUsd + daily.reservedUsd + MODEL_RESERVATION_USD >
-                    MODEL_DAILY_BUDGET_USD ||
-                monthly.spentUsd + monthly.reservedUsd + MODEL_RESERVATION_USD >
-                    MODEL_MONTHLY_BUDGET_USD
+                daily.spentUsd + daily.reservedUsd + MODEL_RESERVATION_USD
+                    > MODEL_DAILY_BUDGET_USD
+                || monthly.spentUsd + monthly.reservedUsd + MODEL_RESERVATION_USD
+                    > MODEL_MONTHLY_BUDGET_USD
             ) {
                 database.exec('ROLLBACK');
                 return null;
@@ -414,6 +436,8 @@ export class BackendPublicState {
      * Converts one reservation into reported spend or the conservative full reserve.
      *
      * @param input - Reservation identity and optional validated provider cost.
+     * @param input.reservationId
+     * @param input.costUsd
      */
     static settleModelBudget(input: {
         reservationId: string;
@@ -442,12 +466,11 @@ export class BackendPublicState {
             if (dayKey === null || monthKey === null || reservedUsd === null) {
                 throw new Error('Invalid model budget reservation.');
             }
-            const costUsd =
-                input.costUsd !== undefined &&
-                Number.isFinite(input.costUsd) &&
-                input.costUsd >= 0
-                    ? input.costUsd
-                    : reservedUsd;
+            const costUsd = input.costUsd !== undefined
+                && Number.isFinite(input.costUsd)
+                && input.costUsd >= 0
+                ? input.costUsd
+                : reservedUsd;
             BackendPublicState.settleBudgetPeriod(
                 database,
                 dayKey,
@@ -525,6 +548,10 @@ export class BackendPublicState {
      * Queries only one video's retained rows, optionally constrained to one algorithm.
      *
      * @param input - Indexed artifact identity and deterministic read timestamp.
+     * @param input.videoId
+     * @param input.algorithmVersion
+     * @param input.nowMs
+     *
      * @returns Parsed unknown payloads for validation by the artifact repository.
      */
     static findArtifacts(input: {
@@ -535,26 +562,25 @@ export class BackendPublicState {
         const nowMs = input.nowMs ?? Date.now();
         BackendPublicState.runHousekeeping(nowMs);
         const database = BackendPublicState.getDatabase();
-        const rows =
-            input.algorithmVersion === undefined
-                ? database
-                        .prepare(
-                            `SELECT payload_json
+        const rows = input.algorithmVersion === undefined
+            ? database
+                .prepare(
+                    `SELECT payload_json
                            FROM analysis_artifacts
                            WHERE video_id = ? AND expires_at_ms > ?
                            ORDER BY completed_at_ms ASC`,
-                        )
-                        .all(input.videoId, nowMs)
-                : database
-                        .prepare(
-                            `SELECT payload_json
+                )
+                .all(input.videoId, nowMs)
+            : database
+                .prepare(
+                    `SELECT payload_json
                            FROM analysis_artifacts
                            WHERE video_id = ?
                              AND algorithm_version = ?
                              AND expires_at_ms > ?
                            ORDER BY completed_at_ms ASC`,
-                        )
-                        .all(input.videoId, input.algorithmVersion, nowMs);
+                )
+                .all(input.videoId, input.algorithmVersion, nowMs);
         return rows.flatMap((row) => {
             const payload = BackendPublicState.readString(row, 'payload_json');
             if (payload === null) {
@@ -572,6 +598,12 @@ export class BackendPublicState {
      * Queries only rows matching the authoritative uploaded-caption identity.
      *
      * @param input - Exact indexed identity and deterministic read timestamp.
+     * @param input.videoId
+     * @param input.algorithmVersion
+     * @param input.languageCode
+     * @param input.transcriptHash
+     * @param input.nowMs
+     *
      * @returns Parsed unknown payloads for validation by the artifact repository.
      */
     static findArtifactsExact(input: {
@@ -727,6 +759,7 @@ export class BackendPublicState {
      * Reads one retained support record for persistence tests.
      *
      * @param supportId - Opaque returned support identity.
+     *
      * @returns Safe retained metadata, or `null` when absent.
      */
     static findFailureForTests(
@@ -761,10 +794,10 @@ export class BackendPublicState {
             expiresAtMs: BackendPublicState.readNumber(row, 'expires_at_ms'),
         };
         if (
-            read.supportId === null ||
-            read.code === null ||
-            read.createdAtMs === null ||
-            read.expiresAtMs === null
+            read.supportId === null
+            || read.code === null
+            || read.createdAtMs === null
+            || read.expiresAtMs === null
         ) {
             return null;
         }
@@ -797,8 +830,7 @@ export class BackendPublicState {
             return BackendPublicState.database;
         }
         const path = BackendPublicState.resolveDatabasePath();
-        const databaseFileExists =
-            path !== SQLITE_MEMORY_PATH && existsSync(path);
+        const databaseFileExists = path !== SQLITE_MEMORY_PATH && existsSync(path);
         if (path !== SQLITE_MEMORY_PATH) {
             mkdirSync(dirname(path), {
                 recursive: true,
@@ -812,9 +844,9 @@ export class BackendPublicState {
         );
         if (path !== SQLITE_MEMORY_PATH) {
             if (
-                databaseFileExists &&
-                BackendPublicState.readPragmaNumber(database, 'auto_vacuum') !==
-                    2
+                databaseFileExists
+                && BackendPublicState.readPragmaNumber(database, 'auto_vacuum')
+                    !== 2
             ) {
                 database.exec('PRAGMA auto_vacuum = INCREMENTAL; VACUUM;');
             }
@@ -833,15 +865,15 @@ export class BackendPublicState {
      */
     private static resolveDatabasePath(): string {
         if (
-            BackendPublicState.databasePathForTests === null &&
-            (process.env.VITEST === 'true' || process.env.VITEST === '1')
+            BackendPublicState.databasePathForTests === null
+            && (process.env.VITEST === 'true' || process.env.VITEST === '1')
         ) {
             return SQLITE_MEMORY_PATH;
         }
         return (
-            BackendPublicState.databasePathForTests ??
-            process.env[DATABASE_PATH_ENVIRONMENT_VARIABLE] ??
-            join(
+            BackendPublicState.databasePathForTests
+            ?? process.env[DATABASE_PATH_ENVIRONMENT_VARIABLE]
+            ?? join(
                 process.cwd(),
                 DEFAULT_DATABASE_DIRECTORY,
                 DEFAULT_DATABASE_FILE_NAME,
@@ -983,8 +1015,7 @@ export class BackendPublicState {
             .prepare('PRAGMA table_info(analysis_failures)')
             .all()
             .some(
-                (row) =>
-                    BackendPublicState.readString(row, 'name') === columnName,
+                (row) => BackendPublicState.readString(row, 'name') === columnName,
             );
         if (exists) {
             return;
@@ -1008,8 +1039,7 @@ export class BackendPublicState {
             .prepare('PRAGMA table_info(analysis_artifacts)')
             .all()
             .some(
-                (row) =>
-                    BackendPublicState.readString(row, 'name') === columnName,
+                (row) => BackendPublicState.readString(row, 'name') === columnName,
             );
         if (exists) {
             return;
@@ -1023,6 +1053,12 @@ export class BackendPublicState {
      * Applies one sliding-window quota in a short write transaction.
      *
      * @param input - Quota identity, window, limit, and timestamp.
+     * @param input.kind
+     * @param input.subjectHash
+     * @param input.nowMs
+     * @param input.windowMs
+     * @param input.limit
+     *
      * @returns Allow or retry decision.
      */
     private static consumeSingleQuota(input: {
@@ -1063,6 +1099,10 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param input - Event identity and inclusive lower timestamp.
+     * @param input.kind
+     * @param input.subjectHash
+     * @param input.sinceMs
+     *
      * @returns Number of matching events.
      */
     private static countEvents(
@@ -1084,6 +1124,9 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param input - Stable event kind, hashed identity, and timestamp.
+     * @param input.kind
+     * @param input.subjectHash
+     * @param input.nowMs
      */
     private static insertEvent(
         database: DatabaseSync,
@@ -1102,6 +1145,12 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param input - Event/window identity and current timestamp.
+     * @param input.kind
+     * @param input.subjectHash
+     * @param input.sinceMs
+     * @param input.windowMs
+     * @param input.nowMs
+     *
      * @returns Positive whole-second retry delay.
      */
     private static retryAfterOldestEvent(
@@ -1121,8 +1170,7 @@ export class BackendPublicState {
                  WHERE event_kind = ? AND subject_hash = ? AND created_at_ms > ?`,
             )
             .get(input.kind, input.subjectHash, input.sinceMs);
-        const oldestAtMs =
-            BackendPublicState.readNumber(row, 'oldest_at_ms') ?? input.nowMs;
+        const oldestAtMs = BackendPublicState.readNumber(row, 'oldest_at_ms') ?? input.nowMs;
         return Math.max(
             1,
             Math.ceil(
@@ -1136,6 +1184,7 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param periodKey - UTC day or month key.
+     *
      * @returns Current period accounting.
      */
     private static readBudgetPeriod(
@@ -1212,6 +1261,7 @@ export class BackendPublicState {
      * Produces deterministic UTC keys independent of the server timezone.
      *
      * @param nowMs - Timestamp to bucket.
+     *
      * @returns Day and month keys.
      */
     private static periodKeys(nowMs: number): { day: string; month: string } {
@@ -1226,6 +1276,7 @@ export class BackendPublicState {
      * Extracts bounded artifact identity before a JSON payload enters SQLite.
      *
      * @param record - Validated artifact record from its owning repository.
+     *
      * @returns Indexed artifact fields.
      */
     private static readArtifactIdentity(record: unknown): {
@@ -1262,10 +1313,10 @@ export class BackendPublicState {
         );
         const sourceType = BackendPublicState.readString(video, 'sourceType');
         if (
-            recordId === null ||
-            videoId === null ||
-            algorithmVersion === null ||
-            completedAtMs === null
+            recordId === null
+            || videoId === null
+            || algorithmVersion === null
+            || completedAtMs === null
         ) {
             throw new Error('Invalid artifact record.');
         }
@@ -1301,8 +1352,7 @@ export class BackendPublicState {
                 'SELECT COUNT(*) AS artifact_count FROM analysis_artifacts',
             )
             .get();
-        const artifactCount =
-            BackendPublicState.readNumber(row, 'artifact_count') ?? 0;
+        const artifactCount = BackendPublicState.readNumber(row, 'artifact_count') ?? 0;
         const excessCount = Math.max(0, artifactCount - artifactLimit);
         if (excessCount === 0) {
             return;
@@ -1344,6 +1394,7 @@ export class BackendPublicState {
      *
      * @param database - Open SQLite connection.
      * @param pragmaName - Hard-coded PRAGMA identifier selected by this module.
+     *
      * @returns Numeric PRAGMA value, or `null` when unavailable.
      */
     private static readPragmaNumber(
@@ -1379,6 +1430,7 @@ export class BackendPublicState {
      * Hashes bearer credentials into a fixed-length database identity.
      *
      * @param token - Raw installation credential held by the extension.
+     *
      * @returns Lowercase SHA-256 digest.
      */
     private static hashToken(token: string): string {
@@ -1390,6 +1442,7 @@ export class BackendPublicState {
      *
      * @param row - Unknown query result.
      * @param key - Allow-listed numeric column.
+     *
      * @returns Finite number or `null`.
      */
     private static readNumber(row: unknown, key: string): number | null {
@@ -1407,6 +1460,7 @@ export class BackendPublicState {
      *
      * @param row - Unknown query/object result.
      * @param key - Allow-listed string field.
+     *
      * @returns String or `null`.
      */
     private static readString(row: unknown, key: string): string | null {
@@ -1450,10 +1504,10 @@ export class BackendPublicState {
      */
     private static runHousekeeping(nowMs: number): void {
         if (
-            BackendPublicState.lastHousekeepingAtMs !== 0 &&
-            nowMs >= BackendPublicState.lastHousekeepingAtMs &&
-            nowMs - BackendPublicState.lastHousekeepingAtMs <
-                HOUSEKEEPING_INTERVAL_MS
+            BackendPublicState.lastHousekeepingAtMs !== 0
+            && nowMs >= BackendPublicState.lastHousekeepingAtMs
+            && nowMs - BackendPublicState.lastHousekeepingAtMs
+                < HOUSEKEEPING_INTERVAL_MS
         ) {
             return;
         }
@@ -1482,10 +1536,10 @@ export class BackendPublicState {
                     'reserved_usd',
                 );
                 if (
-                    reservationId === null ||
-                    dayKey === null ||
-                    monthKey === null ||
-                    reservedUsd === null
+                    reservationId === null
+                    || dayKey === null
+                    || monthKey === null
+                    || reservedUsd === null
                 ) {
                     continue;
                 }

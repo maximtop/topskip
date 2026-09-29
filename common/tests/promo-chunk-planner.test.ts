@@ -24,6 +24,7 @@ const DYNAMIC = {
  * Parses `[sec] text` merged-transcript lines for planner tests.
  *
  * @param mergedText - Newline-joined `[sec] text` transcript
+ *
  * @returns Timed lines the planner consumes
  */
 function toLines(mergedText: string): TimedLine[] {
@@ -48,6 +49,7 @@ function toLines(mergedText: string): TimedLine[] {
  * @param lineCount - Number of lines
  * @param secStep - Seconds between consecutive line timestamps
  * @param bodyRepeat - Repeated character count after the bracket prefix
+ *
  * @returns Newline-joined transcript
  */
 function makeTimedTranscript(

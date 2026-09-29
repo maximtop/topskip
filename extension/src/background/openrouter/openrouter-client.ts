@@ -1,48 +1,47 @@
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
 
-const OPENROUTER_CHAT_COMPLETIONS_URL =
-    'https://openrouter.ai/api/v1/chat/completions';
+const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
 
 /**
  * Chat message shape accepted by OpenRouter chat completions.
  */
-export type OpenRouterChatMessage = {
+export interface OpenRouterChatMessage {
     role: 'system' | 'user' | 'assistant';
     content: string;
-};
+}
 
 /**
  * Token details reported for prompt-side multimodal/cached usage.
  */
-export type OpenRouterPromptTokenDetails = {
+export interface OpenRouterPromptTokenDetails {
     cachedTokens?: number;
     cacheWriteTokens?: number;
     audioTokens?: number;
     videoTokens?: number;
-};
+}
 
 /**
  * Token details reported for completion-side reasoning or media usage.
  */
-export type OpenRouterCompletionTokenDetails = {
+export interface OpenRouterCompletionTokenDetails {
     reasoningTokens?: number;
     audioTokens?: number;
     imageTokens?: number;
-};
+}
 
 /**
  * Provider cost details returned by OpenRouter for BYOK accounting.
  */
-export type OpenRouterCostDetails = {
+export interface OpenRouterCostDetails {
     upstreamInferenceCost?: number;
     upstreamInferencePromptCost?: number;
     upstreamInferenceCompletionsCost?: number;
-};
+}
 
 /**
  * Normalized token and cost usage parsed from OpenRouter responses.
  */
-export type OpenRouterUsage = {
+export interface OpenRouterUsage {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
@@ -51,12 +50,12 @@ export type OpenRouterUsage = {
     cost?: number;
     isByok?: boolean;
     costDetails?: OpenRouterCostDetails;
-};
+}
 
 /**
  * Request values needed to call OpenRouter chat completions.
  */
-export type CallOpenRouterChatParams = {
+export interface CallOpenRouterChatParams {
     apiKey: string;
     model: string;
     messages: OpenRouterChatMessage[];
@@ -69,12 +68,13 @@ export type CallOpenRouterChatParams = {
         | 'xhigh'
         | 'max';
     signal?: AbortSignal;
-};
+}
 
 /**
  * Narrows unknown JSON to a non-array object record.
  *
  * @param value - Unknown JSON-like value
+ *
  * @returns Whether the value is a plain object
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -85,6 +85,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * Reads a finite number field from an untyped JSON object.
  *
  * @param value - Unknown field value
+ *
  * @returns Finite number or `undefined`
  */
 function getFiniteNumber(value: unknown): number | undefined {
@@ -98,6 +99,7 @@ function getFiniteNumber(value: unknown): number | undefined {
  * Reads a string field when the runtime type is `string`.
  *
  * @param value - Unknown field value
+ *
  * @returns String or `undefined`
  */
 function getString(value: unknown): string | undefined {
@@ -108,6 +110,7 @@ function getString(value: unknown): string | undefined {
  * Reads a string field, preserving JSON `null` as distinct from missing.
  *
  * @param value - Unknown field value
+ *
  * @returns String, `null`, or `undefined`
  */
 function getNullableString(value: unknown): string | null | undefined {
@@ -121,6 +124,7 @@ function getNullableString(value: unknown): string | null | undefined {
  * Reads a boolean field when the runtime type is `boolean`.
  *
  * @param value - Unknown field value
+ *
  * @returns Boolean or `undefined`
  */
 function getBoolean(value: unknown): boolean | undefined {
@@ -131,6 +135,7 @@ function getBoolean(value: unknown): boolean | undefined {
  * Normalizes OpenRouter `prompt_tokens_details` snake_case into camelCase.
  *
  * @param value - Raw `prompt_tokens_details` object
+ *
  * @returns Normalized prompt token details or `undefined`
  */
 function parsePromptTokenDetails(
@@ -144,10 +149,10 @@ function parsePromptTokenDetails(
     const audioTokens = getFiniteNumber(value.audio_tokens);
     const videoTokens = getFiniteNumber(value.video_tokens);
     if (
-        cachedTokens === undefined &&
-        cacheWriteTokens === undefined &&
-        audioTokens === undefined &&
-        videoTokens === undefined
+        cachedTokens === undefined
+        && cacheWriteTokens === undefined
+        && audioTokens === undefined
+        && videoTokens === undefined
     ) {
         return undefined;
     }
@@ -163,6 +168,7 @@ function parsePromptTokenDetails(
  * Normalizes OpenRouter `completion_tokens_details` into camelCase fields.
  *
  * @param value - Raw `completion_tokens_details` object
+ *
  * @returns Normalized completion token details or `undefined`
  */
 function parseCompletionTokenDetails(
@@ -175,9 +181,9 @@ function parseCompletionTokenDetails(
     const audioTokens = getFiniteNumber(value.audio_tokens);
     const imageTokens = getFiniteNumber(value.image_tokens);
     if (
-        reasoningTokens === undefined &&
-        audioTokens === undefined &&
-        imageTokens === undefined
+        reasoningTokens === undefined
+        && audioTokens === undefined
+        && imageTokens === undefined
     ) {
         return undefined;
     }
@@ -192,6 +198,7 @@ function parseCompletionTokenDetails(
  * Normalizes OpenRouter `cost_details` upstream cost fields when present.
  *
  * @param value - Raw `cost_details` object
+ *
  * @returns Normalized cost detail breakdown or `undefined`
  */
 function parseCostDetails(value: unknown): OpenRouterCostDetails | undefined {
@@ -208,9 +215,9 @@ function parseCostDetails(value: unknown): OpenRouterCostDetails | undefined {
         value.upstream_inference_completions_cost,
     );
     if (
-        upstreamInferenceCost === undefined &&
-        upstreamInferencePromptCost === undefined &&
-        upstreamInferenceCompletionsCost === undefined
+        upstreamInferenceCost === undefined
+        && upstreamInferencePromptCost === undefined
+        && upstreamInferenceCompletionsCost === undefined
     ) {
         return undefined;
     }
@@ -225,6 +232,7 @@ function parseCostDetails(value: unknown): OpenRouterCostDetails | undefined {
  * Builds a typed usage object from OpenRouter’s `usage` JSON blob.
  *
  * @param value - Raw `usage` object from OpenRouter
+ *
  * @returns Normalized usage block or `undefined`
  */
 function parseUsage(value: unknown): OpenRouterUsage | undefined {
@@ -235,9 +243,9 @@ function parseUsage(value: unknown): OpenRouterUsage | undefined {
     const completionTokens = getFiniteNumber(value.completion_tokens);
     const totalTokens = getFiniteNumber(value.total_tokens);
     if (
-        promptTokens === undefined ||
-        completionTokens === undefined ||
-        totalTokens === undefined
+        promptTokens === undefined
+        || completionTokens === undefined
+        || totalTokens === undefined
     ) {
         return undefined;
     }
@@ -277,8 +285,7 @@ function parseUsage(value: unknown): OpenRouterUsage | undefined {
  * Stable transport/parse classification attached to a failed provider call so
  * BYOK metadata can record it without the response body.
  */
-export type ProviderCallFailureKind =
-    | 'http'
+export type ProviderCallFailureKind = | 'http'
     | 'network'
     | 'timeout'
     | 'parse'
@@ -288,28 +295,36 @@ export type ProviderCallFailureKind =
  * Calls OpenRouter chat completions (non-streaming). Does not log the API key.
  *
  * @param params - Model, key, messages, optional abort signal
+ *
  * @returns Assistant message text or error
  */
 export async function callOpenRouterChat(
     params: CallOpenRouterChatParams,
 ): Promise<
     | {
-          ok: true;
-          rawContent: string;
-          usage?: OpenRouterUsage;
-          responseId?: string;
-          responseModel?: string;
-          finishReason?: string | null;
-          nativeFinishReason?: string | null;
-      }
+        ok: true;
+        rawContent: string;
+        usage?: OpenRouterUsage;
+        responseId?: string;
+        responseModel?: string;
+        finishReason?: string | null;
+        nativeFinishReason?: string | null;
+    }
     | {
-          ok: false;
-          error: string;
-          status: number | null;
-          kind: ProviderCallFailureKind;
-      }
+        ok: false;
+        error: string;
+        status: number | null;
+        kind: ProviderCallFailureKind;
+    }
 > {
-    const { apiKey, model, messages, reasoningEffort, signal } = params;
+    const {
+
+        apiKey,
+        model,
+        messages,
+        reasoningEffort,
+        signal,
+    } = params;
     try {
         const res = await fetch(OPENROUTER_CHAT_COMPLETIONS_URL, {
             method: 'POST',
@@ -374,7 +389,7 @@ export async function callOpenRouterChat(
                 kind: 'parse',
             };
         }
-        const message = first.message;
+        const { message } = first;
         if (!isRecord(message)) {
             return {
                 ok: false,
@@ -383,7 +398,7 @@ export async function callOpenRouterChat(
                 kind: 'parse',
             };
         }
-        const content = message.content;
+        const { content } = message;
         if (typeof content !== 'string') {
             return {
                 ok: false,
@@ -402,8 +417,8 @@ export async function callOpenRouterChat(
             nativeFinishReason: getNullableString(first.native_finish_reason),
         };
     } catch (e) {
-        const aborted = signal?.aborted === true ||
-            (e instanceof DOMException && e.name === 'AbortError');
+        const aborted = signal?.aborted === true
+            || (e instanceof DOMException && e.name === 'AbortError');
         const msg = e instanceof Error ? e.message : String(e);
         return {
             ok: false,

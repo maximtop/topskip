@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     PROVIDER_AVAILABILITY,
@@ -8,6 +16,8 @@ import {
 
 /**
  * Minimal mock for a LanguageModel session.
+ *
+ * @param overrides
  */
 function makeSession(
     overrides?: Partial<{
@@ -22,8 +32,7 @@ function makeSession(
     const contextUsage = overrides?.contextUsage ?? 0;
     // Default: fits in budget (returns 0 tokens used by transcript).
     const measureContextUsageResult = overrides?.measureContextUsageResult ?? 0;
-    const promptResult =
-        overrides?.promptResult ?? JSON.stringify({ hasPromo: false });
+    const promptResult = overrides?.promptResult ?? JSON.stringify({ hasPromo: false });
     const promptError = overrides?.promptError ?? null;
 
     return {
@@ -41,6 +50,8 @@ function makeSession(
 
 /**
  * Minimal mock for the LanguageModel static interface.
+ *
+ * @param overrides
  */
 function makeLanguageModelGlobal(
     overrides?: Partial<{
@@ -62,8 +73,7 @@ function makeLanguageModelGlobal(
 }
 
 // Must import after mock setup so vi.mock takes effect.
-const { ChromePromptApiAdapter } =
-    await import('@/background/providers/chrome-prompt-api-adapter');
+const { ChromePromptApiAdapter } = await import('@/background/providers/chrome-prompt-api-adapter');
 
 const baseParams: AnalyzeTranscriptParams = {
     transcript: 'videoId=abc\nlanguage=en\n\nHello world this is a transcript.',
@@ -395,10 +405,10 @@ describe('ChromePromptApiAdapter', () => {
 
                 const [createOpts] = lmGlobal.create.mock.calls[0] as [
                     {
-                        initialPrompts?: Array<{
+                        initialPrompts?: {
                             role: string;
                             content: string;
-                        }>;
+                        }[];
                     },
                 ];
                 expect(createOpts?.initialPrompts?.[0]?.role).toBe('system');

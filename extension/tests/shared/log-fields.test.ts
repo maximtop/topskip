@@ -32,8 +32,8 @@ describe('formatLogFields', () => {
                 actions: ['loadModule:captions', 'toggleSubtitlesOn'],
             }),
         ).toBe(
-            'urlShape={"pathname":"/api/timedtext","hasPot":true} ' +
-                'actions=["loadModule:captions","toggleSubtitlesOn"]',
+            'urlShape={"pathname":"/api/timedtext","hasPot":true} '
+                + 'actions=["loadModule:captions","toggleSubtitlesOn"]',
         );
     });
 

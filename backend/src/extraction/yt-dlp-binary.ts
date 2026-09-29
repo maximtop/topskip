@@ -1,5 +1,5 @@
-import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import path from 'node:path';
 
 const YT_DLP_PATH_ENV = 'TOPSKIP_YT_DLP_PATH';
 const YT_DLP_TOOL_DIRECTORY = '.tools';

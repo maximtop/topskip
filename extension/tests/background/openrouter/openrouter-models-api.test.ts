@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 describe('openrouter-models-api', () => {
     beforeEach(() => {
@@ -9,18 +16,16 @@ describe('openrouter-models-api', () => {
     it('fetches models list from OpenRouter API', async () => {
         const mockFetch = vi.fn().mockResolvedValue({
             ok: true,
-            json: () =>
-                Promise.resolve({
-                    data: [
-                        { id: 'google/gemini-2.5-flash' },
-                        { id: 'openai/gpt-4o' },
-                    ],
-                }),
+            json: () => Promise.resolve({
+                data: [
+                    { id: 'google/gemini-2.5-flash' },
+                    { id: 'openai/gpt-4o' },
+                ],
+            }),
         });
         vi.stubGlobal('fetch', mockFetch);
 
-        const { fetchOpenRouterModelList } =
-            await import('@/background/openrouter/openrouter-models-api');
+        const { fetchOpenRouterModelList } = await import('@/background/openrouter/openrouter-models-api');
         const models = await fetchOpenRouterModelList('sk-test');
         expect(models).toContain('google/gemini-2.5-flash');
         expect(models).toContain('openai/gpt-4o');
@@ -35,15 +40,13 @@ describe('openrouter-models-api', () => {
     it('caches models list for subsequent calls with same key', async () => {
         const mockFetch = vi.fn().mockResolvedValue({
             ok: true,
-            json: () =>
-                Promise.resolve({
-                    data: [{ id: 'google/gemini-2.5-flash' }],
-                }),
+            json: () => Promise.resolve({
+                data: [{ id: 'google/gemini-2.5-flash' }],
+            }),
         });
         vi.stubGlobal('fetch', mockFetch);
 
-        const { fetchOpenRouterModelList } =
-            await import('@/background/openrouter/openrouter-models-api');
+        const { fetchOpenRouterModelList } = await import('@/background/openrouter/openrouter-models-api');
         await fetchOpenRouterModelList('sk-test');
         await fetchOpenRouterModelList('sk-test');
 
@@ -54,8 +57,7 @@ describe('openrouter-models-api', () => {
         const mockFetch = vi.fn().mockRejectedValue(new Error('Network error'));
         vi.stubGlobal('fetch', mockFetch);
 
-        const { fetchOpenRouterModelList } =
-            await import('@/background/openrouter/openrouter-models-api');
+        const { fetchOpenRouterModelList } = await import('@/background/openrouter/openrouter-models-api');
         const models = await fetchOpenRouterModelList('sk-test');
         expect(models).toEqual([]);
     });
@@ -64,8 +66,7 @@ describe('openrouter-models-api', () => {
         const mockFetch = vi.fn().mockResolvedValue({ ok: false });
         vi.stubGlobal('fetch', mockFetch);
 
-        const { fetchOpenRouterModelList } =
-            await import('@/background/openrouter/openrouter-models-api');
+        const { fetchOpenRouterModelList } = await import('@/background/openrouter/openrouter-models-api');
         const models = await fetchOpenRouterModelList('sk-test');
         expect(models).toEqual([]);
     });
@@ -77,8 +78,7 @@ describe('openrouter-models-api', () => {
         });
         vi.stubGlobal('fetch', mockFetch);
 
-        const { fetchOpenRouterModelList } =
-            await import('@/background/openrouter/openrouter-models-api');
+        const { fetchOpenRouterModelList } = await import('@/background/openrouter/openrouter-models-api');
         const models = await fetchOpenRouterModelList('sk-test');
         expect(models).toEqual([]);
     });

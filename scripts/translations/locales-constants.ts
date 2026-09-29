@@ -7,7 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 /**
  * Shape of `scripts/translations/config.json`.
  */
-type TranslationsConfig = {
+interface TranslationsConfig {
     twosky_config_path: string;
     api_url: string;
     source_relative_path: string;
@@ -18,21 +18,22 @@ type TranslationsConfig = {
     locales_data_filename: string;
     required_locales: string[];
     threshold_percentage: number;
-};
+}
 
 /**
  * Entry of `extension/.twosky.json`.
  */
-type TwoskyConfig = {
+interface TwoskyConfig {
     base_locale: string;
     languages: Record<string, string>;
     project_id: string;
-};
+}
 
 /**
  * Narrows a value to a non-null object so its fields can be read.
  *
  * @param value - Parsed JSON of unknown shape.
+ *
  * @returns Whether the value is a plain object.
  */
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -49,6 +50,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
  * @param raw - Parsed file contents.
  * @param key - Field to read.
  * @param check - Predicate the value must satisfy.
+ *
  * @returns The validated field value.
  */
 function requireField<T>(
@@ -66,15 +68,14 @@ function requireField<T>(
 
 const isString = (v: unknown): v is string => typeof v === 'string';
 const isNumber = (v: unknown): v is number => typeof v === 'number';
-const isStringArray = (v: unknown): v is string[] =>
-    Array.isArray(v) && v.every(isString);
-const isStringMap = (v: unknown): v is Record<string, string> =>
-    isRecord(v) && Object.values(v).every(isString);
+const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
+const isStringMap = (v: unknown): v is Record<string, string> => isRecord(v) && Object.values(v).every(isString);
 
 /**
  * Parses a JSON file into an unvalidated record.
  *
  * @param filePath - Absolute path to the file.
+ *
  * @returns Parsed contents.
  */
 function readJsonRecord(filePath: string): Record<string, unknown> {
@@ -170,8 +171,7 @@ export const PROJECT_ID = twoskyConfig.project_id;
 
 export const API_URL = inputConfig.api_url;
 export const SRC_RELATIVE_PATH = inputConfig.source_relative_path;
-export const SRC_FILENAME_EXTENSIONS =
-    inputConfig.supported_source_filename_extensions;
+export const SRC_FILENAME_EXTENSIONS = inputConfig.supported_source_filename_extensions;
 export const PERSISTENT_MESSAGES = inputConfig.persistent_messages;
 export const LOCALES_RELATIVE_PATH = inputConfig.locales_relative_path;
 export const FORMAT = inputConfig.locales_data_format;

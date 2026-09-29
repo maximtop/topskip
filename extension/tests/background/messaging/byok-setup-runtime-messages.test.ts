@@ -1,4 +1,17 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
+import { OpenAiAdapter } from '@/background/providers/openai-adapter';
+import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
+import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
+import { ANALYSIS_MODE } from '@/shared/constants';
 
 const prefsMocks = vi.hoisted(() => ({
     ready: vi.fn().mockResolvedValue(undefined),
@@ -48,12 +61,6 @@ vi.mock('@/background/openrouter/openrouter-client', () => ({
 vi.mock('@/background/openai/openai-client', () => ({
     callOpenAiResponse: providerBoundaryMocks.callOpenAiResponse,
 }));
-
-import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
-import { OpenAiAdapter } from '@/background/providers/openai-adapter';
-import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
-import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
-import { ANALYSIS_MODE } from '@/shared/constants';
 
 describe('ByokSetupRuntimeMessages', () => {
     const prefs = {

@@ -1,4 +1,26 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import {
+    CONTENT_SCRIPT_REATTACH_PROBE_TIMEOUT_MS,
+    CONTENT_SCRIPT_REATTACH_SETTLE_TIMEOUT_MS,
+    ContentScriptReattach,
+} from '@/background/lifecycle/content-script-reattach';
+import { CAPTION_PAGE_BRIDGE_INSTALL_FLAG } from '@/shared/caption-page-bridge-flags';
+import { CONTENT_SCRIPT_BUNDLE } from '@/shared/content-script-bundles';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    CONTENT_SCRIPT_REATTACH_OUTCOME,
+    TOPSKIP_MESSAGE,
+} from '@/shared/messages';
 
 const browserMocks = vi.hoisted(() => ({
     getManifest: vi.fn(() => ({ version: '0.1.0' })),
@@ -40,20 +62,6 @@ vi.mock('@/background/debug-log/tab-attribution-registry', () => ({
     TabAttributionRegistry: { noteTab: debugLogMocks.noteTab },
 }));
 
-import {
-    CONTENT_SCRIPT_REATTACH_PROBE_TIMEOUT_MS,
-    CONTENT_SCRIPT_REATTACH_SETTLE_TIMEOUT_MS,
-    ContentScriptReattach,
-} from '@/background/lifecycle/content-script-reattach';
-import { CAPTION_PAGE_BRIDGE_INSTALL_FLAG } from '@/shared/caption-page-bridge-flags';
-import { CONTENT_SCRIPT_BUNDLE } from '@/shared/content-script-bundles';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    CONTENT_SCRIPT_REATTACH_OUTCOME,
-    TOPSKIP_MESSAGE,
-} from '@/shared/messages';
-
 const TAB_ID = 41;
 const WATCH_URL = 'https://www.youtube.com/watch?v=abc123DEF45';
 const CURRENT_ACK = {
@@ -69,14 +77,15 @@ const RECEIVING_END_MISSING = new Error(
  * Distinguishes the MAIN-world flag read from the two bundle injections.
  *
  * @param call - One recorded `scripting.executeScript` argument list.
+ *
  * @returns Whether the call is the settle probe rather than an injection.
  */
 function isFlagProbe(call: unknown[]): boolean {
     const [injection] = call;
     return (
-        typeof injection === 'object' &&
-        injection !== null &&
-        typeof Reflect.get(injection, 'func') === 'function'
+        typeof injection === 'object'
+        && injection !== null
+        && typeof Reflect.get(injection, 'func') === 'function'
     );
 }
 
@@ -90,10 +99,9 @@ function mockPageBridgeInstalled(installedStates: boolean[]): void {
     let probeIndex = 0;
     browserMocks.executeScript.mockImplementation((injection: unknown) => {
         if (isFlagProbe([injection])) {
-            const state =
-                installedStates[
-                    Math.min(probeIndex, installedStates.length - 1)
-                ] ?? false;
+            const state = installedStates[
+                Math.min(probeIndex, installedStates.length - 1)
+            ] ?? false;
             probeIndex += 1;
             return Promise.resolve([{ result: state, frameId: 0 }]);
         }
@@ -183,11 +191,9 @@ describe('ContentScriptReattach.handleRequest', () => {
     });
 
     it('logs failures as stable codes and never the API error text', async () => {
-        browserMocks.executeScript.mockImplementation((injection: unknown) =>
-            isFlagProbe([injection])
-                ? Promise.resolve([{ result: false, frameId: 0 }])
-                : Promise.reject(new Error('Cannot access contents of the page')),
-        );
+        browserMocks.executeScript.mockImplementation((injection: unknown) => (isFlagProbe([injection])
+            ? Promise.resolve([{ result: false, frameId: 0 }])
+            : Promise.reject(new Error('Cannot access contents of the page'))));
         await ContentScriptReattach.handleRequest();
         expect(debugLogMocks.record).toHaveBeenLastCalledWith(
             DEBUG_LOG_EVENT.Reattach,
@@ -320,11 +326,9 @@ describe('ContentScriptReattach.handleRequest', () => {
     });
 
     it('reports an injection failure instead of claiming success', async () => {
-        browserMocks.executeScript.mockImplementation((injection: unknown) =>
-            isFlagProbe([injection])
-                ? Promise.resolve([{ result: false, frameId: 0 }])
-                : Promise.reject(new Error('Cannot access contents of the page')),
-        );
+        browserMocks.executeScript.mockImplementation((injection: unknown) => (isFlagProbe([injection])
+            ? Promise.resolve([{ result: false, frameId: 0 }])
+            : Promise.reject(new Error('Cannot access contents of the page'))));
 
         await expect(ContentScriptReattach.handleRequest()).resolves.toEqual({
             ok: false,

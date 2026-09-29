@@ -1,4 +1,5 @@
 import { formatLogStage } from '@/shared/log-fields';
+
 import type { ServerAnalysisLogFields } from '@/shared/server-analysis-log-types';
 
 const SERVER_ANALYSIS_LOG_PREFIX = '[TopSkip server-analysis]';

@@ -8,20 +8,20 @@ const DOWNLOAD_ANCHOR_REL = 'noopener';
  * The anchor surface a download needs; `HTMLAnchorElement` satisfies it and
  * tests supply a fake because Vitest runs without a DOM.
  */
-export type DownloadAnchor = {
+export interface DownloadAnchor {
     href: string;
     download: string;
     rel: string;
     click(): void;
-};
+}
 
 /**
  * Document surface for creating the transient anchor (`document` in the
  * page; a fake in tests).
  */
-export type DownloadHost = {
+export interface DownloadHost {
     createElement(tagName: typeof DOWNLOAD_ANCHOR_TAG): DownloadAnchor;
-};
+}
 
 /**
  * Clipboard and in-page file export for the debug log bundle; static API
@@ -36,6 +36,7 @@ export class DebugLogExportActions {
      * Download log.
      *
      * @param text - Bundle text to place on the clipboard.
+     *
      * @returns Whether the clipboard accepted the text.
      */
     static copy(text: string): Promise<boolean> {

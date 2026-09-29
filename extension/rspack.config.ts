@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { config as loadDotEnv } from 'dotenv';
+
 import { defineConfig } from '@rspack/cli';
 import {
     Compilation,
@@ -10,6 +10,7 @@ import {
     rspack,
     sources,
 } from '@rspack/core';
+import { config as loadDotEnv } from 'dotenv';
 
 import {
     BUILD_MODE_ENV_VAR,
@@ -35,6 +36,7 @@ loadDotEnv({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
  *
  * @param build - Resolved `TOPSKIP_BUILD` value
  * @param serverOrigin - Explicit validated backend origin.
+ *
  * @returns Rspack plugin
  */
 function topSkipManifestPlugin(

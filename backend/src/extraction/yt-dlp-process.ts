@@ -5,22 +5,21 @@ import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
 /**
  * Bounded subprocess request used for every yt-dlp invocation.
  */
-export type YtDlpRunRequest = {
+export interface YtDlpRunRequest {
     binaryPath?: string;
     args: readonly string[];
     timeoutMs: number;
     maxOutputBytes: number;
-};
+}
 
 /**
  * Safe subprocess result that never exposes stderr or raw spawn errors.
  */
-export type YtDlpRunResult =
-    | { status: 'succeeded'; stdout: string }
+export type YtDlpRunResult = | { status: 'succeeded'; stdout: string }
     | {
-          status: 'failed';
-          code: 'binary_missing' | 'oversized_response' | 'process_failed';
-      }
+        status: 'failed';
+        code: 'binary_missing' | 'oversized_response' | 'process_failed';
+    }
     | { status: 'timed_out'; code: 'timeout' };
 
 /**
@@ -37,6 +36,7 @@ export class YtDlpProcess {
      * Runs one command and maps all process failures into stable diagnostics.
      *
      * @param request - Executable arguments and resource limits.
+     *
      * @returns Safe bounded process result.
      */
     static async run(request: YtDlpRunRequest): Promise<YtDlpRunResult> {
@@ -79,10 +79,9 @@ export class YtDlpProcess {
                 chunks.push(chunk);
             });
             child.on('error', (error) => {
-                const code =
-                    'code' in error && error.code === 'ENOENT'
-                        ? 'binary_missing'
-                        : 'process_failed';
+                const code = 'code' in error && error.code === 'ENOENT'
+                    ? 'binary_missing'
+                    : 'process_failed';
                 finish({ status: 'failed', code });
             });
             child.on('close', (code) => {

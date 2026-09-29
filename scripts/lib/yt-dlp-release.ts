@@ -3,10 +3,10 @@ import { createHash } from 'node:crypto';
 /**
  * Describes a verified standalone artifact from the pinned nightly release.
  */
-export type YtDlpReleaseAsset = {
+export interface YtDlpReleaseAsset {
     assetName: string;
     sha256: string;
-};
+}
 
 /**
  * Pinned upstream build keeps bootstrap installs reproducible in CI.
@@ -32,6 +32,7 @@ const LINUX_X64_ASSET: YtDlpReleaseAsset = {
  *
  * @param platform - Node platform identifier.
  * @param architecture - Node architecture identifier.
+ *
  * @returns Pinned asset name and expected digest.
  */
 export function selectYtDlpReleaseAsset(
@@ -55,6 +56,7 @@ export function selectYtDlpReleaseAsset(
  *
  * @param contents - Downloaded release artifact.
  * @param expectedSha256 - Trusted digest stored in this repository.
+ *
  * @returns Whether the artifact matches the pinned digest.
  */
 export function verifyYtDlpAssetChecksum(

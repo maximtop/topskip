@@ -1,25 +1,34 @@
-import * as v from 'valibot';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
-import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
-import { startAnalysisJobForTest } from './analysis-jobs-test-helpers';
-import { BackendPublicState } from '@topskip/backend/public-state';
-import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
-import { BackendSubtitleExtractionPipeline } from '@topskip/backend/extraction/subtitle-extraction-pipeline';
-import type { BackendLlmAnalysisAdapterResult } from '@topskip/backend/analysis/promo-analysis-types';
-import {
-    transcriptArtifactSchema,
-    type SubtitleExtractionStrategy,
-    type TranscriptArtifact,
-} from '@topskip/backend/extraction/subtitle-extraction-types';
-import { LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS } from '@topskip/backend/extraction/local-transcript-fixtures';
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_API_VERSION,
     SERVER_ANALYSIS_UNAVAILABLE_REASON,
 } from '@topskip/common/server-analysis-contract';
-import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
+import * as v from 'valibot';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
+import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
+import { LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS } from '@topskip/backend/extraction/local-transcript-fixtures';
+import { BackendSubtitleExtractionPipeline } from '@topskip/backend/extraction/subtitle-extraction-pipeline';
+import {
+    transcriptArtifactSchema,
+    type SubtitleExtractionStrategy,
+    type TranscriptArtifact,
+} from '@topskip/backend/extraction/subtitle-extraction-types';
+import { BackendPublicState } from '@topskip/backend/public-state';
+import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
+
+import { startAnalysisJobForTest } from './analysis-jobs-test-helpers';
+
+import type { BackendLlmAnalysisAdapterResult } from '@topskip/backend/analysis/promo-analysis-types';
 
 const UPLOAD_TEST_NOW_MS = 1_900_000_000_000;
 
@@ -47,8 +56,8 @@ function makeUploadArtifact(
                 startSec: input.startSec ?? 0,
                 durationSec: 40,
                 text:
-                    input.text ??
-                    'This segment is sponsored before the main topic.',
+                    input.text
+                    ?? 'This segment is sponsored before the main topic.',
             },
         ],
     });
@@ -183,8 +192,7 @@ describe('BackendAnalysisJobs', () => {
     ] as const)(
         'never calls the model after extraction preflight %s',
         async (code) => {
-            const analyze =
-                vi.fn<() => Promise<BackendLlmAnalysisAdapterResult>>();
+            const analyze = vi.fn<() => Promise<BackendLlmAnalysisAdapterResult>>();
             const strategy: SubtitleExtractionStrategy = {
                 name: 'preflight_fixture',
                 extract: () => ({
@@ -209,10 +217,9 @@ describe('BackendAnalysisJobs', () => {
                 throw new Error('Expected processing response.');
             }
 
-            const terminal =
-                await BackendAnalysisJobs.waitForExtractionForTests(
-                    processing.jobId,
-                );
+            const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+                processing.jobId,
+            );
 
             expect(terminal).toMatchObject({
                 status: 'unavailable',
@@ -281,10 +288,9 @@ describe('BackendAnalysisJobs', () => {
             | ((result: BackendLlmAnalysisAdapterResult) => void)
             | undefined;
         const analyze = vi.fn(
-            () =>
-                new Promise<BackendLlmAnalysisAdapterResult>((resolve) => {
-                    resolveAnalysis = resolve;
-                }),
+            () => new Promise<BackendLlmAnalysisAdapterResult>((resolve) => {
+                resolveAnalysis = resolve;
+            }),
         );
         const first = startAnalysisJobForTest({
             videoId: LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS.Primary,
@@ -357,10 +363,9 @@ describe('BackendAnalysisJobs', () => {
             | ((result: BackendLlmAnalysisAdapterResult) => void)
             | undefined;
         const analyze = vi.fn(
-            () =>
-                new Promise<BackendLlmAnalysisAdapterResult>((resolve) => {
-                    resolveAnalysis = resolve;
-                }),
+            () => new Promise<BackendLlmAnalysisAdapterResult>((resolve) => {
+                resolveAnalysis = resolve;
+            }),
         );
         const upload = makeUploadArtifact();
         const first = startAnalysisJobForTest({
@@ -411,12 +416,10 @@ describe('BackendAnalysisJobs', () => {
         ).toBeNull();
 
         const otherUpload = makeUploadArtifact({ languageCode: 'de' });
-        const otherAnalyze = vi.fn(() =>
-            Promise.resolve({
-                rawModelResponse: '{"hasPromo":false}',
-                model: 'test-model',
-            }),
-        );
+        const otherAnalyze = vi.fn(() => Promise.resolve({
+            rawModelResponse: '{"hasPromo":false}',
+            model: 'test-model',
+        }));
         const other = startAnalysisJobForTest({
             source: 'extension_upload',
             identity: otherUpload.identity,
@@ -464,18 +467,16 @@ describe('BackendAnalysisJobs', () => {
             BackendSubtitleExtractionPipeline,
             'extract',
         );
-        const analyze = vi.fn(() =>
-            Promise.resolve({
-                rawModelResponse:
+        const analyze = vi.fn(() => Promise.resolve({
+            rawModelResponse:
                     '{"hasPromo":true,"promoBlocks":[{"startSec":4,"endSec":24}]}',
-                model: 'test-model',
-                usage: {
-                    inputTokens: 100,
-                    outputTokens: 20,
-                    costUsd: 0.002,
-                },
-            }),
-        );
+            model: 'test-model',
+            usage: {
+                inputTokens: 100,
+                outputTokens: 20,
+                costUsd: 0.002,
+            },
+        }));
         const upload = makeUploadArtifact();
         const processing = startAnalysisJobForTest({
             source: 'extension_upload',
@@ -557,10 +558,9 @@ describe('BackendAnalysisJobs', () => {
             if (processing.status !== 'processing') {
                 throw new Error('Expected processing response.');
             }
-            const terminal =
-                await BackendAnalysisJobs.waitForExtractionForTests(
-                    processing.jobId,
-                );
+            const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+                processing.jobId,
+            );
 
             expect(terminal).toMatchObject({
                 status: 'error',
@@ -577,21 +577,20 @@ describe('BackendAnalysisJobs', () => {
     });
 
     it('runs two cold jobs and bounds the global queue at ten', async () => {
-        const releases: Array<() => void> = [];
+        const releases: (() => void)[] = [];
         const processingJobs = Array.from({ length: 12 }, (_, index) => {
             const videoId = `queueTest${String(index).padStart(2, '0')}`;
             const strategy: SubtitleExtractionStrategy = {
                 name: 'pending_extraction',
-                extract: () =>
-                    new Promise((resolve) => {
-                        releases.push(() => {
-                            resolve({
-                                status: 'failed',
-                                failureReason: 'strategy_error',
-                                diagnostics: { code: 'video_unavailable' },
-                            });
+                extract: () => new Promise((resolve) => {
+                    releases.push(() => {
+                        resolve({
+                            status: 'failed',
+                            failureReason: 'strategy_error',
+                            diagnostics: { code: 'video_unavailable' },
                         });
-                    }),
+                    });
+                }),
             };
             return startAnalysisJobForTest({
                 videoId,
@@ -616,11 +615,9 @@ describe('BackendAnalysisJobs', () => {
             releasedCount += 1;
         }
         await Promise.all(
-            processingJobs.map((job) =>
-                BackendAnalysisJobs.waitForExtractionForTests(
-                    job.status === 'processing' ? job.jobId : '',
-                ),
-            ),
+            processingJobs.map((job) => BackendAnalysisJobs.waitForExtractionForTests(
+                job.status === 'processing' ? job.jobId : '',
+            )),
         );
         expect(BackendAnalysisJobs.snapshotForTests()).toMatchObject({
             activeJobCount: 0,
@@ -666,10 +663,9 @@ describe('BackendAnalysisJobs', () => {
                     analyze,
                 },
             });
-            const terminal =
-                await BackendAnalysisJobs.waitForExtractionForTests(
-                    processing.status === 'processing' ? processing.jobId : '',
-                );
+            const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+                processing.status === 'processing' ? processing.jobId : '',
+            );
 
             expect(terminal).toMatchObject({
                 status: 'error',
@@ -1107,10 +1103,9 @@ describe('BackendAnalysisJobs', () => {
                     analyze,
                 },
             });
-            const terminal =
-                await BackendAnalysisJobs.waitForExtractionForTests(
-                    processing.status === 'processing' ? processing.jobId : '',
-                );
+            const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+                processing.status === 'processing' ? processing.jobId : '',
+            );
 
             expect(terminal).toMatchObject({
                 status: 'error',
@@ -1178,17 +1173,15 @@ describe('BackendAnalysisJobs', () => {
                     providerId: 'test',
                     model: 'test',
                     promptVersion: 'test',
-                    analyze: () =>
-                        Promise.resolve({
-                            rawModelResponse: '{"hasPromo":false}',
-                            model: 'test',
-                        }),
+                    analyze: () => Promise.resolve({
+                        rawModelResponse: '{"hasPromo":false}',
+                        model: 'test',
+                    }),
                 },
             });
-            const terminal =
-                await BackendAnalysisJobs.waitForExtractionForTests(
-                    processing.status === 'processing' ? processing.jobId : '',
-                );
+            const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+                processing.status === 'processing' ? processing.jobId : '',
+            );
 
             expect(terminal?.status).toBe('no_promo');
             expect(settle).toHaveBeenCalledOnce();
@@ -1260,10 +1253,9 @@ describe('BackendAnalysisJobs', () => {
                 algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
                 nowMs: 1_900_000_000_000,
             });
-            const terminal =
-                await BackendAnalysisJobs.waitForExtractionForTests(
-                    processing.status === 'processing' ? processing.jobId : '',
-                );
+            const terminal = await BackendAnalysisJobs.waitForExtractionForTests(
+                processing.status === 'processing' ? processing.jobId : '',
+            );
 
             expect(terminal?.status).toBe('ready');
         } finally {

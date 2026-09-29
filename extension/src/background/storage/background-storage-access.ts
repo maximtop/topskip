@@ -39,8 +39,7 @@ export class BackgroundStorageAccess {
      */
     static ready(): Promise<void> {
         if (BackgroundStorageAccess.accessPromise === null) {
-            BackgroundStorageAccess.accessPromise =
-                BackgroundStorageAccess.applyRestriction();
+            BackgroundStorageAccess.accessPromise = BackgroundStorageAccess.applyRestriction();
         }
         return BackgroundStorageAccess.accessPromise;
     }

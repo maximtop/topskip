@@ -1,4 +1,12 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+    beforeEach,
+    afterEach,
+} from 'vitest';
 import { createActor } from 'xstate';
 
 import { chromeDownloadMachine } from '@/options/chrome-download-machine';

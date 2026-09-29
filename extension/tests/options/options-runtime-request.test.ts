@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { requestOptionsRuntimeMessage } from '@/options/options-runtime-request';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
@@ -61,10 +69,9 @@ describe('requestOptionsRuntimeMessage', () => {
 
     it('rejects a lost reply only after the given bound', async () => {
         mocks.sendMessage.mockImplementation(
-            () =>
-                new Promise<unknown>(() => {
-                    // A killed service worker may never deliver its reply.
-                }),
+            () => new Promise<unknown>(() => {
+                // A killed service worker may never deliver its reply.
+            }),
         );
         let settled = false;
         const request = requestOptionsRuntimeMessage(MESSAGE, TIMEOUT_MS);

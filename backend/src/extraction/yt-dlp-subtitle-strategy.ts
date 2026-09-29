@@ -1,6 +1,14 @@
-import { mkdtemp, open, readdir, rm } from 'node:fs/promises';
+import {
+
+    mkdtemp,
+    open,
+    readdir,
+    rm,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+
+import { parseTranscriptJson3 } from '@topskip/common/captions/transcript-json3';
 import * as v from 'valibot';
 
 import {
@@ -14,7 +22,6 @@ import {
     type YtDlpRunResult,
     type YtDlpRunner,
 } from '@topskip/backend/extraction/yt-dlp-process';
-import { parseTranscriptJson3 } from '@topskip/common/captions/transcript-json3';
 import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
 
 const YT_DLP_STRATEGY_NAME = 'yt_dlp_subtitles';
@@ -50,15 +57,16 @@ const metadataSchema = v.object({
  * Selected caption identity determines which yt-dlp download mode is safe to
  * invoke.
  */
-export type YtDlpSubtitleTrack = {
+export interface YtDlpSubtitleTrack {
     kind: 'manual' | 'automatic';
     languageCode: string;
-};
+}
 
 /**
  * Applies the product language fallback policy to validated yt-dlp metadata.
  *
  * @param input - Unknown metadata returned by the external process.
+ *
  * @returns Selected caption track or `null` when metadata is unusable.
  */
 export function selectYtDlpSubtitleTrack(
@@ -73,7 +81,7 @@ export function selectYtDlpSubtitleTrack(
         parsed.output.automatic_captions ?? {},
     ).sort();
     const original = parsed.output.language?.trim();
-    const candidates: Array<YtDlpSubtitleTrack | null> = [
+    const candidates: (YtDlpSubtitleTrack | null)[] = [
         selectMatchingTrack(manual, original, 'manual'),
         selectMatchingTrack(automatic, original, 'automatic'),
         selectMatchingTrack(manual, ENGLISH_LANGUAGE_CODE, 'manual'),
@@ -92,6 +100,7 @@ export class YtDlpSubtitleStrategy {
      * Creates an injectable strategy so unit tests never contact YouTube.
      *
      * @param runner - Bounded yt-dlp process boundary.
+     *
      * @returns Production extraction strategy.
      */
     static create(
@@ -208,6 +217,7 @@ export class YtDlpSubtitleStrategy {
      * Uses only machine-readable metadata and disables ambient user configs.
      *
      * @param videoId - Validated YouTube video id.
+     *
      * @returns Safe yt-dlp metadata arguments.
      */
     private static metadataArgs(videoId: string): readonly string[] {
@@ -229,6 +239,10 @@ export class YtDlpSubtitleStrategy {
      * Downloads exactly one selected caption track without media files.
      *
      * @param input - Video, temporary directory, and selected caption track.
+     * @param input.videoId
+     * @param input.directory
+     * @param input.track
+     *
      * @returns Safe yt-dlp subtitle download arguments.
      */
     private static downloadArgs(input: {
@@ -236,10 +250,9 @@ export class YtDlpSubtitleStrategy {
         directory: string;
         track: YtDlpSubtitleTrack;
     }): readonly string[] {
-        const mode =
-            input.track.kind === 'manual'
-                ? '--write-subs'
-                : '--write-auto-subs';
+        const mode = input.track.kind === 'manual'
+            ? '--write-subs'
+            : '--write-auto-subs';
         return [
             '--ignore-config',
             '--no-playlist',
@@ -268,6 +281,7 @@ export class YtDlpSubtitleStrategy {
      * Parses stdout as unknown before validating its track maps.
      *
      * @param stdout - Bounded yt-dlp metadata output.
+     *
      * @returns Unknown JSON value or `null` when decoding fails.
      */
     private static parseMetadata(
@@ -286,6 +300,13 @@ export class YtDlpSubtitleStrategy {
      * Reads the sole generated json3 file and converts it into an artifact.
      *
      * @param input - Temp directory and artifact identity metadata.
+     * @param input.directory
+     * @param input.track
+     * @param input.videoId
+     * @param input.algorithmVersion
+     * @param input.nowMs
+     * @param input.videoDurationSec
+     *
      * @returns Selected artifact or safe failure.
      */
     private static async readArtifact(input: {
@@ -296,9 +317,7 @@ export class YtDlpSubtitleStrategy {
         nowMs: number;
         videoDurationSec: number | undefined;
     }): Promise<SubtitleExtractionStrategyResult> {
-        const files = (await readdir(input.directory)).filter((file) =>
-            file.endsWith(JSON3_FILE_SUFFIX),
-        );
+        const files = (await readdir(input.directory)).filter((file) => file.endsWith(JSON3_FILE_SUFFIX));
         if (files.length !== 1 || files[0] === undefined) {
             BackendServerAnalysisLog.warn('yt-dlp-artifact-failed', {
                 videoId: input.videoId,
@@ -372,6 +391,7 @@ export class YtDlpSubtitleStrategy {
      * Requires duration-bearing non-live metadata before captions or model analysis can run.
      *
      * @param metadata - Validated yt-dlp metadata object.
+     *
      * @returns Whether metadata proves a finite ordinary VOD duration.
      */
     private static isOrdinaryVod(
@@ -380,17 +400,17 @@ export class YtDlpSubtitleStrategy {
         duration: number;
     } {
         if (
-            metadata.duration === undefined ||
-            !Number.isFinite(metadata.duration) ||
-            metadata.duration <= 0 ||
-            metadata.is_live === true
+            metadata.duration === undefined
+            || !Number.isFinite(metadata.duration)
+            || metadata.duration <= 0
+            || metadata.is_live === true
         ) {
             return false;
         }
         return (
-            metadata.live_status === undefined ||
-            metadata.live_status === null ||
-            metadata.live_status === 'not_live'
+            metadata.live_status === undefined
+            || metadata.live_status === null
+            || metadata.live_status === 'not_live'
         );
     }
 
@@ -398,6 +418,7 @@ export class YtDlpSubtitleStrategy {
      * Stats and reads a subtitle through a fixed-size handle buffer to cap allocation.
      *
      * @param filePath - Sole generated JSON3 subtitle path.
+     *
      * @returns Complete bounded bytes, or `null` when the file exceeds 1 MiB.
      */
     private static async readBoundedSubtitleFile(
@@ -444,6 +465,7 @@ export class YtDlpSubtitleStrategy {
      *
      * @param result - Failed bounded subprocess result.
      * @param defaultCode - Stage-specific safe fallback code.
+     *
      * @returns Safe strategy failure.
      */
     private static processFailure(
@@ -458,8 +480,7 @@ export class YtDlpSubtitleStrategy {
                 diagnostics: { code: result.code },
             };
         }
-        const code =
-            result.code === 'process_failed' ? defaultCode : result.code;
+        const code = result.code === 'process_failed' ? defaultCode : result.code;
         return YtDlpSubtitleStrategy.failed(code);
     }
 
@@ -467,6 +488,7 @@ export class YtDlpSubtitleStrategy {
      * Maps external failures to generic failure reasons plus stable diagnostics.
      *
      * @param code - Safe diagnostic code.
+     *
      * @returns Failed extraction result.
      */
     private static failed(code: string): SubtitleExtractionStrategyResult {
@@ -484,6 +506,7 @@ export class YtDlpSubtitleStrategy {
  * @param languages - Sorted available track keys.
  * @param preferred - Preferred language from metadata or fallback policy.
  * @param kind - Track source kind.
+ *
  * @returns Matching track or `null`.
  */
 function selectMatchingTrack(
@@ -495,8 +518,7 @@ function selectMatchingTrack(
         return null;
     }
     const match = languages.find(
-        (language) =>
-            language === preferred || language.startsWith(`${preferred}-`),
+        (language) => language === preferred || language.startsWith(`${preferred}-`),
     );
     return match === undefined ? null : { kind, languageCode: match };
 }
@@ -506,6 +528,7 @@ function selectMatchingTrack(
  *
  * @param languages - Sorted available track keys.
  * @param kind - Track source kind.
+ *
  * @returns First track or `null`.
  */
 function firstTrack(
@@ -520,6 +543,7 @@ function firstTrack(
  * Prevents a metadata-provided language key from widening yt-dlp's regex.
  *
  * @param value - Exact caption language key.
+ *
  * @returns Regex-safe language key.
  */
 function escapeRegularExpression(value: string): string {

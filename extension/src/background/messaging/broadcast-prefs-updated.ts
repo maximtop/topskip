@@ -1,9 +1,11 @@
 import browser from '@/shared/browser';
-import type { UserPreferences } from '@/shared/constants';
 import { TOPSKIP_MESSAGE, type TopSkipRuntimeMessage } from '@/shared/messages';
+
+import type { UserPreferences } from '@/shared/constants';
 
 // FIXME why content script does not send message to background
 // to check that settings were not changed before starting to work?
+
 /**
  * Pushes prefs to every tab’s content scripts after the background has written
  * storage. Needed because only the background reads/writes prefs in
@@ -21,6 +23,7 @@ export class PrefsBroadcast {
      * block the rest.
      *
      * @param prefs The preferences to broadcast.
+     *
      * @returns A promise that resolves when broadcast attempts finish
      * (best-effort per tab).
      */

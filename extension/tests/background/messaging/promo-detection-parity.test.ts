@@ -1,7 +1,27 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+    beforeEach,
+} from 'vitest';
+
+// ------------------------------------------------------------------
+// Imports under test (after mocks)
+// ------------------------------------------------------------------
+
+import { PromoDetectionRuntimeMessages } from '@/background/messaging/misc-runtime-messages';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { PromoDetectionStore } from '@/background/promo-detection-store';
+import {
+    ANALYSIS_MODE,
+    STORAGE_KEY_PREFS,
+    STORAGE_KEY_OPENROUTER,
+} from '@/shared/constants';
+import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 import type { PromoBlock } from '@topskip/common/promo-types';
-import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 // ------------------------------------------------------------------
 // Hoisted mocks
@@ -66,10 +86,9 @@ vi.mock('@/background/openrouter/parse-llm-promo-response', () => ({
 vi.mock(
     '@/background/openrouter/log-promo-analysis',
     async (importOriginal) => {
-        const mod =
-            await importOriginal<
+        const mod = await importOriginal<
                 typeof import('@/background/openrouter/log-promo-analysis')
-            >();
+        >();
         return {
             ...mod,
             buildPromoAnalysisLogBundle: vi.fn().mockReturnValue(''),
@@ -79,25 +98,12 @@ vi.mock(
 );
 
 // ------------------------------------------------------------------
-// Imports under test (after mocks)
-// ------------------------------------------------------------------
-
-import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { PromoDetectionStore } from '@/background/promo-detection-store';
-import { PromoDetectionRuntimeMessages } from '@/background/messaging/misc-runtime-messages';
-import {
-    ANALYSIS_MODE,
-    STORAGE_KEY_PREFS,
-    STORAGE_KEY_OPENROUTER,
-} from '@/shared/constants';
-
-// ------------------------------------------------------------------
 // FR-010: popup and content receive identical promoBlocks
 // ------------------------------------------------------------------
 
 describe(
-    'FR-010: popup GET_DETECTION_STATUS and content' +
-        ' PROMO_BLOCKS_DETECTED share identical blocks',
+    'FR-010: popup GET_DETECTION_STATUS and content'
+        + ' PROMO_BLOCKS_DETECTED share identical blocks',
     () => {
         const TAB_ID = 42;
         const VIDEO_ID = 'abc123';

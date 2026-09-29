@@ -1,13 +1,13 @@
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import browser from '@/shared/browser';
+import { LOG_PREFIX_CONTENT } from '@/shared/constants';
 import { getErrorMessage } from '@/shared/error';
 import {
     type ContentLogLevel,
     type GetDetectionStatusResponse,
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
-import { LOG_PREFIX_CONTENT } from '@/shared/constants';
 
 /**
  * Handles `TOPSKIP_CONTENT_LOG` messages from the content
@@ -27,10 +27,9 @@ export class ContentLogMessages {
         args: unknown[],
         tabId: number | undefined,
     ): void {
-        const tag =
-            tabId !== undefined
-                ? `[TopSkip content t${tabId}]`
-                : LOG_PREFIX_CONTENT;
+        const tag = tabId !== undefined
+            ? `[TopSkip content t${tabId}]`
+            : LOG_PREFIX_CONTENT;
 
         console[level](tag, ...args);
     }
@@ -58,10 +57,22 @@ export class PromoDetectionRuntimeMessages {
             });
             const tabId = tabs[0]?.id;
             if (tabId === undefined) {
-                return { ok: true, tabId: null, state: null, debugLoggingEnabled };
+                return {
+
+                    ok: true,
+                    tabId: null,
+                    state: null,
+                    debugLoggingEnabled,
+                };
             }
             const state = PromoDetectionStore.get(tabId);
-            return { ok: true, tabId, state, debugLoggingEnabled };
+            return {
+
+                ok: true,
+                tabId,
+                state,
+                debugLoggingEnabled,
+            };
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
         }
@@ -72,6 +83,7 @@ export class PromoDetectionRuntimeMessages {
      *
      * @param state - Detection state to store, or `null` to clear it.
      * @param tabId - Sender tab id whose popup state should be seeded.
+     *
      * @returns Ack response for the dev-only mutation.
      */
     static async handleDevSet(

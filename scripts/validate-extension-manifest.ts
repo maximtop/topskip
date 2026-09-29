@@ -1,8 +1,8 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import * as v from 'valibot';
 
@@ -59,9 +59,7 @@ function assertExactSet(
         throw new Error(`${field} contains duplicate entries.`);
     }
     const hasExactSize = actualSet.size === expectedSet.size;
-    const containsOnlyExpected = [...actualSet].every((value) =>
-        expectedSet.has(value),
-    );
+    const containsOnlyExpected = [...actualSet].every((value) => expectedSet.has(value));
     if (!hasExactSize || !containsOnlyExpected) {
         throw new Error(`${field} does not match the selected build profile.`);
     }
@@ -180,6 +178,7 @@ export function validateExtensionManifest(
  * options cannot silently change the artifact policy.
  *
  * @param args - User arguments after the executable path.
+ *
  * @returns Validated CLI values.
  */
 function parseCliArguments(args: string[]): CliArguments {
@@ -193,15 +192,14 @@ function parseCliArguments(args: string[]): CliArguments {
     for (let index = 0; index < normalizedArgs.length; index += 2) {
         const flag = normalizedArgs[index];
         const value = normalizedArgs[index + 1];
-        const isKnownFlag =
-            flag === BUILD_FLAG ||
-            flag === SERVER_ORIGIN_FLAG ||
-            flag === MANIFEST_PATH_FLAG;
+        const isKnownFlag = flag === BUILD_FLAG
+            || flag === SERVER_ORIGIN_FLAG
+            || flag === MANIFEST_PATH_FLAG;
         if (
-            !isKnownFlag ||
-            value === undefined ||
-            value === '' ||
-            values.has(flag)
+            !isKnownFlag
+            || value === undefined
+            || value === ''
+            || values.has(flag)
         ) {
             throw new Error(
                 'Expected --build, --server-origin, and --manifest exactly once.',
@@ -229,6 +227,7 @@ function parseCliArguments(args: string[]): CliArguments {
  * logs while retaining enough policy context to diagnose a failed artifact.
  *
  * @param error - Unknown failure from argument, file, JSON, or policy parsing.
+ *
  * @returns One single-line bounded diagnostic.
  */
 function formatCliError(error: unknown): string {
@@ -245,6 +244,7 @@ function formatCliError(error: unknown): string {
  * without terminating callers that import this module.
  *
  * @param args - CLI arguments after the executable path.
+ *
  * @returns Zero for a valid artifact, otherwise one.
  */
 export async function main(args: string[]): Promise<number> {

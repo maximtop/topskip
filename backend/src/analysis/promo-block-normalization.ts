@@ -1,13 +1,14 @@
+import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
+import { sortAndDedupePromoBlocks } from '@topskip/common/promo-dedupe';
+import { promoBlockSchema } from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
 import {
     BACKEND_ANALYSIS_FAILURE_REASON,
     type BackendAnalysisFailureReason,
 } from '@topskip/backend/analysis/promo-analysis-types';
-import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
-import { sortAndDedupePromoBlocks } from '@topskip/common/promo-dedupe';
+
 import type { PromoBlock } from '@topskip/common/promo-types';
-import { promoBlockSchema } from '@topskip/common/server-analysis-contract';
 
 const MIN_TIMELINE_SEC = 0;
 const FULL_VIDEO_BLOCK_START_SEC = 0;
@@ -16,30 +17,28 @@ const OPEN_ENDED_BLOCK_IMPLIED_DURATION_SEC = DEFAULT_PROMO_BLOCK_DURATION_SEC;
 /**
  * Input for backend promo block normalization.
  */
-export type BackendPromoBlockNormalizationInput = {
+export interface BackendPromoBlockNormalizationInput {
     promoBlocks: PromoBlock[];
     durationSec: number | undefined;
-};
+}
 
 /**
  * Result of validating and normalizing model-produced promo blocks.
  */
-export type BackendPromoBlockNormalizationResult =
-    | { ok: true; promoBlocks: PromoBlock[] }
+export type BackendPromoBlockNormalizationResult = | { ok: true; promoBlocks: PromoBlock[] }
     | { ok: false; failureReason: BackendAnalysisFailureReason };
 
 /**
  * Normalizes model promo blocks before the backend can deliver them to clients.
  *
  * @param input - Raw model blocks and optional known video duration.
+ *
  * @returns Sorted safe blocks, or a stable unsafe-block failure.
  */
 export function normalizeBackendPromoBlocks(
     input: BackendPromoBlockNormalizationInput,
 ): BackendPromoBlockNormalizationResult {
-    const durationBoundBlocks = input.promoBlocks.map((block) =>
-        boundOpenEndedBlock(block, input.durationSec),
-    );
+    const durationBoundBlocks = input.promoBlocks.map((block) => boundOpenEndedBlock(block, input.durationSec));
     if (!durationBoundBlocks.every(isSafeBlock(input.durationSec))) {
         return unsafeBlocks();
     }
@@ -58,6 +57,7 @@ export function normalizeBackendPromoBlocks(
  *
  * @param block - Parsed model block.
  * @param durationSec - Known video duration, if available.
+ *
  * @returns Original block or a copy ending at the known video boundary.
  */
 function boundOpenEndedBlock(
@@ -65,10 +65,10 @@ function boundOpenEndedBlock(
     durationSec: number | undefined,
 ): PromoBlock {
     if (
-        durationSec === undefined ||
-        block.endSec !== undefined ||
-        block.startSec >= durationSec ||
-        effectiveEndSec(block) <= durationSec
+        durationSec === undefined
+        || block.endSec !== undefined
+        || block.startSec >= durationSec
+        || effectiveEndSec(block) <= durationSec
     ) {
         return block;
     }
@@ -79,6 +79,7 @@ function boundOpenEndedBlock(
  * Builds a validation predicate scoped to the known duration.
  *
  * @param durationSec - Known video duration, if the extension sent one.
+ *
  * @returns Predicate that accepts only delivery-safe blocks.
  */
 function isSafeBlock(
@@ -92,8 +93,8 @@ function isSafeBlock(
 
         const endSec = effectiveEndSec(parsed.output);
         if (
-            parsed.output.startSec < MIN_TIMELINE_SEC ||
-            endSec <= parsed.output.startSec
+            parsed.output.startSec < MIN_TIMELINE_SEC
+            || endSec <= parsed.output.startSec
         ) {
             return false;
         }
@@ -107,8 +108,8 @@ function isSafeBlock(
         }
 
         return !(
-            parsed.output.startSec <= FULL_VIDEO_BLOCK_START_SEC &&
-            endSec >= durationSec
+            parsed.output.startSec <= FULL_VIDEO_BLOCK_START_SEC
+            && endSec >= durationSec
         );
     };
 }
@@ -117,6 +118,7 @@ function isSafeBlock(
  * Mirrors content-side interpretation for blocks that omit an explicit end.
  *
  * @param block - Validated promo block.
+ *
  * @returns Explicit or implied timeline end.
  */
 function effectiveEndSec(block: PromoBlock): number {

@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const storageGet = vi.fn();
 const storageSet = vi.fn();
@@ -17,8 +24,7 @@ vi.mock('@/shared/browser', () => ({
 }));
 
 const { STORAGE_KEY_SERVER_INSTALLATION } = await import('@/shared/constants');
-const { ServerInstallationStorage } =
-    await import('@/background/storage/server-installation-storage');
+const { ServerInstallationStorage } = await import('@/background/storage/server-installation-storage');
 
 const NOW_MS = 1_900_000_000_000;
 

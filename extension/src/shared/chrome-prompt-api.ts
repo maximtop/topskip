@@ -19,6 +19,7 @@ export const LANGUAGE_MODEL_METHOD = {
      * Returns current model availability state.
      */
     AVAILABILITY: 'availability',
+
     /**
      * Creates a new model session (triggers download if needed).
      */

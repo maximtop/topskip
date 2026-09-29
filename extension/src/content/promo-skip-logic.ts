@@ -1,28 +1,30 @@
-import { MAX_PLAYBACK_DELTA_SEC } from '@/content/skip-logic';
-import type { PromoBlock } from '@topskip/common/promo-types';
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
+
+import { MAX_PLAYBACK_DELTA_SEC } from '@/content/skip-logic';
+
+import type { PromoBlock } from '@topskip/common/promo-types';
 
 /**
  * Playback state needed to evaluate promo block skip decisions.
  */
-export type PromoBlocksSkipInput = {
+export interface PromoBlocksSkipInput {
     prevTime: number;
     currentTime: number;
     duration: number;
     isSeeking: boolean;
+
     /**
      * Rounded `startSec` keys for blocks that already fired
      * (stable across list reorders).
      */
     firedStartKeys: ReadonlySet<number>;
-    blocks: ReadonlyArray<PromoBlock>;
-};
+    blocks: readonly PromoBlock[];
+}
 
 /**
  * Action produced by promo block skip evaluation.
  */
-export type PromoBlocksSkipDecision =
-    | { action: 'none' }
+export type PromoBlocksSkipDecision = | { action: 'none' }
     | { action: 'skip'; blockIndex: number; targetTime: number };
 
 /**
@@ -30,6 +32,7 @@ export type PromoBlocksSkipDecision =
  *
  * @param block - Promo block
  * @param duration - Media duration in seconds
+ *
  * @returns Target `currentTime` after skip
  */
 export function computePromoBlockTargetTime(
@@ -49,6 +52,7 @@ export function computePromoBlockTargetTime(
  * Stable integer key for “already skipped” tracking across block list edits.
  *
  * @param startSec - Block start time
+ *
  * @returns Rounded second used as fired-tracking key
  */
 export function promoBlockStartKey(startSec: number): number {
@@ -60,6 +64,7 @@ export function promoBlockStartKey(startSec: number): number {
  * start during natural playback (FR-015).
  *
  * @param input - Playback state and blocks
+ *
  * @returns Skip decision or none
  */
 export function evaluatePromoBlocksSkip(
@@ -75,10 +80,10 @@ export function evaluatePromoBlocksSkip(
     } = input;
 
     if (
-        !Number.isFinite(duration) ||
-        duration <= 0 ||
-        isSeeking ||
-        blocks.length === 0
+        !Number.isFinite(duration)
+        || duration <= 0
+        || isSeeking
+        || blocks.length === 0
     ) {
         return { action: 'none' };
     }
@@ -93,10 +98,9 @@ export function evaluatePromoBlocksSkip(
             continue;
         }
         const start = block.startSec;
-        const crossed =
-            prevTime < start &&
-            currentTime >= start &&
-            currentTime < duration + 0.001;
+        const crossed = prevTime < start
+            && currentTime >= start
+            && currentTime < duration + 0.001;
         if (!crossed) {
             continue;
         }
@@ -114,12 +118,12 @@ export function evaluatePromoBlocksSkip(
 /**
  * Mutable fired-block state used when playback seeks backward.
  */
-export type ResetFiredInput = {
+export interface ResetFiredInput {
     currentTime: number;
     prevTime: number;
-    blocks: ReadonlyArray<PromoBlock>;
+    blocks: readonly PromoBlock[];
     firedStartKeys: Set<number>;
-};
+}
 
 /**
  * Clears fired indices for blocks whose `startSec` is now ahead of
@@ -129,7 +133,13 @@ export type ResetFiredInput = {
  * @param input - Current playback state and fired set to mutate
  */
 export function resetFiredIndicesOnBackwardSeek(input: ResetFiredInput): void {
-    const { currentTime, prevTime, blocks, firedStartKeys } = input;
+    const {
+
+        currentTime,
+        prevTime,
+        blocks,
+        firedStartKeys,
+    } = input;
     if (currentTime >= prevTime || firedStartKeys.size === 0) {
         return;
     }
@@ -158,16 +168,15 @@ export const PROMO_SKIP_SUPPRESSION_REASON = {
 /**
  * Suppression reason literal union.
  */
-export type PromoSkipSuppressionReason =
-    (typeof PROMO_SKIP_SUPPRESSION_REASON)[keyof typeof PROMO_SKIP_SUPPRESSION_REASON];
+export type PromoSkipSuppressionReason = (typeof PROMO_SKIP_SUPPRESSION_REASON)[keyof typeof PROMO_SKIP_SUPPRESSION_REASON];
 
 /**
  * Block index plus the reason it did not fire on this time update.
  */
-export type PromoSkipSuppression = {
+export interface PromoSkipSuppression {
     blockIndex: number;
     reason: PromoSkipSuppressionReason;
-};
+}
 
 /**
  * Explains a missed skip for the first block whose start was crossed or whose
@@ -176,6 +185,7 @@ export type PromoSkipSuppression = {
  * {@link evaluatePromoBlocksSkip} would have skipped.
  *
  * @param input - Same playback state handed to `evaluatePromoBlocksSkip`.
+ *
  * @returns Suppression for the first relevant block, or `null`.
  */
 export function explainSuppressedPromoSkip(

@@ -6,14 +6,14 @@ const LEGACY_SOURCE_TYPES = new Set([
     'youtube_yt_dlp',
 ]);
 
-export type FrozenV2ArtifactRow = {
+export interface FrozenV2ArtifactRow {
     recordId: string;
     videoId: string;
     algorithmVersion: string;
     completedAtMs: number;
     expiresAtMs: number;
     payload: unknown;
-};
+}
 
 /**
  * Emulates the pre-v3 reader without importing any current persistence schemas.
@@ -25,6 +25,7 @@ export class FrozenPublicStateV2Reader {
      * @param path - SQLite database migrated by the current backend.
      * @param videoId - Legacy indexed video identity.
      * @param algorithmVersion - Legacy indexed algorithm identity.
+     *
      * @returns Old-shape artifact rows that remain readable after migration.
      */
     static readArtifacts(
@@ -85,6 +86,7 @@ export class FrozenPublicStateV2Reader {
      * Parses the frozen row shape and rejects sources unknown to the old image.
      *
      * @param row - Raw SQLite row.
+     *
      * @returns Frozen row or null when v2 cannot understand its payload.
      */
     private static parseRow(row: unknown): FrozenV2ArtifactRow | null {
@@ -110,12 +112,12 @@ export class FrozenPublicStateV2Reader {
             'payload_json',
         );
         if (
-            recordId === null ||
-            videoId === null ||
-            algorithmVersion === null ||
-            completedAtMs === null ||
-            expiresAtMs === null ||
-            payloadJson === null
+            recordId === null
+            || videoId === null
+            || algorithmVersion === null
+            || completedAtMs === null
+            || expiresAtMs === null
+            || payloadJson === null
         ) {
             return null;
         }
@@ -143,6 +145,7 @@ export class FrozenPublicStateV2Reader {
      * Models the old schema's closed source union without current imports.
      *
      * @param payload - Parsed artifact JSON.
+     *
      * @returns Whether v2 recognizes the selected transcript source.
      */
     private static hasLegacySource(payload: unknown): boolean {
@@ -158,8 +161,8 @@ export class FrozenPublicStateV2Reader {
         }
         const sourceType: unknown = Reflect.get(artifact, 'sourceType');
         return (
-            typeof sourceType === 'string' &&
-            LEGACY_SOURCE_TYPES.has(sourceType)
+            typeof sourceType === 'string'
+            && LEGACY_SOURCE_TYPES.has(sourceType)
         );
     }
 
@@ -168,6 +171,7 @@ export class FrozenPublicStateV2Reader {
      *
      * @param value - Unknown row-like value.
      * @param key - Frozen SQLite column name.
+     *
      * @returns String or null.
      */
     private static readString(value: object, key: string): string | null {
@@ -180,6 +184,7 @@ export class FrozenPublicStateV2Reader {
      *
      * @param value - Unknown row-like value.
      * @param key - Frozen SQLite column name.
+     *
      * @returns Number or null.
      */
     private static readNumber(value: object, key: string): number | null {

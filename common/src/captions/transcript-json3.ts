@@ -1,21 +1,23 @@
-import type { CaptionSegment } from '@topskip/common/caption-types';
 import { MS_PER_SECOND } from '@topskip/common/constants';
+
+import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * Parses YouTube JSON3 caption events and segments from any owning runtime.
  *
  * @param raw - JSON3 subtitle document.
+ *
  * @returns Segments or a parse error.
  */
 export function parseTranscriptJson3(raw: string):
     | {
-          ok: true;
-          segments: CaptionSegment[];
-      }
+        ok: true;
+        segments: CaptionSegment[];
+    }
     | {
-          ok: false;
-          error: string;
-      } {
+        ok: false;
+        error: string;
+    } {
     const trimmed = raw.trim();
     if (trimmed.length === 0) {
         return { ok: false, error: 'Empty transcript response' };
@@ -32,7 +34,7 @@ export function parseTranscriptJson3(raw: string):
         return { ok: false, error: 'Invalid JSON transcript' };
     }
 
-    const events = (root as { events?: unknown }).events;
+    const { events } = (root as { events?: unknown });
     if (!Array.isArray(events)) {
         return { ok: false, error: 'No events in JSON transcript' };
     }
@@ -60,10 +62,9 @@ export function parseTranscriptJson3(raw: string):
         }
         text = text.replace(/\n/g, ' ').trim();
         const dDurationMs: unknown = Reflect.get(ev, 'dDurationMs');
-        const durationSec =
-            typeof dDurationMs === 'number' && Number.isFinite(dDurationMs)
-                ? dDurationMs / MS_PER_SECOND
-                : 0;
+        const durationSec = typeof dDurationMs === 'number' && Number.isFinite(dDurationMs)
+            ? dDurationMs / MS_PER_SECOND
+            : 0;
         if (text.length > 0) {
             segments.push({
                 startSec,

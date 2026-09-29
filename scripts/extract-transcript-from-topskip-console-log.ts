@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 /**
  * Rebuilds the LLM-style merged transcript from a Chrome-exported service
  * worker log where {@link logTranscriptForDeveloper} printed caption chunks as
@@ -11,30 +12,29 @@ import { fileURLToPath } from 'node:url';
 
 import { Command } from 'commander';
 
-type Segment = { startSec: number; text: string };
+interface Segment { startSec: number; text: string }
 
 /**
  * @param raw - Substring inside single-quoted `text: '…'`
+ *
  * @returns Unescaped caption text
  */
 function unescapeJsSingleQuotedText(raw: string): string {
-    return raw.replace(/\\(['\\])/g, (_m, ch: string) =>
-        ch === '\\' ? '\\' : "'",
-    );
+    return raw.replace(/\\(['\\])/g, (_m, ch: string) => (ch === '\\' ? '\\' : "'"));
 }
 
 /**
  * @param raw - Substring inside double-quoted `text: "…"`
+ *
  * @returns Unescaped caption text
  */
 function unescapeJsDoubleQuotedText(raw: string): string {
-    return raw.replace(/\\(["\\])/g, (_m, ch: string) =>
-        ch === '\\' ? '\\' : '"',
-    );
+    return raw.replace(/\\(["\\])/g, (_m, ch: string) => (ch === '\\' ? '\\' : '"'));
 }
 
 /**
  * @param s - Caption fragment as logged in DevTools
+ *
  * @returns Plain text for the merged transcript
  */
 function decodeHtmlEntities(s: string): string {
@@ -61,6 +61,7 @@ const RE_MANGLED = new RegExp(
 
 /**
  * @param logText - Full `.log` file contents
+ *
  * @returns Parsed caption segments (may be unsorted; caller sorts)
  */
 export function parseCaptionSegmentsFromTopSkipConsoleLog(
@@ -73,10 +74,9 @@ export function parseCaptionSegmentsFromTopSkipConsoleLog(
         while (m !== null) {
             const startSec = Number(m[1]);
             const rawText = m[2] ?? '';
-            const body =
-                re === RE_SINGLE
-                    ? unescapeJsSingleQuotedText(rawText)
-                    : unescapeJsDoubleQuotedText(rawText);
+            const body = re === RE_SINGLE
+                ? unescapeJsSingleQuotedText(rawText)
+                : unescapeJsDoubleQuotedText(rawText);
             if (Number.isFinite(startSec)) {
                 out.push({ startSec, text: decodeHtmlEntities(body) });
             }
@@ -101,6 +101,7 @@ export function parseCaptionSegmentsFromTopSkipConsoleLog(
  * @param segments - Parsed segments
  * @param videoId - YouTube id for the user message header
  * @param languageCode - BCP-like language code
+ *
  * @returns Full user message body (videoId/language headers plus `[sec]`
  *   lines, same shape as production merge + headers)
  */
@@ -126,10 +127,11 @@ export function buildUserMessageFromSegments(
     return `${head}\n${lines.join('\n')}`;
 }
 
-type ExtractCliOpts = { out?: string; videoId: string; language: string };
+interface ExtractCliOpts { out?: string; videoId: string; language: string }
 
 /**
  * @param argv - Typically `process.argv.slice(2)`
+ *
  * @returns Arguments for Commander after stripping wrapper-injected `--`
  */
 function normalizeForwardedCliArgs(argv: readonly string[]): string[] {
@@ -143,6 +145,7 @@ function normalizeForwardedCliArgs(argv: readonly string[]): string[] {
 /**
  * @param logPath - Exported DevTools `.log` path
  * @param opts - Output path and synthetic message headers
+ *
  * @returns void
  */
 function extractCliAction(logPath: string, opts: ExtractCliOpts): void {
@@ -150,8 +153,8 @@ function extractCliAction(logPath: string, opts: ExtractCliOpts): void {
     const segments = parseCaptionSegmentsFromTopSkipConsoleLog(logText);
     if (segments.length === 0) {
         console.error(
-            'No caption segments found. Export must include expanded ' +
-                '`N: {start:, text:}` lines (not only [{…}] collapsed).',
+            'No caption segments found. Export must include expanded '
+                + '`N: {start:, text:}` lines (not only [{…}] collapsed).',
         );
         process.exit(1);
     }

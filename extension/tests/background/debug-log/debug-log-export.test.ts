@@ -1,4 +1,26 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import {
+    DEBUG_LOG_BUNDLE_EVENTS_MARKER,
+    DEBUG_LOG_BUNDLE_NOTICE,
+    DebugLogExport,
+    EnvironmentProbe,
+    type DebugLogEnvironment,
+} from '@/background/debug-log/debug-log-export';
+import { ANALYSIS_MODE } from '@/shared/constants';
+import { DEBUG_LOG_CAP_BYTES } from '@/shared/debug-log-constants';
+import { DEFAULT_DETECTION_MODEL_ID, buildOpenRouterModelId } from '@/shared/detection-models';
+import { PROVIDER_ID } from '@/shared/providers';
+
+import type { DebugLogSnapshot } from '@/background/debug-log/debug-log-store';
 
 const browserMocks = vi.hoisted(() => ({
     getManifest: vi.fn(() => ({ version: '0.1.0', version_name: '0.1.0 (dev build 1)' })),
@@ -25,24 +47,11 @@ vi.mock('@/background/storage/prefs-sync', () => ({
     PrefsSyncStorage: prefsMocks,
 }));
 
-import {
-    DEBUG_LOG_BUNDLE_EVENTS_MARKER,
-    DEBUG_LOG_BUNDLE_NOTICE,
-    DebugLogExport,
-    EnvironmentProbe,
-    type DebugLogEnvironment,
-} from '@/background/debug-log/debug-log-export';
-import type { DebugLogSnapshot } from '@/background/debug-log/debug-log-store';
-import { ANALYSIS_MODE } from '@/shared/constants';
-import { DEBUG_LOG_CAP_BYTES } from '@/shared/debug-log-constants';
-import { DEFAULT_DETECTION_MODEL_ID, buildOpenRouterModelId } from '@/shared/detection-models';
-import { PROVIDER_ID } from '@/shared/providers';
-
-const FULL_UA =
-    'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 ' +
-    '(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36';
+const FULL_UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 '
+    + '(KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36';
 const EXPORTED_AT_MS = Date.UTC(2026, 7, 22, 13, 5, 9, 123);
 const ENABLED_AT_MS = EXPORTED_AT_MS - 60_000;
+
 /**
  * SC-007: neither the probe nor the bundle builder touches the network.
  */
@@ -60,6 +69,8 @@ const ENV: DebugLogEnvironment = {
 
 /**
  * Snapshot with two lines and non-zero counters.
+ *
+ * @param overrides
  */
 function snapshot(overrides: Partial<DebugLogSnapshot['status']> = {}): DebugLogSnapshot {
     return {
@@ -74,7 +85,14 @@ function snapshot(overrides: Partial<DebugLogSnapshot['status']> = {}): DebugLog
             capBytes: DEBUG_LOG_CAP_BYTES,
             evictedCount: 7,
             oldestRetainedMs: ENABLED_AT_MS,
-            dropped: { incognito: 3, coalesced: 4, ceiling: 5, unreachable: 6, lost: 1 },
+            dropped: {
+
+                incognito: 3,
+                coalesced: 4,
+                ceiling: 5,
+                unreachable: 6,
+                lost: 1,
+            },
             revision: 9,
             ...overrides,
         },

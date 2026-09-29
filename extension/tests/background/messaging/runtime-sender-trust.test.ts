@@ -1,4 +1,21 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { RuntimeSenderTrust } from '@/background/messaging/runtime-sender-trust';
+
+import {
+    EXTENSION_ID,
+    makeContentSender,
+    makeForeignExtensionSender,
+    makeOptionsSender,
+    makePopupSender,
+    makeWebPageSender,
+} from '../../helpers/runtime-senders';
 
 const extensionId = await vi.hoisted(async () => {
     const { EXTENSION_ID } = await import('../../helpers/runtime-senders');
@@ -13,16 +30,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-import { RuntimeSenderTrust } from '@/background/messaging/runtime-sender-trust';
-import {
-    EXTENSION_ID,
-    makeContentSender,
-    makeForeignExtensionSender,
-    makeOptionsSender,
-    makePopupSender,
-    makeWebPageSender,
-} from '../../helpers/runtime-senders';
 
 const VIDEO_ID = 'dQw4w9WgXcQ';
 

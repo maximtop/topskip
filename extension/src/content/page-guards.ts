@@ -10,8 +10,7 @@ import {
  * Local static server host used by Playwright e2e (see `tests/e2e/fixtures`);
  * `null` outside development bundles.
  */
-export const E2E_HOST: string | null =
-    DEV_E2E_ORIGIN === null ? null : new URL(DEV_E2E_ORIGIN).hostname;
+export const E2E_HOST: string | null = DEV_E2E_ORIGIN === null ? null : new URL(DEV_E2E_ORIGIN).hostname;
 
 /**
  * Exact production hostname accepted by the legacy URL-parts boundary.
@@ -25,6 +24,7 @@ const YOUTUBE_HOST = new URL(YOUTUBE_ORIGIN).hostname;
  * @param hostname Current document hostname.
  * @param search `location.search` string (includes `?` prefix handling via
  * URLSearchParams).
+ *
  * @returns The watch video id, a fixture placeholder, or `null` when absent.
  */
 export function getWatchVideoIdFromSearch(
@@ -47,6 +47,10 @@ export function getWatchVideoIdFromSearch(
  * fixture).
  *
  * @param input URL parts for the current document.
+ * @param input.hostname
+ * @param input.pathname
+ * @param input.search
+ *
  * @returns `true` when the script should activate on this page.
  */
 export function shouldActivateTopSkip(input: {
@@ -55,9 +59,8 @@ export function shouldActivateTopSkip(input: {
     search: string;
 }): boolean {
     const { hostname, pathname, search } = input;
-    const origin =
-        DEV_E2E_ORIGIN !== null && hostname === E2E_HOST
-            ? DEV_E2E_ORIGIN
-            : `https://${hostname}`;
+    const origin = DEV_E2E_ORIGIN !== null && hostname === E2E_HOST
+        ? DEV_E2E_ORIGIN
+        : `https://${hostname}`;
     return getWatchVideoIdFromUrl(`${origin}${pathname}${search}`) !== null;
 }

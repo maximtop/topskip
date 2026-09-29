@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { logTranscriptForDeveloper } from '@/background/captions/log-transcript-dev';
 

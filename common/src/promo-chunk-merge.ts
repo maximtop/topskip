@@ -14,6 +14,7 @@ export class ChunkMerge {
      * @param chunkStartSec - First caption `startSec` in the chunk
      * @param chunkEndSec - Last caption `startSec` in the chunk
      * @param toleranceSec - Slack on both sides
+     *
      * @returns Filtered blocks (copy)
      */
     static filterPromoBlocksForChunkTimeRange(

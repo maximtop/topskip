@@ -8,15 +8,16 @@ import {
     TextInput,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
 import { translator } from '@/shared/i18n/translator';
 import { PROVIDER_LABEL } from '@/shared/providers';
 
+import type { ReactElement } from 'react';
+
 /**
  * State and callbacks for the custom model add/remove form.
  */
-type AddModelPanelProps = {
+interface AddModelPanelProps {
     customModels: string[];
     newModelDraft: string;
     addBusy: boolean;
@@ -24,12 +25,13 @@ type AddModelPanelProps = {
     onNewModelDraftChange(value: string): void;
     onAddCustomModel(): void;
     onRemoveCustomModel(slug: string): void;
-};
+}
 
 /**
  * OpenRouter custom models remain an add-model flow, not provider selection.
  *
  * @param props - Custom model list and actions.
+ *
  * @returns Add model panel.
  */
 export function AddModelPanel(props: AddModelPanelProps): ReactElement {

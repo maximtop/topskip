@@ -6,22 +6,31 @@ import {
     rmSync,
     writeFileSync,
 } from 'node:fs';
-import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
-import * as v from 'valibot';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { dirname, join } from 'node:path';
 
+import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { BACKEND_ANALYSIS_PROVIDER_ID_MAX_LENGTH } from '@topskip/backend/analysis/promo-analysis-types';
 import {
     AnalysisArtifactStore,
     analysisArtifactRecordSchema,
 } from '@topskip/backend/analysis-artifact-store';
-import { BACKEND_ANALYSIS_PROVIDER_ID_MAX_LENGTH } from '@topskip/backend/analysis/promo-analysis-types';
 import {
     transcriptArtifactSchema,
     type TranscriptArtifact,
 } from '@topskip/backend/extraction/subtitle-extraction-types';
 import { BackendPublicState } from '@topskip/backend/public-state';
-import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 
 const TRANSCRIPT_HASH = 'a'.repeat(64);
 const OTHER_TRANSCRIPT_HASH = 'b'.repeat(64);
@@ -189,15 +198,13 @@ describe('AnalysisArtifactStore', () => {
     });
 
     it('rejects ready artifact records without transcript and analysis artifacts', () => {
-        expect(() =>
-            AnalysisArtifactStore.buildRecordForTests({
-                videoId: 'dQw4w9WgXcQ',
-                algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
-                terminalStatus: 'ready',
-                selectedTranscriptArtifact: null,
-                analysisRun: null,
-            }),
-        ).toThrow();
+        expect(() => AnalysisArtifactStore.buildRecordForTests({
+            videoId: 'dQw4w9WgXcQ',
+            algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
+            terminalStatus: 'ready',
+            selectedTranscriptArtifact: null,
+            analysisRun: null,
+        })).toThrow();
     });
 
     it('requires canonical identity and transcript fields for extension uploads', () => {
@@ -366,7 +373,7 @@ describe('AnalysisArtifactStore', () => {
             selectedTranscriptArtifact: transcript,
         });
         const saved = AnalysisArtifactStore.save(record);
-        const analysisRun = saved.analysisRun;
+        const { analysisRun } = saved;
         if (analysisRun === null) {
             throw new Error('Expected a retained model run.');
         }

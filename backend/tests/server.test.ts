@@ -1,22 +1,6 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import * as v from 'valibot';
 import { request as requestHttp } from 'node:http';
 import { connect, type Socket } from 'node:net';
 
-import { BackendApiProtection } from '@topskip/backend/api-protection';
-import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
-import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
-import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
-import { startAnalysisJobForTest } from './analysis-jobs-test-helpers';
-import { BackendHttpServer } from '@topskip/backend/server';
-import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
-import { BackendPublicState } from '@topskip/backend/public-state';
-import { BACKEND_CAPTION_SOURCE } from '@topskip/backend/server-config';
-import {
-    legacyProcessingResponseSchema,
-    legacyUnavailableResponseSchema,
-} from '@topskip/backend/legacy/legacy-server-analysis-contract';
-import type { SubtitleExtractionStrategyResult } from '@topskip/backend/extraction/subtitle-extraction-types';
 import { MIME_APPLICATION_JSON } from '@topskip/common/constants';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
@@ -29,9 +13,35 @@ import {
     rateLimitedResponseSchema,
     readyResponseSchema,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+import {
 
-const ORIGINAL_ALLOWED_EXTENSION_ORIGINS =
-    process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS;
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
+import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
+import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
+import { BackendApiProtection } from '@topskip/backend/api-protection';
+import {
+    legacyProcessingResponseSchema,
+    legacyUnavailableResponseSchema,
+} from '@topskip/backend/legacy/legacy-server-analysis-contract';
+import { BackendPublicState } from '@topskip/backend/public-state';
+import { BackendHttpServer } from '@topskip/backend/server';
+import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
+import { BACKEND_CAPTION_SOURCE } from '@topskip/backend/server-config';
+
+import { startAnalysisJobForTest } from './analysis-jobs-test-helpers';
+
+import type { SubtitleExtractionStrategyResult } from '@topskip/backend/extraction/subtitle-extraction-types';
+
+const ORIGINAL_ALLOWED_EXTENSION_ORIGINS = process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS;
 
 async function listenOnEphemeralPort(
     server: ReturnType<typeof BackendHttpServer.create>,
@@ -67,7 +77,7 @@ async function postChunkedBody(
     url: string,
     body: Buffer,
 ): Promise<{ statusCode: number; body: string }> {
-    return await new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         const request = requestHttp(
             url,
             {
@@ -95,7 +105,7 @@ async function postWithDeclaredLength(
     url: string,
     declaredLength: number,
 ): Promise<number> {
-    return await new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         const request = requestHttp(
             url,
             {
@@ -117,7 +127,7 @@ async function postWithDeclaredLength(
 
 async function openHeldAnalysisUpload(baseUrl: string): Promise<Socket> {
     const url = new URL(baseUrl);
-    return await new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
         const socket = connect(Number(url.port), url.hostname);
         socket.once('error', reject);
         socket.once('connect', () => {
@@ -157,7 +167,7 @@ function validTranscriptUpload(
 }
 
 describe('BackendHttpServer request body guard', () => {
-    const servers: Array<ReturnType<typeof BackendHttpServer.create>> = [];
+    const servers: ReturnType<typeof BackendHttpServer.create>[] = [];
 
     beforeEach(() => {
         BackendAnalysisJobs.resetForTests();
@@ -168,10 +178,9 @@ describe('BackendHttpServer request body guard', () => {
     afterEach(async () => {
         await Promise.all(
             servers.map(
-                (server) =>
-                    new Promise<void>((resolve) => {
-                        server.close(() => resolve());
-                    }),
+                (server) => new Promise<void>((resolve) => {
+                    server.close(() => resolve());
+                }),
             ),
         );
         servers.length = 0;
@@ -180,8 +189,7 @@ describe('BackendHttpServer request body guard', () => {
         if (ORIGINAL_ALLOWED_EXTENSION_ORIGINS === undefined) {
             delete process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS;
         } else {
-            process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS =
-                ORIGINAL_ALLOWED_EXTENSION_ORIGINS;
+            process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS = ORIGINAL_ALLOWED_EXTENSION_ORIGINS;
         }
     });
 
@@ -306,7 +314,7 @@ describe('BackendHttpServer request body guard', () => {
             'handleAnalysisRequest',
         );
 
-        const unsupportedHeaders: Array<Record<string, string>> = [
+        const unsupportedHeaders: Record<string, string>[] = [
             {},
             { 'content-type': 'text/plain' },
             { 'content-type': 'application/jsonx' },
@@ -520,10 +528,10 @@ describe('BackendHttpServer request body guard', () => {
                 expect(response.status).toBe(201);
                 const body: unknown = await response.json();
                 if (
-                    body === null ||
-                    typeof body !== 'object' ||
-                    !('token' in body) ||
-                    typeof body.token !== 'string'
+                    body === null
+                    || typeof body !== 'object'
+                    || !('token' in body)
+                    || typeof body.token !== 'string'
                 ) {
                     throw new Error('Expected registration token.');
                 }
@@ -810,8 +818,7 @@ describe('BackendHttpServer request body guard', () => {
         await listenOnEphemeralPort(server);
         const baseUrl = localServerUrl(server);
 
-        const requestFor = (videoId: string): Record<string, unknown> =>
-            validTranscriptUpload(videoId);
+        const requestFor = (videoId: string): Record<string, unknown> => validTranscriptUpload(videoId);
 
         expect(
             (
@@ -899,10 +906,10 @@ describe('BackendHttpServer request body guard', () => {
             );
             const registrationBody: unknown = await registration.json();
             if (
-                registrationBody === null ||
-                typeof registrationBody !== 'object' ||
-                !('token' in registrationBody) ||
-                typeof registrationBody.token !== 'string'
+                registrationBody === null
+                || typeof registrationBody !== 'object'
+                || !('token' in registrationBody)
+                || typeof registrationBody.token !== 'string'
             ) {
                 throw new Error('Expected registration token.');
             }
@@ -970,10 +977,10 @@ describe('BackendHttpServer request body guard', () => {
             );
             const registrationBody: unknown = await registration.json();
             if (
-                registrationBody === null ||
-                typeof registrationBody !== 'object' ||
-                !('token' in registrationBody) ||
-                typeof registrationBody.token !== 'string'
+                registrationBody === null
+                || typeof registrationBody !== 'object'
+                || !('token' in registrationBody)
+                || typeof registrationBody.token !== 'string'
             ) {
                 throw new Error('Expected registration token.');
             }
@@ -1069,10 +1076,9 @@ describe('BackendHttpServer request body guard', () => {
             extractionStrategies: [
                 {
                     name: 'pending_extraction',
-                    extract: () =>
-                        new Promise((resolve) => {
-                            release = resolve;
-                        }),
+                    extract: () => new Promise((resolve) => {
+                        release = resolve;
+                    }),
                 },
             ],
         });
@@ -1181,14 +1187,12 @@ describe('BackendHttpServer request body guard', () => {
                     code: 'internal_error',
                 },
             });
-            const error: unknown =
-                body !== null && typeof body === 'object'
-                    ? Reflect.get(body, 'error')
-                    : null;
-            const supportId: unknown =
-                error !== null && typeof error === 'object'
-                    ? Reflect.get(error, 'supportId')
-                    : null;
+            const error: unknown = body !== null && typeof body === 'object'
+                ? Reflect.get(body, 'error')
+                : null;
+            const supportId: unknown = error !== null && typeof error === 'object'
+                ? Reflect.get(error, 'supportId')
+                : null;
             expect(supportId).toMatch(/^support-/u);
         } finally {
             authenticate.mockRestore();
@@ -1213,14 +1217,12 @@ describe('BackendHttpServer request body guard', () => {
                 validTranscriptUpload(),
             );
             const body: unknown = await response.json();
-            const error: unknown =
-                body !== null && typeof body === 'object'
-                    ? Reflect.get(body, 'error')
-                    : null;
-            const supportId: unknown =
-                error !== null && typeof error === 'object'
-                    ? Reflect.get(error, 'supportId')
-                    : null;
+            const error: unknown = body !== null && typeof body === 'object'
+                ? Reflect.get(body, 'error')
+                : null;
+            const supportId: unknown = error !== null && typeof error === 'object'
+                ? Reflect.get(error, 'supportId')
+                : null;
             if (typeof supportId !== 'string') {
                 throw new Error('Expected persisted support metadata.');
             }

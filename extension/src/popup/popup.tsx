@@ -4,11 +4,11 @@ import { MantineProvider } from '@mantine/core';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
+import { ErrorBoundary } from '@/shared/ErrorBoundary';
 import { i18n } from '@/shared/i18n/i18n';
+import { topskipTheme } from '@/shared/theme';
 
 import { PopupApp } from './PopupApp';
-import { ErrorBoundary } from '@/shared/ErrorBoundary';
-import { topskipTheme } from '@/shared/theme';
 
 /**
  * Popup bundle bootstrap; not instantiable.

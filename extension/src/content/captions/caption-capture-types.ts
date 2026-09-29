@@ -6,8 +6,7 @@ import type {
 /**
  * State names for one player-mediated caption capture session.
  */
-export type CaptionCaptureState =
-    | 'idle'
+export type CaptionCaptureState = | 'idle'
     | 'installing'
     | 'activating'
     | 'waiting-capture'
@@ -18,7 +17,7 @@ export type CaptionCaptureState =
 /**
  * Mutable session metadata tracked while capturing captions for a video.
  */
-export type CaptionCaptureSession = {
+export interface CaptionCaptureSession {
     videoId: string;
     activationId: string;
     startedAtMs: number;
@@ -26,42 +25,42 @@ export type CaptionCaptureSession = {
     state: CaptionCaptureState;
     wasOn: boolean | null;
     userIntervened: boolean;
-};
+}
 
 /**
  * Sanitized timedtext URL metadata safe to include in diagnostics.
  */
-export type CapturedTimedtextUrlShape = {
+export interface CapturedTimedtextUrlShape {
     pathname: string;
     paramNames: string[];
     fmt: string | null;
     hasPot: boolean;
-};
+}
 
 /**
  * Snapshot of caption state before TopSkip touches the player.
  */
-export type CaptionCaptureSnapshot = {
+export interface CaptionCaptureSnapshot {
     wasOn: boolean;
     userIntervened: boolean;
-};
+}
 
 /**
  * Successful page-world timedtext capture payload.
  */
-export type CapturedTimedtextPayload = {
+export interface CapturedTimedtextPayload {
     videoId: string;
     languageCode: string;
     body: string;
     contentType: string | null;
     bodyLength: number;
     urlShape: CapturedTimedtextUrlShape;
-};
+}
 
 /**
  * Structured caption capture failure returned to the watch orchestrator.
  */
-export type CaptionCaptureFailure = {
+export interface CaptionCaptureFailure {
     reason: CaptionCaptureFailureReason;
     message: string;
     diagnostics?: {
@@ -70,21 +69,20 @@ export type CaptionCaptureFailure = {
         languageCode?: string;
         urlShape?: CapturedTimedtextUrlShape;
     };
-};
+}
 
 /**
  * Terminal result returned to the watch route that owns the capture session.
  */
-export type CaptionCaptureResult =
-    | { status: 'ready'; payload: CaptionsFromContentSuccessPayload }
+export type CaptionCaptureResult = | { status: 'ready'; payload: CaptionsFromContentSuccessPayload }
     | { status: 'failed'; failure: CaptionCaptureFailure }
     | { status: 'cancelled' };
 
 /**
  * Input that binds one player capture to its owning watch session.
  */
-export type CaptionCaptureInput = {
+export interface CaptionCaptureInput {
     videoId: string;
     signal: AbortSignal;
     captureTimeoutMs?: number;
-};
+}

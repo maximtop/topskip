@@ -16,6 +16,8 @@ const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 
 /**
  * Fully attributed record with overridable parts.
+ *
+ * @param overrides
  */
 function record(overrides: Partial<DebugLogLineRecord> = {}): DebugLogLineRecord {
     return {
@@ -39,12 +41,18 @@ describe('formatDebugLogLine', () => {
                 session: SESSION_ID,
                 job: 'job-x',
                 support: `support-${SESSION_ID}`,
-                fields: { route: 'server', reason: 'a b', skipped: undefined, count: 2 },
+                fields: {
+
+                    route: 'server',
+                    reason: 'a b',
+                    skipped: undefined,
+                    count: 2,
+                },
             }),
         );
         expect(line).toBe(
-            `2026-08-22T23:59:59.123Z w3#41 ct t12 v=dQw4w9WgXcQ s=${SESSION_ID} j=job-x ` +
-                `sup=support-${SESSION_ID} route-decision route=server reason="a b" count=2`,
+            `2026-08-22T23:59:59.123Z w3#41 ct t12 v=dQw4w9WgXcQ s=${SESSION_ID} j=job-x `
+                + `sup=support-${SESSION_ID} route-decision route=server reason="a b" count=2`,
         );
     });
 

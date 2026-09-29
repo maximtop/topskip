@@ -3,35 +3,37 @@
  * start/end deltas). Used by the maintainer compare CLI.
  */
 
-export type HumanRefBlock = {
+export interface HumanRefBlock {
     id: string;
     startSec: number;
     endSec: number;
+
     /**
      * Optional caption snippet at window start (for reviewers)
      */
     startCue?: string;
+
     /**
      * Optional caption snippet at window end
      */
     endCue?: string;
-};
+}
 
-export type ReferencePredBlock = {
+export interface ReferencePredBlock {
     startSec: number;
     endSec?: number;
-};
+}
 
-export type ReferenceBundle = {
+export interface ReferenceBundle {
     videoId?: string;
     humanBlocks: HumanRefBlock[];
     firstRunModel?: {
         model: string;
         blocks: ReferencePredBlock[];
     };
-};
+}
 
-export type AlignedBlockMetric = {
+export interface AlignedBlockMetric {
     id: string;
     humanStartSec: number;
     humanEndSec: number;
@@ -41,7 +43,7 @@ export type AlignedBlockMetric = {
     startDeltaSec: number;
     endDeltaSec: number;
     iouWithHuman: number;
-};
+}
 
 /**
  * Intersection-over-union for two closed intervals on the real line.
@@ -50,6 +52,7 @@ export type AlignedBlockMetric = {
  * @param a1 - Interval A end (sec), strictly after a0
  * @param b0 - Interval B start
  * @param b1 - Interval B end, strictly after b0
+ *
  * @returns IoU in [0, 1]
  */
 export function intervalIoU(
@@ -75,6 +78,7 @@ export function intervalIoU(
  *
  * @param human - Ordered reference windows
  * @param pred - Model blocks in timeline order
+ *
  * @returns One metric row per aligned index
  */
 export function compareHumanAlignedBlocks(
@@ -116,15 +120,16 @@ function isRecord(x: unknown): x is Record<string, unknown> {
 /**
  * @param item - One element of `humanBlocks` in the JSON file
  * @param index - 0-based index for error messages
+ *
  * @returns Parsed human block
  */
 function parseHumanBlock(item: unknown, index: number): HumanRefBlock {
     if (!isRecord(item)) {
         throw new Error(`humanBlocks[${String(index)}] must be an object`);
     }
-    const id = item.id;
-    const startSec = item.startSec;
-    const endSec = item.endSec;
+    const { id } = item;
+    const { startSec } = item;
+    const { endSec } = item;
     if (typeof id !== 'string' || id.length === 0) {
         throw new Error(
             `humanBlocks[${String(index)}].id must be a non-empty string`,
@@ -136,14 +141,14 @@ function parseHumanBlock(item: unknown, index: number): HumanRefBlock {
         );
     }
     if (
-        !Number.isFinite(startSec) ||
-        !Number.isFinite(endSec) ||
-        endSec <= startSec
+        !Number.isFinite(startSec)
+        || !Number.isFinite(endSec)
+        || endSec <= startSec
     ) {
         throw new Error(`humanBlocks[${String(index)}] has invalid start/end`);
     }
-    const startCue = item.startCue;
-    const endCue = item.endCue;
+    const { startCue } = item;
+    const { endCue } = item;
     const out: HumanRefBlock = { id, startSec, endSec };
     if (typeof startCue === 'string') {
         out.startCue = startCue;
@@ -157,6 +162,7 @@ function parseHumanBlock(item: unknown, index: number): HumanRefBlock {
 /**
  * @param item - One block under firstRunModel.blocks
  * @param index - Index for error messages
+ *
  * @returns Parsed predicted block
  */
 function parsePredBlock(item: unknown, index: number): ReferencePredBlock {
@@ -165,18 +171,17 @@ function parsePredBlock(item: unknown, index: number): ReferencePredBlock {
             `firstRunModel.blocks[${String(index)}] must be an object`,
         );
     }
-    const startSec = item.startSec;
-    const endSec = item.endSec;
+    const { startSec } = item;
+    const { endSec } = item;
     if (typeof startSec !== 'number' || !Number.isFinite(startSec)) {
         throw new Error(
             `firstRunModel.blocks[${String(index)}].startSec must be a finite number`,
         );
     }
     if (endSec !== undefined) {
-        const badEnd =
-            typeof endSec !== 'number' ||
-            !Number.isFinite(endSec) ||
-            endSec <= startSec;
+        const badEnd = typeof endSec !== 'number'
+            || !Number.isFinite(endSec)
+            || endSec <= startSec;
         if (badEnd) {
             throw new Error(
                 `firstRunModel.blocks[${String(index)}].endSec is invalid`,
@@ -188,6 +193,7 @@ function parsePredBlock(item: unknown, index: number): ReferencePredBlock {
 
 /**
  * @param jsonText - UTF-8 JSON matching the promo reference fixture shape
+ *
  * @returns Parsed bundle
  */
 export function parseReferenceBundleJson(jsonText: string): ReferenceBundle {
@@ -200,7 +206,7 @@ export function parseReferenceBundleJson(jsonText: string): ReferenceBundle {
     if (!isRecord(raw)) {
         throw new Error('reference JSON root must be an object');
     }
-    const videoId = raw.videoId;
+    const { videoId } = raw;
     if (videoId !== undefined && typeof videoId !== 'string') {
         throw new Error('videoId must be a string when present');
     }
@@ -216,7 +222,7 @@ export function parseReferenceBundleJson(jsonText: string): ReferenceBundle {
         if (!isRecord(fr)) {
             throw new Error('firstRunModel must be an object');
         }
-        const model = fr.model;
+        const { model } = fr;
         const blocksRaw = fr.blocks;
         if (typeof model !== 'string' || !Array.isArray(blocksRaw)) {
             throw new Error(

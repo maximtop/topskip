@@ -1,10 +1,10 @@
+import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
 import {
     legacyReadyResponseSchema,
     type LegacyServerAnalysisResponse,
 } from '@topskip/backend/legacy/legacy-server-analysis-contract';
-import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 
 /**
  * Valid YouTube-shaped id used by the Playwright watch fixture.
@@ -32,6 +32,9 @@ export class BackendCacheFixtures {
      * Returns a ready cache response when the fixture key matches exactly.
      *
      * @param input - Validated request cache key.
+     * @param input.videoId
+     * @param input.algorithmVersion
+     *
      * @returns Legacy ready response for the seeded video, otherwise `null`.
      */
     static findReady(input: {
@@ -42,8 +45,8 @@ export class BackendCacheFixtures {
             return null;
         }
         if (
-            input.videoId !== SEEDED_SERVER_CACHE_VIDEO_ID ||
-            input.algorithmVersion !== SERVER_ANALYSIS_ALGORITHM_VERSION
+            input.videoId !== SEEDED_SERVER_CACHE_VIDEO_ID
+            || input.algorithmVersion !== SERVER_ANALYSIS_ALGORITHM_VERSION
         ) {
             return null;
         }

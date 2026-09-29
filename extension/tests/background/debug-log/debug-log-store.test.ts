@@ -1,24 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
-const storage = await vi.hoisted(async () => {
-    const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
-    );
-    return { local: createMemoryStorageArea() };
-});
-
-vi.mock('@/shared/browser', () => ({
-    default: {
-        storage: {
-            local: {
-                get: storage.local.get,
-                set: storage.local.set,
-                remove: storage.local.remove,
-                setAccessLevel: vi.fn().mockResolvedValue(undefined),
-            },
-        },
-    },
-}));
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import {
@@ -40,7 +28,28 @@ import {
 } from '@/shared/debug-log-constants';
 import { utf8ByteLength } from '@/shared/debug-log-format';
 import { DEV_DEBUG_LOG_SEED_STATE } from '@/shared/messages';
+
 import { spyOnAllConsole } from '../../helpers/console-spy';
+
+const storage = await vi.hoisted(async () => {
+    const { createMemoryStorageArea } = await import(
+        '../../helpers/memory-storage-area'
+    );
+    return { local: createMemoryStorageArea() };
+});
+
+vi.mock('@/shared/browser', () => ({
+    default: {
+        storage: {
+            local: {
+                get: storage.local.get,
+                set: storage.local.set,
+                remove: storage.local.remove,
+                setAccessLevel: vi.fn().mockResolvedValue(undefined),
+            },
+        },
+    },
+}));
 
 /**
  * SC-007: the store never touches the network — every describe block in this
@@ -62,7 +71,7 @@ const ZERO_DROPPED = {
 /**
  * Persisted shape read back from the memory storage in assertions.
  */
-type StoredIndex = {
+interface StoredIndex {
     segments: { id: number; bytes: number; count: number; firstTsMs: number }[];
     nextSegmentId: number;
     retiredSegmentIds: number[];
@@ -70,10 +79,13 @@ type StoredIndex = {
     sizeBytes: number;
     evictedCount: number;
     revision: number;
-};
+}
 
 /**
  * The store is format-agnostic; any text works as a line in these tests.
+ *
+ * @param text
+ * @param n
  */
 function line(text: string, n = 0): string {
     return `${new Date(NOW_MS + n).toISOString()} w0#${n} bg ${text}`;
@@ -81,6 +93,8 @@ function line(text: string, n = 0): string {
 
 /**
  * Storage key of one segment, mirroring the store's private helper.
+ *
+ * @param id
  */
 function segmentKey(id: number): string {
     return `${STORAGE_KEY_DEBUG_LOG_SEGMENT_PREFIX}${id}`;
@@ -90,9 +104,7 @@ function segmentKey(id: number): string {
  * Every persisted key that belongs to the debug log.
  */
 function debugLogKeys(): string[] {
-    return Object.keys(storage.local.data).filter((key) =>
-        key.startsWith(STORAGE_KEY_DEBUG_LOG_PREFIX),
-    );
+    return Object.keys(storage.local.data).filter((key) => key.startsWith(STORAGE_KEY_DEBUG_LOG_PREFIX));
 }
 
 /**
@@ -100,10 +112,9 @@ function debugLogKeys(): string[] {
  */
 function persistedDebugLogBytes(): number {
     return debugLogKeys().reduce(
-        (sum, key) =>
-            sum +
-            utf8ByteLength(JSON.stringify(key)) +
-            utf8ByteLength(JSON.stringify(storage.local.data[key])),
+        (sum, key) => sum
+            + utf8ByteLength(JSON.stringify(key))
+            + utf8ByteLength(JSON.stringify(storage.local.data[key])),
         0,
     );
 }
@@ -118,6 +129,8 @@ function storedIndex(): StoredIndex {
 /**
  * Accounted size definition from the spec: UTF-8 bytes of every line plus one
  * newline terminator per line.
+ *
+ * @param lines
  */
 function accountedBytes(lines: readonly string[]): number {
     return lines.length === 0 ? 0 : utf8ByteLength(`${lines.join('\n')}\n`);
@@ -125,6 +138,8 @@ function accountedBytes(lines: readonly string[]): number {
 
 /**
  * Valid persisted index with every counter at its fresh value.
+ *
+ * @param overrides
  */
 function indexFixture(overrides: Partial<StoredIndex> = {}): Record<string, unknown> {
     return {
@@ -165,6 +180,8 @@ async function enabledStore(): Promise<void> {
  * Fills an enabled store with 1 KiB lines until one more line would cross the
  * cap; every batch is flushed so the next append evicts exactly one segment and
  * touches at most one segment key.
+ *
+ * @param store
  */
 async function fillToCap(store: typeof DebugLogStore): Promise<string> {
     const filler = line('c'.repeat(1000));
@@ -182,6 +199,8 @@ async function fillToCap(store: typeof DebugLogStore): Promise<string> {
 
 /**
  * Deterministic PRNG so randomized sequences are reproducible.
+ *
+ * @param seed
  */
 function mulberry32(seed: number): () => number {
     let state = seed;
@@ -195,6 +214,9 @@ function mulberry32(seed: number): () => number {
 
 /**
  * Random-length line mixing ASCII and multi-byte characters.
+ *
+ * @param rng
+ * @param n
  */
 function randomLine(rng: () => number, n: number): string {
     const length = 40 + Math.floor(rng() * 1360);
@@ -453,8 +475,7 @@ describe('DebugLogStore ring buffer', () => {
     it('accounts UTF-8 bytes plus one newline per line exactly', async () => {
         await enabledStore();
         DebugLogStore.append([line('é'), line('😀')]);
-        const expected =
-            utf8ByteLength(line('é')) + 1 + utf8ByteLength(line('😀')) + 1;
+        const expected = utf8ByteLength(line('é')) + 1 + utf8ByteLength(line('😀')) + 1;
         expect(DebugLogStore.getStatus().sizeBytes).toBe(expected);
         await DebugLogStore.flush();
         expect((await DebugLogStore.readSnapshot()).lines).toEqual([
@@ -606,8 +627,8 @@ describe('DebugLogStore ring buffer', () => {
         DebugLogStore.append([line('EVICT_ME_SENTINEL')]);
         const filler = line('z'.repeat(1000));
         const needed = Math.ceil(
-            (DEBUG_LOG_CAP_BYTES + DEBUG_LOG_SEGMENT_MAX_BYTES) /
-                (utf8ByteLength(filler) + 1),
+            (DEBUG_LOG_CAP_BYTES + DEBUG_LOG_SEGMENT_MAX_BYTES)
+                / (utf8ByteLength(filler) + 1),
         );
         for (let written = 0; written < needed; written += 100) {
             DebugLogStore.append(Array.from({ length: 100 }, () => filler));
@@ -682,6 +703,9 @@ describe('DebugLogStore durability and reads', () => {
 
     /**
      * Fills enough 1 KiB lines to close `segments` segments and start another.
+     *
+     * @param store
+     * @param segments
      */
     async function fillSegments(store: typeof DebugLogStore, segments: number): Promise<number> {
         const filler = line('f'.repeat(1000));

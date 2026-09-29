@@ -1,9 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
-import { PreferencesStore } from '@/popup/preferences-store';
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
 import { POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS } from '@/popup/constants';
-import { TOPSKIP_MESSAGE } from '@/shared/messages';
+import { PreferencesStore } from '@/popup/preferences-store';
 import { ANALYSIS_MODE } from '@/shared/constants';
+import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 const mocks = vi.hoisted(() => ({
     sendMessage: vi.fn(),
@@ -41,11 +49,11 @@ vi.mock('@/shared/browser', () => ({
  * GET_PREFS → prefs response; GET_ACTIVE_PROVIDER → provider response.
  *
  * @param msg - Inbound message from sendMessage.
+ *
  * @returns Mock response promise.
  */
 function defaultSendMessage(msg: unknown): Promise<unknown> {
-    const type: unknown =
-        msg && typeof msg === 'object' ? Reflect.get(msg, 'type') : undefined;
+    const type: unknown = msg && typeof msg === 'object' ? Reflect.get(msg, 'type') : undefined;
     if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
         return Promise.resolve({
             ok: true,
@@ -83,10 +91,9 @@ describe('PreferencesStore', () => {
 
     it('load applies the stored analysis mode', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_PREFS) {
                 return Promise.resolve({
                     ok: true,
@@ -109,10 +116,9 @@ describe('PreferencesStore', () => {
 
     it('load prefers GET_MODEL_SETTINGS and does not fall back to GET_ACTIVE_PROVIDER when the active model is found', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_MODEL_SETTINGS) {
                 return Promise.resolve({
                     ok: true,
@@ -155,10 +161,9 @@ describe('PreferencesStore', () => {
 
     it('load falls back to GET_ACTIVE_PROVIDER when GET_MODEL_SETTINGS has no matching active model', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_MODEL_SETTINGS) {
                 return Promise.resolve({
                     ok: true,
@@ -187,10 +192,9 @@ describe('PreferencesStore', () => {
 
     it('load applies stored enabled flag and providerId', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
                 return Promise.resolve({
                     ok: true,
@@ -222,10 +226,9 @@ describe('PreferencesStore', () => {
 
     it('load rejects when background returns error', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
                 return Promise.resolve({ ok: false, error: 'unavailable' });
             }
@@ -240,10 +243,9 @@ describe('PreferencesStore', () => {
         vi.useFakeTimers();
         let prefsAttempts = 0;
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type !== TOPSKIP_MESSAGE.GET_PREFS) {
                 return defaultSendMessage(msg);
             }
@@ -292,10 +294,9 @@ describe('PreferencesStore', () => {
 
     it('keeps validated core prefs when optional metadata refresh rejects', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_PREFS) {
                 return Promise.resolve({
                     ok: true,
@@ -318,10 +319,9 @@ describe('PreferencesStore', () => {
 
     it('does not wait for unresolved optional metadata after core prefs', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_PREFS) {
                 return Promise.resolve({
                     ok: true,
@@ -455,10 +455,9 @@ describe('PreferencesStore', () => {
 
     it('load sets empty display names when GET_ACTIVE_PROVIDER fails', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
                 return Promise.resolve({ ok: false, error: 'unavailable' });
             }
@@ -479,10 +478,9 @@ describe('PreferencesStore', () => {
 
         // Seed refresh response for the provider change
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
             if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
                 return Promise.resolve({
                     ok: true,
@@ -536,10 +534,9 @@ describe('PreferencesStore', () => {
 
     it('load fetches chrome model availability for chrome provider', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
 
             if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
                 return Promise.resolve({
@@ -588,10 +585,9 @@ describe('PreferencesStore', () => {
         await store.load();
 
         mocks.sendMessage.mockImplementation((msg: unknown) => {
-            const type: unknown =
-                msg && typeof msg === 'object'
-                    ? Reflect.get(msg, 'type')
-                    : undefined;
+            const type: unknown = msg && typeof msg === 'object'
+                ? Reflect.get(msg, 'type')
+                : undefined;
 
             if (type === TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER) {
                 return Promise.resolve({

@@ -1,14 +1,14 @@
-import type { PromoBlock } from '@topskip/common/promo-types';
-import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
+import type { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import type { ProviderId } from '@/shared/providers';
+import type { PromoBlock } from '@topskip/common/promo-types';
+
 export { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 export { PROVIDER_ID, type ProviderId } from '@/shared/providers';
 
 /**
  * Whether the provider is ready to run analysis.
  */
-export type ProviderAvailability =
-    (typeof PROVIDER_AVAILABILITY)[keyof typeof PROVIDER_AVAILABILITY];
+export type ProviderAvailability = (typeof PROVIDER_AVAILABILITY)[keyof typeof PROVIDER_AVAILABILITY];
 
 /**
  * LLM chat role literals used by all provider adapters.
@@ -21,6 +21,7 @@ export const LLM_ROLE = {
      * System-level prompt role.
      */
     System: 'system',
+
     /**
      * User-turn prompt role.
      */
@@ -30,10 +31,10 @@ export const LLM_ROLE = {
 /**
  * Metadata about the provider that ran an analysis (for logging).
  */
-export type ProviderMeta = {
+export interface ProviderMeta {
     id: ProviderId;
     model: string;
-};
+}
 
 /**
  * Extension-owned provider failures that must not become generic LLM errors.
@@ -45,13 +46,12 @@ export const PROVIDER_ANALYSIS_FAILURE_CODE = {
 /**
  * Safe diagnostic shared by adapters when Chrome no longer grants a host.
  */
-export const PROVIDER_HOST_ACCESS_REQUIRED_ERROR =
-    'Provider host access is required';
+export const PROVIDER_HOST_ACCESS_REQUIRED_ERROR = 'Provider host access is required';
 
 /**
  * A revoked optional host grant stops BYOK analysis before provider I/O.
  */
-export type ProviderHostAccessRequiredAnalysisResult = {
+export interface ProviderHostAccessRequiredAnalysisResult {
     ok: false;
     failureCode: typeof PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired;
     error: string;
@@ -59,73 +59,79 @@ export type ProviderHostAccessRequiredAnalysisResult = {
     rawAssistant?: never;
     status?: never;
     kind?: never;
-};
+}
 
 /**
  * Ordinary provider and parsing failures retain partial-analysis behavior.
  */
-type ProviderAnalysisFailure = {
+interface ProviderAnalysisFailure {
     ok: false;
     error: string;
     tooLarge?: boolean;
+
     /**
      * Raw model text when available (e.g. parse failures).
      */
     rawAssistant?: string;
+
     /**
      * HTTP status from the provider call, or `null` for transport failures.
      */
     status?: number | null;
+
     /**
      * Stable transport/parse classification for BYOK metadata.
      */
     kind?: 'http' | 'network' | 'timeout' | 'parse' | 'aborted';
     failureCode?: never;
-};
+}
 
 /**
  * Input to `LlmProviderAdapter.analyzeTranscript`.
  */
-export type AnalyzeTranscriptParams = {
+export interface AnalyzeTranscriptParams {
     /**
      * Merged caption text, already trimmed by the pipeline.
      */
     transcript: string;
+
     /**
      * YouTube video ID.
      */
     videoId: string;
+
     /**
      * Caption language code (e.g. `'en'`).
      */
     languageCode: string;
+
     /**
      * Video duration in seconds; used for promo-block clamping when known.
      */
     durationSec?: number;
+
     /**
      * Cancellation signal from the pipeline's AbortController.
      */
     signal?: AbortSignal;
-};
+}
 
 /**
  * Output of `LlmProviderAdapter.analyzeTranscript`.
  */
-export type AnalyzeTranscriptResult =
+export type AnalyzeTranscriptResult = | {
+    ok: true;
+    hasPromo: false;
+    providerMeta: ProviderMeta;
+    rawAssistant: string;
+}
     | {
-          ok: true;
-          hasPromo: false;
-          providerMeta: ProviderMeta;
-          rawAssistant: string;
-      }
-    | {
-          ok: true;
-          hasPromo: true;
-          blocks: PromoBlock[];
-          providerMeta: ProviderMeta;
-          rawAssistant: string;
-      }
+        ok: true;
+        hasPromo: true;
+        blocks: PromoBlock[];
+        providerMeta: ProviderMeta;
+        rawAssistant: string;
+    }
     | ProviderAnalysisFailure
     | ProviderHostAccessRequiredAnalysisResult;
 
@@ -157,6 +163,7 @@ export interface LlmProviderAdapter {
      * Runs promo detection on a merged transcript.
      *
      * @param params - Transcript and context for the analysis.
+     *
      * @returns Detection result or error.
      */
     analyzeTranscript(

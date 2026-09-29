@@ -1,4 +1,20 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import {
+    ServerAnalysisClient,
+    ServerAnalysisClientError,
+} from '@/background/server-analysis-client';
+import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
+import { MIME_APPLICATION_JSON } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 
 const installationMocks = vi.hoisted(() => ({
     loadFresh: vi.fn(),
@@ -14,14 +30,6 @@ const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
 
 vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
 
-import {
-    ServerAnalysisClient,
-    ServerAnalysisClientError,
-} from '@/background/server-analysis-client';
-import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
-import { MIME_APPLICATION_JSON } from '@/shared/constants';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-
 /**
  * Endpoint under the configured backend origin.
  *
@@ -29,17 +37,19 @@ import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
  * and not the deployment host — changing the origin should not touch tests.
  *
  * @param path - Absolute path beginning with `/`.
+ *
  * @returns Fully qualified endpoint URL.
  */
 function endpoint(path: string): string {
     return `${__TOPSKIP_SERVER_BASE_URL__}${path}`;
 }
 
-const fetchMock =
-    vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
+const fetchMock = vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 
 /**
  * Extracts the request URL from any `fetch` input form.
+ *
+ * @param input
  */
 function requestUrl(input: RequestInfo | URL): string {
     if (typeof input === 'string') {
@@ -52,8 +62,7 @@ const TOKEN = 'a'.repeat(43);
 const REPLACEMENT_TOKEN = 'b'.repeat(43);
 const TOKEN_EXPIRY_MS = 4_102_444_800_000;
 const CAPABILITIES_HEADER_VALUE = 'processing-status,typed-server-errors-v1';
-const TRANSCRIPT_HASH =
-    '1afb6e4ec112941d35fbb2f6b7009e3d5433c89a4546bada9834f392a20bead0';
+const TRANSCRIPT_HASH = '1afb6e4ec112941d35fbb2f6b7009e3d5433c89a4546bada9834f392a20bead0';
 const GOLDEN_CAPTIONS = {
     languageCode: ' EN-us ',
     segments: [
@@ -216,8 +225,7 @@ describe('ServerAnalysisClient', () => {
             new Response(JSON.stringify(PROCESSING_RESPONSE), { status: 202 }),
         );
 
-        const response =
-            await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
+        const response = await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
         expect(response.status).toBe('processing');
         expect(fetchMock).toHaveBeenCalledWith(
@@ -354,13 +362,11 @@ describe('ServerAnalysisClient', () => {
                 { status: 202 },
             ),
         );
-        const processing =
-            await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
+        const processing = await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
         expect(processing).toEqual(PROCESSING_RESPONSE);
 
         vi.resetModules();
-        const { ServerAnalysisClient: RestartedServerAnalysisClient } =
-            await import('@/background/server-analysis-client');
+        const { ServerAnalysisClient: RestartedServerAnalysisClient } = await import('@/background/server-analysis-client');
         fetchMock.mockResolvedValueOnce(
             new Response(
                 JSON.stringify({
@@ -567,13 +573,11 @@ describe('ServerAnalysisClient', () => {
         // Stateful storage emulation: both tabs start on the same stored
         // token; whichever replacement lands first must be reused by the rest.
         let storedToken: string | null = TOKEN;
-        installationMocks.loadFresh.mockImplementation(() =>
-            Promise.resolve(
-                storedToken === null
-                    ? null
-                    : { token: storedToken, expiresAtMs: TOKEN_EXPIRY_MS },
-            ),
-        );
+        installationMocks.loadFresh.mockImplementation(() => Promise.resolve(
+            storedToken === null
+                ? null
+                : { token: storedToken, expiresAtMs: TOKEN_EXPIRY_MS },
+        ));
         installationMocks.save.mockImplementation(
             (record: { token: string }) => {
                 storedToken = record.token;
@@ -624,9 +628,7 @@ describe('ServerAnalysisClient', () => {
 
         expect(first.status).toBe('processing');
         expect(second.status).toBe('processing');
-        const registerCalls = fetchMock.mock.calls.filter(([input]) =>
-            requestUrl(input).includes('/v1/installations/register'),
-        );
+        const registerCalls = fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes('/v1/installations/register'));
         expect(registerCalls).toHaveLength(1);
         expect(installationMocks.clear).toHaveBeenCalledOnce();
         expect(installationMocks.save).toHaveBeenCalledOnce();
@@ -666,8 +668,7 @@ describe('ServerAnalysisClient', () => {
                 }),
             );
 
-        const response =
-            await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
+        const response = await ServerAnalysisClient.requestAnalysis(ANALYSIS_INPUT);
 
         expect(response.status).toBe('processing');
         expect(installationMocks.clear).not.toHaveBeenCalled();

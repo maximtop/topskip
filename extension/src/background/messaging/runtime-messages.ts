@@ -1,9 +1,9 @@
-import { getErrorMessage } from '@/shared/error';
-import {
-    type GetPrefsResponse,
-    type SetAnalysisModeResponse,
-    type SetPrefsResponse,
-} from '@/shared/messages';
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import {
     ANALYSIS_MODE,
     type AnalysisMode,
@@ -11,13 +11,12 @@ import {
 } from '@/shared/constants';
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { toDebugLogModelId } from '@/shared/detection-models';
-
-import { DebugLog } from '@/background/debug-log/debug-log';
-import { DebugLogStore } from '@/background/debug-log/debug-log-store';
-import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
-import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
-import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import { getErrorMessage } from '@/shared/error';
+import {
+    type GetPrefsResponse,
+    type SetAnalysisModeResponse,
+    type SetPrefsResponse,
+} from '@/shared/messages';
 
 /**
  * Namespace for `runtime.onMessage` prefs handling; not instantiable.
@@ -45,6 +44,7 @@ export class PrefsRuntimeMessages {
      * Writes prefs and broadcasts updates to declarative content contexts.
      *
      * @param enabled - New enabled state from the SET payload.
+     *
      * @returns Save result
      */
     static async handleSet(enabled: boolean): Promise<SetPrefsResponse> {
@@ -65,6 +65,7 @@ export class PrefsRuntimeMessages {
      * Changes the analysis route while retaining the user's provider setup.
      *
      * @param analysisMode - Route selected in extension settings.
+     *
      * @returns Saved preference snapshot or a normalized persistence error.
      */
     static async handleSetAnalysisMode(
@@ -87,6 +88,7 @@ export class PrefsRuntimeMessages {
      * preference write and records the saved values (never keys) for support.
      *
      * @param prefs - Validated preferences that replace the current snapshot.
+     *
      * @returns Promise resolved when storage and both notification paths complete.
      */
     private static async saveAndBroadcast(
@@ -114,10 +116,8 @@ export class PrefsRuntimeMessages {
         current: UserPreferences,
         next: UserPreferences,
     ): void {
-        const localAnalysisWasActive =
-            current.enabled && current.analysisMode === ANALYSIS_MODE.Byok;
-        const localAnalysisRemainsActive =
-            next.enabled && next.analysisMode === ANALYSIS_MODE.Byok;
+        const localAnalysisWasActive = current.enabled && current.analysisMode === ANALYSIS_MODE.Byok;
+        const localAnalysisRemainsActive = next.enabled && next.analysisMode === ANALYSIS_MODE.Byok;
         if (localAnalysisWasActive && !localAnalysisRemainsActive) {
             PromoAnalysis.abortAll();
         }

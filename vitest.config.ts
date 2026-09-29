@@ -1,5 +1,6 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+
 import { defineConfig } from 'vitest/config';
 
 import { DEV_E2E_FIXTURE_ORIGIN } from '@topskip/extension/build-modes';

@@ -1,7 +1,7 @@
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import { describe, expect, it } from 'vitest';
 
 import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
-import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 
 describe('ServerTranscriptIdentity', () => {
     it('hashes the shared golden canonical bytes with WebCrypto', async () => {

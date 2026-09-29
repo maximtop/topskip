@@ -1,7 +1,7 @@
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
-import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import { fetchOpenRouterModelList } from '@/background/openrouter/openrouter-models-api';
+import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import {
@@ -10,17 +10,17 @@ import {
 } from '@/shared/detection-models';
 import { getErrorMessage } from '@/shared/error';
 import {
-    isOpenRouterBuiltinModelSlug,
-    isValidOpenRouterModelSlug,
-    OPENROUTER_DEFAULT_MODEL_SLUG,
-} from '@/shared/openrouter-model-presets';
-import { PROVIDER_ID } from '@/shared/providers';
-import {
     type GetOpenRouterConfigResponse,
     type MutateOpenRouterCustomModelResponse,
     type SetOpenRouterConfigResponse,
     type ValidateOpenRouterModelResponse,
 } from '@/shared/messages';
+import {
+    isOpenRouterBuiltinModelSlug,
+    isValidOpenRouterModelSlug,
+    OPENROUTER_DEFAULT_MODEL_SLUG,
+} from '@/shared/openrouter-model-presets';
+import { PROVIDER_ID } from '@/shared/providers';
 
 /**
  * Handles OpenRouter options messaging; not instantiable.
@@ -50,6 +50,7 @@ export class OpenRouterRuntimeMessages {
      *
      * @param apiKey - Raw API key from the SET payload.
      * @param model - Model slug from the SET payload.
+     *
      * @returns Save result
      */
     static async handleSet(
@@ -75,6 +76,7 @@ export class OpenRouterRuntimeMessages {
      * Appends a user custom model slug and optionally switches active model.
      *
      * @param slug - Raw slug string from the ADD payload.
+     *
      * @returns Updated `customModels` or error
      */
     static async handleAddCustomModel(
@@ -114,6 +116,7 @@ export class OpenRouterRuntimeMessages {
      * Removes a user custom model slug and rewires default model when needed.
      *
      * @param slug - Raw slug string from the REMOVE payload.
+     *
      * @returns Updated `customModels` or error
      */
     static async handleRemoveCustomModel(
@@ -131,7 +134,7 @@ export class OpenRouterRuntimeMessages {
             const customModels = current.customModels.filter(
                 (s) => s !== trimmed,
             );
-            let model = current.model;
+            let { model } = current;
             if (model === trimmed) {
                 model = OPENROUTER_DEFAULT_MODEL_SLUG;
             }
@@ -154,6 +157,7 @@ export class OpenRouterRuntimeMessages {
      * on a resolvable catalog entry, not only repair OpenRouter's own model.
      *
      * @param slug - Removed custom OpenRouter slug.
+     *
      * @returns Promise resolved after optional preference repair.
      */
     private static async repairActiveModelAfterCustomRemove(
@@ -183,6 +187,7 @@ export class OpenRouterRuntimeMessages {
      *
      * @param slug - Model slug from the VALIDATE payload.
      * @param apiKey - API key from the VALIDATE payload.
+     *
      * @returns Validation result
      */
     static async handleValidateModelSlug(

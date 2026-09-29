@@ -11,7 +11,6 @@ import {
     TextInput,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
 import {
     CheckIcon,
@@ -23,18 +22,20 @@ import {
     XIcon,
 } from '@/shared/topskip-icons';
 
+import type { ReactElement } from 'react';
+
 /**
  * Select option shape for built-in and custom OpenRouter models.
  */
-type OpenRouterSelectOption = {
+interface OpenRouterSelectOption {
     value: string;
     label: string;
-};
+}
 
 /**
  * OpenRouter form state and callbacks owned by the options container.
  */
-type OpenRouterConfigPanelProps = {
+interface OpenRouterConfigPanelProps {
     apiKey: string;
     apiKeyVisible: boolean;
     savedApiKeyMasked: string | null;
@@ -61,7 +62,7 @@ type OpenRouterConfigPanelProps = {
     onSaveCustomModelEdit(slug: string): void;
     onCancelCustomModelEdit(): void;
     onRemoveCustomModel(slug: string): void;
-};
+}
 
 const OPTIONS_PANEL_BLUE_SOFT = '#eff6ff';
 const OPTIONS_PANEL_BORDER = '#dbe3ee';
@@ -73,15 +74,15 @@ const OPTIONS_PANEL_MUTED = '#64748b';
  * options page container.
  *
  * @param props - Current OpenRouter form state and callbacks
+ *
  * @returns OpenRouter provider panel
  */
 export function OpenRouterConfigPanel(
     props: OpenRouterConfigPanelProps,
 ): ReactElement {
-    const apiKeyPlaceholder =
-        props.savedApiKeyMasked !== null
-            ? '••••••••••••••••••••••••••••••••'
-            : 'sk-or-v1-...';
+    const apiKeyPlaceholder = props.savedApiKeyMasked !== null
+        ? '••••••••••••••••••••••••••••••••'
+        : 'sk-or-v1-...';
 
     return (
         <Stack gap="lg">
@@ -167,14 +168,14 @@ export function OpenRouterConfigPanel(
                                             >
                                                 <path
                                                     d={
-                                                        'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-' +
-                                                        '11-8a18.45 18.45 0 0 1 5.06-5.94'
+                                                        'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-'
+                                                        + '11-8a18.45 18.45 0 0 1 5.06-5.94'
                                                     }
                                                 />
                                                 <path
                                                     d={
-                                                        'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18' +
-                                                        '.5 18.5 0 0 1-2.16 3.19'
+                                                        'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18'
+                                                        + '.5 18.5 0 0 1-2.16 3.19'
                                                     }
                                                 />
                                                 <line
@@ -285,9 +286,8 @@ export function OpenRouterConfigPanel(
                         >
                             {props.customModels.map((slug) => {
                                 const editing = props.editingModelSlug === slug;
-                                const busy =
-                                    props.removeBusySlug === slug ||
-                                    props.updateBusySlug === slug;
+                                const busy = props.removeBusySlug === slug
+                                    || props.updateBusySlug === slug;
                                 return (
                                     <Group
                                         key={slug}
@@ -336,18 +336,18 @@ export function OpenRouterConfigPanel(
                                                 {props.unverifiedModels.has(
                                                     slug,
                                                 ) ? (
-                                                            <Badge
-                                                                size="xs"
-                                                                color="yellow"
-                                                                variant="light"
-                                                                style={{
-                                                                    textTransform:
+                                                        <Badge
+                                                            size="xs"
+                                                            color="yellow"
+                                                            variant="light"
+                                                            style={{
+                                                                textTransform:
                                                                 'none',
-                                                                }}
-                                                            >
-                                                                Unverified
-                                                            </Badge>
-                                                        ) : null}
+                                                            }}
+                                                        >
+                                                            Unverified
+                                                        </Badge>
+                                                    ) : null}
                                             </Group>
                                         )}
                                         {editing ? (
@@ -357,8 +357,8 @@ export function OpenRouterConfigPanel(
                                                     variant="light"
                                                     color="green"
                                                     loading={
-                                                        props.updateBusySlug ===
-                                                        slug
+                                                        props.updateBusySlug
+                                                        === slug
                                                     }
                                                     leftSection={(
                                                         <CheckIcon
@@ -418,16 +418,16 @@ export function OpenRouterConfigPanel(
                                                     variant="light"
                                                     color="red"
                                                     loading={
-                                                        props.removeBusySlug ===
-                                                        slug
+                                                        props.removeBusySlug
+                                                        === slug
                                                     }
                                                     disabled={
-                                                        props.updateBusySlug !==
-                                                            null ||
-                                                        (props.removeBusySlug !==
-                                                            null &&
-                                                            props.removeBusySlug !==
-                                                                slug)
+                                                        props.updateBusySlug
+                                                            !== null
+                                                        || (props.removeBusySlug
+                                                            !== null
+                                                            && props.removeBusySlug
+                                                                !== slug)
                                                     }
                                                     leftSection={(
                                                         <TrashIcon

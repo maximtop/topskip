@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     OPTIONS_DIAGNOSTICS_BUNDLE_TIMEOUT_MS,
@@ -34,7 +42,14 @@ const STATUS: DebugLogStatusPayload = {
     capBytes: 5 * 1024 * 1024,
     evictedCount: 0,
     oldestRetainedMs: 1_755_856_800_000,
-    dropped: { incognito: 1, coalesced: 2, ceiling: 0, unreachable: 0, lost: 0 },
+    dropped: {
+
+        incognito: 1,
+        coalesced: 2,
+        ceiling: 0,
+        unreachable: 0,
+        lost: 0,
+    },
     revision: 7,
 };
 

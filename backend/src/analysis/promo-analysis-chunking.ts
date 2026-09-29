@@ -4,25 +4,25 @@ import {
     SERVER_CHUNK_OVERLAP_SEC,
     SERVER_MAX_CHUNKS_PER_VIDEO,
 } from '@topskip/common/promo-chunking-config';
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * One transcript slice for one model call, with its caption time range.
  */
-export type ServerTranscriptChunk = {
+export interface ServerTranscriptChunk {
     index: number;
     startSec: number;
     endSec: number;
     segments: CaptionSegment[];
-};
+}
 
 /**
  * Failure means the plan could not cover the transcript within the chunk cap;
  * contract limits make this unreachable, so callers treat it as an internal
  * error rather than truncating coverage silently.
  */
-export type ServerChunkPlanResult =
-    | { ok: true; chunks: ServerTranscriptChunk[] }
+export type ServerChunkPlanResult = | { ok: true; chunks: ServerTranscriptChunk[] }
     | { ok: false };
 
 /**
@@ -30,6 +30,7 @@ export type ServerChunkPlanResult =
  * adapter's prompt lines, so the char budget maps 1:1 to prompt size.
  *
  * @param segments - Canonical transcript segments (already validated).
+ *
  * @returns Chunk slices, or `ok: false` when coverage would be partial.
  */
 export function buildServerTranscriptChunks(

@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const mocks = vi.hoisted(() => ({
     tabsQuery: vi.fn(),
@@ -31,8 +39,7 @@ vi.mock('@/background/debug-log/debug-log-store', () => ({
     },
 }));
 
-const { ContentLogMessages, PromoDetectionRuntimeMessages } =
-    await import('@/background/messaging/misc-runtime-messages');
+const { ContentLogMessages, PromoDetectionRuntimeMessages } = await import('@/background/messaging/misc-runtime-messages');
 
 describe('ContentLogMessages.log', () => {
     beforeEach(() => {
@@ -93,7 +100,13 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.detectionGet.mockReturnValue(state);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: 82, state, debugLoggingEnabled: false },
+            {
+
+                ok: true,
+                tabId: 82,
+                state,
+                debugLoggingEnabled: false,
+            },
         );
         expect(mocks.detectionGet).toHaveBeenCalledWith(82);
     });
@@ -102,7 +115,13 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.tabsQuery.mockResolvedValue([]);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: null, state: null, debugLoggingEnabled: false },
+            {
+
+                ok: true,
+                tabId: null,
+                state: null,
+                debugLoggingEnabled: false,
+            },
         );
         expect(mocks.detectionGet).not.toHaveBeenCalled();
     });
@@ -113,12 +132,16 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
             [82, { videoId: 'frontVideo', status: 'no_promo' }],
         ]);
         mocks.tabsQuery.mockResolvedValue([{ id: 82 }]);
-        mocks.detectionGet.mockImplementation((tabId: number) =>
-            states.get(tabId),
-        );
+        mocks.detectionGet.mockImplementation((tabId: number) => states.get(tabId));
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: 82, state: states.get(82), debugLoggingEnabled: false },
+            {
+
+                ok: true,
+                tabId: 82,
+                state: states.get(82),
+                debugLoggingEnabled: false,
+            },
         );
         expect(mocks.detectionGet).not.toHaveBeenCalledWith(41);
     });
@@ -128,7 +151,13 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.debugLogIsEnabled.mockReturnValue(true);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: null, state: null, debugLoggingEnabled: true },
+            {
+
+                ok: true,
+                tabId: null,
+                state: null,
+                debugLoggingEnabled: true,
+            },
         );
         expect(mocks.debugLogReady).toHaveBeenCalled();
     });

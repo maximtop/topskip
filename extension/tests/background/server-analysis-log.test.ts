@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 

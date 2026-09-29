@@ -1,4 +1,11 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { callOpenRouterChat } from '@/background/openrouter/openrouter-client';
 
@@ -12,32 +19,31 @@ describe('callOpenRouterChat', () => {
         const fetchMock = vi.fn().mockResolvedValue({
             ok: true,
             status: 200,
-            text: (): Promise<string> =>
-                Promise.resolve(
-                    JSON.stringify({
-                        id: 'gen-123',
-                        model: 'openai/gpt-5.4',
-                        choices: [
-                            {
-                                finish_reason: 'stop',
-                                native_finish_reason: 'stop',
-                                message: { content: '{"hasPromo":false}' },
-                            },
-                        ],
-                        usage: {
-                            prompt_tokens: 10,
-                            completion_tokens: 4,
-                            total_tokens: 14,
-                            prompt_tokens_details: {
-                                cached_tokens: 2,
-                            },
-                            completion_tokens_details: {
-                                reasoning_tokens: 1,
-                            },
-                            cost: 0.1234,
+            text: (): Promise<string> => Promise.resolve(
+                JSON.stringify({
+                    id: 'gen-123',
+                    model: 'openai/gpt-5.4',
+                    choices: [
+                        {
+                            finish_reason: 'stop',
+                            native_finish_reason: 'stop',
+                            message: { content: '{"hasPromo":false}' },
                         },
-                    }),
-                ),
+                    ],
+                    usage: {
+                        prompt_tokens: 10,
+                        completion_tokens: 4,
+                        total_tokens: 14,
+                        prompt_tokens_details: {
+                            cached_tokens: 2,
+                        },
+                        completion_tokens_details: {
+                            reasoning_tokens: 1,
+                        },
+                        cost: 0.1234,
+                    },
+                }),
+            ),
         });
         vi.stubGlobal('fetch', fetchMock);
 
@@ -81,18 +87,17 @@ describe('callOpenRouterChat', () => {
                 return Promise.resolve({
                     ok: true,
                     status: 200,
-                    text: (): Promise<string> =>
-                        Promise.resolve(
-                            JSON.stringify({
-                                choices: [
-                                    {
-                                        message: {
-                                            content: '{"hasPromo":false}',
-                                        },
+                    text: (): Promise<string> => Promise.resolve(
+                        JSON.stringify({
+                            choices: [
+                                {
+                                    message: {
+                                        content: '{"hasPromo":false}',
                                     },
-                                ],
-                            }),
-                        ),
+                                },
+                            ],
+                        }),
+                    ),
                 });
             },
         );

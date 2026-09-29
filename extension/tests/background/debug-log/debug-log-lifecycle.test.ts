@@ -1,8 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
+import {
+    SESSION_STORAGE_KEY_DEBUG_LOG_WORKER,
+    STORAGE_KEY_DEBUG_LOG_SWITCH,
+} from '@/shared/constants';
+import { DEBUG_LOG_STORE_VERSION } from '@/shared/debug-log-constants';
+import { DEBUG_LOG_EVENT, DEBUG_LOG_RESTART_CAUSE } from '@/shared/debug-log-events';
+
+import { eventNamesOf } from '../../helpers/debug-log-lines';
 
 const storage = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
+        '../../helpers/memory-storage-area'
     );
     return {
         local: createMemoryStorageArea(),
@@ -49,21 +70,16 @@ vi.mock('@/background/debug-log/debug-log-export', () => ({
     EnvironmentProbe: { collect: probeMocks.collect },
 }));
 
-import { DebugLog } from '@/background/debug-log/debug-log';
-import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
-import { DebugLogStore } from '@/background/debug-log/debug-log-store';
-import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
-import {
-    SESSION_STORAGE_KEY_DEBUG_LOG_WORKER,
-    STORAGE_KEY_DEBUG_LOG_SWITCH,
-} from '@/shared/constants';
-import { DEBUG_LOG_STORE_VERSION } from '@/shared/debug-log-constants';
-import { DEBUG_LOG_EVENT, DEBUG_LOG_RESTART_CAUSE } from '@/shared/debug-log-events';
-import { eventNamesOf } from '../../helpers/debug-log-lines';
-
 const NOW_MS = 1_900_000_000_000;
-const TAB = { id: 41, incognito: false, index: 0, highlighted: false,
-    active: true, pinned: false, windowId: 1 };
+const TAB = {
+    id: 41,
+    incognito: false,
+    index: 0,
+    highlighted: false,
+    active: true,
+    pinned: false,
+    windowId: 1,
+};
 const ENV = {
     extensionBuild: 'dev-2',
     browserMajor: 140,
@@ -127,6 +143,9 @@ function resetLifetime(): void {
 /**
  * Completes a worker start: hydrate with the given profile default, then
  * run the lifecycle marker.
+ *
+ * @param buildLabel
+ * @param defaultEnabled
  */
 async function completeStart(buildLabel: string, defaultEnabled = false): Promise<void> {
     await DebugLogStore.ready(defaultEnabled);

@@ -1,4 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+
+import type { CaptionsFromContentPayload } from '@/shared/messages';
 
 const prefsMocks = vi.hoisted(() => ({
     ready: vi.fn().mockResolvedValue(undefined),
@@ -25,10 +38,6 @@ vi.mock('@/background/captions/log-transcript-dev', () => ({
 
 const debugLogMock = vi.hoisted(() => ({ record: vi.fn() }));
 vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
-
-import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import type { CaptionsFromContentPayload } from '@/shared/messages';
 
 const payload: CaptionsFromContentPayload = {
     ok: true,

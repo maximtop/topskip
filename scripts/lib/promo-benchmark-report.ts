@@ -19,31 +19,28 @@ import {
     parseBenchmarkSample,
 } from './promo-benchmark-run';
 
-const BENCHMARK_README_RELATIVE_PATH =
-    'benchmarks/promo-detection/README.md';
-const HISTORICAL_RUN_RELATIVE_PATH =
-    'benchmarks/promo-detection/runs/codex-agent-v1-prompt-v4-max';
-const HISTORICAL_MANIFEST_RELATIVE_PATH =
-    'benchmarks/promo-detection/corpus/manifest-v1.json';
+const BENCHMARK_README_RELATIVE_PATH = 'benchmarks/promo-detection/README.md';
+const HISTORICAL_RUN_RELATIVE_PATH = 'benchmarks/promo-detection/runs/codex-agent-v1-prompt-v4-max';
+const HISTORICAL_MANIFEST_RELATIVE_PATH = 'benchmarks/promo-detection/corpus/manifest-v1.json';
 const MATCH_IOU_THRESHOLD = 0.5;
 
-type ClosedBlock = {
+interface ClosedBlock {
     startSec: number;
     endSec: number;
-};
+}
 
-type BlockMatch = {
+interface BlockMatch {
     referenceIndex: number;
     predictionIndex: number;
     iou: number;
-};
+}
 
-type MatchSelection = {
+interface MatchSelection {
     matches: BlockMatch[];
     totalIou: number;
-};
+}
 
-type ActiveMetrics = {
+interface ActiveMetrics {
     sampleCount: number;
     validCount: number;
     matchedBlockCount?: number;
@@ -60,19 +57,19 @@ type ActiveMetrics = {
     tokenSampleCount: number;
     totalTokens: number;
     totalCostUsd?: number;
-};
+}
 
-type ActiveRow = {
+interface ActiveRow {
     model: (typeof PROMO_BENCHMARK_MODELS)[number];
     metrics: ActiveMetrics;
     rank?: number;
-};
+}
 
-type HistoricalSummary = {
+interface HistoricalSummary {
     validCount: number;
     classificationStableVideos: number;
     blockCountStableVideos: number;
-};
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -102,22 +99,22 @@ function parseActiveSample(
     }
     const value = parseBenchmarkSample(parseJson(filePath));
     if (
-        value.runKey !== benchmarkRunKey('default') ||
-        value.corpusId !== preflight.manifest.corpusId ||
-        value.corpusManifestSha256 !== preflight.manifestSha256 ||
-        value.harness !== DIRECT_API_HARNESS ||
-        value.model !== model ||
-        value.reasoning !== 'default' ||
-        value.videoId !== videoId ||
-        value.repeat !== repeat ||
-        value.transcriptHash !== transcriptHash ||
-        value.fixtureSha256 !== fixtureSha256 ||
-        value.languageCode !== languageCode ||
-        value.promptVersion !== preflight.promptVersion ||
-        value.promptSha256 !== preflight.promptSha256 ||
-        value.messageSha256 !== messageSha256 ||
-        value.outputLimitPolicy !== BENCHMARK_OUTPUT_LIMIT_POLICY ||
-        value.requestConfigSha256 !== preflight.requestConfigSha256
+        value.runKey !== benchmarkRunKey('default')
+        || value.corpusId !== preflight.manifest.corpusId
+        || value.corpusManifestSha256 !== preflight.manifestSha256
+        || value.harness !== DIRECT_API_HARNESS
+        || value.model !== model
+        || value.reasoning !== 'default'
+        || value.videoId !== videoId
+        || value.repeat !== repeat
+        || value.transcriptHash !== transcriptHash
+        || value.fixtureSha256 !== fixtureSha256
+        || value.languageCode !== languageCode
+        || value.promptVersion !== preflight.promptVersion
+        || value.promptSha256 !== preflight.promptSha256
+        || value.messageSha256 !== messageSha256
+        || value.outputLimitPolicy !== BENCHMARK_OUTPUT_LIMIT_POLICY
+        || value.requestConfigSha256 !== preflight.requestConfigSha256
     ) {
         throw new Error('Active sample does not match the leaderboard group.');
     }
@@ -144,15 +141,14 @@ function samplePath(
 function intervalIou(reference: ClosedBlock, prediction: ClosedBlock): number {
     const intersection = Math.max(
         0,
-        Math.min(reference.endSec, prediction.endSec) -
-            Math.max(reference.startSec, prediction.startSec),
+        Math.min(reference.endSec, prediction.endSec)
+            - Math.max(reference.startSec, prediction.startSec),
     );
-    const union =
-        reference.endSec -
-        reference.startSec +
-        prediction.endSec -
-        prediction.startSec -
-        intersection;
+    const union = reference.endSec
+        - reference.startSec
+        + prediction.endSec
+        - prediction.startSec
+        - intersection;
     return union <= 0 ? 0 : intersection / union;
 }
 
@@ -214,11 +210,9 @@ function predictionBlocks(prediction: BenchmarkPrediction): ClosedBlock[] {
     if (!prediction.hasPromo) {
         return [];
     }
-    return prediction.promoBlocks.flatMap((block) =>
-        block.endSec === undefined
-            ? []
-            : [{ startSec: block.startSec, endSec: block.endSec }],
-    );
+    return prediction.promoBlocks.flatMap((block) => (block.endSec === undefined
+        ? []
+        : [{ startSec: block.startSec, endSec: block.endSec }]));
 }
 
 function classF1(
@@ -226,8 +220,7 @@ function classF1(
     falsePositive: number,
     falseNegative: number,
 ): number {
-    const denominator =
-        2 * truePositive + falsePositive + falseNegative;
+    const denominator = 2 * truePositive + falsePositive + falseNegative;
     return denominator === 0 ? 1 : (2 * truePositive) / denominator;
 }
 
@@ -308,9 +301,9 @@ function collectActiveMetrics(
                 const reference = references[match.referenceIndex];
                 const prediction = predictions[match.predictionIndex];
                 referenceIouTotal += match.iou;
-                boundaryErrorTotal +=
-                    Math.abs(prediction.startSec - reference.startSec) +
-                    Math.abs(prediction.endSec - reference.endSec);
+                boundaryErrorTotal
+                    += Math.abs(prediction.startSec - reference.startSec)
+                    + Math.abs(prediction.endSec - reference.endSec);
                 boundaryCount += 2;
             }
             latencies.push(sample.latencyMs);
@@ -331,21 +324,18 @@ function collectActiveMetrics(
             )
             .map((sample) => sample.prediction)
             .filter(
-                (prediction): prediction is BenchmarkPrediction =>
-                    prediction !== undefined,
+                (prediction): prediction is BenchmarkPrediction => prediction !== undefined,
             );
         if (predictions.length !== BENCHMARK_REPEAT_COUNT) {
             continue;
         }
         if (
-            new Set(predictions.map((prediction) => prediction.hasPromo)).size ===
-            1
+            new Set(predictions.map((prediction) => prediction.hasPromo)).size
+            === 1
         ) {
             classificationStableVideos += 1;
         }
-        const blockCounts = predictions.map((prediction) =>
-            prediction.hasPromo ? prediction.promoBlocks.length : 0,
-        );
+        const blockCounts = predictions.map((prediction) => (prediction.hasPromo ? prediction.promoBlocks.length : 0));
         if (new Set(blockCounts).size === 1) {
             blockCountStableVideos += 1;
         }
@@ -365,25 +355,21 @@ function collectActiveMetrics(
         metrics.matchedBlockCount = blockTruePositive;
         metrics.referenceBlockCount = referenceBlockCount;
         metrics.extraBlockCount = blockFalsePositive;
-        metrics.blockRecall =
-            blockTruePositive /
-            (blockTruePositive + blockFalseNegative);
-        metrics.blockPrecision =
-            blockTruePositive /
-            (blockTruePositive + blockFalsePositive);
+        metrics.blockRecall = blockTruePositive
+            / (blockTruePositive + blockFalseNegative);
+        metrics.blockPrecision = blockTruePositive
+            / (blockTruePositive + blockFalsePositive);
         metrics.blockF1 = classF1(
             blockTruePositive,
             blockFalsePositive,
             blockFalseNegative,
         );
-        metrics.referenceIou =
-            referenceBlockCount === 0
-                ? 0
-                : referenceIouTotal / referenceBlockCount;
-        metrics.boundaryMaeSec =
-            boundaryCount === 0
-                ? Number.POSITIVE_INFINITY
-                : boundaryErrorTotal / boundaryCount;
+        metrics.referenceIou = referenceBlockCount === 0
+            ? 0
+            : referenceIouTotal / referenceBlockCount;
+        metrics.boundaryMaeSec = boundaryCount === 0
+            ? Number.POSITIVE_INFINITY
+            : boundaryErrorTotal / boundaryCount;
         metrics.latencyP50Ms = median(latencies);
     }
     return metrics;
@@ -408,20 +394,18 @@ function compareOptionalAscending(
 function rankRows(rows: ActiveRow[]): ActiveRow[] {
     const complete = rows.filter((row) => row.metrics.blockRecall !== undefined);
     complete.sort((left, right) => {
-        const quality =
-            (right.metrics.blockRecall ?? 0) -
-                (left.metrics.blockRecall ?? 0) ||
-            (right.metrics.blockF1 ?? 0) - (left.metrics.blockF1 ?? 0) ||
-            (right.metrics.referenceIou ?? 0) -
-                (left.metrics.referenceIou ?? 0) ||
-            (left.metrics.boundaryMaeSec ?? Number.POSITIVE_INFINITY) -
-                (right.metrics.boundaryMaeSec ?? Number.POSITIVE_INFINITY);
+        const quality = (right.metrics.blockRecall ?? 0)
+                - (left.metrics.blockRecall ?? 0)
+            || (right.metrics.blockF1 ?? 0) - (left.metrics.blockF1 ?? 0)
+            || (right.metrics.referenceIou ?? 0)
+                - (left.metrics.referenceIou ?? 0)
+            || (left.metrics.boundaryMaeSec ?? Number.POSITIVE_INFINITY)
+                - (right.metrics.boundaryMaeSec ?? Number.POSITIVE_INFINITY);
         if (quality !== 0) {
             return quality;
         }
-        const stability =
-            right.metrics.blockCountStableVideos -
-            left.metrics.blockCountStableVideos;
+        const stability = right.metrics.blockCountStableVideos
+            - left.metrics.blockCountStableVideos;
         if (stability !== 0) {
             return stability;
         }
@@ -461,12 +445,12 @@ function parseHistoricalPrediction(value: unknown): BenchmarkPrediction {
     }
     const promoBlocks = value.promoBlocks.map((block) => {
         if (
-            !isRecord(block) ||
-            typeof block.startSec !== 'number' ||
-            !Number.isFinite(block.startSec) ||
-            (block.endSec !== undefined &&
-                (typeof block.endSec !== 'number' ||
-                    !Number.isFinite(block.endSec)))
+            !isRecord(block)
+            || typeof block.startSec !== 'number'
+            || !Number.isFinite(block.startSec)
+            || (block.endSec !== undefined
+                && (typeof block.endSec !== 'number'
+                    || !Number.isFinite(block.endSec)))
         ) {
             throw new Error('Historical promo block is malformed.');
         }
@@ -490,17 +474,17 @@ function historicalSummary(
         path.resolve(repoRoot, HISTORICAL_RUN_RELATIVE_PATH, 'run.json'),
     );
     if (
-        !isRecord(runValue) ||
-        runValue.schemaVersion !== 1 ||
-        runValue.runId !== 'codex-agent-v1-prompt-v4-max' ||
-        runValue.corpusId !== 'promo-paid-v1' ||
-        runValue.harness !== 'Codex agent' ||
-        runValue.model !== 'gpt-5.6-sol' ||
-        runValue.reasoning !== 'max' ||
-        runValue.promptVersion !== '4' ||
-        runValue.promptSha256 !== promptSha256 ||
-        runValue.repeatCount !== BENCHMARK_REPEAT_COUNT ||
-        runValue.expectedSampleCount !== 30
+        !isRecord(runValue)
+        || runValue.schemaVersion !== 1
+        || runValue.runId !== 'codex-agent-v1-prompt-v4-max'
+        || runValue.corpusId !== 'promo-paid-v1'
+        || runValue.harness !== 'Codex agent'
+        || runValue.model !== 'gpt-5.6-sol'
+        || runValue.reasoning !== 'max'
+        || runValue.promptVersion !== '4'
+        || runValue.promptSha256 !== promptSha256
+        || runValue.repeatCount !== BENCHMARK_REPEAT_COUNT
+        || runValue.expectedSampleCount !== 30
     ) {
         throw new Error('Historical run metadata is malformed.');
     }
@@ -514,10 +498,10 @@ function historicalSummary(
         (item) => item.languageCode === 'ru',
     ).length;
     if (
-        manifestValue.corpusId !== 'promo-paid-v1' ||
-        manifestValue.itemCount !== 10 ||
-        englishCount !== 5 ||
-        russianCount !== 5
+        manifestValue.corpusId !== 'promo-paid-v1'
+        || manifestValue.itemCount !== 10
+        || englishCount !== 5
+        || russianCount !== 5
     ) {
         throw new Error('Historical corpus manifest is malformed.');
     }
@@ -543,14 +527,12 @@ function historicalSummary(
             validCount += 1;
         }
         if (
-            new Set(predictions.map((prediction) => prediction.hasPromo)).size ===
-            1
+            new Set(predictions.map((prediction) => prediction.hasPromo)).size
+            === 1
         ) {
             classificationStableVideos += 1;
         }
-        const blockCounts = predictions.map((prediction) =>
-            prediction.hasPromo ? prediction.promoBlocks.length : 0,
-        );
+        const blockCounts = predictions.map((prediction) => (prediction.hasPromo ? prediction.promoBlocks.length : 0));
         if (new Set(blockCounts).size === 1) {
             blockCountStableVideos += 1;
         }
@@ -701,25 +683,25 @@ export function buildBenchmarkReadme(repoRoot: string): string {
         '| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |',
     ];
     for (const row of rows) {
-        const metrics = row.metrics;
+        const { metrics } = row;
         lines.push(
-            `| ${row.rank === undefined ? '—' : String(row.rank)} | ` +
-                `${row.model.id} | ${DIRECT_API_HARNESS} | ` +
-                `${preflight.manifest.corpusId} | default | ` +
-                `${String(metrics.validCount)}/30 | ` +
-                `${formatMatchedBlocks(
+            `| ${row.rank === undefined ? '—' : String(row.rank)} | `
+                + `${row.model.id} | ${DIRECT_API_HARNESS} | `
+                + `${preflight.manifest.corpusId} | default | `
+                + `${String(metrics.validCount)}/30 | `
+                + `${formatMatchedBlocks(
                     metrics.matchedBlockCount,
                     metrics.referenceBlockCount,
                 )} | ${metrics.extraBlockCount === undefined
                     ? '—'
-                    : String(metrics.extraBlockCount)} | ` +
-                `${formatPercent(metrics.blockF1)} | ` +
-                `${formatPercent(metrics.referenceIou)} | ` +
-                `${formatBoundaryError(metrics.boundaryMaeSec)} | ` +
-                `${String(metrics.classificationStableVideos)}/10 / ` +
-                `${String(metrics.blockCountStableVideos)}/10 | ` +
-                `${formatSeconds(metrics.latencyP50Ms)} | ` +
-                `${formatCostPerTask(
+                    : String(metrics.extraBlockCount)} | `
+                + `${formatPercent(metrics.blockF1)} | `
+                + `${formatPercent(metrics.referenceIou)} | `
+                + `${formatBoundaryError(metrics.boundaryMaeSec)} | `
+                + `${String(metrics.classificationStableVideos)}/10 / `
+                + `${String(metrics.blockCountStableVideos)}/10 | `
+                + `${formatSeconds(metrics.latencyP50Ms)} | `
+                + `${formatCostPerTask(
                     metrics.totalCostUsd,
                     metrics.sampleCount,
                 )} | ${formatAverageTotalTokens(
@@ -729,10 +711,10 @@ export function buildBenchmarkReadme(repoRoot: string): string {
         );
     }
     lines.push(
-        '| archive | gpt-5.6-sol | Codex agent | promo-paid-v1 | max | ' +
-            `${String(historical.validCount)}/30 | — | — | — | — | — | ` +
-            `${String(historical.classificationStableVideos)}/10 / ` +
-            `${String(historical.blockCountStableVideos)}/10 | — | — | — |`,
+        '| archive | gpt-5.6-sol | Codex agent | promo-paid-v1 | max | '
+            + `${String(historical.validCount)}/30 | — | — | — | — | — | `
+            + `${String(historical.classificationStableVideos)}/10 / `
+            + `${String(historical.blockCountStableVideos)}/10 | — | — | — |`,
         '',
         'The archive row stays unranked because corpus v1 has no curated block',
         'references and used a different harness. It is included here only for',
@@ -743,48 +725,48 @@ export function buildBenchmarkReadme(repoRoot: string): string {
             '',
             '## Practical choices',
             '',
-            '- **Selected production default: deepseek-v4.1-flash.** ' +
-                `${formatMatchedBlocks(
+            '- **Selected production default: deepseek-v4.1-flash.** '
+                + `${formatMatchedBlocks(
                     deepseekV41FlashMetrics.matchedBlockCount,
                     deepseekV41FlashMetrics.referenceBlockCount,
                 )} references found,`,
-            `  ${String(deepseekV41FlashMetrics.extraBlockCount ?? 0)} extra, ` +
-                `${formatPercent(
+            `  ${String(deepseekV41FlashMetrics.extraBlockCount ?? 0)} extra, `
+                + `${formatPercent(
                     deepseekV41FlashMetrics.referenceIou,
-                )} time overlap, ` +
-                `${formatSeconds(
+                )} time overlap, `
+                + `${formatSeconds(
                     deepseekV41FlashMetrics.latencyP50Ms,
-                )} observed response, ` +
-                `${formatCostPerTask(
+                )} observed response, `
+                + `${formatCostPerTask(
                     deepseekV41FlashMetrics.totalCostUsd,
                     deepseekV41FlashMetrics.sampleCount,
-                )}/task. Replaces deepseek-v4-flash (` +
-                `${formatMatchedBlocks(
+                )}/task. Replaces deepseek-v4-flash (`
+                + `${formatMatchedBlocks(
                     deepseekV4FlashMetrics.matchedBlockCount,
                     deepseekV4FlashMetrics.referenceBlockCount,
                 )} found, ${String(
                     deepseekV4FlashMetrics.extraBlockCount ?? 0,
-                )} extra, ` +
-                `${formatCostPerTask(
+                )} extra, `
+                + `${formatCostPerTask(
                     deepseekV4FlashMetrics.totalCostUsd,
                     deepseekV4FlashMetrics.sampleCount,
-                )}/task) after production under-detected paid promo on a` +
-                ' long (2h18m) Russian interview; on that exact chunk' +
-                ' v4.1-flash reproduced the missed blocks in 20/20 repeat' +
-                ' runs where v4-flash was inconsistent (3/0/3 blocks across' +
-                ' three runs). On this ten-video tracked corpus the two' +
-                ' models tie on found refs, while v4.1-flash records' +
-                ' slightly more extra blocks and slightly lower repeat' +
-                ' stability than v4-flash — a small-sample trade-off' +
-                ' accepted for the long-transcript reliability gain.',
+                )}/task) after production under-detected paid promo on a`
+                + ' long (2h18m) Russian interview; on that exact chunk'
+                + ' v4.1-flash reproduced the missed blocks in 20/20 repeat'
+                + ' runs where v4-flash was inconsistent (3/0/3 blocks across'
+                + ' three runs). On this ten-video tracked corpus the two'
+                + ' models tie on found refs, while v4.1-flash records'
+                + ' slightly more extra blocks and slightly lower repeat'
+                + ' stability than v4-flash — a small-sample trade-off'
+                + ' accepted for the long-transcript reliability gain.',
             `- **Highest paid-only detection quality: kimi-k3.** ${formatMatchedBlocks(
                 kimiMetrics.matchedBlockCount,
                 kimiMetrics.referenceBlockCount,
             )} references found,`,
-            `  ${String(kimiMetrics.extraBlockCount ?? 0)} extra, ` +
-                `${formatPercent(kimiMetrics.referenceIou)} time overlap, ` +
-                `${formatSeconds(kimiMetrics.latencyP50Ms)} response, ` +
-                `${formatCostPerTask(
+            `  ${String(kimiMetrics.extraBlockCount ?? 0)} extra, `
+                + `${formatPercent(kimiMetrics.referenceIou)} time overlap, `
+                + `${formatSeconds(kimiMetrics.latencyP50Ms)} response, `
+                + `${formatCostPerTask(
                     kimiMetrics.totalCostUsd,
                     kimiMetrics.sampleCount,
                 )}/task.`,
@@ -798,8 +780,8 @@ export function buildBenchmarkReadme(repoRoot: string): string {
                 sonnetMetrics.extraBlockCount ?? 0,
             )} extra blocks.`,
             '- **Cheap and fast, but less safe: gpt-5.6-luna.**',
-            `  ${formatSeconds(lunaMetrics.latencyP50Ms)} response and ` +
-                `${formatCostPerTask(
+            `  ${formatSeconds(lunaMetrics.latencyP50Ms)} response and `
+                + `${formatCostPerTask(
                     lunaMetrics.totalCostUsd,
                     lunaMetrics.sampleCount,
                 )}/task, but ${String(
@@ -816,8 +798,8 @@ export function buildBenchmarkReadme(repoRoot: string): string {
     );
     for (const item of preflight.manifest.items) {
         lines.push(
-            `| ${item.videoId} | ${item.languageCode} | ` +
-                `${escapeMarkdown(
+            `| ${item.videoId} | ${item.languageCode} | `
+                + `${escapeMarkdown(
                     referenceText(
                         item.paidPromoBlocks ?? [],
                         item.referenceNote,

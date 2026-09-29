@@ -27,43 +27,46 @@ const TEXT_MAX_LENGTH_MARKER = 'TEXT MAX LENGTH:';
 /**
  * One message that failed validation.
  */
-type InvalidTranslation = {
+interface InvalidTranslation {
     key: string;
     error: string;
-};
+}
 
 /**
  * Per-locale outcome of a validation pass.
  */
-export type ValidationResult = {
+export interface ValidationResult {
     locale: string;
+
     /**
      * Percentage of base messages that are present and valid.
      */
     level: number;
     untranslatedStrings: string[];
     invalidTranslations: InvalidTranslation[];
-};
+}
 
 /**
  * Flags controlling how strict a validation pass is and whether it throws.
  */
-export type ValidationFlags = {
+export interface ValidationFlags {
     /**
      * Only critical errors plus readiness of the required locales.
      */
     isMinimum?: boolean;
+
     /**
      * Report without failing the process.
      */
     isInfo?: boolean;
-};
+}
 
 /**
  * Logs per-locale readiness.
  *
  * @param results - Results to print.
  * @param isMinimum - Suppresses the invalid-translation detail when true.
+ *
  * @returns Nothing.
  */
 function printTranslationsResults(
@@ -97,6 +100,7 @@ function printTranslationsResults(
  * Logs locales that contain structurally invalid translations.
  *
  * @param criticals - Results carrying invalid translations.
+ *
  * @returns Nothing.
  */
 function printCriticalResults(criticals: ValidationResult[]): void {
@@ -114,6 +118,7 @@ function printCriticalResults(criticals: ValidationResult[]): void {
  *
  * @param baseDescriptionValue - Base-locale description, possibly undefined.
  * @param localeMessageValue - Translated message.
+ *
  * @returns Error text, or `null` when the length is acceptable.
  */
 function validateTranslatedLength(
@@ -121,8 +126,8 @@ function validateTranslatedLength(
     localeMessageValue: string,
 ): string | null {
     if (
-        baseDescriptionValue === undefined ||
-        !baseDescriptionValue.includes(TEXT_MAX_LENGTH_MARKER)
+        baseDescriptionValue === undefined
+        || !baseDescriptionValue.includes(TEXT_MAX_LENGTH_MARKER)
     ) {
         return null;
     }
@@ -148,6 +153,7 @@ function validateTranslatedLength(
  * @param baseLocaleTranslations - Base locale messages.
  * @param locale - Locale under validation.
  * @param localeTranslations - Messages of the locale under validation.
+ *
  * @returns The failure, or `undefined` when the message is valid.
  */
 function validateMessage(
@@ -199,6 +205,7 @@ function validateMessage(
  *
  * @param locales - Locales to check.
  * @param flags - Strictness and reporting flags.
+ *
  * @returns One result per locale.
  */
 export async function checkTranslations(
@@ -233,10 +240,8 @@ export async function checkTranslations(
                 }
             }
 
-            const validLocaleMessagesCount =
-                localeMessages.length - invalidTranslations.length;
-            const strictLevel =
-                (validLocaleMessagesCount / baseMessagesCount) * 100;
+            const validLocaleMessagesCount = localeMessages.length - invalidTranslations.length;
+            const strictLevel = (validLocaleMessagesCount / baseMessagesCount) * 100;
 
             return {
                 locale,
@@ -250,12 +255,10 @@ export async function checkTranslations(
     const filteredCriticalResults = translationResults.filter(
         (result) => result.invalidTranslations.length > 0,
     );
-    const filteredReadinessResults = translationResults.filter((result) =>
-        isMinimum
-            ? result.level < THRESHOLD_PERCENTAGE &&
-              REQUIRED_LOCALES.includes(result.locale)
-            : result.level < THRESHOLD_PERCENTAGE,
-    );
+    const filteredReadinessResults = translationResults.filter((result) => (isMinimum
+        ? result.level < THRESHOLD_PERCENTAGE
+              && REQUIRED_LOCALES.includes(result.locale)
+        : result.level < THRESHOLD_PERCENTAGE));
 
     if (isInfo) {
         printTranslationsResults(translationResults);
@@ -284,9 +287,8 @@ export async function checkTranslations(
     }
 
     if (filteredReadinessResults.length === 0) {
-        const coversEveryLocale =
-            locales.length === ALL_LOCALES.length &&
-            locales.every((l, i) => l === ALL_LOCALES[i]);
+        const coversEveryLocale = locales.length === ALL_LOCALES.length
+            && locales.every((l, i) => l === ALL_LOCALES[i]);
         cliLog.success(
             coversEveryLocale
                 ? 'All locales have required level of translations'
@@ -304,6 +306,7 @@ export async function checkTranslations(
  * Copies persistent messages from the base locale into locales missing them.
  *
  * @param locales - Locales to top up.
+ *
  * @returns Human-readable summary of what was copied.
  */
 export async function addRequiredFields(locales: string[]): Promise<string> {

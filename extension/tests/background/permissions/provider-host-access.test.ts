@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     PROVIDER_HOST_ACCESS_STATUS,
@@ -19,8 +26,7 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-const { ProviderHostAccess } =
-    await import('@/background/permissions/provider-host-access');
+const { ProviderHostAccess } = await import('@/background/permissions/provider-host-access');
 
 describe('ProviderHostAccess', () => {
     beforeEach(() => {

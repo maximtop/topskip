@@ -1,5 +1,3 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
-import type { Tabs } from 'webextension-polyfill/namespaces/tabs';
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
@@ -8,6 +6,9 @@ import {
     DEBUG_LOG_CEILING_WINDOW_MS,
     DEBUG_LOG_CONTENT_EVENTS_PER_TAB_PER_MINUTE,
 } from '@/shared/debug-log-constants';
+
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+import type { Tabs } from 'webextension-polyfill/namespaces/tabs';
 
 /**
  * Counter updates are coalesced so a busy tab does not rewrite the session
@@ -36,11 +37,11 @@ const persistedTabsSchema = v.array(
  * Browser-provided incognito flag plus the content-event ceiling counters of
  * one tab; created on the tab's first message, released on tab removal.
  */
-type TabAttribution = {
+interface TabAttribution {
     incognito: boolean;
     windowStartMs: number;
     count: number;
-};
+}
 
 /**
  * Per-tab attribution state for the debug log (incognito exclusion and the
@@ -67,8 +68,7 @@ export class TabAttributionRegistry {
     /**
      * Pending coalesced write of counter or note changes.
      */
-    private static persistTimer: ReturnType<typeof globalThis.setTimeout> | null =
-        null;
+    private static persistTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
 
     /**
      * Restores the attribution persisted before the last worker restart; the
@@ -116,6 +116,7 @@ export class TabAttributionRegistry {
      * per-tab event synchronously.
      *
      * @param tabId - Browser tab id.
+     *
      * @returns `true`/`false` for a known tab, `null` when the tab is unknown.
      */
     static isIncognitoSync(tabId: number): boolean | null {
@@ -143,6 +144,7 @@ export class TabAttributionRegistry {
      *
      * @param tabId - Browser tab id the event is attributed to.
      * @param nowMs - Background receipt time.
+     *
      * @returns Whether the event may be logged (unknown tabs are refused).
      */
     static allowContentEvent(tabId: number, nowMs: number): boolean {
@@ -168,6 +170,7 @@ export class TabAttributionRegistry {
      * resurrect it on the next start.
      *
      * @param tabId - Removed browser tab id.
+     *
      * @returns Promise settled after the mirror reflects the removal.
      */
     static async forget(tabId: number): Promise<void> {

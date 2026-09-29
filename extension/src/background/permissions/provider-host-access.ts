@@ -16,6 +16,7 @@ export class ProviderHostAccess {
      * proceed unless Chrome positively confirms the exact optional origin.
      *
      * @param providerId - Provider whose current host grant is inspected.
+     *
      * @returns Granted only when Chrome confirms the provider origin.
      */
     static async status(
@@ -38,6 +39,7 @@ export class ProviderHostAccess {
      * permission semantics in `status()`.
      *
      * @param providerId - Provider whose current host grant is inspected.
+     *
      * @returns Whether Chrome currently confirms the provider origin.
      */
     static async isGranted(

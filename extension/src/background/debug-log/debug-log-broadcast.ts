@@ -15,6 +15,7 @@ export class DebugLogBroadcast {
      * rest, and no failure surfaces as a console line.
      *
      * @param enabled - New switch state.
+     *
      * @returns Promise settled after every delivery attempt.
      */
     static async notifyStateChanged(enabled: boolean): Promise<void> {

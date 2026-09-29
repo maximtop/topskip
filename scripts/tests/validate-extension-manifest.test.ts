@@ -2,13 +2,21 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     TopSkipBuild,
     getExtensionManifestName,
     type TopSkipBuildMode,
 } from '@topskip/extension/build-modes';
+
 import {
     main,
     validateExtensionManifest,
@@ -109,12 +117,10 @@ describe('validateExtensionManifest', () => {
         const manifest = validManifest(TopSkipBuild.Dev);
         manifest.version_name = '0.1.0 (dev build 2026-08-21T20:40:00Z)';
 
-        expect(() =>
-            validateExtensionManifest(manifest, {
-                build: TopSkipBuild.Dev,
-                serverOrigin: DEV_SERVER_ORIGIN,
-            }),
-        ).not.toThrow();
+        expect(() => validateExtensionManifest(manifest, {
+            build: TopSkipBuild.Dev,
+            serverOrigin: DEV_SERVER_ORIGIN,
+        })).not.toThrow();
     });
 
     it.each([
@@ -123,30 +129,68 @@ describe('validateExtensionManifest', () => {
         ['optional tabs', (value: ManifestFixture) => value.optional_permissions.push('tabs')],
         ['optional scripting', (value: ManifestFixture) => value.optional_permissions.push('scripting')],
         ['missing storage', (value: ManifestFixture) => value.permissions.splice(0)],
-        ['missing scripting', (value: ManifestFixture) => { value.permissions = ['storage', 'activeTab', 'unlimitedStorage']; }],
-        ['missing activeTab', (value: ManifestFixture) => { value.permissions = ['storage', 'scripting', 'unlimitedStorage']; }],
-        ['missing unlimitedStorage', (value: ManifestFixture) => { value.permissions = ['storage', 'scripting', 'activeTab']; }],
+        ['missing scripting', (value: ManifestFixture) => {
+            value.permissions = ['storage', 'activeTab', 'unlimitedStorage'];
+        }],
+        ['missing activeTab', (value: ManifestFixture) => {
+            value.permissions = ['storage', 'scripting', 'unlimitedStorage'];
+        }],
+        ['missing unlimitedStorage', (value: ManifestFixture) => {
+            value.permissions = ['storage', 'scripting', 'activeTab'];
+        }],
         ['optional unlimitedStorage', (value: ManifestFixture) => value.optional_permissions.push('unlimitedStorage')],
         ['required downloads', (value: ManifestFixture) => value.permissions.push('downloads')],
         ['required OpenRouter', (value: ManifestFixture) => value.host_permissions.push('https://openrouter.ai/*')],
         ['missing optional OpenAI', (value: ManifestFixture) => value.optional_host_permissions.pop()],
         ['duplicate host', (value: ManifestFixture) => value.optional_host_permissions.push('https://openrouter.ai/*')],
         ['unknown host', (value: ManifestFixture) => value.optional_host_permissions.push('https://unknown.example/*')],
-        ['HTTP release host', (value: ManifestFixture) => { value.host_permissions = ['http://topskip.example.com/*']; }],
+        ['HTTP release host', (value: ManifestFixture) => {
+            value.host_permissions = ['http://topskip.example.com/*'];
+        }],
         ['release fixture', (value: ManifestFixture) => value.content_scripts[0]?.matches.push(DEV_FIXTURE_MATCH)],
-        ['wrong MAIN world', (value: ManifestFixture) => { if (value.content_scripts[0]) value.content_scripts[0].world = 'ISOLATED'; }],
+        ['wrong MAIN world', (value: ManifestFixture) => {
+            if (value.content_scripts[0]) {
+                value.content_scripts[0].world = 'ISOLATED';
+            }
+        }],
         ['swapped content order', (value: ManifestFixture) => value.content_scripts.reverse()],
-        ['lower Chrome version', (value: ManifestFixture) => { value.minimum_chrome_version = '110'; }],
-        ['missing Chrome version', (value: ManifestFixture) => { delete value.minimum_chrome_version; }],
-        ['all frames', (value: ManifestFixture) => { if (value.content_scripts[0]) value.content_scripts[0].all_frames = true; }],
-        ['about blank', (value: ManifestFixture) => { if (value.content_scripts[0]) value.content_scripts[0].match_about_blank = true; }],
-        ['origin fallback', (value: ManifestFixture) => { if (value.content_scripts[0]) value.content_scripts[0].match_origin_as_fallback = true; }],
+        ['lower Chrome version', (value: ManifestFixture) => {
+            value.minimum_chrome_version = '110';
+        }],
+        ['missing Chrome version', (value: ManifestFixture) => {
+            delete value.minimum_chrome_version;
+        }],
+        ['all frames', (value: ManifestFixture) => {
+            if (value.content_scripts[0]) {
+                value.content_scripts[0].all_frames = true;
+            }
+        }],
+        ['about blank', (value: ManifestFixture) => {
+            if (value.content_scripts[0]) {
+                value.content_scripts[0].match_about_blank = true;
+            }
+        }],
+        ['origin fallback', (value: ManifestFixture) => {
+            if (value.content_scripts[0]) {
+                value.content_scripts[0].match_origin_as_fallback = true;
+            }
+        }],
         ['extra JS', (value: ManifestFixture) => value.content_scripts[0]?.js.push('extra.js')],
-        ['extra CSS', (value: ManifestFixture) => { if (value.content_scripts[0]) value.content_scripts[0].css = ['extra.css']; }],
+        ['extra CSS', (value: ManifestFixture) => {
+            if (value.content_scripts[0]) {
+                value.content_scripts[0].css = ['extra.css'];
+            }
+        }],
         ['extra match', (value: ManifestFixture) => value.content_scripts[0]?.matches.push('https://example.com/*')],
-        ['wrong manifest version', (value: ManifestFixture) => { value.manifest_version = 2; }],
-        ['wrong profile name', (value: ManifestFixture) => { value.name = 'TopSkip (Dev)'; }],
-        ['wrong service worker', (value: ManifestFixture) => { value.background.service_worker = 'worker.js'; }],
+        ['wrong manifest version', (value: ManifestFixture) => {
+            value.manifest_version = 2;
+        }],
+        ['wrong profile name', (value: ManifestFixture) => {
+            value.name = 'TopSkip (Dev)';
+        }],
+        ['wrong service worker', (value: ManifestFixture) => {
+            value.background.service_worker = 'worker.js';
+        }],
     ])('rejects %s', (_label, mutate) => {
         const manifest = validManifest();
         mutate(manifest);
@@ -160,12 +204,10 @@ describe('validateExtensionManifest', () => {
             const manifest = validManifest(TopSkipBuild.Dev);
             manifest.content_scripts[scriptIndex]?.matches.pop();
 
-            expect(() =>
-                validateExtensionManifest(manifest, {
-                    build: TopSkipBuild.Dev,
-                    serverOrigin: DEV_SERVER_ORIGIN,
-                }),
-            ).toThrow();
+            expect(() => validateExtensionManifest(manifest, {
+                build: TopSkipBuild.Dev,
+                serverOrigin: DEV_SERVER_ORIGIN,
+            })).toThrow();
         },
     );
 
@@ -184,12 +226,10 @@ describe('validateExtensionManifest', () => {
             script.matches.reverse();
         }
 
-        expect(() =>
-            validateExtensionManifest(manifest, {
-                build: TopSkipBuild.Dev,
-                serverOrigin: DEV_SERVER_ORIGIN,
-            }),
-        ).not.toThrow();
+        expect(() => validateExtensionManifest(manifest, {
+            build: TopSkipBuild.Dev,
+            serverOrigin: DEV_SERVER_ORIGIN,
+        })).not.toThrow();
     });
 });
 

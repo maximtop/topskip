@@ -24,8 +24,7 @@ const ACTIVATION_UNAVAILABLE_REASON = 'activation-unavailable';
 const CAPTIONS_UNAVAILABLE_REASON = 'captions-unavailable';
 const CAPTIONS_BUTTON_SELECTOR = '.ytp-subtitles-button[aria-pressed]';
 const HIDE_STYLE_ID = 'topskip-caption-hide-style';
-const CAPTION_HIDE_CSS =
-    '#movie_player .ytp-caption-window-container,#movie_player .caption-window{visibility:hidden!important;}';
+const CAPTION_HIDE_CSS = '#movie_player .ytp-caption-window-container,#movie_player .caption-window{visibility:hidden!important;}';
 const CAPTION_MODULE = 'captions';
 const CAPTION_RELOAD_OPTION = 'reload';
 const CAPTION_TRACK_OPTION = 'track';
@@ -33,9 +32,8 @@ const REFETCH_TRANSPORT = 'refetch';
 const REFETCH_CREDENTIALS: RequestCredentials = 'same-origin';
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX_EXCLUSIVE = 300;
-const VERBOSE_CAPTURE_LOGS =
-    typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined' &&
-    __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
+const VERBOSE_CAPTURE_LOGS = typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined'
+    && __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
 const AD_STATE_SELECTORS = [
     '.ytp-ad-player-overlay',
     '.ytp-ad-preview-container',
@@ -51,17 +49,17 @@ type TimedtextTransport = 'fetch' | 'xhr' | typeof REFETCH_TRANSPORT;
 /**
  * Sanitized timedtext URL metadata emitted from page-world capture.
  */
-type PageBridgeUrlShape = {
+interface PageBridgeUrlShape {
     pathname: string;
     paramNames: string[];
     fmt: string | null;
     hasPot: boolean;
-};
+}
 
 /**
  * Page-world message carrying a captured json3 timedtext response.
  */
-type PageBridgeCaptureMessage = {
+interface PageBridgeCaptureMessage {
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Main;
     kind: 'timedtext-capture';
     videoId: string | null;
@@ -70,12 +68,12 @@ type PageBridgeCaptureMessage = {
     contentType: string | null;
     bodyLength: number;
     urlShape: PageBridgeUrlShape;
-};
+}
 
 /**
  * Page-world diagnostic message for bridge activation/capture stages.
  */
-type PageBridgeDiagnosticMessage = {
+interface PageBridgeDiagnosticMessage {
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Main;
     kind: 'diagnostic';
     stage: string;
@@ -95,7 +93,7 @@ type PageBridgeDiagnosticMessage = {
     hideStylePresent?: boolean;
     hasTracks?: number | null;
     actions?: string[];
-};
+}
 
 /**
  * Union of page-world messages accepted by the content script listener.
@@ -119,9 +117,9 @@ type CaptionRestoreSnapshot = Readonly<{
 /**
  * URL metadata stays outside page-owned XHR objects and disappears with them.
  */
-type XhrRequestMetadata = {
+interface XhrRequestMetadata {
     url: string;
-};
+}
 
 const installCaptionPageBridge = (): void => {
     const previousTeardown: unknown = Reflect.get(globalThis, TEARDOWN_FLAG);
@@ -134,10 +132,9 @@ const installCaptionPageBridge = (): void => {
     }
     Reflect.set(globalThis, INSTALL_FLAG, true);
 
-    const bridgeInstanceId =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const bridgeInstanceId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     let nextBridgeMessageSequence = 0;
     let nextCaptureGeneration = 0;
     let activeCaptureGeneration: number | null = null;
@@ -156,8 +153,7 @@ const installCaptionPageBridge = (): void => {
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const originalFetch = window.fetch;
 
-    const isCurrentGeneration = (generation: number): boolean =>
-        generation === activeCaptureGeneration;
+    const isCurrentGeneration = (generation: number): boolean => generation === activeCaptureGeneration;
 
     const isJson3Timedtext = (rawUrl: string): URL | null => {
         try {
@@ -186,8 +182,8 @@ const installCaptionPageBridge = (): void => {
         generation?: number,
     ): void => {
         if (
-            generation !== undefined &&
-            !isCurrentGeneration(generation)
+            generation !== undefined
+            && !isCurrentGeneration(generation)
         ) {
             return;
         }
@@ -202,8 +198,8 @@ const installCaptionPageBridge = (): void => {
             // The DOM event below remains available when cross-world messaging fails.
         }
         if (
-            generation !== undefined &&
-            !isCurrentGeneration(generation)
+            generation !== undefined
+            && !isCurrentGeneration(generation)
         ) {
             return;
         }
@@ -338,6 +334,7 @@ const installCaptionPageBridge = (): void => {
      * encoded parameter name cannot slip past the filter.
      *
      * @param translated - Parsed player request that carried `tlang`.
+     *
      * @returns The same request asking for the source-language track.
      */
     const withoutTranslation = (translated: URL): URL => {
@@ -346,8 +343,7 @@ const installCaptionPageBridge = (): void => {
             .slice(1)
             .split('&')
             .filter(
-                (pair) =>
-                    !new URLSearchParams(pair).has(TIMEDTEXT_TRANSLATION_PARAM),
+                (pair) => !new URLSearchParams(pair).has(TIMEDTEXT_TRANSLATION_PARAM),
             )
             .join('&');
         return original;
@@ -376,6 +372,7 @@ const installCaptionPageBridge = (): void => {
      *
      * @param generation - Capture generation that observed the translation.
      * @param translated - Parsed translated player request.
+     *
      * @returns Resolves after the refetch settled; never rejects.
      */
     const refetchUntranslated = async (
@@ -504,15 +501,12 @@ const installCaptionPageBridge = (): void => {
         void refetchUntranslated(generation, parsed);
     };
 
-    const getMoviePlayer = (): Element | null =>
-        document.getElementById('movie_player');
+    const getMoviePlayer = (): Element | null => document.getElementById('movie_player');
 
-    const getMainVideo = (): HTMLVideoElement | null =>
-        document.querySelector('#movie_player video.html5-main-video') ??
-        document.querySelector('video.html5-main-video');
+    const getMainVideo = (): HTMLVideoElement | null => document.querySelector('#movie_player video.html5-main-video')
+        ?? document.querySelector('video.html5-main-video');
 
-    const isVisibleElement = (element: Element): boolean =>
-        element instanceof HTMLElement && element.offsetParent !== null;
+    const isVisibleElement = (element: Element): boolean => element instanceof HTMLElement && element.offsetParent !== null;
 
     const isAdLikelyActive = (): boolean => {
         const player = getMoviePlayer();
@@ -606,8 +600,8 @@ const installCaptionPageBridge = (): void => {
     const hasPlayerMethod = (methodName: string): boolean => {
         const player = getMoviePlayer();
         return (
-            player !== null &&
-            typeof Reflect.get(player, methodName) === 'function'
+            player !== null
+            && typeof Reflect.get(player, methodName) === 'function'
         );
     };
 
@@ -724,7 +718,13 @@ const installCaptionPageBridge = (): void => {
             error,
             actions,
         });
-        return { ok: false, reason, error, actions };
+        return {
+
+            ok: false,
+            reason,
+            error,
+            actions,
+        };
     };
 
     const finishActivation = (
@@ -756,7 +756,14 @@ const installCaptionPageBridge = (): void => {
             },
             generation,
         );
-        return { ok: true, wasOn, userIntervened, hasTracks, actions };
+        return {
+
+            ok: true,
+            wasOn,
+            userIntervened,
+            hasTracks,
+            actions,
+        };
     };
 
     /**
@@ -765,6 +772,7 @@ const installCaptionPageBridge = (): void => {
      *
      * @param tracks - Untrusted player tracklist.
      * @param actions - Activation action log to extend.
+     *
      * @returns Whether the tracklist offered any track at all.
      */
     const selectTrack = (tracks: unknown, actions: string[]): boolean => {
@@ -833,8 +841,7 @@ const installCaptionPageBridge = (): void => {
         }
         const tracks = getPlayerOption('tracklist');
         const hasTracks = Array.isArray(tracks) ? tracks.length : null;
-        const captionsCurrentlyOn =
-            button?.getAttribute('aria-pressed') === 'true';
+        const captionsCurrentlyOn = button?.getAttribute('aria-pressed') === 'true';
 
         if (isReactivation) {
             if (setPlayerOption(CAPTION_RELOAD_OPTION, true)) {
@@ -862,8 +869,8 @@ const installCaptionPageBridge = (): void => {
 
         if (!isReactivation) {
             if (
-                !selectTrack(tracks, actions) &&
-                setPlayerOption(CAPTION_RELOAD_OPTION, true)
+                !selectTrack(tracks, actions)
+                && setPlayerOption(CAPTION_RELOAD_OPTION, true)
             ) {
                 actions.push('setOption:reload');
             }
@@ -945,10 +952,9 @@ const installCaptionPageBridge = (): void => {
         input: RequestInfo | URL,
         init?: RequestInit,
     ): Promise<Response> => {
-        const callOriginalFetch = (): Promise<Response> =>
-            init === undefined
-                ? originalFetch.call(window, input)
-                : originalFetch.call(window, input, init);
+        const callOriginalFetch = (): Promise<Response> => (init === undefined
+            ? originalFetch.call(window, input)
+            : originalFetch.call(window, input, init));
         const generation = activeCaptureGeneration;
         if (generation === null) {
             return callOriginalFetch();
@@ -1003,8 +1009,8 @@ const installCaptionPageBridge = (): void => {
     let wrappedSend: unknown = null;
 
     if (
-        typeof originalOpen === 'function' &&
-        typeof originalSend === 'function'
+        typeof originalOpen === 'function'
+        && typeof originalSend === 'function'
     ) {
         wrappedOpen = function (
             this: XMLHttpRequest,
@@ -1042,17 +1048,16 @@ const installCaptionPageBridge = (): void => {
         ): void {
             const generation = activeCaptureGeneration;
             const requestUrl = xhrRequestMetadata.get(this)?.url ?? '';
-            const shouldObserve =
-                generation !== null &&
-                isJson3Timedtext(requestUrl) !== null;
+            const shouldObserve = generation !== null
+                && isJson3Timedtext(requestUrl) !== null;
             if (shouldObserve) {
                 this.addEventListener(
                     'loadend',
                     () => {
                         if (
-                            !isCurrentGeneration(generation) ||
-                            this.status < HTTP_SUCCESS_MIN ||
-                            this.status >= HTTP_SUCCESS_MAX_EXCLUSIVE
+                            !isCurrentGeneration(generation)
+                            || this.status < HTTP_SUCCESS_MIN
+                            || this.status >= HTTP_SUCCESS_MAX_EXCLUSIVE
                         ) {
                             return;
                         }
@@ -1062,8 +1067,8 @@ const installCaptionPageBridge = (): void => {
                             if (typeof responseBody === 'string') {
                                 text = responseBody;
                             } else if (
-                                responseBody !== null &&
-                                typeof responseBody === 'object'
+                                responseBody !== null
+                                && typeof responseBody === 'object'
                             ) {
                                 text = JSON.stringify(responseBody);
                             } else {
@@ -1112,14 +1117,14 @@ const installCaptionPageBridge = (): void => {
             window.fetch = originalFetch;
         }
         if (
-            typeof wrappedOpen === 'function' &&
-            Reflect.get(XMLHttpRequest.prototype, 'open') === wrappedOpen
+            typeof wrappedOpen === 'function'
+            && Reflect.get(XMLHttpRequest.prototype, 'open') === wrappedOpen
         ) {
             Reflect.set(XMLHttpRequest.prototype, 'open', originalOpen);
         }
         if (
-            typeof wrappedSend === 'function' &&
-            Reflect.get(XMLHttpRequest.prototype, 'send') === wrappedSend
+            typeof wrappedSend === 'function'
+            && Reflect.get(XMLHttpRequest.prototype, 'send') === wrappedSend
         ) {
             Reflect.set(XMLHttpRequest.prototype, 'send', originalSend);
         }

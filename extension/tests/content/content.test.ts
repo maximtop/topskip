@@ -1,4 +1,15 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { Content } from '@/content/content';
+import { EXTENSION_CONTEXT_POLL_INTERVAL_MS } from '@/content/extension-context-watch';
 
 const runtimeState = vi.hoisted(
     (): { id: string | undefined } => ({ id: 'extension-id' }),
@@ -36,9 +47,6 @@ const { debugLogDispose } = vi.hoisted(() => ({ debugLogDispose: vi.fn() }));
 vi.mock('@/content/debug-log-client', () => ({
     DebugLogClient: { dispose: debugLogDispose },
 }));
-
-import { Content } from '@/content/content';
-import { EXTENSION_CONTEXT_POLL_INTERVAL_MS } from '@/content/extension-context-watch';
 
 describe('Content', () => {
     beforeEach(() => {

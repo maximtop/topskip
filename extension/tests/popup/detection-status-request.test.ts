@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { POPUP_DETECTION_REQUEST_TIMEOUT_MS } from '@/popup/constants';
 import { requestDetectionStatusWithTimeout } from '@/popup/detection-status-request';
@@ -57,10 +65,9 @@ describe('detection status request', () => {
 
     it('rejects a lost reply only after the five-second bound', async () => {
         mocks.sendMessage.mockImplementation(
-            () =>
-                new Promise<unknown>(() => {
-                    // A killed service worker may never deliver its reply.
-                }),
+            () => new Promise<unknown>(() => {
+                // A killed service worker may never deliver its reply.
+            }),
         );
         let settled = false;
         const request = requestDetectionStatusWithTimeout();

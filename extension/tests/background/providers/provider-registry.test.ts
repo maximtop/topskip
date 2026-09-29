@@ -16,6 +16,7 @@ import { ProviderRegistry } from '@/background/providers/provider-registry';
  *
  * @param id - Provider identifier.
  * @param displayName - User-facing label.
+ *
  * @returns A stub adapter.
  */
 function stubAdapter(id: ProviderId, displayName: string): LlmProviderAdapter {

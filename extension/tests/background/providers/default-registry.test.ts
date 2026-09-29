@@ -1,4 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { defaultRegistry } from '@/background/providers/default-registry';
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -10,8 +18,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-import { defaultRegistry } from '@/background/providers/default-registry';
 
 describe('defaultRegistry', () => {
     it('registers selectable providers for the options UI', () => {

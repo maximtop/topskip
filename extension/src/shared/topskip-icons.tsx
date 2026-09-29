@@ -3,15 +3,16 @@ import type { ReactElement } from 'react';
 /**
  * Common dimensions and color accepted by local SVG icons.
  */
-export type TopSkipIconProps = {
+export interface TopSkipIconProps {
     size: number;
     color?: string;
-};
+}
 
 /**
  * Product mark used by popup and options branding.
  *
  * @param props - SVG dimensions and optional color.
+ *
  * @returns TopSkip skip/play mark.
  */
 export function TopSkipLogoIcon(props: TopSkipIconProps): ReactElement {
@@ -41,6 +42,7 @@ export function TopSkipLogoIcon(props: TopSkipIconProps): ReactElement {
  * Compact check mark for positive statuses.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Check icon.
  */
 export function CheckIcon(props: TopSkipIconProps): ReactElement {
@@ -66,6 +68,7 @@ export function CheckIcon(props: TopSkipIconProps): ReactElement {
  * Settings gear matching the reference outline style.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Settings icon.
  */
 export function SettingsIcon(props: TopSkipIconProps): ReactElement {
@@ -92,6 +95,7 @@ export function SettingsIcon(props: TopSkipIconProps): ReactElement {
  * Home icon for the General options section.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Home icon.
  */
 export function HomeIcon(props: TopSkipIconProps): ReactElement {
@@ -119,6 +123,7 @@ export function HomeIcon(props: TopSkipIconProps): ReactElement {
  * Target icon for detection settings.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Target icon.
  */
 export function TargetIcon(props: TopSkipIconProps): ReactElement {
@@ -149,6 +154,7 @@ export function TargetIcon(props: TopSkipIconProps): ReactElement {
  * Palette icon for appearance settings.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Palette icon.
  */
 export function PaletteIcon(props: TopSkipIconProps): ReactElement {
@@ -177,6 +183,7 @@ export function PaletteIcon(props: TopSkipIconProps): ReactElement {
  * Keyboard icon for shortcuts settings.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Keyboard icon.
  */
 export function KeyboardIcon(props: TopSkipIconProps): ReactElement {
@@ -206,6 +213,7 @@ export function KeyboardIcon(props: TopSkipIconProps): ReactElement {
  * Info icon used for About and helper callouts.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Info icon.
  */
 export function InfoIcon(props: TopSkipIconProps): ReactElement {
@@ -233,6 +241,7 @@ export function InfoIcon(props: TopSkipIconProps): ReactElement {
  * Pencil icon for edit actions.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Edit icon.
  */
 export function PencilIcon(props: TopSkipIconProps): ReactElement {
@@ -259,6 +268,7 @@ export function PencilIcon(props: TopSkipIconProps): ReactElement {
  * Trash icon for delete actions.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Delete icon.
  */
 export function TrashIcon(props: TopSkipIconProps): ReactElement {
@@ -288,6 +298,7 @@ export function TrashIcon(props: TopSkipIconProps): ReactElement {
  * X icon for cancel actions.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Cancel icon.
  */
 export function XIcon(props: TopSkipIconProps): ReactElement {
@@ -314,6 +325,7 @@ export function XIcon(props: TopSkipIconProps): ReactElement {
  * External-link icon for navigation actions.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns External-link icon.
  */
 export function ExternalLinkIcon(props: TopSkipIconProps): ReactElement {
@@ -341,6 +353,7 @@ export function ExternalLinkIcon(props: TopSkipIconProps): ReactElement {
  * Lock icon for local-key storage helper text.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Lock icon.
  */
 export function LockIcon(props: TopSkipIconProps): ReactElement {
@@ -367,6 +380,7 @@ export function LockIcon(props: TopSkipIconProps): ReactElement {
  * Small promo block icon for popup detection summary.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Promo block icon.
  */
 export function PromoBlocksIcon(props: TopSkipIconProps): ReactElement {
@@ -398,6 +412,7 @@ export function PromoBlocksIcon(props: TopSkipIconProps): ReactElement {
  * Activity (pulse) icon for the Diagnostics section.
  *
  * @param props - SVG dimensions and optional stroke color.
+ *
  * @returns Activity icon.
  */
 export function ActivityIcon(props: TopSkipIconProps): ReactElement {

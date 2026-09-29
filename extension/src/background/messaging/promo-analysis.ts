@@ -1,37 +1,13 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
+import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
+import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
+import {
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+} from '@topskip/common/promo-types';
 
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
-import {
-    buildPromoAnalysisLogBundle,
-    listTimedLinesFromMergedTranscript,
-    LogPromoAnalysis,
-    logChunkPromoEntry,
-    type ChunkLogOutcome,
-    type PromoUncoveredRange,
-} from '@/background/openrouter/log-promo-analysis';
+import { DebugLog } from '@/background/debug-log/debug-log';
 import { DevConsole } from '@/background/dev-console';
-import { PromoDetectionStore } from '@/background/promo-detection-store';
-import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
-import {
-    ANALYSIS_MODE,
-    MAX_CAPTION_TRANSCRIPT_CHARS,
-} from '@/shared/constants';
-import browser from '@/shared/browser';
-import {
-    PROMO_DETECTION_SOURCE,
-    TOPSKIP_MESSAGE,
-    type CaptionsFromContentPayload,
-    type LocalDetectionState,
-    type TopSkipRuntimeMessage,
-} from '@/shared/messages';
-import { PROVIDER_ID } from '@/shared/providers';
-import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
-import { defaultRegistry } from '@/background/providers/default-registry';
-import type { ProviderRegistry } from '@/background/providers/provider-registry';
-import {
-    PROVIDER_ANALYSIS_FAILURE_CODE,
-    type AnalyzeTranscriptResult,
-} from '@/background/providers/llm-provider-adapter';
 import {
     BLOCK_MERGE_GAP_SEC,
     CHUNK_BLOCK_TOLERANCE_SEC,
@@ -43,23 +19,53 @@ import {
     OVERLAP_FLOOR_SEC,
     OVERLAP_FRACTION,
 } from '@/background/messaging/chunk-plan-config';
-import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
-import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
-import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
 import {
-    PROMO_DETECTION_PROMPT_VERSION,
-    PROMO_DETECTION_SYSTEM_PROMPT,
-} from '@/background/openrouter/promo-detection-system-prompt';
+    buildPromoAnalysisLogBundle,
+    listTimedLinesFromMergedTranscript,
+    LogPromoAnalysis,
+    logChunkPromoEntry,
+    type ChunkLogOutcome,
+    type PromoUncoveredRange,
+} from '@/background/openrouter/log-promo-analysis';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import { PromoDetectionStore } from '@/background/promo-detection-store';
+import browser from '@/shared/browser';
+import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
+import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import {
-    PROMO_DETECTION_STATUS,
-    type PromoBlock,
-} from '@topskip/common/promo-types';
-import { DebugLog } from '@/background/debug-log/debug-log';
+    ANALYSIS_MODE,
+    MAX_CAPTION_TRANSCRIPT_CHARS,
+} from '@/shared/constants';
 import {
     DEBUG_LOG_EVENT,
     formatPromoBlockTimings,
 } from '@/shared/debug-log-events';
+import {
+    PROMO_DETECTION_SOURCE,
+    TOPSKIP_MESSAGE,
+    type CaptionsFromContentPayload,
+    type LocalDetectionState,
+    type TopSkipRuntimeMessage,
+} from '@/shared/messages';
+import { PROVIDER_ID } from '@/shared/providers';
+import { defaultRegistry } from '@/background/providers/default-registry';
+
+import type { ProviderRegistry } from '@/background/providers/provider-registry';
+
+import {
+    PROVIDER_ANALYSIS_FAILURE_CODE,
+    type AnalyzeTranscriptResult,
+} from '@/background/providers/llm-provider-adapter';
+
+
+import {
+    PROMO_DETECTION_PROMPT_VERSION,
+    PROMO_DETECTION_SYSTEM_PROMPT,
+} from '@/background/openrouter/promo-detection-system-prompt';
+
 import { toDebugLogModelName } from '@/shared/detection-models';
+
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 /**
  * Stable code logged for an unexpected BYOK analysis exception (never the
@@ -113,6 +119,7 @@ export class PromoAnalysis {
      * bounded `tooLarge` retry (non-recursive).
      *
      * @param text - Chunk user message
+     *
      * @returns Two halves or `null` if not splittable
      */
     private static splitTranscriptLinesInHalf(
@@ -130,6 +137,7 @@ export class PromoAnalysis {
      * Caption time span covering the timed lines present in one chunk slice.
      *
      * @param chunkText - `[sec] text` lines
+     *
      * @returns First and last caption seconds in the slice
      */
     private static timeRangeFromChunkText(chunkText: string): {
@@ -153,6 +161,7 @@ export class PromoAnalysis {
      * @param mergedText - Full merged transcript
      * @param lastChunkLineEndIndex - Inclusive index of the last caption line
      *   included in the final planned chunk
+     *
      * @returns First and last seconds of the dropped tail, or `null`
      */
     private static droppedTailRangeSec(
@@ -177,6 +186,7 @@ export class PromoAnalysis {
      *
      * @param result - Adapter result
      * @param aborted - Whether the run was aborted
+     *
      * @returns Log label
      */
     private static chunkOutcomeForLog(
@@ -194,8 +204,8 @@ export class PromoAnalysis {
             return 'too_large';
         }
         if (
-            result.rawAssistant !== undefined &&
-            result.rawAssistant.length > 0
+            result.rawAssistant !== undefined
+            && result.rawAssistant.length > 0
         ) {
             return 'parse_error';
         }
@@ -207,15 +217,16 @@ export class PromoAnalysis {
      * the run returns to setup-required without consuming remaining chunks.
      *
      * @param result - Provider result inspected before generic error handling.
+     *
      * @returns Whether the provider host grant must be restored explicitly.
      */
     private static requiresProviderHostAccess(
         result: AnalyzeTranscriptResult,
     ): boolean {
         return (
-            !result.ok &&
-            result.failureCode ===
-                PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired
+            !result.ok
+            && result.failureCode
+                === PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired
         );
     }
 
@@ -226,6 +237,7 @@ export class PromoAnalysis {
      *
      * @param result - Adapter result of the chunk call.
      * @param aborted - Whether the run was superseded while the call was in flight.
+     *
      * @returns Stable outcome token.
      */
     private static byokChunkOutcomeForLog(
@@ -259,6 +271,17 @@ export class PromoAnalysis {
      * Records the terminal BYOK metadata summary (no prompt/assistant text).
      *
      * @param input - Terminal run counters and stable outcome.
+     * @param input.tabId
+     * @param input.videoId
+     * @param input.provider
+     * @param input.model
+     * @param input.chunks
+     * @param input.parsedBlocks
+     * @param input.coverage
+     * @param input.uncovered
+     * @param input.blocks
+     * @param input.totalLatencyMs
+     * @param input.outcome
      */
     private static recordByokRunEnded(input: {
         tabId: number;
@@ -329,6 +352,7 @@ export class PromoAnalysis {
      *
      * @param tabId - Tab whose provider run is being checked.
      * @param abort - Controller captured by the async continuation.
+     *
      * @returns Whether the continuation still owns the live provider route.
      */
     private static isCurrentRun(
@@ -336,8 +360,8 @@ export class PromoAnalysis {
         abort: AbortController,
     ): boolean {
         return (
-            !abort.signal.aborted &&
-            PromoAnalysis.inflight.get(tabId)?.abort === abort
+            !abort.signal.aborted
+            && PromoAnalysis.inflight.get(tabId)?.abort === abort
         );
     }
 
@@ -349,8 +373,8 @@ export class PromoAnalysis {
     static abortForProviderChange(providerId: string): void {
         for (const [tabId, inflight] of PromoAnalysis.inflight.entries()) {
             if (
-                inflight.providerId === null ||
-                inflight.providerId !== providerId
+                inflight.providerId === null
+                || inflight.providerId !== providerId
             ) {
                 PromoAnalysis.abortForTab(tabId);
             }
@@ -380,6 +404,7 @@ export class PromoAnalysis {
      *
      * @param tabId - Target tab
      * @param payload - Caption payload
+     *
      * @returns Promise that settles when analysis finishes or aborts
      */
     private static async run(
@@ -427,7 +452,7 @@ export class PromoAnalysis {
                 return;
             }
 
-            const providerId = prefs.providerId;
+            const { providerId } = prefs;
             runProvider = providerId;
             DebugLog.record(
                 DEBUG_LOG_EVENT.ByokRunStarted,
@@ -628,8 +653,7 @@ export class PromoAnalysis {
                 if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
-                const { startSec: cStart, endSec: cEnd } =
-                    PromoAnalysis.timeRangeFromChunkText(chunkText);
+                const { startSec: cStart, endSec: cEnd } = PromoAnalysis.timeRangeFromChunkText(chunkText);
                 const t0 = performance.now();
                 const result = await adapter.analyzeTranscript({
                     ...baseParams,
@@ -639,8 +663,8 @@ export class PromoAnalysis {
                     return;
                 }
                 const latencyMs = performance.now() - t0;
-                totalAdapterCalls = totalAdapterCalls + 1;
-                totalAdapterLatencyMs = totalAdapterLatencyMs + latencyMs;
+                totalAdapterCalls += 1;
+                totalAdapterLatencyMs += latencyMs;
 
                 recordChunk({
                     result,
@@ -702,7 +726,7 @@ export class PromoAnalysis {
                 }
 
                 if (!result.ok) {
-                    chunkFailures = chunkFailures + 1;
+                    chunkFailures += 1;
                     if (result.tooLarge === true) {
                         anyPartial = true;
                     }
@@ -770,8 +794,8 @@ export class PromoAnalysis {
                     return;
                 }
                 const firstLatency = performance.now() - t0;
-                totalAdapterCalls = totalAdapterCalls + 1;
-                totalAdapterLatencyMs = totalAdapterLatencyMs + firstLatency;
+                totalAdapterCalls += 1;
+                totalAdapterLatencyMs += firstLatency;
 
                 recordChunk({
                     result: first,
@@ -831,7 +855,7 @@ export class PromoAnalysis {
                         chunk.text,
                     );
                     if (halves === null) {
-                        chunkFailures = chunkFailures + 1;
+                        chunkFailures += 1;
                         anyPartial = true;
                         uncoveredRanges.push({
                             startSec: chunk.startSec,
@@ -863,7 +887,7 @@ export class PromoAnalysis {
                 }
 
                 if (!first.ok) {
-                    chunkFailures = chunkFailures + 1;
+                    chunkFailures += 1;
                     uncoveredRanges.push({
                         startSec: chunk.startSec,
                         endSec: chunk.endSec,
@@ -916,16 +940,15 @@ export class PromoAnalysis {
 
             const totalWallClockMs = performance.now() - runStartedAt;
 
-            const outcomeBlocks =
-                mergedBlocks.length > 0
-                    ? { type: 'promo_blocks' as const, blocks: mergedBlocks }
-                    : chunkFailures >= plan.chunks.length &&
-                        plan.chunks.length > 0
-                        ? {
-                                type: 'adapter_error' as const,
-                                error: 'All transcript chunks failed',
-                            }
-                        : { type: 'no_promo' as const };
+            const outcomeBlocks = mergedBlocks.length > 0
+                ? { type: 'promo_blocks' as const, blocks: mergedBlocks }
+                : chunkFailures >= plan.chunks.length
+                        && plan.chunks.length > 0
+                    ? {
+                        type: 'adapter_error' as const,
+                        error: 'All transcript chunks failed',
+                    }
+                    : { type: 'no_promo' as const };
 
             if (chunkFailures >= plan.chunks.length && plan.chunks.length > 0) {
                 await setStatus({
@@ -1109,8 +1132,8 @@ export class PromoAnalysis {
             });
         } catch (e) {
             if (
-                !PromoAnalysis.isCurrentRun(tabId, abort) ||
-                (e instanceof DOMException && e.name === 'AbortError')
+                !PromoAnalysis.isCurrentRun(tabId, abort)
+                || (e instanceof DOMException && e.name === 'AbortError')
             ) {
                 return;
             }

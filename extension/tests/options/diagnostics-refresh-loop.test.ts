@@ -14,6 +14,7 @@ import {
     type DiagnosticsRefreshReads,
     type DiagnosticsRefreshSink,
 } from '@/options/diagnostics-refresh-loop';
+
 import type { DebugLogStatusPayload } from '@/shared/messages';
 
 // The loop's default reads import `@/options/diagnostics-request`, which pulls
@@ -33,14 +34,27 @@ const STATUS: DebugLogStatusPayload = {
     capBytes: 5 * 1024 * 1024,
     evictedCount: 0,
     oldestRetainedMs: 1_755_856_800_000,
-    dropped: { incognito: 0, coalesced: 0, ceiling: 0, unreachable: 0, lost: 0 },
+    dropped: {
+
+        incognito: 0,
+        coalesced: 0,
+        ceiling: 0,
+        unreachable: 0,
+        lost: 0,
+    },
     revision: 1,
 };
-const PREVIEW = { text: 'line\n', shownBytes: 5, totalBytes: 5, revision: 1 };
+const PREVIEW = {
+
+    text: 'line\n',
+    shownBytes: 5,
+    totalBytes: 5,
+    revision: 1,
+};
 
 type Spy = ReturnType<typeof vi.fn>;
 
-type LoopHarness = {
+interface LoopHarness {
     loop: DiagnosticsRefreshLoop;
     // The read mocks carry the real signatures so `mockImplementationOnce`
     // callbacks returning a Promise satisfy no-misused-promises (a bare
@@ -50,7 +64,7 @@ type LoopHarness = {
         requestPreview: Mock<DiagnosticsRefreshReads['requestPreview']>;
     };
     sink: { onStatus: Spy; onPreview: Spy; onUnavailable: Spy };
-};
+}
 
 /**
  * Builds a loop over scripted reads and spy sinks.
@@ -154,10 +168,9 @@ describe('DiagnosticsRefreshLoop', () => {
         const { loop, reads } = makeLoop();
         let resolveStatus: (status: DebugLogStatusPayload) => void = () => {};
         reads.requestStatus.mockImplementationOnce(
-            () =>
-                new Promise<DebugLogStatusPayload>((resolve) => {
-                    resolveStatus = resolve;
-                }),
+            () => new Promise<DebugLogStatusPayload>((resolve) => {
+                resolveStatus = resolve;
+            }),
         );
         reads.requestStatus.mockResolvedValue({ ...STATUS, hasLog: false });
 
@@ -179,10 +192,9 @@ describe('DiagnosticsRefreshLoop', () => {
         const { loop, reads, sink } = makeLoop();
         let resolveStatus: (status: DebugLogStatusPayload) => void = () => {};
         reads.requestStatus.mockImplementation(
-            () =>
-                new Promise<DebugLogStatusPayload>((resolve) => {
-                    resolveStatus = resolve;
-                }),
+            () => new Promise<DebugLogStatusPayload>((resolve) => {
+                resolveStatus = resolve;
+            }),
         );
         loop.refreshNow();
         loop.stop();

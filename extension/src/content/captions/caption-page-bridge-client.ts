@@ -22,12 +22,12 @@ const BRIDGE_UNAVAILABLE_RESULT = Object.freeze({
 /**
  * Cleanup metadata keeps every pending command single-settlement and leak-free.
  */
-type PendingCaptionPageBridgeCommand = {
+interface PendingCaptionPageBridgeCommand {
     resolve: (result: unknown) => void;
     timeoutId: ReturnType<typeof globalThis.setTimeout>;
     signal: AbortSignal | undefined;
     abortListener: (() => void) | undefined;
-};
+}
 
 /**
  * Correlates the isolated content bundle with the declarative MAIN bridge
@@ -39,8 +39,7 @@ export class CaptionPageBridgeClient {
     /**
      * One map makes correlation and duplicate suppression the same operation.
      */
-    private static readonly pendingCommands =
-        new Map<string, PendingCaptionPageBridgeCommand>();
+    private static readonly pendingCommands = new Map<string, PendingCaptionPageBridgeCommand>();
 
     /**
      * The listener remains installed between commands to avoid accumulating
@@ -58,6 +57,7 @@ export class CaptionPageBridgeClient {
      * Checks that the declarative MAIN bridge can answer the current protocol.
      *
      * @param signal Optional owner cancellation.
+     *
      * @returns Opaque bridge result or a bounded bridge-unavailable failure.
      */
     static probe(signal?: AbortSignal): Promise<unknown> {
@@ -74,6 +74,7 @@ export class CaptionPageBridgeClient {
      * and only refresh the lease.
      *
      * @param signal Optional owner cancellation.
+     *
      * @returns Opaque bridge result or a bounded bridge-unavailable failure.
      */
     static activate(signal?: AbortSignal): Promise<unknown> {
@@ -87,6 +88,7 @@ export class CaptionPageBridgeClient {
      * Returns the MAIN bridge to dormant mode and restores caption state.
      *
      * @param signal Optional cleanup cancellation.
+     *
      * @returns Opaque bridge result or a bounded bridge-unavailable failure.
      */
     static deactivate(signal?: AbortSignal): Promise<unknown> {
@@ -102,6 +104,7 @@ export class CaptionPageBridgeClient {
      * `fetch`/XHR wrappers from a bundle that can no longer use them.
      *
      * @param signal Optional cleanup cancellation.
+     *
      * @returns Opaque bridge result or a bounded bridge-unavailable failure.
      */
     static teardown(signal?: AbortSignal): Promise<unknown> {
@@ -117,8 +120,8 @@ export class CaptionPageBridgeClient {
      */
     static dispose(): void {
         if (
-            CaptionPageBridgeClient.resultListenerInstalled &&
-            typeof document !== 'undefined'
+            CaptionPageBridgeClient.resultListenerInstalled
+            && typeof document !== 'undefined'
         ) {
             document.removeEventListener(
                 CAPTION_PAGE_BRIDGE_EVENT.CommandResult,
@@ -143,6 +146,7 @@ export class CaptionPageBridgeClient {
      *
      * @param command Lifecycle command accepted by the bridge.
      * @param signal Optional owner cancellation.
+     *
      * @returns Opaque bridge result or a bounded bridge-unavailable failure.
      */
     private static sendCommand(
@@ -150,10 +154,10 @@ export class CaptionPageBridgeClient {
         signal?: AbortSignal,
     ): Promise<unknown> {
         if (
-            signal?.aborted === true ||
-            typeof document === 'undefined' ||
-            typeof CustomEvent === 'undefined' ||
-            !CaptionPageBridgeClient.ensureResultListener()
+            signal?.aborted === true
+            || typeof document === 'undefined'
+            || typeof CustomEvent === 'undefined'
+            || !CaptionPageBridgeClient.ensureResultListener()
         ) {
             return Promise.resolve(BRIDGE_UNAVAILABLE_RESULT);
         }
@@ -260,6 +264,7 @@ export class CaptionPageBridgeClient {
      *
      * @param requestId Correlation identity to settle.
      * @param result Opaque result returned to the owner.
+     *
      * @returns Whether a live command consumed the result.
      */
     private static settleCommand(

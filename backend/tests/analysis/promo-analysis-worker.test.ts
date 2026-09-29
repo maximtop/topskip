@@ -1,23 +1,29 @@
+import {
+    SERVER_ANALYSIS_ALGORITHM_VERSION,
+    SERVER_ANALYSIS_ERROR_CODE,
+} from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { LocalPromoAnalysisFixtureAdapter } from '@topskip/backend/analysis/local-analysis-fixtures';
-import { normalizeBackendPromoBlocks } from '@topskip/backend/analysis/promo-block-normalization';
-import { BackendPromoAnalysisWorker } from '@topskip/backend/analysis/promo-analysis-worker';
 import {
     BACKEND_ANALYSIS_FAILURE_REASON,
     analysisRunArtifactSchema,
 } from '@topskip/backend/analysis/promo-analysis-types';
+import { BackendPromoAnalysisWorker } from '@topskip/backend/analysis/promo-analysis-worker';
+import { normalizeBackendPromoBlocks } from '@topskip/backend/analysis/promo-block-normalization';
 import { parseBackendPromoResponse } from '@topskip/backend/analysis/promo-response-parser';
 import { LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS } from '@topskip/backend/extraction/local-transcript-fixtures';
 import {
     transcriptArtifactSchema,
     type TranscriptArtifact,
 } from '@topskip/backend/extraction/subtitle-extraction-types';
-import {
-    SERVER_ANALYSIS_ALGORITHM_VERSION,
-    SERVER_ANALYSIS_ERROR_CODE,
-} from '@topskip/common/server-analysis-contract';
 
 function makeTranscriptArtifact(input: {
     videoId: string;
@@ -466,11 +472,10 @@ describe('backend promo analysis worker', () => {
                 providerId: 'test',
                 model: 'test',
                 promptVersion: 'test',
-                analyze: () =>
-                    Promise.resolve({
-                        rawModelResponse: 'invalid response',
-                        model: 'test',
-                    }),
+                analyze: () => Promise.resolve({
+                    rawModelResponse: 'invalid response',
+                    model: 'test',
+                }),
             },
         });
         expect(error.terminalResponse).toMatchObject({
@@ -573,12 +578,11 @@ describe('backend promo analysis worker', () => {
                 providerId: 'test_adapter',
                 model: 'test-model',
                 promptVersion: 'test-prompt',
-                analyze: () =>
-                    Promise.resolve({
-                        rawModelResponse:
+                analyze: () => Promise.resolve({
+                    rawModelResponse:
                             '{"hasPromo":true,"promoBlocks":[{"startSec":100}]}',
-                        model: 'test-model',
-                    }),
+                    model: 'test-model',
+                }),
             },
         });
 
@@ -622,11 +626,10 @@ describe('backend promo analysis worker', () => {
                     providerId: 'test_adapter',
                     model: 'test-model',
                     promptVersion: 'test-prompt',
-                    analyze: () =>
-                        Promise.resolve({
-                            rawModelResponse: raw,
-                            model: 'test-model',
-                        }),
+                    analyze: () => Promise.resolve({
+                        rawModelResponse: raw,
+                        model: 'test-model',
+                    }),
                 },
             });
 

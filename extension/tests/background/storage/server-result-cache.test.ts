@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const storageGet = vi.fn();
 const storageSet = vi.fn();
@@ -16,10 +23,8 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-const { STORAGE_KEY_SERVER_RESULT_CACHE, STORAGE_KEY_SERVER_RESULT_CACHE_INDEX } =
-    await import('@/shared/constants');
-const { ServerResultCacheStorage } =
-    await import('@/background/storage/server-result-cache');
+const { STORAGE_KEY_SERVER_RESULT_CACHE, STORAGE_KEY_SERVER_RESULT_CACHE_INDEX } = await import('@/shared/constants');
+const { ServerResultCacheStorage } = await import('@/background/storage/server-result-cache');
 
 const NOW_MS = 1_900_000_000_000;
 const EXPIRES_AT_MS = NOW_MS + 60_000;
@@ -57,11 +62,9 @@ describe('ServerResultCacheStorage', () => {
     });
 
     it('loads only an exact server result by algorithm, video, language, and hash', async () => {
-        storageGet.mockImplementation((key: string) =>
-            Promise.resolve(
-                key === CACHE_KEY ? { [CACHE_KEY]: EXACT_ENTRY } : {},
-            ),
-        );
+        storageGet.mockImplementation((key: string) => Promise.resolve(
+            key === CACHE_KEY ? { [CACHE_KEY]: EXACT_ENTRY } : {},
+        ));
 
         await expect(
             ServerResultCacheStorage.loadExact({
@@ -253,15 +256,13 @@ describe('ServerResultCacheStorage', () => {
     });
 
     it('prunes the index when an invalid row is repaired', async () => {
-        storageGet.mockImplementation((keys: string | string[] | null) =>
-            Promise.resolve(
-                keys === CACHE_KEY
-                    ? { [CACHE_KEY]: { nope: true } }
-                    : keys === INDEX_KEY
-                        ? { [INDEX_KEY]: [CACHE_KEY, 'other'] }
-                        : {},
-            ),
-        );
+        storageGet.mockImplementation((keys: string | string[] | null) => Promise.resolve(
+            keys === CACHE_KEY
+                ? { [CACHE_KEY]: { nope: true } }
+                : keys === INDEX_KEY
+                    ? { [INDEX_KEY]: [CACHE_KEY, 'other'] }
+                    : {},
+        ));
 
         await expect(
             ServerResultCacheStorage.loadExact({

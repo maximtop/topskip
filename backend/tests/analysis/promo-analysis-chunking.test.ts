@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildServerTranscriptChunks } from '@topskip/backend/analysis/promo-analysis-chunking';
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * Builds a uniform transcript: one segment every 4 s, ~28 chars per line.
  *
  * @param totalSec - Transcript timeline length in seconds
+ *
  * @returns Ordered caption segments
  */
 function makeSegments(totalSec: number): CaptionSegment[] {

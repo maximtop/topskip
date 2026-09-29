@@ -1,7 +1,16 @@
 import { MantineProvider } from '@mantine/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DiagnosticsSection } from '@/options/DiagnosticsSection';
+import { topskipTheme } from '@/shared/theme';
 
 const mocks = vi.hoisted(() => ({
     sendMessage: vi.fn(),
@@ -37,14 +46,12 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-import { DiagnosticsSection } from '@/options/DiagnosticsSection';
-import { topskipTheme } from '@/shared/theme';
-
 /**
  * Extracts one element's opening tag by test id (attribute order varies).
  *
  * @param html - Static markup.
  * @param testId - `data-testid` to find.
+ *
  * @returns Opening tag text, or `''` when absent.
  */
 function openingTag(html: string, testId: string): string {

@@ -21,6 +21,7 @@ import {
     type DebugLogLineRecord,
 } from '@/shared/debug-log-format';
 import { formatLogStage } from '@/shared/log-fields';
+
 import type { DebugLogAppendPayload } from '@/shared/messages';
 
 /**
@@ -67,7 +68,7 @@ const RESTART_CAUSE_EVENTS: ReadonlySet<DebugLogEventName> = new Set([
  * Attribution resolved by the background, never by the sender; `tsMs`
  * back-dates batched content events.
  */
-export type DebugLogContext = {
+export interface DebugLogContext {
     src?: DebugLogSource;
     tab?: number;
     video?: string;
@@ -75,17 +76,17 @@ export type DebugLogContext = {
     job?: string;
     support?: string;
     tsMs?: number;
-};
+}
 
 /**
  * One record held until the facade opens or committed right away.
  */
-type PendingRecord = {
+interface PendingRecord {
     event: DebugLogEventName;
     fields: DebugLogFields;
     ctx: DebugLogContext;
     tsMs: number;
-};
+}
 
 /**
  * Single diagnostics entry point for the background: stamps, gates,
@@ -184,7 +185,7 @@ export class DebugLog {
         nowMs = Date.now(),
     ): void {
         try {
-            const dropped = payload.dropped;
+            const { dropped } = payload;
             if (dropped !== undefined) {
                 DebugLogStore.noteDropped(DEBUG_LOG_DROP_REASON.Coalesced, dropped.coalesced);
                 DebugLogStore.noteDropped(DEBUG_LOG_DROP_REASON.Ceiling, dropped.ceiling);
@@ -236,12 +237,13 @@ export class DebugLog {
      * decides the `bridge` source stamp.
      *
      * @param fields - Validated wire fields of one content event.
+     *
      * @returns `bridge` for forwarded page stages, `content` otherwise.
      */
     private static contentSource(fields: DebugLogFields): DebugLogSource {
-        const stage = fields.stage;
-        return typeof stage === 'string' &&
-            stage.startsWith(DEBUG_LOG_PAGE_STAGE_PREFIX)
+        const { stage } = fields;
+        return typeof stage === 'string'
+            && stage.startsWith(DEBUG_LOG_PAGE_STAGE_PREFIX)
             ? DEBUG_LOG_SOURCE.Bridge
             : DEBUG_LOG_SOURCE.Content;
     }
@@ -371,6 +373,7 @@ export class DebugLog {
      * tab is stripped because an unattributed stage must not name a video.
      *
      * @param ctx - Caller context.
+     *
      * @returns Id fields for the line record.
      */
     private static attributedIds(
@@ -391,6 +394,7 @@ export class DebugLog {
      *
      * @param pattern - Fixed id pattern.
      * @param value - Candidate id.
+     *
      * @returns The id or `undefined`.
      */
     private static matching(pattern: RegExp, value: string | undefined): string | undefined {

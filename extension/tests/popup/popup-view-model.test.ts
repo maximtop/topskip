@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     chooseMonotonicDetectionSnapshot,
 } from '@/popup/detection-transport-state';
 import { buildPopupViewModel, isGetDetectionOk } from '@/popup/PopupApp';
 import { ANALYSIS_MODE } from '@/shared/constants';
+
 import type { PromoDetectionStatePayload } from '@/shared/messages';
 
 const SERVER_SESSION_ID = '00000000-0000-4000-8000-000000000001';

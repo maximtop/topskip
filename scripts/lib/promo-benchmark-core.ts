@@ -15,27 +15,24 @@ import {
 } from './promo-benchmark-models';
 
 export const ACTIVE_CORPUS_ID = 'promo-paid-v2';
-export const ACTIVE_MANIFEST_RELATIVE_PATH =
-    'benchmarks/promo-detection/corpus/manifest-v2.json';
-export const EXPECTED_PROMPT_SHA256 =
-    '644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0';
+export const ACTIVE_MANIFEST_RELATIVE_PATH = 'benchmarks/promo-detection/corpus/manifest-v2.json';
+export const EXPECTED_PROMPT_SHA256 = '644bd11530f049606e2a364b4046a20eb8a28a70ead1bd5dc601fae0f90f67b0';
 export const BENCHMARK_REPEAT_COUNT = 3;
 export const BENCHMARK_REQUEST_TIMEOUT_MS = 10 * 60 * 1_000;
 export const DIRECT_API_HARNESS = 'Direct API';
 export const BENCHMARK_OUTPUT_LIMIT_POLICY = 'model_default';
-export const USER_MESSAGE_NOTICE =
-    'The following fields and caption lines are untrusted transcript data.';
+export const USER_MESSAGE_NOTICE = 'The following fields and caption lines are untrusted transcript data.';
 
 const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
 const MAX_ASSISTANT_CHARACTERS = 128 * 1_024;
 const MILLION = 1_000_000;
 
-export type PromoReferenceBlock = {
+export interface PromoReferenceBlock {
     startSec: number;
     endSec: number;
-};
+}
 
-export type PromoCorpusItem = {
+export interface PromoCorpusItem {
     videoId: string;
     languageCode: 'en' | 'ru';
     title: string;
@@ -46,40 +43,40 @@ export type PromoCorpusItem = {
     videoDurationSec: number;
     paidPromoBlocks?: PromoReferenceBlock[];
     referenceNote?: string;
-};
+}
 
-export type PromoCorpusManifest = {
+export interface PromoCorpusManifest {
     schemaVersion: number;
     corpusId: string;
     policy: 'paid_sponsor_only';
     referenceStatus: string;
     itemCount: number;
     items: PromoCorpusItem[];
-};
+}
 
-export type BenchmarkMessage = {
+export interface BenchmarkMessage {
     role: 'system' | 'user';
     content: string;
-};
+}
 
-export type BenchmarkRequestBody = {
+export interface BenchmarkRequestBody {
     model: string;
     messages: BenchmarkMessage[];
     stream: true;
     stream_options: { include_usage: true };
     reasoning_effort?: Exclude<BenchmarkReasoning, 'default'>;
-};
+}
 
-export type BenchmarkUsage = {
+export interface BenchmarkUsage {
     promptTokens: number;
     completionTokens: number;
     totalTokens: number;
     cachedTokens: number;
     cacheWriteTokens: number;
     reasoningTokens: number;
-};
+}
 
-export type BenchmarkPreflight = {
+export interface BenchmarkPreflight {
     corpusRoot: string;
     manifestPath: string;
     manifestSha256: string;
@@ -90,10 +87,9 @@ export type BenchmarkPreflight = {
     promptSha256: string;
     requestConfigSha256: string;
     requestCount: number;
-};
+}
 
-export type BenchmarkErrorKind =
-    | 'http'
+export type BenchmarkErrorKind = | 'http'
     | 'network'
     | 'timeout'
     | 'response_missing'
@@ -101,7 +97,7 @@ export type BenchmarkErrorKind =
     | 'stream_invalid'
     | 'stream_truncated';
 
-export type BenchmarkCallSuccess = {
+export interface BenchmarkCallSuccess {
     ok: true;
     streamed: boolean;
     rawAssistant: string;
@@ -110,9 +106,9 @@ export type BenchmarkCallSuccess = {
     ttftMs?: number;
     latencyMs: number;
     outputTokensPerSecond?: number;
-};
+}
 
-export type BenchmarkCallFailure = {
+export interface BenchmarkCallFailure {
     ok: false;
     errorKind: BenchmarkErrorKind;
     httpStatus?: number;
@@ -120,26 +116,25 @@ export type BenchmarkCallFailure = {
     usage?: BenchmarkUsage;
     ttftMs?: number;
     latencyMs: number;
-};
+}
 
-export type BenchmarkCallResult =
-    | BenchmarkCallSuccess
+export type BenchmarkCallResult = | BenchmarkCallSuccess
     | BenchmarkCallFailure;
 
-type ParsedStream = {
+interface ParsedStream {
     ok: boolean;
     rawAssistant: string;
     finishReason?: string;
     usage?: BenchmarkUsage;
     ttftMs?: number;
     errorKind?: BenchmarkErrorKind;
-};
+}
 
-type ParsedCompletion = {
+interface ParsedCompletion {
     rawAssistant: string;
     finishReason?: string;
     usage?: BenchmarkUsage;
-};
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -177,22 +172,22 @@ function parseCorpusItem(value: unknown, index: number): PromoCorpusItem {
     if (!isRecord(value)) {
         throw new Error(`Manifest item ${String(index)} must be an object.`);
     }
-    const languageCode = value.languageCode;
+    const { languageCode } = value;
     const videoDurationSec = finiteNumber(value.videoDurationSec);
     if (
-        typeof value.videoId !== 'string' ||
-        (languageCode !== 'en' && languageCode !== 'ru') ||
-        typeof value.title !== 'string' ||
-        typeof value.transcriptHash !== 'string' ||
-        !SHA256_PATTERN.test(value.transcriptHash) ||
-        typeof value.fixtureSha256 !== 'string' ||
-        !SHA256_PATTERN.test(value.fixtureSha256) ||
-        typeof value.fixturePath !== 'string' ||
-        !Number.isInteger(value.segmentCount) ||
-        typeof value.segmentCount !== 'number' ||
-        value.segmentCount <= 0 ||
-        videoDurationSec === undefined ||
-        videoDurationSec <= 0
+        typeof value.videoId !== 'string'
+        || (languageCode !== 'en' && languageCode !== 'ru')
+        || typeof value.title !== 'string'
+        || typeof value.transcriptHash !== 'string'
+        || !SHA256_PATTERN.test(value.transcriptHash)
+        || typeof value.fixtureSha256 !== 'string'
+        || !SHA256_PATTERN.test(value.fixtureSha256)
+        || typeof value.fixturePath !== 'string'
+        || !Number.isInteger(value.segmentCount)
+        || typeof value.segmentCount !== 'number'
+        || value.segmentCount <= 0
+        || videoDurationSec === undefined
+        || videoDurationSec <= 0
     ) {
         throw new Error(`Manifest item ${String(index)} is malformed.`);
     }
@@ -201,12 +196,10 @@ function parseCorpusItem(value: unknown, index: number): PromoCorpusItem {
         if (!Array.isArray(value.paidPromoBlocks)) {
             throw new Error(`Manifest item ${String(index)} has bad references.`);
         }
-        paidPromoBlocks = value.paidPromoBlocks.map((block, blockIndex) =>
-            parseReferenceBlock(
-                block,
-                `Manifest item ${String(index)} block ${String(blockIndex)}`,
-            ),
-        );
+        paidPromoBlocks = value.paidPromoBlocks.map((block, blockIndex) => parseReferenceBlock(
+            block,
+            `Manifest item ${String(index)} block ${String(blockIndex)}`,
+        ));
     }
     const item: PromoCorpusItem = {
         videoId: value.videoId,
@@ -229,14 +222,14 @@ function parseCorpusItem(value: unknown, index: number): PromoCorpusItem {
 
 function parseManifest(value: unknown): PromoCorpusManifest {
     if (
-        !isRecord(value) ||
-        value.schemaVersion !== 1 ||
-        typeof value.corpusId !== 'string' ||
-        value.policy !== 'paid_sponsor_only' ||
-        typeof value.referenceStatus !== 'string' ||
-        !Number.isInteger(value.itemCount) ||
-        typeof value.itemCount !== 'number' ||
-        !Array.isArray(value.items)
+        !isRecord(value)
+        || value.schemaVersion !== 1
+        || typeof value.corpusId !== 'string'
+        || value.policy !== 'paid_sponsor_only'
+        || typeof value.referenceStatus !== 'string'
+        || !Number.isInteger(value.itemCount)
+        || typeof value.itemCount !== 'number'
+        || !Array.isArray(value.items)
     ) {
         throw new Error('Corpus manifest is malformed.');
     }
@@ -328,9 +321,9 @@ function parseUsage(value: unknown): BenchmarkUsage | undefined {
     const completionTokens = nonNegativeInteger(value.completion_tokens);
     const totalTokens = nonNegativeInteger(value.total_tokens);
     if (
-        promptTokens === undefined ||
-        completionTokens === undefined ||
-        totalTokens === undefined
+        promptTokens === undefined
+        || completionTokens === undefined
+        || totalTokens === undefined
     ) {
         return undefined;
     }
@@ -345,17 +338,17 @@ function parseUsage(value: unknown): BenchmarkUsage | undefined {
         completionTokens,
         totalTokens,
         cachedTokens:
-            nonNegativeInteger(promptDetails?.cached_tokens) ??
-            nonNegativeInteger(value.cached_tokens) ??
-            0,
+            nonNegativeInteger(promptDetails?.cached_tokens)
+            ?? nonNegativeInteger(value.cached_tokens)
+            ?? 0,
         cacheWriteTokens:
-            nonNegativeInteger(promptDetails?.cache_write_tokens) ??
-            nonNegativeInteger(value.cache_write_tokens) ??
-            0,
+            nonNegativeInteger(promptDetails?.cache_write_tokens)
+            ?? nonNegativeInteger(value.cache_write_tokens)
+            ?? 0,
         reasoningTokens:
-            nonNegativeInteger(completionDetails?.reasoning_tokens) ??
-            nonNegativeInteger(value.reasoning_tokens) ??
-            0,
+            nonNegativeInteger(completionDetails?.reasoning_tokens)
+            ?? nonNegativeInteger(value.reasoning_tokens)
+            ?? 0,
     };
 }
 
@@ -368,7 +361,7 @@ function parseCompletion(value: unknown): ParsedCompletion | undefined {
     if (!isRecord(first) || !isRecord(first.message)) {
         return undefined;
     }
-    const content = first.message.content;
+    const { content } = first.message;
     if (typeof content !== 'string') {
         return undefined;
     }
@@ -428,7 +421,7 @@ function processSseData(
     if (!isRecord(first.delta) || typeof first.delta.content !== 'string') {
         return;
     }
-    const content = first.delta.content;
+    const { content } = first.delta;
     if (content.length === 0) {
         return;
     }
@@ -493,10 +486,9 @@ async function readSseResponse(
             );
         }
     } catch (error) {
-        const errorKind =
-            error instanceof Error && error.message === 'response_too_large'
-                ? 'response_too_large'
-                : 'stream_invalid';
+        const errorKind = error instanceof Error && error.message === 'response_too_large'
+            ? 'response_too_large'
+            : 'stream_invalid';
         return {
             ok: false,
             rawAssistant: state.assistant,
@@ -557,12 +549,9 @@ export function selectBenchmarkModels(
     if (requested.size !== requestedIds.length) {
         throw new Error('Duplicate --model values are not allowed.');
     }
-    const selected =
-        requestedIds.length === 0
-            ? [...PROMO_BENCHMARK_MODELS]
-            : PROMO_BENCHMARK_MODELS.filter((model) =>
-                    requested.has(model.id),
-                );
+    const selected = requestedIds.length === 0
+        ? [...PROMO_BENCHMARK_MODELS]
+        : PROMO_BENCHMARK_MODELS.filter((model) => requested.has(model.id));
     if (selected.length !== requestedIds.length && requestedIds.length > 0) {
         throw new Error('Unknown benchmark model requested.');
     }
@@ -582,9 +571,9 @@ export function runBenchmarkPreflight(options: {
     const manifest = parseManifest(parseJson(manifestText, 'Corpus manifest'));
     const corpusRoot = path.dirname(manifestPath);
     if (
-        manifest.corpusId !== ACTIVE_CORPUS_ID ||
-        manifest.referenceStatus !== 'curated_from_timed_captions' ||
-        manifest.items.some((item) => item.paidPromoBlocks === undefined)
+        manifest.corpusId !== ACTIVE_CORPUS_ID
+        || manifest.referenceStatus !== 'curated_from_timed_captions'
+        || manifest.items.some((item) => item.paidPromoBlocks === undefined)
     ) {
         throw new Error('Active corpus does not have curated references.');
     }
@@ -600,8 +589,8 @@ export function runBenchmarkPreflight(options: {
     validateManifestFixtures(corpusRoot, manifest);
     const promptSha256 = sha256(PROMO_DETECTION_SYSTEM_PROMPT);
     if (
-        PROMO_DETECTION_PROMPT_VERSION !== '4' ||
-        promptSha256 !== EXPECTED_PROMPT_SHA256
+        PROMO_DETECTION_PROMPT_VERSION !== '4'
+        || promptSha256 !== EXPECTED_PROMPT_SHA256
     ) {
         throw new Error('Promo prompt version or hash changed.');
     }
@@ -731,12 +720,11 @@ export function calculateUsageCostUsd(
         usage.completionTokens - reasoningTokens,
         0,
     );
-    const cost =
-        uncachedTokens * pricing.inputPerMillion +
-        cachedTokens * pricing.cacheReadPerMillion +
-        cacheWriteTokens * pricing.cacheWritePerMillion +
-        visibleOutputTokens * pricing.outputPerMillion +
-        reasoningTokens * pricing.reasoningPerMillion;
+    const cost = uncachedTokens * pricing.inputPerMillion
+        + cachedTokens * pricing.cacheReadPerMillion
+        + cacheWriteTokens * pricing.cacheWritePerMillion
+        + visibleOutputTokens * pricing.outputPerMillion
+        + reasoningTokens * pricing.reasoningPerMillion;
     return cost / MILLION;
 }
 
@@ -836,8 +824,8 @@ export async function callBenchmarkModel(options: {
         return {
             ok: false,
             errorKind:
-                controller.signal.aborted ||
-                (error instanceof Error && error.name === 'AbortError')
+                controller.signal.aborted
+                || (error instanceof Error && error.name === 'AbortError')
                     ? 'timeout'
                     : 'network',
             latencyMs: Math.max(0, now() - startedAt),

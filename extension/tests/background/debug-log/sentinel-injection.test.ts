@@ -1,8 +1,39 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import {
+    DebugLogExport,
+    EnvironmentProbe,
+    type DebugLogEnvironment,
+} from '@/background/debug-log/debug-log-export';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
+import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
+import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
+import { CaptureDiagnostics } from '@/content/captions/capture-diagnostics';
+import { ANALYSIS_MODE } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import { PROVIDER_ID } from '@/shared/providers';
+
+import { makeContentSender } from '../../helpers/runtime-senders';
+
+import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
+import type { DebugLogAppendPayload } from '@/shared/messages';
 
 const storage = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
+        '../../helpers/memory-storage-area'
     );
     return {
         local: createMemoryStorageArea(),
@@ -107,27 +138,6 @@ vi.mock('@/background/captions/log-transcript-dev', () => ({
     logTranscriptForDeveloper: vi.fn(),
 }));
 
-import { DebugLog } from '@/background/debug-log/debug-log';
-import {
-    DebugLogExport,
-    EnvironmentProbe,
-    type DebugLogEnvironment,
-} from '@/background/debug-log/debug-log-export';
-import { DebugLogStore } from '@/background/debug-log/debug-log-store';
-import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
-import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
-import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
-import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
-import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
-import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
-import { CaptureDiagnostics } from '@/content/captions/capture-diagnostics';
-import { ANALYSIS_MODE } from '@/shared/constants';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import type { DebugLogAppendPayload } from '@/shared/messages';
-import { PROVIDER_ID } from '@/shared/providers';
-import { makeContentSender } from '../../helpers/runtime-senders';
-
 const NOW_MS = 1_900_000_000_000;
 const TAB_ID = 5;
 const REATTACH_TAB_ID = 41;
@@ -212,6 +222,7 @@ function contentSender(): ReturnType<typeof makeContentSender> {
  * BYOK adapter returning the given analysis result for every chunk.
  *
  * @param result - Analysis result every `analyzeTranscript` call resolves to.
+ *
  * @returns Adapter double for the provider registry mock.
  */
 function makeAdapter(
@@ -245,6 +256,7 @@ function captionsPayload(): Parameters<typeof PromoAnalysis.onCaptionsReady>[1] 
  * terminal status) and returns once `byok-run-ended` has been recorded.
  *
  * @param adapter - Adapter double the provider registry serves.
+ *
  * @returns Promise settled once the run's end was recorded.
  */
 async function driveByokRun(adapter: LlmProviderAdapter): Promise<void> {
@@ -263,7 +275,13 @@ async function driveByokRun(adapter: LlmProviderAdapter): Promise<void> {
  */
 async function driveAllEmitters(): Promise<void> {
     await CaptionRuntimeMessages.handle(
-        { ok: false, videoId: VIDEO_ID, reason: 'capture-timeout', error: SENTINEL.SignedUrl },
+        {
+
+            ok: false,
+            videoId: VIDEO_ID,
+            reason: 'capture-timeout',
+            error: SENTINEL.SignedUrl,
+        },
         contentSender(),
     );
     browserMocks.executeScript.mockRejectedValue(new Error(SENTINEL.ExecuteScriptUrl));
@@ -361,7 +379,13 @@ describe('sentinel injection (FR-046, SC-002)', () => {
 
     it('caption-failure: payload.error never reaches the bundle', async () => {
         await CaptionRuntimeMessages.handle(
-            { ok: false, videoId: VIDEO_ID, reason: 'capture-timeout', error: SENTINEL.SignedUrl },
+            {
+
+                ok: false,
+                videoId: VIDEO_ID,
+                reason: 'capture-timeout',
+                error: SENTINEL.SignedUrl,
+            },
             contentSender(),
         );
 

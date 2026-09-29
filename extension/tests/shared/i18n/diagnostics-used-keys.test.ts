@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 const SRC = path.resolve(__dirname, '../../../src');
 const EN = JSON.parse(
     readFileSync(path.join(SRC, '_locales/en/messages.json'), 'utf8'),
 ) as Record<string, unknown>;
+
 /**
  * Files that resolve Diagnostics / popup-indicator copy through
  * `translator.getMessage('<key>', …)`.

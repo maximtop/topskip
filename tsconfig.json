@@ -1,20 +1,9 @@
 {
+    "extends": "./tsconfig.base.json",
     "compilerOptions": {
-        "target": "ES2022",
-        "lib": ["ES2022", "DOM", "DOM.Iterable"],
-        "module": "ESNext",
-        "moduleResolution": "bundler",
         "allowImportingTsExtensions": true,
         "jsx": "react-jsx",
-        "strict": true,
-        "skipLibCheck": true,
-        "noEmit": true,
-        "isolatedModules": true,
-        "resolveJsonModule": true,
         "types": ["chrome", "node", "dom-chromium-ai"],
-        "noUnusedLocals": true,
-        "noUnusedParameters": true,
-        "noFallthroughCasesInSwitch": true,
         "paths": {
             "@/*": ["./extension/src/*"],
             "@topskip/backend/*": ["./backend/src/*"],
@@ -35,7 +24,6 @@
         "extension/rspack.config.ts",
         "extension/playwright.config.ts",
         "deploy/rspack.config.ts",
-        "eslint.config.ts",
         "vitest.config.ts",
         "scripts/**/*.ts"
     ],

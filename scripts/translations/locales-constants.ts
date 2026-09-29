@@ -21,7 +21,7 @@ type TranslationsConfig = {
 };
 
 /**
- * Entry of the repository-root `.twosky.json`.
+ * Entry of `extension/.twosky.json`.
  */
 type TwoskyConfig = {
     base_locale: string;

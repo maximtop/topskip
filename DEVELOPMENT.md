@@ -461,7 +461,7 @@ because the code uses the Tabs API.
 | `make build`           | `pnpm run build`                                               |
 | `make server`          | Load root `.env`, require the OpenRouter key, then run backend |
 | `make extension`       | Watch and rebuild the development extension                    |
-| `make lint`            | `pnpm run lint`                                                |
+| `make lint`            | `pnpm run check`                                               |
 | `make test`            | Coverage, deployment asset tests, then Playwright E2E          |
 | `make test-unit`       | `pnpm run test` (Vitest, no coverage)                          |
 | `make test-coverage`   | `pnpm run test:coverage`                                       |
@@ -479,11 +479,11 @@ because the code uses the Tabs API.
 | `pnpm run build:watch`                       | Rspack watch mode                                                                    |
 | `pnpm run validate:extension-manifest -- …` | Validate one emitted manifest against an exact build profile                        |
 | `pnpm run format`                            | Apply formatting and safe autofixes (`eslint --fix .`)                               |
-| `pnpm run format:check`                      | Report formatting without writing (alias of `lint:eslint`)                           |
-| `pnpm run lint`                              | **ESLint** + **markdownlint** + **`tsc --noEmit`**                                    |
-| `pnpm run lint:eslint`                       | **ESLint** — the project's only linter, type-aware (`eslint.config.ts`)              |
+| `pnpm run format:check`                      | Report formatting without writing (alias of `lint`)                                  |
+| `pnpm run check`                             | **ESLint** + **markdownlint** + **`tsc --noEmit`**                                    |
+| `pnpm run lint`                              | **ESLint** — the project's only linter, type-aware (`eslint.config.mjs`)             |
 | `pnpm run lint:md`                           | **markdownlint-cli2** on `**/*.md` (excludes `node_modules`, `dist`, `coverage`)     |
-| `pnpm run lint:types`                        | **TypeScript** — full project typecheck (`tsc --noEmit`, same as editor diagnostics) |
+| `pnpm run typecheck`                         | **TypeScript** — full project typecheck (`tsc --noEmit`, same as editor diagnostics) |
 | `pnpm run test`                              | Vitest once (`vitest run`)                                                           |
 | `pnpm run test:watch`                        | Vitest watch mode                                                                    |
 | `pnpm run test:coverage`                     | Vitest with coverage (thresholds in `vitest.config.ts`)                              |
@@ -494,9 +494,9 @@ because the code uses the Tabs API.
 | `pnpm run openrouter:compare-presets`        | Maintainer-only: same transcript → every built-in OpenRouter preset (see below)      |
 | `pnpm run openrouter:extract-log-transcript` | Rebuild `[sec] text` user message from an exported caption `.log` (see below)        |
 
-Formatting is owned by [ESLint Stylistic](https://eslint.style) rules inside `eslint.config.ts`, so `pnpm run lint` enforces the same style CI does; `pnpm run format` applies it.
+Formatting is owned by [ESLint Stylistic](https://eslint.style) rules inside `eslint.config.mjs`, so `pnpm run lint` enforces the same style CI does; `pnpm run format` applies it. Ignores, globals and extra rules go to `eslint.local.mjs`; it can add rules but never override one from `eslint.config.mjs`.
 
-Stylistic is a set of lint rules, not a formatter: it fixes indentation, quotes, semicolons, spacing, and trailing commas, but it never re-wraps a long line. Write to **80 columns** by hand; `max-len` only errors past **100**, because unbreakable spans (long member chains, deeply nested JSX) legitimately exceed 80. Markdown, JSON, and YAML are no longer auto-formatted — `pnpm run lint:md` still checks Markdown.
+Stylistic is a set of lint rules, not a formatter: it fixes indentation, quotes, semicolons, spacing, and trailing commas, but it never re-wraps a long line. Wrap by hand; `max-len` errors past **120** columns, comments included. Markdown, JSON, and YAML are no longer auto-formatted — `pnpm run lint:md` still checks Markdown.
 
 ### Maintainer: compare preset models on one transcript
 
@@ -544,7 +544,7 @@ pnpm exec playwright install chromium
 
     ```bash
     pnpm install --frozen-lockfile
-    pnpm run lint
+    pnpm run check
     pnpm run build
     pnpm run test
     pnpm run test:coverage
@@ -993,7 +993,7 @@ stream.
 | **`make server` reports a missing OpenRouter key**    | Copy `.env.example` to the root `.env`, set `OPENROUTER_API_KEY`, or export it in the shell before starting the server                                                                                                              |
 | **Explicit legacy mode reports missing `yt-dlp`**     | Run `make yt-dlp-install`, or set `TOPSKIP_YT_DLP_PATH` to a working executable; default `extension_upload` mode never requires it                                                                                                  |
 | **Extension doesn’t update after edits**              | Run `make build`, click **Reload** on `chrome://extensions`, then reload already-open YouTube tabs; static scripts cannot replace an invalidated document context |
-| **Lint errors in IDE but not terminal**               | Run `pnpm run lint` from repo root (includes **`pnpm run lint:types`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service.                                                          |
+| **Lint errors in IDE but not terminal**               | Run `pnpm run check` from repo root (includes **`pnpm run typecheck`**). ESLint alone does not repeat every `tsc` error — the editor uses the TypeScript language service.                                                          |
 | **`pnpm run test:e2e` fails (browser)**               | Run `pnpm exec playwright install chromium`                                                                                                                                                                                         |
 | **`pnpm run test:e2e` times out / video never plays** | Confirm `extension/tests/e2e/fixtures/skip-test.mp4` exists; re-run `bash scripts/generate-e2e-fixture-video.sh` if needed                                                                                                          |
 | **Port 4173 already in use**                          | Stop the other process using the port, or adjust `extension/playwright.config.ts` `webServer` + manifest host if you must (keep them in sync)                                                                                       |

@@ -9,11 +9,11 @@ import * as v from 'valibot';
 import {
     resolveTopSkipBuild,
     type TopSkipBuildMode,
-} from '../extension/build-modes.ts';
+} from '@topskip/extension/build-modes';
 import {
     composeExtensionManifest,
     extensionManifestSchema,
-} from '../extension/manifest-profile.ts';
+} from '@topskip/extension/manifest-profile';
 
 const CLI_ARGUMENT_COUNT = 6;
 const CLI_ERROR_MAX_LENGTH = 260;

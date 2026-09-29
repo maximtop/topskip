@@ -7,7 +7,7 @@ import {
     TopSkipBuild,
     TOPSKIP_BUILD_MODES,
     type TopSkipBuildMode,
-} from '../extension/build-modes.ts';
+} from '@topskip/extension/build-modes';
 
 const program = new Command();
 

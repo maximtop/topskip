@@ -8,7 +8,7 @@ import {
     TopSkipBuild,
     getExtensionManifestName,
     type TopSkipBuildMode,
-} from '../../extension/build-modes';
+} from '@topskip/extension/build-modes';
 import {
     main,
     validateExtensionManifest,

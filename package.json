@@ -33,7 +33,7 @@
         "openrouter:compare-presets": "tsx scripts/compare-openrouter-presets.ts",
         "benchmark:promo": "tsx scripts/promo-benchmark.ts",
         "openrouter:extract-log-transcript": "tsx scripts/extract-transcript-from-topskip-console-log.ts",
-        "locales": "tsx tasks/translations/index.ts"
+        "locales": "tsx scripts/translations/index.ts"
     },
     "engines": {
         "node": ">=22"

@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 /**
- * Shape of `tasks/translations/config.json`.
+ * Shape of `scripts/translations/config.json`.
  */
 type TranslationsConfig = {
     twosky_config_path: string;

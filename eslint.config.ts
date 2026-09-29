@@ -198,7 +198,6 @@ export default tseslint.config(
             'common/tests/**/*.ts',
             'extension/tests/**/*.ts',
             'scripts/**/*.ts',
-            'tasks/**/*.ts',
         ],
         languageOptions: {
             globals: { ...globals.node },
@@ -217,7 +216,6 @@ export default tseslint.config(
             'common/tests/**/*.ts',
             'extension/tests/**/*.ts',
             'scripts/**/*.ts',
-            'tasks/**/*.ts',
         ],
         plugins: { jsdoc },
         settings: {

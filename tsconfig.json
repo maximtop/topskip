@@ -37,8 +37,7 @@
         "deploy/rspack.config.ts",
         "eslint.config.ts",
         "vitest.config.ts",
-        "scripts/**/*.ts",
-        "tasks/**/*.ts"
+        "scripts/**/*.ts"
     ],
     "exclude": ["node_modules", "extension/dist"]
 }

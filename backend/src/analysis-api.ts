@@ -117,9 +117,9 @@ export class BackendAnalysisApi {
     static handleAnalysisRequest(
         raw: unknown,
         options: {
-            nowMs?: number;
-            context?: BackendAnalysisRequestContext;
-            captionSource?: BackendCaptionSource;
+            nowMs?: number | undefined;
+            context?: BackendAnalysisRequestContext | undefined;
+            captionSource?: BackendCaptionSource | undefined;
         } = {},
     ): BackendApiResult {
         const nowMs = options.nowMs ?? Date.now();

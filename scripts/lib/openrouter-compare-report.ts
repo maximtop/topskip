@@ -22,12 +22,12 @@ export interface CompareBlock {
     /**
      * Block end time in seconds; absent when the model did not report an end.
      */
-    endSec?: number;
+    endSec?: number | undefined;
 
     /**
      * Model-reported confidence label for this block, when provided.
      */
-    confidence?: string;
+    confidence?: string | undefined;
 }
 
 /**
@@ -37,22 +37,22 @@ export interface CompareUsagePromptTokensDetails {
     /**
      * Number of prompt tokens served from cache.
      */
-    cachedTokens?: number;
+    cachedTokens?: number | undefined;
 
     /**
      * Number of prompt tokens written to cache for later reuse.
      */
-    cacheWriteTokens?: number;
+    cacheWriteTokens?: number | undefined;
 
     /**
      * Number of prompt tokens attributed to audio input.
      */
-    audioTokens?: number;
+    audioTokens?: number | undefined;
 
     /**
      * Number of prompt tokens attributed to video input.
      */
-    videoTokens?: number;
+    videoTokens?: number | undefined;
 }
 
 /**
@@ -62,17 +62,17 @@ export interface CompareUsageCompletionTokensDetails {
     /**
      * Number of completion tokens spent on internal reasoning.
      */
-    reasoningTokens?: number;
+    reasoningTokens?: number | undefined;
 
     /**
      * Number of completion tokens attributed to audio output.
      */
-    audioTokens?: number;
+    audioTokens?: number | undefined;
 
     /**
      * Number of completion tokens attributed to image output.
      */
-    imageTokens?: number;
+    imageTokens?: number | undefined;
 }
 
 /**
@@ -82,17 +82,17 @@ export interface CompareUsageCostDetails {
     /**
      * Total upstream inference cost in USD, as reported by the provider.
      */
-    upstreamInferenceCost?: number;
+    upstreamInferenceCost?: number | undefined;
 
     /**
      * Portion of upstream inference cost attributed to the prompt, in USD.
      */
-    upstreamInferencePromptCost?: number;
+    upstreamInferencePromptCost?: number | undefined;
 
     /**
      * Portion of upstream inference cost attributed to the completion, in USD.
      */
-    upstreamInferenceCompletionsCost?: number;
+    upstreamInferenceCompletionsCost?: number | undefined;
 }
 
 /**
@@ -117,27 +117,27 @@ export interface CompareUsage {
     /**
      * Cache- and modality-specific prompt token breakdown, when available.
      */
-    promptTokensDetails?: CompareUsagePromptTokensDetails;
+    promptTokensDetails?: CompareUsagePromptTokensDetails | undefined;
 
     /**
      * Modality-specific completion token breakdown, when available.
      */
-    completionTokensDetails?: CompareUsageCompletionTokensDetails;
+    completionTokensDetails?: CompareUsageCompletionTokensDetails | undefined;
 
     /**
      * Reported cost in USD for the call, when the provider returns one.
      */
-    cost?: number;
+    cost?: number | undefined;
 
     /**
      * Whether the call was billed under the caller's own API key (BYOK).
      */
-    isByok?: boolean;
+    isByok?: boolean | undefined;
 
     /**
      * Detailed upstream cost breakdown, when available.
      */
-    costDetails?: CompareUsageCostDetails;
+    costDetails?: CompareUsageCostDetails | undefined;
 }
 
 /**
@@ -147,37 +147,37 @@ export interface ComparePricing {
     /**
      * Price per prompt token.
      */
-    prompt?: number;
+    prompt?: number | undefined;
 
     /**
      * Price per completion token.
      */
-    completion?: number;
+    completion?: number | undefined;
 
     /**
      * Flat price per request.
      */
-    request?: number;
+    request?: number | undefined;
 
     /**
      * Price per web-search invocation, for models with built-in search.
      */
-    webSearch?: number;
+    webSearch?: number | undefined;
 
     /**
      * Price per internal-reasoning token.
      */
-    internalReasoning?: number;
+    internalReasoning?: number | undefined;
 
     /**
      * Price per prompt token served from cache.
      */
-    inputCacheRead?: number;
+    inputCacheRead?: number | undefined;
 
     /**
      * Price per prompt token written to cache.
      */
-    inputCacheWrite?: number;
+    inputCacheWrite?: number | undefined;
 }
 
 /**
@@ -187,42 +187,42 @@ export interface CompareCostAnalysis {
     /**
      * Cost as reported directly by the provider, when available.
      */
-    reportedCost?: number;
+    reportedCost?: number | undefined;
 
     /**
      * Cost estimated locally from pricing and token usage.
      */
-    estimatedCostUsd?: number;
+    estimatedCostUsd?: number | undefined;
 
     /**
      * Estimated cost attributed to the prompt.
      */
-    promptCostUsd?: number;
+    promptCostUsd?: number | undefined;
 
     /**
      * Estimated cost attributed to the completion.
      */
-    completionCostUsd?: number;
+    completionCostUsd?: number | undefined;
 
     /**
      * Estimated cost attributed to cache reads.
      */
-    cacheReadCostUsd?: number;
+    cacheReadCostUsd?: number | undefined;
 
     /**
      * Estimated cost attributed to cache writes.
      */
-    cacheWriteCostUsd?: number;
+    cacheWriteCostUsd?: number | undefined;
 
     /**
      * Estimated cost attributed to internal reasoning tokens.
      */
-    internalReasoningCostUsd?: number;
+    internalReasoningCostUsd?: number | undefined;
 
     /**
      * Estimated flat per-request cost.
      */
-    requestCostUsd?: number;
+    requestCostUsd?: number | undefined;
 }
 
 /**
@@ -232,17 +232,17 @@ export interface CompareSource {
     /**
      * Path or name of the input fixture used for the run.
      */
-    fixture?: string;
+    fixture?: string | undefined;
 
     /**
      * Path to the human reference file; null when none was supplied.
      */
-    reference?: string | null;
+    reference?: string | null | undefined;
 
     /**
      * Path to the output file the report was written to; null when not written.
      */
-    out?: string | null;
+    out?: string | null | undefined;
 }
 
 /**
@@ -257,7 +257,7 @@ export interface CompareRow {
     /**
      * Model identifier actually reported back by OpenRouter, when it differs.
      */
-    responseModel?: string;
+    responseModel?: string | undefined;
 
     /**
      * Wall-clock duration of the call in milliseconds.
@@ -272,37 +272,37 @@ export interface CompareRow {
     /**
      * Error message when the call failed.
      */
-    error?: string;
+    error?: string | undefined;
 
     /**
      * Token and cost usage reported for the call.
      */
-    usage?: CompareUsage;
+    usage?: CompareUsage | undefined;
 
     /**
      * Pricing in effect for the model at call time.
      */
-    pricing?: ComparePricing;
+    pricing?: ComparePricing | undefined;
 
     /**
      * Cost figures derived from usage and pricing.
      */
-    costAnalysis?: CompareCostAnalysis;
+    costAnalysis?: CompareCostAnalysis | undefined;
 
     /**
      * Promo blocks the model detected.
      */
-    blocks?: CompareBlock[];
+    blocks?: CompareBlock[] | undefined;
 
     /**
      * Per-block alignment metrics against the human reference.
      */
-    vsHuman?: AlignedBlockMetric[];
+    vsHuman?: AlignedBlockMetric[] | undefined;
 
     /**
      * Free-text note explaining why alignment metrics could not be computed.
      */
-    vsHumanNote?: string;
+    vsHumanNote?: string | undefined;
 }
 
 /**
@@ -312,12 +312,12 @@ export interface CompareReport {
     /**
      * ISO timestamp of when the compare run was generated.
      */
-    generatedAt?: string;
+    generatedAt?: string | undefined;
 
     /**
      * Where the inputs for this run came from.
      */
-    source?: CompareSource;
+    source?: CompareSource | undefined;
 
     /**
      * Number of presets included in the run.
@@ -332,17 +332,17 @@ export interface CompareReport {
     /**
      * Human reference bundle the rows were compared against, when supplied.
      */
-    reference?: ReferenceBundle;
+    reference?: ReferenceBundle | undefined;
 
     /**
      * Alignment metrics for the original first run against the human reference.
      */
-    firstRunVsHuman?: AlignedBlockMetric[];
+    firstRunVsHuman?: AlignedBlockMetric[] | undefined;
 
     /**
      * Free-text note for the first-run alignment metrics.
      */
-    firstRunVsHumanNote?: string;
+    firstRunVsHumanNote?: string | undefined;
 }
 
 /**
@@ -357,17 +357,17 @@ interface MetricSummary {
     /**
      * Average intersection-over-union across matched blocks.
      */
-    avgIou?: number;
+    avgIou?: number | undefined;
 
     /**
      * Average absolute start-time delta across matched blocks, in seconds.
      */
-    avgAbsStartDelta?: number;
+    avgAbsStartDelta?: number | undefined;
 
     /**
      * Average absolute end-time delta across matched blocks, in seconds.
      */
-    avgAbsEndDelta?: number;
+    avgAbsEndDelta?: number | undefined;
 }
 
 /**
@@ -382,17 +382,17 @@ interface CostInfo {
     /**
      * The cost actually used for sorting and display, in USD.
      */
-    effectiveCost?: number;
+    effectiveCost?: number | undefined;
 
     /**
      * Cost as reported by the provider, when available.
      */
-    reportedCost?: number;
+    reportedCost?: number | undefined;
 
     /**
      * Cost estimated locally, when no reported cost was available.
      */
-    estimatedCostUsd?: number;
+    estimatedCostUsd?: number | undefined;
 
     /**
      * Which of the two cost sources `effectiveCost` was taken from.
@@ -477,7 +477,7 @@ interface RenderLane {
     /**
      * Confidence label to show as a pill, when available.
      */
-    confidence?: string;
+    confidence?: string | undefined;
 
     /**
      * Whether to draw the human block as a faint shadow behind this lane.

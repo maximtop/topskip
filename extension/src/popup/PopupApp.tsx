@@ -996,7 +996,7 @@ function PromoTimeline({
     durationSec,
 }: {
     blocks: readonly PromoBlock[];
-    durationSec?: number;
+    durationSec?: number | undefined;
 }): ReactElement | null {
     if (
         blocks.length === 0

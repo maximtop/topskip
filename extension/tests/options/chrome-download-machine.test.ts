@@ -197,7 +197,7 @@ describe('chromeDownloadMachine', () => {
 
         // Simulate progress events from the monitor
         expect(monitorCallbacks.length).toBeGreaterThan(0);
-        monitorCallbacks[0]({ loaded: 0.5 });
+        monitorCallbacks[0]!({ loaded: 0.5 });
 
         await vi.waitFor(() => {
             expect(actor.getSnapshot().context.progress).toBe(50);
@@ -222,13 +222,13 @@ describe('chromeDownloadMachine', () => {
             actor.send({ type: 'DOWNLOAD' });
 
             // Simulate progress events
-            monitorCallbacks[0]({ loaded: 0.25 });
+            monitorCallbacks[0]!({ loaded: 0.25 });
             await vi.waitFor(() => {
                 expect(actor.getSnapshot().context.progress).toBe(25);
                 expect(actor.getSnapshot().context.extracting).toBe(false);
             });
 
-            monitorCallbacks[0]({ loaded: 1 });
+            monitorCallbacks[0]!({ loaded: 1 });
             await vi.waitFor(() => {
                 expect(actor.getSnapshot().context.progress).toBe(100);
                 expect(actor.getSnapshot().context.extracting).toBe(true);

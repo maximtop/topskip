@@ -154,7 +154,7 @@ export interface UploadAnalysisJobStartInput {
     /**
      * Video duration in seconds, when known ahead of analysis.
      */
-    durationSec?: number;
+    durationSec?: number | undefined;
 
     /**
      * Overrides the default model analysis adapter; used by tests.
@@ -164,7 +164,7 @@ export interface UploadAnalysisJobStartInput {
     /**
      * Caller-supplied correlation id echoed into operational logs.
      */
-    requestId?: string;
+    requestId?: string | undefined;
 }
 
 /**
@@ -209,7 +209,7 @@ export interface LegacyAnalysisJobStartInput {
     /**
      * Video duration in seconds, when known ahead of extraction.
      */
-    durationSec?: number;
+    durationSec?: number | undefined;
 
     /**
      * Overrides the default model analysis adapter; used by tests.
@@ -219,12 +219,12 @@ export interface LegacyAnalysisJobStartInput {
     /**
      * Ordered extraction strategies to try; defaults to the pipeline's own order when absent.
      */
-    extractionStrategies?: readonly SubtitleExtractionStrategy[];
+    extractionStrategies?: readonly SubtitleExtractionStrategy[] | undefined;
 
     /**
      * Caller-supplied correlation id echoed into operational logs.
      */
-    requestId?: string;
+    requestId?: string | undefined;
 }
 
 /**
@@ -585,8 +585,8 @@ export class BackendAnalysisJobs {
     static getStatus(
         jobId: string,
         options: {
-            nowMs?: number;
-            ownerInstallationHash?: string;
+            nowMs?: number | undefined;
+            ownerInstallationHash?: string | undefined;
         } = {},
     ): BackendAnalysisJobResponse | null {
         void options;

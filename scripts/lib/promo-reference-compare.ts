@@ -45,7 +45,7 @@ export interface ReferencePredBlock {
     /**
      * Predicted end time in seconds. Absent when the model did not report an end boundary.
      */
-    endSec?: number;
+    endSec?: number | undefined;
 }
 
 /**
@@ -55,7 +55,7 @@ export interface ReferenceBundle {
     /**
      * Video identifier, when present in the fixture.
      */
-    videoId?: string;
+    videoId?: string | undefined;
 
     /**
      * Human-annotated reference blocks for this video, in timeline order.
@@ -75,7 +75,7 @@ export interface ReferenceBundle {
          * Predicted blocks from this model run, in timeline order.
          */
         blocks: ReferencePredBlock[];
-    };
+    } | undefined;
 }
 
 /**
@@ -171,8 +171,9 @@ export function compareHumanAlignedBlocks(
     const n = Math.min(human.length, pred.length);
     const out: AlignedBlockMetric[] = [];
     for (let i = 0; i < n; i += 1) {
-        const h = human[i];
-        const p = pred[i];
+        // n = min(human.length, pred.length), so both indices are in range.
+        const h = human[i]!;
+        const p = pred[i]!;
         const assumed = p.endSec === undefined;
         const pe = assumed ? h.endSec : p.endSec;
         const predEnd = pe ?? h.endSec;

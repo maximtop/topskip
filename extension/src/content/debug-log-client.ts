@@ -75,17 +75,17 @@ export interface DebugLogEventIds {
     /**
      * Current watch video id, when known and valid (`VIDEO_ID_PATTERN`).
      */
-    video?: string;
+    video?: string | undefined;
 
     /**
      * Current watch session id, when known and valid (`UUID_PATTERN`).
      */
-    session?: string;
+    session?: string | undefined;
 
     /**
      * Current backend analysis job id, when known and valid (`JOB_ID_PATTERN`).
      */
-    job?: string;
+    job?: string | undefined;
 }
 
 /**

@@ -522,7 +522,7 @@ describe('DebugLogStore ring buffer', () => {
         await DebugLogStore.flush();
         expect(storage.local.set).toHaveBeenCalledTimes(1);
         const written = storage.local.set.mock.calls[0]?.[0];
-        expect(Object.keys(written).sort()).toEqual([INDEX_KEY, segmentKey(1)].sort());
+        expect(Object.keys(written!).sort()).toEqual([INDEX_KEY, segmentKey(1)].sort());
     });
 
     it('evicts whole oldest segments at the cap and keeps accounted size exact', async () => {
@@ -574,7 +574,7 @@ describe('DebugLogStore ring buffer', () => {
 
         expect(storage.local.set).toHaveBeenCalledTimes(1);
         const written = storage.local.set.mock.calls[0]?.[0];
-        const keys = Object.keys(written);
+        const keys = Object.keys(written!);
         expect(keys).toContain(INDEX_KEY);
         expect(
             keys.filter((key) => key.startsWith(STORAGE_KEY_DEBUG_LOG_SEGMENT_PREFIX)),

@@ -126,8 +126,8 @@ describe('CaptionPageBridgeClient', () => {
         );
         expect(resultListenerCalls).toHaveLength(1);
 
-        dispatchResult(requests[0].requestId, { sequence: 1 });
-        dispatchResult(requests[1].requestId, { sequence: 2 });
+        dispatchResult(requests[0]!.requestId, { sequence: 1 });
+        dispatchResult(requests[1]!.requestId, { sequence: 2 });
         await expect(first).resolves.toEqual({ sequence: 1 });
         await expect(second).resolves.toEqual({ sequence: 2 });
     });
@@ -295,8 +295,8 @@ describe('CaptionPageBridgeClient', () => {
                 if (requests.length !== 2) {
                     return;
                 }
-                dispatchResult(requests[0].requestId, { stale: true });
-                dispatchResult(requests[1].requestId, { ok: true });
+                dispatchResult(requests[0]!.requestId, { stale: true });
+                dispatchResult(requests[1]!.requestId, { ok: true });
             },
         );
 

@@ -42,6 +42,14 @@ const NORMAL_TAB = {
     windowId: 1,
 };
 const INCOGNITO_TAB = { ...NORMAL_TAB, id: 42, incognito: true };
+const TAB_WITHOUT_ID = {
+    incognito: false,
+    index: 0,
+    highlighted: false,
+    active: true,
+    pinned: false,
+    windowId: 1,
+};
 
 /**
  * Simulates an MV3 worker restart while the mocked session storage survives.
@@ -79,7 +87,7 @@ describe('TabAttributionRegistry', () => {
     it('ignores senders and tabs without an id', async () => {
         await TabAttributionRegistry.ready();
         TabAttributionRegistry.noteSender({});
-        TabAttributionRegistry.noteTab({ ...NORMAL_TAB, id: undefined });
+        TabAttributionRegistry.noteTab(TAB_WITHOUT_ID);
         expect(TabAttributionRegistry.countKnownNonIncognito()).toBe(0);
     });
 

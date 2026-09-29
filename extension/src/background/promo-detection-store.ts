@@ -40,12 +40,22 @@ const MAX_RETIRED_SERVER_SESSIONS_PER_TAB = 32;
 const SESSION_STORAGE_KEY = 'topskipPromoDetectionStore';
 
 /**
+ * Minimal check of one persisted tab payload: only `status` is verified.
+ */
+const persistedTabStateSchema = v.looseObject({ status: v.string() });
+
+/**
  * Structural check for the persisted mirror; payloads are trusted because only
  * this store (a trusted context) writes the key.
  */
 const persistedStoreSchema = v.strictObject({
     tabState: v.array(
-        v.tuple([v.number(), v.looseObject({ status: v.string() })]),
+        v.tuple([
+            v.number(),
+            v.custom<PromoDetectionStatePayload>((input) => {
+                return v.is(persistedTabStateSchema, input);
+            }),
+        ]),
     ),
     activeServerSession: v.array(v.tuple([v.number(), v.string()])),
     retiredServerSessions: v.array(v.tuple([v.number(), v.array(v.string())])),
@@ -260,10 +270,7 @@ export class PromoDetectionStore {
         }
         for (const [tabId, state] of parsed.output.tabState) {
             if (!PromoDetectionStore.tabState.has(tabId)) {
-                PromoDetectionStore.tabState.set(
-                    tabId,
-                    state as PromoDetectionStatePayload,
-                );
+                PromoDetectionStore.tabState.set(tabId, state);
             }
         }
         for (const [tabId, sessionId] of parsed.output.activeServerSession) {

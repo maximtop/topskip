@@ -82,12 +82,12 @@ interface PredictedBlock {
     /**
      * Predicted block end time in seconds, when the model reported one.
      */
-    endSec?: number;
+    endSec?: number | undefined;
 
     /**
      * Model-reported confidence label for this block, when reported.
      */
-    confidence?: string;
+    confidence?: string | undefined;
 }
 
 /**
@@ -104,7 +104,7 @@ interface Row {
     /**
      * Model slug OpenRouter actually served the request with, when reported.
      */
-    responseModel?: string;
+    responseModel?: string | undefined;
 
     /**
      * Wall-clock request duration in milliseconds.
@@ -119,7 +119,7 @@ interface Row {
     /**
      * Failure message; set only when `ok` is false.
      */
-    error?: string;
+    error?: string | undefined;
 
     /**
      * Token usage reported by OpenRouter for this request, when available.
@@ -147,23 +147,23 @@ interface Row {
             /**
              * Prompt tokens served from cache.
              */
-            cachedTokens?: number;
+            cachedTokens?: number | undefined;
 
             /**
              * Prompt tokens written to cache for reuse.
              */
-            cacheWriteTokens?: number;
+            cacheWriteTokens?: number | undefined;
 
             /**
              * Prompt tokens attributed to audio input.
              */
-            audioTokens?: number;
+            audioTokens?: number | undefined;
 
             /**
              * Prompt tokens attributed to video input.
              */
-            videoTokens?: number;
-        };
+            videoTokens?: number | undefined;
+        } | undefined;
 
         /**
          * Breakdown of completion tokens by category, when reported.
@@ -172,28 +172,28 @@ interface Row {
             /**
              * Completion tokens spent on internal reasoning.
              */
-            reasoningTokens?: number;
+            reasoningTokens?: number | undefined;
 
             /**
              * Completion tokens attributed to audio output.
              */
-            audioTokens?: number;
+            audioTokens?: number | undefined;
 
             /**
              * Completion tokens attributed to image output.
              */
-            imageTokens?: number;
-        };
+            imageTokens?: number | undefined;
+        } | undefined;
 
         /**
          * Total cost in USD as reported directly by OpenRouter, when present.
          */
-        cost?: number;
+        cost?: number | undefined;
 
         /**
          * Whether this request billed through the caller's own (BYOK) provider key.
          */
-        isByok?: boolean;
+        isByok?: boolean | undefined;
 
         /**
          * Cost breakdown for BYOK requests where the upstream provider bills separately.
@@ -202,24 +202,24 @@ interface Row {
             /**
              * Total upstream inference cost in USD.
              */
-            upstreamInferenceCost?: number;
+            upstreamInferenceCost?: number | undefined;
 
             /**
              * Upstream prompt-processing cost in USD.
              */
-            upstreamInferencePromptCost?: number;
+            upstreamInferencePromptCost?: number | undefined;
 
             /**
              * Upstream completion-generation cost in USD.
              */
-            upstreamInferenceCompletionsCost?: number;
-        };
-    };
+            upstreamInferenceCompletionsCost?: number | undefined;
+        } | undefined;
+    } | undefined;
 
     /**
      * Per-token pricing for this model, fetched from the OpenRouter models list.
      */
-    pricing?: OpenRouterModelPricing;
+    pricing?: OpenRouterModelPricing | undefined;
 
     /**
      * Cost figures computed locally from `usage` and `pricing`, alongside the reported cost.
@@ -228,58 +228,58 @@ interface Row {
         /**
          * Cost as reported directly by OpenRouter (same value as `usage.cost`).
          */
-        reportedCost?: number;
+        reportedCost?: number | undefined;
 
         /**
          * Total cost estimated from `usage` and `pricing`.
          */
-        estimatedCostUsd?: number;
+        estimatedCostUsd?: number | undefined;
 
         /**
          * Estimated cost attributable to prompt tokens.
          */
-        promptCostUsd?: number;
+        promptCostUsd?: number | undefined;
 
         /**
          * Estimated cost attributable to completion tokens.
          */
-        completionCostUsd?: number;
+        completionCostUsd?: number | undefined;
 
         /**
          * Estimated cost attributable to cache reads.
          */
-        cacheReadCostUsd?: number;
+        cacheReadCostUsd?: number | undefined;
 
         /**
          * Estimated cost attributable to cache writes.
          */
-        cacheWriteCostUsd?: number;
+        cacheWriteCostUsd?: number | undefined;
 
         /**
          * Estimated cost attributable to internal reasoning tokens.
          */
-        internalReasoningCostUsd?: number;
+        internalReasoningCostUsd?: number | undefined;
 
         /**
          * Estimated flat per-request cost.
          */
-        requestCostUsd?: number;
-    };
+        requestCostUsd?: number | undefined;
+    } | undefined;
 
     /**
      * Promo blocks the model predicted; empty array when it reported no promo.
      */
-    blocks?: PredictedBlock[];
+    blocks?: PredictedBlock[] | undefined;
 
     /**
      * Per-block alignment metrics against the reference human blocks, when a reference was given.
      */
-    vsHuman?: AlignedBlockMetric[];
+    vsHuman?: AlignedBlockMetric[] | undefined;
 
     /**
      * Note explaining a block-count mismatch against the human reference, when one exists.
      */
-    vsHumanNote?: string;
+    vsHumanNote?: string | undefined;
 }
 
 /**

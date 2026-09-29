@@ -177,8 +177,8 @@ describe('ChunkPlanner.buildChunkPlan', () => {
         expect(plan.chunks.length).toBeGreaterThan(1);
         expect(plan.partialCoverage).toBe(false);
         for (let i = 1; i < plan.chunks.length; i += 1) {
-            const prev = plan.chunks[i - 1];
-            const next = plan.chunks[i];
+            const prev = plan.chunks[i - 1]!;
+            const next = plan.chunks[i]!;
             expect(next.startSec).toBeLessThanOrEqual(prev.endSec - 239);
         }
     });

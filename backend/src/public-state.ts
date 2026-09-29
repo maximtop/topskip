@@ -521,7 +521,7 @@ export class BackendPublicState {
      */
     static settleModelBudget(input: {
         reservationId: string;
-        costUsd?: number;
+        costUsd?: number | undefined;
     }): void {
         const database = BackendPublicState.getDatabase();
         database.exec('BEGIN IMMEDIATE');

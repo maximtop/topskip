@@ -420,7 +420,7 @@ export function isAllowedDebugLogField(
  * @returns Bounded scalar string, empty for no blocks.
  */
 export function formatPromoBlockTimings(
-    blocks: readonly { startSec: number; endSec?: number }[],
+    blocks: readonly { startSec: number; endSec?: number | undefined }[],
 ): string {
     const shown = blocks.slice(0, DEBUG_LOG_MAX_BLOCK_TIMINGS).map((block) => {
         const start = block.startSec.toFixed(BLOCK_TIMING_DECIMALS);

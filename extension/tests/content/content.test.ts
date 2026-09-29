@@ -90,10 +90,10 @@ describe('Content', () => {
         expect(teardownPageBridge).toHaveBeenCalledOnce();
         expect(debugLogDispose).toHaveBeenCalledOnce();
         expect(debugLogDispose.mock.invocationCallOrder[0]).toBeLessThan(
-            disposeWatch.mock.invocationCallOrder[0],
+            disposeWatch.mock.invocationCallOrder[0]!,
         );
         expect(disposeWatch.mock.invocationCallOrder[0]).toBeLessThan(
-            teardownPageBridge.mock.invocationCallOrder[0],
+            teardownPageBridge.mock.invocationCallOrder[0]!,
         );
 
         vi.advanceTimersByTime(EXTENSION_CONTEXT_POLL_INTERVAL_MS * 3);

@@ -14,37 +14,37 @@ export interface OpenRouterModelPricing {
     /**
      * USD cost per prompt token.
      */
-    prompt?: number;
+    prompt?: number | undefined;
 
     /**
      * USD cost per completion token.
      */
-    completion?: number;
+    completion?: number | undefined;
 
     /**
      * Flat USD cost added per request, independent of token counts.
      */
-    request?: number;
+    request?: number | undefined;
 
     /**
      * USD cost per web search invocation.
      */
-    webSearch?: number;
+    webSearch?: number | undefined;
 
     /**
      * USD cost per internal reasoning token.
      */
-    internalReasoning?: number;
+    internalReasoning?: number | undefined;
 
     /**
      * USD cost per cached prompt token read.
      */
-    inputCacheRead?: number;
+    inputCacheRead?: number | undefined;
 
     /**
      * USD cost per prompt token written to cache.
      */
-    inputCacheWrite?: number;
+    inputCacheWrite?: number | undefined;
 }
 
 /**
@@ -139,12 +139,12 @@ export interface CompareSummaryRowInput {
     /**
      * Cost in USD reported directly by OpenRouter, when available.
      */
-    reportedCost?: number;
+    reportedCost?: number | undefined;
 
     /**
      * Cost in USD estimated from public pricing metadata, used when `reportedCost` is absent.
      */
-    estimatedCostUsd?: number;
+    estimatedCostUsd?: number | undefined;
 
     /**
      * Per-block alignment metrics against the human reference labels.

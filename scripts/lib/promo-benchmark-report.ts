@@ -147,7 +147,7 @@ interface ActiveMetrics {
     /**
      * Median sample latency across the model's recorded samples, in milliseconds.
      */
-    latencyP50Ms?: number;
+    latencyP50Ms?: number | undefined;
 
     /**
      * Number of samples that reported token usage.
@@ -382,9 +382,11 @@ function bestBlockMatches(
             predictionIndex += 1
         ) {
             if (!usedPredictions.has(predictionIndex)) {
+                // referenceIndex < references.length (guarded above) and
+                // predictionIndex < predictions.length (loop condition).
                 const iou = intervalIou(
-                    references[referenceIndex],
-                    predictions[predictionIndex],
+                    references[referenceIndex]!,
+                    predictions[predictionIndex]!,
                 );
                 if (iou >= MATCH_IOU_THRESHOLD) {
                     usedPredictions.add(predictionIndex);
@@ -457,7 +459,8 @@ function median(values: readonly number[]): number | undefined {
     if (sorted.length % 2 === 1) {
         return sorted[middle];
     }
-    return (sorted[middle - 1] + sorted[middle]) / 2;
+    // length is even and non-zero, so both neighbors of the midpoint are in range.
+    return (sorted[middle - 1]! + sorted[middle]!) / 2;
 }
 
 /**
@@ -528,8 +531,9 @@ function collectActiveMetrics(
                     blockFalseNegative += references.length - matches.length;
                     referenceBlockCount += references.length;
                     for (const match of matches) {
-                        const reference = references[match.referenceIndex];
-                        const prediction = predictions[match.predictionIndex];
+                        // bestBlockMatches only emits indices into references/predictions.
+                        const reference = references[match.referenceIndex]!;
+                        const prediction = predictions[match.predictionIndex]!;
                         referenceIouTotal += match.iou;
                         boundaryErrorTotal
                             += Math.abs(prediction.startSec - reference.startSec)

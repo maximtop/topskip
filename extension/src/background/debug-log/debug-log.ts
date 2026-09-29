@@ -77,37 +77,37 @@ export interface DebugLogContext {
     /**
      * Origin of the event; defaults to `background` when omitted.
      */
-    src?: DebugLogSource;
+    src?: DebugLogSource | undefined;
 
     /**
      * Browser tab this event is attributed to, when known.
      */
-    tab?: number;
+    tab?: number | undefined;
 
     /**
      * YouTube video id; stripped unless `tab` is also set.
      */
-    video?: string;
+    video?: string | undefined;
 
     /**
      * Server-analysis session id, kept only when it matches its fixed pattern.
      */
-    session?: string;
+    session?: string | undefined;
 
     /**
      * Server-analysis job id, kept only when it matches its fixed pattern.
      */
-    job?: string;
+    job?: string | undefined;
 
     /**
      * Support/report id, kept only when it matches its fixed pattern.
      */
-    support?: string;
+    support?: string | undefined;
 
     /**
      * Back-dated event time in epoch ms; defaults to the current receipt time.
      */
-    tsMs?: number;
+    tsMs?: number | undefined;
 }
 
 /**

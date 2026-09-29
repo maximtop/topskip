@@ -44,27 +44,27 @@ export interface DebugLogLineRecord {
     /**
      * Id of the tab the event is attributed to, when known.
      */
-    tab?: number;
+    tab?: number | undefined;
 
     /**
      * Id of the video the event is attributed to, when known.
      */
-    video?: string;
+    video?: string | undefined;
 
     /**
      * Id of the capture/analysis session the event belongs to, when known.
      */
-    session?: string;
+    session?: string | undefined;
 
     /**
      * Id of the background job the event belongs to, when known.
      */
-    job?: string;
+    job?: string | undefined;
 
     /**
      * Support/diagnostic identifier attached to the event, when set.
      */
-    support?: string;
+    support?: string | undefined;
 
     /**
      * Normative event name from the debug-log vocabulary.

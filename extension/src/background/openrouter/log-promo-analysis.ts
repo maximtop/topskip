@@ -95,7 +95,7 @@ export function excerptTimedLinesAroundSec(
     }
     let anchor = 0;
     for (let i = 0; i < timedLines.length; i += 1) {
-        if (timedLines[i].sec <= targetSec) {
+        if (timedLines[i]!.sec <= targetSec) {
             anchor = i;
         } else {
             break;
@@ -277,8 +277,8 @@ export function logChunkPromoEntry(
         rawAssistantMaxChars: number;
         adapterLatencyMs: number;
         outcome: ChunkLogOutcome;
-        parsedBlockCount?: number;
-        retryLabel?: string;
+        parsedBlockCount?: number | undefined;
+        retryLabel?: string | undefined;
     },
     enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
 ): void {
@@ -375,7 +375,7 @@ export function buildPromoAnalysisLogBundle(params: {
         /**
          * Failed adapter slices and transcript tail dropped by the chunk cap.
          */
-        uncoveredRanges?: PromoUncoveredRange[];
+        uncoveredRanges?: PromoUncoveredRange[] | undefined;
         totalAdapterLatencyMs: number;
         totalWallClockMs: number;
         globalTruncated: boolean;

@@ -219,7 +219,7 @@ describe(
             });
 
             // 4. Referential identity: content message uses the store's array
-            const sentMsg = tabsSendMessage.mock.calls[0][1] as {
+            const sentMsg = tabsSendMessage.mock.calls[0]![1] as {
                 promoBlocks: PromoBlock[];
             };
             expect(sentMsg.promoBlocks).toBe(storedBlocks);

@@ -227,7 +227,7 @@ export class ServerAnalysisRuntimeMessages {
         videoId: string;
         promoBlocks: PromoBlock[];
         source: ServerPromoDetectionSource;
-        durationSec?: number;
+        durationSec?: number | undefined;
     }): Promise<boolean> {
         if (
             !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
@@ -437,7 +437,7 @@ export class ServerAnalysisRuntimeMessages {
         sessionId: string;
         requestedVideoId: string;
         response: ServerAnalysisResponse;
-        durationSec?: number;
+        durationSec?: number | undefined;
         readySource: ReadyServerDetectionSource;
     }): Promise<RequestServerAnalysisResponse> {
         if (

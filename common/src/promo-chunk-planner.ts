@@ -250,7 +250,8 @@ export class ChunkPlanner {
         }
         const anchorSec = endLine.sec;
         let k = startIdx;
-        while (k < endIdx && anchorSec - lines[k].sec > overlapSec) {
+        // k stays < endIdx, and endLine = lines[endIdx] above proved endIdx in range.
+        while (k < endIdx && anchorSec - lines[k]!.sec > overlapSec) {
             k += 1;
         }
         return k;
@@ -288,7 +289,7 @@ export class ChunkPlanner {
                 startIdx,
             );
             if (oneLineLen > budgetChars) {
-                const s0 = lines[startIdx].sec;
+                const s0 = lines[startIdx]!.sec;
                 const text = ChunkPlanner.sliceLines(lines, startIdx, startIdx);
                 out.push({
                     index,
@@ -302,8 +303,8 @@ export class ChunkPlanner {
                 index += 1;
                 startIdx += 1;
             } else {
-                const sFirst = lines[startIdx].sec;
-                const sLast = lines[endIdx].sec;
+                const sFirst = lines[startIdx]!.sec;
+                const sLast = lines[endIdx]!.sec;
                 const text = ChunkPlanner.sliceLines(lines, startIdx, endIdx);
                 out.push({
                     index,
@@ -364,8 +365,9 @@ export class ChunkPlanner {
             0,
             lines.length - 1,
         );
-        const firstSec = lines[0].sec;
-        const lastSec = lines[lines.length - 1].sec;
+        // lines.length === 0 returned above, so index 0 and the last index exist.
+        const firstSec = lines[0]!.sec;
+        const lastSec = lines[lines.length - 1]!.sec;
         const durationSec = Math.max(lastSec - firstSec, 1e-6);
         const charsPerSec = totalChars / durationSec;
 

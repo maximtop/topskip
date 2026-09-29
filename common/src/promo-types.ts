@@ -23,13 +23,13 @@ export interface PromoBlock {
      * ends; absent when the model could not determine an end within the
      * visible transcript.
      */
-    endSec?: number;
+    endSec?: number | undefined;
 
     /**
      * LLM-reported confidence for this block; absent when the model did not
      * report one.
      */
-    confidence?: PromoConfidence;
+    confidence?: PromoConfidence | undefined;
 }
 
 /**

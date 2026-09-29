@@ -1025,7 +1025,7 @@ export interface ProviderHostAccessRequiredFailure {
  */
 export type TestConnectionKeyResponse = | { ok: true; valid: true }
     | { ok: true; valid: false; error: string }
-    | { ok: false; error: string; retryable?: boolean }
+    | { ok: false; error: string; retryable?: boolean | undefined }
     | ProviderHostAccessRequiredFailure;
 
 /**

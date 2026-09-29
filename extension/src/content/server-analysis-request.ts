@@ -37,7 +37,7 @@ export function shouldUseServerAnalysis(prefs: UserPreferences): boolean {
 export function buildRequestServerAnalysisMessage(input: {
     sessionId: string;
     videoId: string;
-    durationSec?: number;
+    durationSec?: number | undefined;
     languageCode: string;
     segments: readonly CaptionSegment[];
 }): TopSkipRuntimeMessage {

@@ -94,7 +94,7 @@ export interface BackendPromoAnalysisWorkerInput {
     /**
      * LLM adapter override for tests; defaults to the environment-selected adapter when omitted.
      */
-    adapter?: BackendLlmAnalysisAdapter;
+    adapter?: BackendLlmAnalysisAdapter | undefined;
 
     /**
      * Completion-time clock override for deterministic tests; defaults to `Date.now` when omitted.
@@ -315,7 +315,7 @@ export class BackendPromoAnalysisWorker {
             parsedResult: ParsedModelPromoResult;
             rawModelResponse: string;
             model: string;
-            usage?: BackendLlmAnalysisUsage;
+            usage?: BackendLlmAnalysisUsage | undefined;
         }
         | {
             ok: false;
@@ -482,10 +482,10 @@ export class BackendPromoAnalysisWorker {
             parsedResult: ParsedModelPromoResult | null;
             normalizedPromoBlocks: PromoBlock[];
             failureReason: BackendAnalysisFailureReason;
-            model?: string;
-            promptVersion?: string;
-            usage?: BackendLlmAnalysisUsage;
-            completedAtMs?: number;
+            model?: string | undefined;
+            promptVersion?: string | undefined;
+            usage?: BackendLlmAnalysisUsage | undefined;
+            completedAtMs?: number | undefined;
         },
     ): BackendPromoAnalysisWorkerResult {
         return {
@@ -525,10 +525,10 @@ export class BackendPromoAnalysisWorker {
             parsedResult: ParsedModelPromoResult | null;
             normalizedPromoBlocks: PromoBlock[];
             failureReason: BackendAnalysisFailureReason | null;
-            model?: string;
-            promptVersion?: string;
-            usage?: BackendLlmAnalysisUsage;
-            completedAtMs?: number;
+            model?: string | undefined;
+            promptVersion?: string | undefined;
+            usage?: BackendLlmAnalysisUsage | undefined;
+            completedAtMs?: number | undefined;
         },
     ): AnalysisRunArtifact {
         return v.parse(analysisRunArtifactSchema, {

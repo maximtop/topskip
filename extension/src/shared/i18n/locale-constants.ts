@@ -20,7 +20,7 @@ export const BASE_LOCALE: AvailableLocale = 'en';
  * Sorted alphabetically.
  */
 export const AVAILABLE_LOCALES: AvailableLocale[] = (
-    Object.keys(twosky[0].languages) as AvailableLocale[]
+    Object.keys(twosky[0]!.languages) as AvailableLocale[] // .twosky.json always has one config entry
 ).sort();
 
 /**

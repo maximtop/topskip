@@ -44,8 +44,8 @@ export type BenchmarkPrediction = | { hasPromo: false }
         hasPromo: true;
         promoBlocks: {
             startSec: number;
-            endSec?: number;
-            confidence?: string;
+            endSec?: number | undefined;
+            confidence?: string | undefined;
         }[];
     };
 
@@ -484,6 +484,41 @@ function hasValidSamplePayload(value: Record<string, unknown>): boolean {
 }
 
 /**
+ * Narrows a value to a well-formed `BenchmarkSample` payload.
+ *
+ * @param value - Decoded JSON value, typically read from an on-disk sample file.
+ *
+ * @returns Whether `value` has every required field, correctly typed and internally
+ * consistent.
+ */
+function isValidBenchmarkSample(value: unknown): value is BenchmarkSample {
+    return (
+        isRecord(value)
+        && value.schemaVersion === 2
+        && typeof value.runKey === 'string'
+        && typeof value.corpusId === 'string'
+        && typeof value.corpusManifestSha256 === 'string'
+        && value.harness === DIRECT_API_HARNESS
+        && typeof value.model === 'string'
+        && BENCHMARK_REASONING_LEVELS.some(
+            (level) => level === value.reasoning,
+        )
+        && Number.isInteger(value.repeat)
+        && isNonNegativeNumber(value.repeat)
+        && typeof value.videoId === 'string'
+        && typeof value.languageCode === 'string'
+        && typeof value.transcriptHash === 'string'
+        && typeof value.fixtureSha256 === 'string'
+        && typeof value.promptVersion === 'string'
+        && typeof value.promptSha256 === 'string'
+        && typeof value.messageSha256 === 'string'
+        && value.outputLimitPolicy === BENCHMARK_OUTPUT_LIMIT_POLICY
+        && typeof value.requestConfigSha256 === 'string'
+        && hasValidSamplePayload(value)
+    );
+}
+
+/**
  * Validates and narrows an arbitrary JSON value into a well-formed `BenchmarkSample`.
  *
  * @param value - Decoded JSON value, typically read from an on-disk sample file.
@@ -493,33 +528,10 @@ function hasValidSamplePayload(value: Record<string, unknown>): boolean {
  * @throws {Error} When any required field is missing, malformed or internally inconsistent.
  */
 export function parseBenchmarkSample(value: unknown): BenchmarkSample {
-    if (
-        !isRecord(value)
-        || value.schemaVersion !== 2
-        || typeof value.runKey !== 'string'
-        || typeof value.corpusId !== 'string'
-        || typeof value.corpusManifestSha256 !== 'string'
-        || value.harness !== DIRECT_API_HARNESS
-        || typeof value.model !== 'string'
-        || !BENCHMARK_REASONING_LEVELS.some(
-            (level) => level === value.reasoning,
-        )
-        || !Number.isInteger(value.repeat)
-        || !isNonNegativeNumber(value.repeat)
-        || typeof value.videoId !== 'string'
-        || typeof value.languageCode !== 'string'
-        || typeof value.transcriptHash !== 'string'
-        || typeof value.fixtureSha256 !== 'string'
-        || typeof value.promptVersion !== 'string'
-        || typeof value.promptSha256 !== 'string'
-        || typeof value.messageSha256 !== 'string'
-        || value.outputLimitPolicy !== BENCHMARK_OUTPUT_LIMIT_POLICY
-        || typeof value.requestConfigSha256 !== 'string'
-        || !hasValidSamplePayload(value)
-    ) {
+    if (!isValidBenchmarkSample(value)) {
         throw new Error('Benchmark sample is incomplete or malformed.');
     }
-    return value as BenchmarkSample;
+    return value;
 }
 
 /**
@@ -676,7 +688,7 @@ function createSample(options: {
     expected: ExpectedSample;
     durationSec: number;
     call: BenchmarkCallResult;
-    costUsd?: number;
+    costUsd?: number | undefined;
 }): BenchmarkSample {
     const parsed = predictionFromCall(options.call, options.durationSec);
     const sample: BenchmarkSample = {
@@ -778,7 +790,7 @@ export async function runBenchmarkMatrix(options: {
         item: BenchmarkPreflight['manifest']['items'][number];
         model: BenchmarkPreflight['models'][number];
         messages: ReturnType<typeof buildBenchmarkMessages>;
-        existing?: BenchmarkSample;
+        existing?: BenchmarkSample | undefined;
     }[] = [];
     for (let repeat = 1; repeat <= BENCHMARK_REPEAT_COUNT; repeat += 1) {
         for (const item of options.preflight.manifest.items) {

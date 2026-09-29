@@ -62,7 +62,7 @@ export function checkLocale(
         }
     }
 
-    const baseMatch = lookupMap.get(parts[0]);
+    const baseMatch = lookupMap.get(parts[0]!); // split() always yields at least one part
     if (baseMatch) {
         return { suitable: true, locale: baseMatch };
     }

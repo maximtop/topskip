@@ -76,7 +76,7 @@ async function resolveAvailability(): Promise<ProviderAvailabilityMessage> {
     }
     const raw: unknown = await (availFn as () => Promise<unknown>).call(lm);
     const mapped: ProviderAvailabilityMessage = typeof raw === 'string' && raw in AVAILABILITY_MAP
-        ? AVAILABILITY_MAP[raw]
+        ? AVAILABILITY_MAP[raw]! // `raw in AVAILABILITY_MAP` guarantees the key exists
         : PROVIDER_AVAILABILITY.UNAVAILABLE;
     DevConsole.info(
         `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}`

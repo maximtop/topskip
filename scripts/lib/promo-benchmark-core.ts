@@ -313,17 +313,17 @@ export interface BenchmarkCallSuccess {
     /**
      * Provider-reported finish reason; absent when the provider did not report one.
      */
-    finishReason?: string;
+    finishReason?: string | undefined;
 
     /**
      * Token usage for the call; absent when the provider did not report usage.
      */
-    usage?: BenchmarkUsage;
+    usage?: BenchmarkUsage | undefined;
 
     /**
      * Milliseconds from request start to the first output token; absent for non-streamed calls.
      */
-    ttftMs?: number;
+    ttftMs?: number | undefined;
 
     /**
      * Milliseconds from request start to the call completing.
@@ -333,7 +333,7 @@ export interface BenchmarkCallSuccess {
     /**
      * Completion tokens per second after the first token; absent when it cannot be computed.
      */
-    outputTokensPerSecond?: number;
+    outputTokensPerSecond?: number | undefined;
 }
 
 /**
@@ -363,12 +363,12 @@ export interface BenchmarkCallFailure {
     /**
      * Token usage collected before the failure, if any.
      */
-    usage?: BenchmarkUsage;
+    usage?: BenchmarkUsage | undefined;
 
     /**
      * Milliseconds from request start to the first output token, if any was received.
      */
-    ttftMs?: number;
+    ttftMs?: number | undefined;
 
     /**
      * Milliseconds from request start to the call failing.
@@ -399,18 +399,18 @@ interface ParsedStream {
     /**
      * Provider-reported finish reason; absent when no chunk reported one.
      */
-    finishReason?: string;
+    finishReason?: string | undefined;
 
     /**
      * Token usage from the final usage chunk; absent when none was received.
      */
-    usage?: BenchmarkUsage;
+    usage?: BenchmarkUsage | undefined;
 
     /**
      * Milliseconds from request start to the first output token; absent when no content was
      * received.
      */
-    ttftMs?: number;
+    ttftMs?: number | undefined;
 
     /**
      * Reason the stream did not complete normally; absent when ok is true.
@@ -435,7 +435,7 @@ interface ParsedCompletion {
     /**
      * Token usage; absent when the provider did not report usage.
      */
-    usage?: BenchmarkUsage;
+    usage?: BenchmarkUsage | undefined;
 }
 
 /**
@@ -1295,7 +1295,7 @@ export async function callBenchmarkModel(options: {
     baseUrl: string;
     apiKey: string;
     body: BenchmarkRequestBody;
-    fetchFunction?: typeof fetch;
+    fetchFunction?: typeof fetch | undefined;
     now?: () => number;
     timeoutMs?: number;
 }): Promise<BenchmarkCallResult> {

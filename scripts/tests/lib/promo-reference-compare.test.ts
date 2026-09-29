@@ -30,9 +30,9 @@ describe('compareHumanAlignedBlocks', () => {
         const pred = [{ startSec: 268 }, { startSec: 826, endSec: 945 }];
         const m = compareHumanAlignedBlocks(human, pred);
         expect(m).toHaveLength(2);
-        expect(m[0].startDeltaSec).toBeCloseTo(268 - 242.12, 5);
-        expect(m[0].predEndAssumed).toBe(true);
-        expect(m[0].predEndSec).toBe(329.44);
+        expect(m[0]!.startDeltaSec).toBeCloseTo(268 - 242.12, 5);
+        expect(m[0]!.predEndAssumed).toBe(true);
+        expect(m[0]!.predEndSec).toBe(329.44);
     });
 });
 

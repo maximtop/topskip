@@ -123,7 +123,7 @@ export interface BackendLlmAnalysisUsage {
      * Provider-reported cost in US dollars for this request; absent when the provider did not
      * report cost.
      */
-    costUsd?: number;
+    costUsd?: number | undefined;
 }
 
 /**
@@ -143,7 +143,7 @@ export interface BackendLlmAnalysisAdapterResult {
     /**
      * Token/cost accounting for this request; absent when the provider returned no usage metadata.
      */
-    usage?: BackendLlmAnalysisUsage;
+    usage?: BackendLlmAnalysisUsage | undefined;
 }
 
 /**

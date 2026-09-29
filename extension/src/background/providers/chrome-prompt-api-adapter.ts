@@ -201,7 +201,7 @@ export class ChromePromptApiAdapter implements LlmProviderAdapter {
                     opts: LanguageModelCreateOptions,
                 ) => Promise<LanguageModel>
             ).call(lm, {
-                signal,
+                ...(signal === undefined ? {} : { signal }),
                 initialPrompts: [
                     {
                         role: LLM_ROLE.System,
@@ -278,7 +278,7 @@ export class ChromePromptApiAdapter implements LlmProviderAdapter {
             try {
                 rawContent = await session.prompt(transcript, {
                     responseConstraint: PROMO_DETECTION_RESPONSE_SCHEMA,
-                    signal: params.signal,
+                    ...(params.signal === undefined ? {} : { signal: params.signal }),
                 });
             } catch (e) {
                 return {

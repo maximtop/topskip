@@ -150,8 +150,8 @@ export class PromoAnalysis {
             return { startSec: 0, endSec: 0 };
         }
         return {
-            startSec: t[0].sec,
-            endSec: t[t.length - 1].sec,
+            startSec: t[0]!.sec, // t.length === 0 returned above
+            endSec: t[t.length - 1]!.sec,
         };
     }
 

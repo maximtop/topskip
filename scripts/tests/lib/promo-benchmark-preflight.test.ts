@@ -69,7 +69,7 @@ describe('promo benchmark preflight', () => {
             requestedModelIds: ['glm-5.2', 'gpt-5.6-sol'],
             reasoning: 'default',
         });
-        const item = preflight.manifest.items[0];
+        const item = preflight.manifest.items[0]!;
         const messages = buildBenchmarkMessages(preflight.corpusRoot, item);
         const first = buildBenchmarkRequestBody({
             model: 'glm-5.2',

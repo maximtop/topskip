@@ -39,7 +39,7 @@ export interface CallOpenAiResponseParams {
     /**
      * Optional abort signal to cancel the in-flight request.
      */
-    signal?: AbortSignal;
+    signal?: AbortSignal | undefined;
 }
 
 /**
@@ -145,7 +145,7 @@ export async function callOpenAiResponse(
                 input: params.input,
                 store: false,
             }),
-            signal: params.signal,
+            signal: params.signal ?? null,
         });
         if (!response.ok) {
             const body = await response.text();

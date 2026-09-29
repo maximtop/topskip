@@ -77,12 +77,12 @@ export interface ValidationFlags {
     /**
      * Only critical errors plus readiness of the required locales.
      */
-    isMinimum?: boolean;
+    isMinimum?: boolean | undefined;
 
     /**
      * Report without failing the process.
      */
-    isInfo?: boolean;
+    isInfo?: boolean | undefined;
 }
 
 /**

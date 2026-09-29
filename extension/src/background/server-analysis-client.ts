@@ -113,9 +113,9 @@ export class ServerAnalysisClient {
     private static async fetchBackendJsonAttempt(
         input: {
             operation: ServerOperation;
-            videoId?: string;
-            jobId?: string;
-            tabId?: number;
+            videoId?: string | undefined;
+            jobId?: string | undefined;
+            tabId?: number | undefined;
             path: string;
             init: RequestInit;
         },
@@ -252,9 +252,9 @@ export class ServerAnalysisClient {
      */
     private static async fetchBackendJson(input: {
         operation: ServerOperation;
-        videoId?: string;
-        jobId?: string;
-        tabId?: number;
+        videoId?: string | undefined;
+        jobId?: string | undefined;
+        tabId?: number | undefined;
         path: string;
         init: RequestInit;
     }): Promise<BackendJsonResult> {
@@ -538,12 +538,12 @@ export class ServerAnalysisClient {
     private static async requestAuthenticated(
         input: {
             operation: 'analysis' | 'poll';
-            videoId?: string;
-            jobId?: string;
-            tabId?: number;
+            videoId?: string | undefined;
+            jobId?: string | undefined;
+            tabId?: number | undefined;
             path: string;
             method: 'GET' | 'POST';
-            body?: string;
+            body?: string | undefined;
         },
         canRetryToken = true,
     ): Promise<ServerAnalysisResponse> {
@@ -638,11 +638,11 @@ export class ServerAnalysisClient {
      */
     static async requestAnalysis(input: {
         videoId: string;
-        durationSec?: number;
+        durationSec?: number | undefined;
         extensionVersion: string;
         languageCode: string;
         segments: readonly CaptionSegment[];
-        tabId?: number;
+        tabId?: number | undefined;
     }): Promise<ServerAnalysisResponse> {
         const canonical = CaptionTranscriptCanonicalizer.canonicalize(input);
         if (!canonical.ok) {

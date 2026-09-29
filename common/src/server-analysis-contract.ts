@@ -779,7 +779,7 @@ export function isValidYouTubeVideoId(videoId: string): boolean {
  */
 export function buildServerAnalysisRequest(input: {
     videoId: string;
-    durationSec?: number;
+    durationSec?: number | undefined;
     extensionVersion: string;
     languageCode: string;
     segments: readonly CaptionSegment[];

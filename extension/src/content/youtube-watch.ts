@@ -341,7 +341,7 @@ export interface PromoBlocksAcceptanceInput {
     /**
      * Session id carried by the delivered message, when the source reports one.
      */
-    messageSessionId?: string;
+    messageSessionId?: string | undefined;
 }
 
 /**

@@ -199,5 +199,5 @@ export interface CaptionCaptureInput {
     /**
      * Bounded wait in ms for the player-mediated capture request, when set.
      */
-    captureTimeoutMs?: number;
+    captureTimeoutMs?: number | undefined;
 }

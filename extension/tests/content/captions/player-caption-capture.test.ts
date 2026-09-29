@@ -1373,7 +1373,7 @@ describe('PlayerCaptionCapture', () => {
         expect(mockTeardownBridge).toHaveBeenCalledOnce();
         expect(mockDisposeBridge).toHaveBeenCalled();
         expect(mockDeactivateBridge.mock.invocationCallOrder[0]).toBeLessThan(
-            mockTeardownBridge.mock.invocationCallOrder[0],
+            mockTeardownBridge.mock.invocationCallOrder[0]!,
         );
         expect(mockTeardownBridge.mock.invocationCallOrder[0]).toBeLessThan(
             mockDisposeBridge.mock.invocationCallOrder.at(-1) ?? 0,

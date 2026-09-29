@@ -709,7 +709,7 @@ export class BackendHttpServer {
             && parts[1] === 'analysis'
             && parts[2] === 'jobs'
         ) {
-            const jobId = BackendHttpServer.decodeJobId(parts[3]);
+            const jobId = BackendHttpServer.decodeJobId(parts[3]!);
             return jobId === null ? null : { kind: 'status', jobId };
         }
 
@@ -720,7 +720,7 @@ export class BackendHttpServer {
             && parts[2] === 'jobs'
             && parts[4] === 'fixture-result'
         ) {
-            const jobId = BackendHttpServer.decodeJobId(parts[3]);
+            const jobId = BackendHttpServer.decodeJobId(parts[3]!);
             return jobId === null ? null : { kind: 'fixture-result', jobId };
         }
 

@@ -1908,7 +1908,7 @@ export class PlayerCaptionCapture {
             session === null
             || DebugLogClient.isEnabled() !== true
             || !CaptureDiagnostics.acceptBridgeDiagnostic(
-                details,
+                { ...details },
                 PlayerCaptionCapture.bridgeDiagnosticCount,
             )
         ) {

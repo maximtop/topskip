@@ -381,7 +381,7 @@ describe('PreferencesStore', () => {
 
         // Grab the listener that was registered
         const listener = mocks.connectOnMessage.addListener.mock
-            .calls[0][0] as (msg: unknown) => void;
+            .calls[0]![0] as (msg: unknown) => void;
 
         // Simulate a message from the background
         listener({
@@ -405,7 +405,7 @@ describe('PreferencesStore', () => {
         const store = new PreferencesStore();
         store.connectPort();
         const listener = mocks.connectOnMessage.addListener.mock
-            .calls[0][0] as (msg: unknown) => void;
+            .calls[0]![0] as (msg: unknown) => void;
 
         listener({
             type: TOPSKIP_MESSAGE.PREFS_UPDATED,
@@ -426,7 +426,7 @@ describe('PreferencesStore', () => {
         store.connectPort();
 
         const listener = mocks.connectOnMessage.addListener.mock
-            .calls[0][0] as (msg: unknown) => void;
+            .calls[0]![0] as (msg: unknown) => void;
 
         listener({ type: 'UNKNOWN_TYPE' });
         expect(store.enabled).toBe(true);
@@ -496,7 +496,7 @@ describe('PreferencesStore', () => {
         store.connectPort();
 
         const listener = mocks.connectOnMessage.addListener.mock
-            .calls[0][0] as (msg: unknown) => void;
+            .calls[0]![0] as (msg: unknown) => void;
 
         // Simulate provider change arriving on port
         listener({
@@ -519,7 +519,7 @@ describe('PreferencesStore', () => {
 
         store.connectPort();
         const listener = mocks.connectOnMessage.addListener.mock
-            .calls[0][0] as (msg: unknown) => void;
+            .calls[0]![0] as (msg: unknown) => void;
 
         // Same provider as loaded ('openrouter')
         listener({
@@ -610,7 +610,7 @@ describe('PreferencesStore', () => {
 
         store.connectPort();
         const listener = mocks.connectOnMessage.addListener.mock
-            .calls[0][0] as (msg: unknown) => void;
+            .calls[0]![0] as (msg: unknown) => void;
 
         listener({
             type: TOPSKIP_MESSAGE.PREFS_UPDATED,

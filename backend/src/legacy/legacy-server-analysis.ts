@@ -70,7 +70,7 @@ export class BackendLegacyServerAnalysis {
             nowMs: number;
             installationHash: string;
             ipHash: string;
-            requestId?: string;
+            requestId?: string | undefined;
             publicContext: boolean;
         },
     ): BackendLegacyAnalysisResult {

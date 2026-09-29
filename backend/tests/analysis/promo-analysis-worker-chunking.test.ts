@@ -65,8 +65,8 @@ function makeAdapter(
         analyze(input: BackendLlmAnalysisAdapterInput) {
             const segs = input.transcriptArtifact.segments;
             calls.push({
-                firstSec: segs[0].startSec,
-                lastSec: segs[segs.length - 1].startSec,
+                firstSec: segs[0]!.startSec,
+                lastSec: segs[segs.length - 1]!.startSec,
             });
             n += 1;
             const out = respond(input, n);
@@ -107,8 +107,8 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
         expect(adapter.calls.length).toBeGreaterThan(1);
         // Adjacent chunk calls overlap by ~240s.
         for (let i = 1; i < adapter.calls.length; i += 1) {
-            expect(adapter.calls[i].firstSec).toBeLessThanOrEqual(
-                adapter.calls[i - 1].lastSec - 239,
+            expect(adapter.calls[i]!.firstSec).toBeLessThanOrEqual(
+                adapter.calls[i - 1]!.lastSec - 239,
             );
         }
         expect(result.terminalResponse.status).toBe('ready');
@@ -140,15 +140,15 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
             clock: () => 2_000,
         });
         expect(probe.calls.length).toBeGreaterThan(1);
-        const boundary = probe.calls[0].lastSec;
+        const boundary = probe.calls[0]!.lastSec;
 
         // Chunk 1 sees only the first half of the promo and reports
         // [boundary-120 .. boundary]; chunk 2 (whose 240s overlap covers the
         // promo start) reports the full [boundary-120 .. boundary+120].
         const adapter = makeAdapter((input) => {
             const segs = input.transcriptArtifact.segments;
-            const firstSec = segs[0].startSec;
-            const lastSec = segs[segs.length - 1].startSec;
+            const firstSec = segs[0]!.startSec;
+            const lastSec = segs[segs.length - 1]!.startSec;
             if (firstSec === 0) {
                 return JSON.stringify({
                     hasPromo: true,
@@ -189,7 +189,7 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
             return;
         }
         expect(result.terminalResponse.promoBlocks).toHaveLength(1);
-        const block = result.terminalResponse.promoBlocks[0];
+        const block = result.terminalResponse.promoBlocks[0]!;
         expect(block.startSec).toBe(boundary - 120);
         expect(block.endSec).toBe(boundary + 120);
     });

@@ -29,22 +29,22 @@ export interface OpenRouterPromptTokenDetails {
     /**
      * Prompt tokens served from cache, when the provider reports it.
      */
-    cachedTokens?: number;
+    cachedTokens?: number | undefined;
 
     /**
      * Prompt tokens written to cache, when the provider reports it.
      */
-    cacheWriteTokens?: number;
+    cacheWriteTokens?: number | undefined;
 
     /**
      * Prompt tokens attributed to audio input, when the provider reports it.
      */
-    audioTokens?: number;
+    audioTokens?: number | undefined;
 
     /**
      * Prompt tokens attributed to video input, when the provider reports it.
      */
-    videoTokens?: number;
+    videoTokens?: number | undefined;
 }
 
 /**
@@ -54,17 +54,17 @@ export interface OpenRouterCompletionTokenDetails {
     /**
      * Completion tokens spent on reasoning, when the provider reports it.
      */
-    reasoningTokens?: number;
+    reasoningTokens?: number | undefined;
 
     /**
      * Completion tokens attributed to audio output, when the provider reports it.
      */
-    audioTokens?: number;
+    audioTokens?: number | undefined;
 
     /**
      * Completion tokens attributed to image output, when the provider reports it.
      */
-    imageTokens?: number;
+    imageTokens?: number | undefined;
 }
 
 /**
@@ -74,18 +74,18 @@ export interface OpenRouterCostDetails {
     /**
      * Total upstream inference cost in USD, when the provider reports it.
      */
-    upstreamInferenceCost?: number;
+    upstreamInferenceCost?: number | undefined;
 
     /**
      * Upstream prompt-side inference cost in USD, when the provider reports it.
      */
-    upstreamInferencePromptCost?: number;
+    upstreamInferencePromptCost?: number | undefined;
 
     /**
      * Upstream completion-side inference cost in USD, when the provider
      * reports it.
      */
-    upstreamInferenceCompletionsCost?: number;
+    upstreamInferenceCompletionsCost?: number | undefined;
 }
 
 /**
@@ -163,12 +163,13 @@ export interface CallOpenRouterChatParams {
         | 'medium'
         | 'high'
         | 'xhigh'
-        | 'max';
+        | 'max'
+        | undefined;
 
     /**
      * Optional abort signal to cancel the in-flight request.
      */
-    signal?: AbortSignal;
+    signal?: AbortSignal | undefined;
 }
 
 /**
@@ -405,11 +406,11 @@ export async function callOpenRouterChat(
     | {
         ok: true;
         rawContent: string;
-        usage?: OpenRouterUsage;
-        responseId?: string;
-        responseModel?: string;
-        finishReason?: string | null;
-        nativeFinishReason?: string | null;
+        usage?: OpenRouterUsage | undefined;
+        responseId?: string | undefined;
+        responseModel?: string | undefined;
+        finishReason?: string | null | undefined;
+        nativeFinishReason?: string | null | undefined;
     }
     | {
         ok: false;
@@ -442,7 +443,7 @@ export async function callOpenRouterChat(
                         ? undefined
                         : { effort: reasoningEffort },
             }),
-            signal,
+            signal: signal ?? null,
         });
         const text = await res.text();
         if (!res.ok) {

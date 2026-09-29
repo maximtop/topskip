@@ -163,12 +163,12 @@ export interface AnalyzeTranscriptParams {
     /**
      * Video duration in seconds; used for promo-block clamping when known.
      */
-    durationSec?: number;
+    durationSec?: number | undefined;
 
     /**
      * Cancellation signal from the pipeline's AbortController.
      */
-    signal?: AbortSignal;
+    signal?: AbortSignal | undefined;
 }
 
 /**

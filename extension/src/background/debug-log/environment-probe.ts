@@ -111,7 +111,7 @@ export class EnvironmentProbe {
             return null;
         }
         const match = UA_CHROME_MAJOR_PATTERN.exec(userAgent);
-        return match === null ? null : Number.parseInt(match[1], 10);
+        return match === null ? null : Number.parseInt(match[1]!, 10); // pattern has one mandatory capture group
     }
 
     /**

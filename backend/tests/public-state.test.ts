@@ -466,7 +466,7 @@ describe('BackendPublicState', () => {
         );
         expect(BackendPublicState.reserveModelBudget({ nowMs })).toBeNull();
 
-        const first = reservations[0];
+        const first = reservations[0]!;
         if (first === null) {
             throw new Error('Expected a model budget reservation.');
         }

@@ -314,16 +314,16 @@ describe('DebugLogRuntimeMessages', () => {
                 if (match === null) {
                     throw new Error(`unparsable line: ${line}`);
                 }
-                expect(Date.parse(match[1])).toBeLessThanOrEqual(bundle.exportedAtMs);
-                seqByWorker.set(match[2], [
-                    ...(seqByWorker.get(match[2]) ?? []),
-                    Number(match[3]),
+                expect(Date.parse(match[1]!)).toBeLessThanOrEqual(bundle.exportedAtMs);
+                seqByWorker.set(match[2]!, [
+                    ...(seqByWorker.get(match[2]!) ?? []),
+                    Number(match[3]!),
                 ]);
             }
             for (const seqs of seqByWorker.values()) {
                 seqs.forEach((seq, index) => {
                     if (index > 0) {
-                        expect(seq).toBe(seqs[index - 1] + 1);
+                        expect(seq).toBe(seqs[index - 1]! + 1);
                     }
                 });
             }

@@ -160,12 +160,12 @@ interface PageBridgeDiagnosticMessage {
     /**
      * HTTP status of the timedtext response, when applicable.
      */
-    status?: number;
+    status?: number | undefined;
 
     /**
      * Response body length, when applicable.
      */
-    bodyLength?: number;
+    bodyLength?: number | undefined;
 
     /**
      * Response `Content-Type` header, when applicable.

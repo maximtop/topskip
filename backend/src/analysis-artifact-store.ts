@@ -104,12 +104,12 @@ interface SafeOperationalDiagnostics {
     /**
      * Which code path produced the artifact; absent when the caller did not report one.
      */
-    artifactSource?: v.InferOutput<typeof operationalArtifactSourceSchema>;
+    artifactSource?: v.InferOutput<typeof operationalArtifactSourceSchema> | undefined;
 
     /**
      * Analysis provider id, validated against the allow-listed provider format; absent when unset.
      */
-    provider?: string;
+    provider?: string | undefined;
 }
 
 const safeOperationalDiagnosticsSchema = v.pipe(
@@ -437,10 +437,26 @@ export type AnalysisArtifactRecord = v.InferOutput<
 
 /**
  * Untrusted artifact input is parsed before entering the repository.
+ *
+ * `operationalMetadata.diagnostics` also accepts the already-redacted output
+ * shape, since callers such as {@link AnalysisArtifactStore.buildDefaultOperationalMetadata}
+ * and {@link AnalysisArtifactStore.buildRecordForTests} pass diagnostics that
+ * already went through {@link AnalysisArtifactStore.redactOperationalMetadata}
+ * before reaching {@link AnalysisArtifactStore.save}, which redacts again.
  */
-export type AnalysisArtifactRecordInput = v.InferInput<
-    typeof analysisArtifactRecordSchema
->;
+export type AnalysisArtifactRecordInput = Omit<
+    v.InferInput<typeof analysisArtifactRecordSchema>,
+    'operationalMetadata'
+> & {
+    operationalMetadata: Omit<
+        v.InferInput<typeof analysisArtifactRecordSchema>['operationalMetadata'],
+        'diagnostics'
+    > & {
+        diagnostics:
+            | v.InferInput<typeof analysisArtifactRecordSchema>['operationalMetadata']['diagnostics']
+            | AnalysisOperationalMetadata['diagnostics'];
+    };
+};
 
 /**
  * Test helper input keeps fixtures concise while still passing production validation.

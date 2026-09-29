@@ -557,7 +557,7 @@ export class DebugLogStore {
         const tail: DebugLogSegmentInfo[] = [];
         let bytes = 0;
         for (let i = index.segments.length - 1; i >= 0 && bytes < maxBytes; i -= 1) {
-            const info = index.segments[i];
+            const info = index.segments[i]!; // i is within [0, length) by the loop bound
             tail.unshift(info);
             bytes += info.bytes;
         }
@@ -1110,7 +1110,7 @@ export class DebugLogStore {
         const stored: Record<string, unknown> = keys.length === 0 ? {} : await browser.storage.local.get(keys);
         const result: CollectedLines = { lines: [], lostCount: 0, lostBytes: 0 };
         infos.forEach((info, position) => {
-            const part = buffered[position];
+            const part = buffered[position]!; // buffered has one entry per info, same index
             if (part !== null) {
                 result.lines.push(...part);
                 return;

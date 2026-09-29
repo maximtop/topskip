@@ -52,7 +52,7 @@ export class BackendSubtitleExtractionPipeline {
         videoId: string;
         algorithmVersion: string;
         nowMs: number;
-        strategies?: readonly SubtitleExtractionStrategy[];
+        strategies?: readonly SubtitleExtractionStrategy[] | undefined;
     }): Promise<SubtitleExtractionPipelineResult> {
         const strategies = input.strategies
             ?? BackendSubtitleExtractionPipeline.defaultStrategies();

@@ -104,21 +104,21 @@ describe('PrefsPortHub', () => {
         const { port } = createMockPort(PREFS_PORT_NAME);
         // Trigger the listener that register() stored, as if
         // the browser just opened a new port connection.
-        onConnectListeners[0](port);
+        onConnectListeners[0]!(port);
         expect(port.onDisconnect.addListener).toHaveBeenCalledOnce();
         expect(PrefsPortHub.connectedCount()).toBe(1);
     });
 
     it('ignores a port with the wrong name', () => {
         const { port } = createMockPort('some-other-port');
-        onConnectListeners[0](port);
+        onConnectListeners[0]!(port);
         expect(port.onDisconnect.addListener).not.toHaveBeenCalled();
         expect(PrefsPortHub.connectedCount()).toBe(0);
     });
 
     it('removes a port on disconnect', () => {
         const { port, simulateDisconnect } = createMockPort();
-        onConnectListeners[0](port);
+        onConnectListeners[0]!(port);
         expect(PrefsPortHub.connectedCount()).toBe(1);
         simulateDisconnect();
         expect(PrefsPortHub.connectedCount()).toBe(0);
@@ -127,8 +127,8 @@ describe('PrefsPortHub', () => {
     it('broadcastPrefsUpdate posts to all connected ports', () => {
         const m1 = createMockPort();
         const m2 = createMockPort();
-        onConnectListeners[0](m1.port);
-        onConnectListeners[0](m2.port);
+        onConnectListeners[0]!(m1.port);
+        onConnectListeners[0]!(m2.port);
 
         PrefsPortHub.broadcastPrefsUpdate({
             enabled: false,
@@ -153,8 +153,8 @@ describe('PrefsPortHub', () => {
     it('broadcastPrefsUpdate skips disconnected ports gracefully', () => {
         const m1 = createMockPort();
         const m2 = createMockPort();
-        onConnectListeners[0](m1.port);
-        onConnectListeners[0](m2.port);
+        onConnectListeners[0]!(m1.port);
+        onConnectListeners[0]!(m2.port);
         m2.simulateDisconnect();
 
         PrefsPortHub.broadcastPrefsUpdate({
@@ -170,8 +170,8 @@ describe('PrefsPortHub', () => {
     it('disconnectAll clears all ports', () => {
         const m1 = createMockPort();
         const m2 = createMockPort();
-        onConnectListeners[0](m1.port);
-        onConnectListeners[0](m2.port);
+        onConnectListeners[0]!(m1.port);
+        onConnectListeners[0]!(m2.port);
         expect(PrefsPortHub.connectedCount()).toBe(2);
 
         PrefsPortHub.disconnectAll();

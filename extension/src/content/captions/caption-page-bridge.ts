@@ -153,7 +153,9 @@ const installCaptionPageBridge = (): void => {
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const originalFetch = window.fetch;
 
-    const isCurrentGeneration = (generation: number): boolean => generation === activeCaptureGeneration;
+    const isCurrentGeneration = (generation: number): boolean => {
+        return generation === activeCaptureGeneration;
+    };
 
     const isJson3Timedtext = (rawUrl: string): URL | null => {
         try {
@@ -170,12 +172,14 @@ const installCaptionPageBridge = (): void => {
         }
     };
 
-    const getSanitizedUrlShape = (parsed: URL): PageBridgeUrlShape => ({
-        pathname: parsed.pathname,
-        paramNames: Array.from(parsed.searchParams.keys()).sort(),
-        fmt: parsed.searchParams.get('fmt'),
-        hasPot: parsed.searchParams.has('pot'),
-    });
+    const getSanitizedUrlShape = (parsed: URL): PageBridgeUrlShape => {
+        return {
+            pathname: parsed.pathname,
+            paramNames: Array.from(parsed.searchParams.keys()).sort(),
+            fmt: parsed.searchParams.get('fmt'),
+            hasPot: parsed.searchParams.has('pot'),
+        };
+    };
 
     const postPageBridgeMessage = (
         message: PageBridgeMessage,
@@ -501,12 +505,18 @@ const installCaptionPageBridge = (): void => {
         void refetchUntranslated(generation, parsed);
     };
 
-    const getMoviePlayer = (): Element | null => document.getElementById('movie_player');
+    const getMoviePlayer = (): Element | null => {
+        return document.getElementById('movie_player');
+    };
 
-    const getMainVideo = (): HTMLVideoElement | null => document.querySelector('#movie_player video.html5-main-video')
+    const getMainVideo = (): HTMLVideoElement | null => {
+        return document.querySelector('#movie_player video.html5-main-video')
         ?? document.querySelector('video.html5-main-video');
+    };
 
-    const isVisibleElement = (element: Element): boolean => element instanceof HTMLElement && element.offsetParent !== null;
+    const isVisibleElement = (element: Element): boolean => {
+        return element instanceof HTMLElement && element.offsetParent !== null;
+    };
 
     const isAdLikelyActive = (): boolean => {
         const player = getMoviePlayer();
@@ -952,9 +962,11 @@ const installCaptionPageBridge = (): void => {
         input: RequestInfo | URL,
         init?: RequestInit,
     ): Promise<Response> => {
-        const callOriginalFetch = (): Promise<Response> => (init === undefined
-            ? originalFetch.call(window, input)
-            : originalFetch.call(window, input, init));
+        const callOriginalFetch = (): Promise<Response> => {
+            return (init === undefined
+                ? originalFetch.call(window, input)
+                : originalFetch.call(window, input, init));
+        };
         const generation = activeCaptureGeneration;
         if (generation === null) {
             return callOriginalFetch();

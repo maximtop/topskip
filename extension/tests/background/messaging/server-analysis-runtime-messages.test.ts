@@ -258,7 +258,9 @@ describe('ServerAnalysisRuntimeMessages', () => {
     });
 
     it('acknowledges acquisition only after its detection snapshot persists', async () => {
-        let releaseWrite = (): void => undefined;
+        let releaseWrite = (): void => {
+            return undefined;
+        };
         detectionMocks.set.mockImplementationOnce(
             () => new Promise<void>((resolve) => {
                 releaseWrite = resolve;

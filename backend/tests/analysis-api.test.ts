@@ -407,10 +407,12 @@ describe('BackendAnalysisApi', () => {
     });
 
     it('returns an identified rate failure without starting a third cold job', () => {
-        const submit = (videoId: string, nowMs: number) => BackendAnalysisApi.handleAnalysisRequest(
-            buildUploadRequest({ videoId }),
-            { nowMs },
-        );
+        const submit = (videoId: string, nowMs: number) => {
+            return BackendAnalysisApi.handleAnalysisRequest(
+                buildUploadRequest({ videoId }),
+                { nowMs },
+            );
+        };
         expect(submit(PRIMARY_VIDEO_ID, TEST_NOW_MS).statusCode).toBe(202);
         expect(submit(SECONDARY_VIDEO_ID, TEST_NOW_MS + 1).statusCode).toBe(
             202,

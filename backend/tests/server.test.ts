@@ -818,7 +818,9 @@ describe('BackendHttpServer request body guard', () => {
         await listenOnEphemeralPort(server);
         const baseUrl = localServerUrl(server);
 
-        const requestFor = (videoId: string): Record<string, unknown> => validTranscriptUpload(videoId);
+        const requestFor = (videoId: string): Record<string, unknown> => {
+            return validTranscriptUpload(videoId);
+        };
 
         expect(
             (

@@ -1,9 +1,9 @@
 import { captionSegmentSchema } from '@topskip/common/caption-types';
 import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
-
 import {
     type PromoBlock,
-    type PromoDetectionStatus
+    type PromoDetectionStatus,
+    PROMO_DETECTION_STATUS
 } from '@topskip/common/promo-types';
 import {
     extensionVersionSchema,
@@ -38,9 +38,6 @@ import type {
     ConnectionProviderId,
     ProviderHostAccessStatus,
 } from './provider-host-permissions';
-import type {
-    PROMO_DETECTION_STATUS
-} from '@topskip/common/promo-types';
 
 export type { ConnectionProviderId } from './provider-host-permissions';
 

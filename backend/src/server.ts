@@ -820,13 +820,17 @@ export class BackendHttpServer {
                     invalidRequest(false);
                 }
             };
-            const onAborted = (): void => invalidRequest(true);
+            const onAborted = (): void => {
+                return invalidRequest(true);
+            };
             const onClose = (): void => {
                 if (!req.complete) {
                     invalidRequest(true);
                 }
             };
-            const onError = (): void => invalidRequest(true);
+            const onError = (): void => {
+                return invalidRequest(true);
+            };
             const timeout = setTimeout(() => {
                 req.pause();
                 finish({

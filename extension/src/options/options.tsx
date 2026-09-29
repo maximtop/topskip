@@ -27,6 +27,8 @@ import {
     ConnectionsPanel,
     type ConnectionTestState,
 } from '@/options/ConnectionsPanel';
+import { OPTIONS_SECTION_HASH_PREFIX } from '@/options/constants';
+import { DiagnosticsSection } from '@/options/DiagnosticsSection';
 import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
 import {
     ProviderHostAccessActions,
@@ -34,8 +36,6 @@ import {
     type ProviderHostAccessActionInput,
 } from '@/options/provider-host-access-actions';
 import { ProviderHostAccessRequest } from '@/options/provider-host-access-request';
-import { OPTIONS_SECTION_HASH_PREFIX } from '@/options/constants';
-import { DiagnosticsSection } from '@/options/DiagnosticsSection';
 import browser from '@/shared/browser';
 import {
     ANALYSIS_MODE,
@@ -946,75 +946,77 @@ function OptionsApp(): ReactElement {
         };
     };
 
-    const createHostAccessActionEffects = (): ProviderHostAccessActionEffects => ({
-        request: (providerId) => ProviderHostAccessRequest.request(providerId),
-        reload: load,
-        sendTest: (providerId) => browser.runtime.sendMessage({
-            type: TOPSKIP_MESSAGE.TEST_CONNECTION_KEY,
-            providerId,
-            apiKey: connectionDrafts[providerId],
-        }),
-        showKeyRequired: (providerId) => {
-            setTestStates((current) => ({
-                ...current,
-                [providerId]: {
-                    kind: 'key_required',
-                },
-            }));
-        },
-        showRequestOutcome: (providerId, outcome) => {
-            const kind = outcome
+    const createHostAccessActionEffects = (): ProviderHostAccessActionEffects => {
+        return {
+            request: (providerId) => ProviderHostAccessRequest.request(providerId),
+            reload: load,
+            sendTest: (providerId) => browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.TEST_CONNECTION_KEY,
+                providerId,
+                apiKey: connectionDrafts[providerId],
+            }),
+            showKeyRequired: (providerId) => {
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: {
+                        kind: 'key_required',
+                    },
+                }));
+            },
+            showRequestOutcome: (providerId, outcome) => {
+                const kind = outcome
                     === PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Denied
-                ? 'access_denied'
-                : 'access_request_failed';
-            setTestStates((current) => ({
-                ...current,
-                [providerId]: { kind },
-            }));
-        },
-        applyTestResponse: (providerId, response) => {
-            let state: ConnectionTestState;
-            if (!response.ok && 'code' in response) {
-                state = { kind: 'host_access_required' };
-            } else if (response.ok && response.valid) {
-                state = { kind: 'valid' };
-            } else if (response.ok) {
-                state = { kind: 'invalid' };
-            } else {
-                state = { kind: 'error' };
-            }
-            setTestStates((current) => ({
-                ...current,
-                [providerId]: state,
-            }));
-        },
-        showTestUnavailable: (providerId) => {
-            setTestStates((current) => ({
-                ...current,
-                [providerId]: { kind: 'error' },
-            }));
-        },
-        showReloadUnavailable: () => {
-            setError(
-                translator.getMessage('options_error_load_failed'),
-            );
-        },
-        clearFeedback: (providerId) => {
-            setTestStates((current) => ({
-                ...current,
-                [providerId]: { kind: 'idle' },
-            }));
-        },
-        markAccessMissing: (providerId) => {
-            setConnections((current) => current.map((entry) => (entry.providerId === providerId
-                ? {
-                    ...entry,
-                    hostAccessStatus:
-                                        PROVIDER_HOST_ACCESS_STATUS.Missing,
+                    ? 'access_denied'
+                    : 'access_request_failed';
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: { kind },
+                }));
+            },
+            applyTestResponse: (providerId, response) => {
+                let state: ConnectionTestState;
+                if (!response.ok && 'code' in response) {
+                    state = { kind: 'host_access_required' };
+                } else if (response.ok && response.valid) {
+                    state = { kind: 'valid' };
+                } else if (response.ok) {
+                    state = { kind: 'invalid' };
+                } else {
+                    state = { kind: 'error' };
                 }
-                : entry)));
-        },
-    });
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: state,
+                }));
+            },
+            showTestUnavailable: (providerId) => {
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: { kind: 'error' },
+                }));
+            },
+            showReloadUnavailable: () => {
+                setError(
+                    translator.getMessage('options_error_load_failed'),
+                );
+            },
+            clearFeedback: (providerId) => {
+                setTestStates((current) => ({
+                    ...current,
+                    [providerId]: { kind: 'idle' },
+                }));
+            },
+            markAccessMissing: (providerId) => {
+                setConnections((current) => current.map((entry) => (entry.providerId === providerId
+                    ? {
+                        ...entry,
+                        hostAccessStatus:
+                                        PROVIDER_HOST_ACCESS_STATUS.Missing,
+                    }
+                    : entry)));
+            },
+        };
+    };
 
     const onGrantHostAccess = (
         providerId: ConnectionProviderId,

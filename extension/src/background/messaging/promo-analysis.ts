@@ -27,8 +27,17 @@ import {
     type ChunkLogOutcome,
     type PromoUncoveredRange,
 } from '@/background/openrouter/log-promo-analysis';
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import {
+    PROMO_DETECTION_PROMPT_VERSION,
+    PROMO_DETECTION_SYSTEM_PROMPT,
+} from '@/background/openrouter/promo-detection-system-prompt';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
+import { defaultRegistry } from '@/background/providers/default-registry';
+import {
+    PROVIDER_ANALYSIS_FAILURE_CODE,
+    type AnalyzeTranscriptResult,
+} from '@/background/providers/llm-provider-adapter';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import browser from '@/shared/browser';
 import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
@@ -40,6 +49,7 @@ import {
     DEBUG_LOG_EVENT,
     formatPromoBlockTimings,
 } from '@/shared/debug-log-events';
+import { toDebugLogModelName } from '@/shared/detection-models';
 import {
     PROMO_DETECTION_SOURCE,
     TOPSKIP_MESSAGE,
@@ -48,23 +58,8 @@ import {
     type TopSkipRuntimeMessage,
 } from '@/shared/messages';
 import { PROVIDER_ID } from '@/shared/providers';
-import { defaultRegistry } from '@/background/providers/default-registry';
 
 import type { ProviderRegistry } from '@/background/providers/provider-registry';
-
-import {
-    PROVIDER_ANALYSIS_FAILURE_CODE,
-    type AnalyzeTranscriptResult,
-} from '@/background/providers/llm-provider-adapter';
-
-
-import {
-    PROMO_DETECTION_PROMPT_VERSION,
-    PROMO_DETECTION_SYSTEM_PROMPT,
-} from '@/background/openrouter/promo-detection-system-prompt';
-
-import { toDebugLogModelName } from '@/shared/detection-models';
-
 import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 /**

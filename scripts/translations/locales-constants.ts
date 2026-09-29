@@ -66,10 +66,18 @@ function requireField<T>(
     return value;
 }
 
-const isString = (v: unknown): v is string => typeof v === 'string';
-const isNumber = (v: unknown): v is number => typeof v === 'number';
-const isStringArray = (v: unknown): v is string[] => Array.isArray(v) && v.every(isString);
-const isStringMap = (v: unknown): v is Record<string, string> => isRecord(v) && Object.values(v).every(isString);
+const isString = (v: unknown): v is string => {
+    return typeof v === 'string';
+};
+const isNumber = (v: unknown): v is number => {
+    return typeof v === 'number';
+};
+const isStringArray = (v: unknown): v is string[] => {
+    return Array.isArray(v) && v.every(isString);
+};
+const isStringMap = (v: unknown): v is Record<string, string> => {
+    return isRecord(v) && Object.values(v).every(isString);
+};
 
 /**
  * Parses a JSON file into an unvalidated record.

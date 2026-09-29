@@ -1090,7 +1090,9 @@ describe('per-video analysis route lifecycle', () => {
         );
     }
 
-    const NEVER_RESPOND: ServerRuntimeResponder = () => new Promise<unknown>(() => undefined);
+    const NEVER_RESPOND: ServerRuntimeResponder = () => {
+        return new Promise<unknown>(() => undefined);
+    };
 
     /**
      * Delivers Server blocks for the harness's live session, which stays
@@ -1344,7 +1346,9 @@ describe('per-video analysis route lifecycle', () => {
 
     it('ignores a timed-out reply after a newer preferences response', async () => {
         let attempt = 0;
-        let resolveOld: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldReply = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -1387,7 +1391,9 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('does not let a late preferences reply overwrite a broadcast', async () => {
-        let resolveOld: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldReply = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -1526,7 +1532,9 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('cancels active capture and ignores its completion after disable', async () => {
-        let resolveCapture: (result: unknown) => void = () => undefined;
+        let resolveCapture: (result: unknown) => void = () => {
+            return undefined;
+        };
         const captureOwner: { signal: AbortSignal | null } = {
             signal: null,
         };
@@ -2255,7 +2263,9 @@ describe('per-video analysis route lifecycle', () => {
 
     it('ignores a duplicate late interruption acknowledgement', async () => {
         let deliveryAttempt = 0;
-        let resolveOld: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldAcknowledgement = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -2327,11 +2337,13 @@ describe('per-video analysis route lifecycle', () => {
             for (const retryAfterMs of SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS) {
                 await harness.advanceBindingTime(retryAfterMs);
             }
-            const interruptionMessages = (): unknown[] => harness
-                .messagesOfType(
-                    TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
-                )
-                .filter((message) => isAnalysisInterruptionMessage(message));
+            const interruptionMessages = (): unknown[] => {
+                return harness
+                    .messagesOfType(
+                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
+                    )
+                    .filter((message) => isAnalysisInterruptionMessage(message));
+            };
             expect(interruptionMessages()).toHaveLength(5);
 
             await harness.advanceBindingTime(10 * MS_PER_SECOND);
@@ -2551,8 +2563,12 @@ describe('per-video analysis route lifecycle', () => {
     }
 
     it('keeps replacement operation ownership after the old promise settles', async () => {
-        let resolveOld: (response: unknown) => void = () => undefined;
-        let resolveReplacement: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
+        let resolveReplacement: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldRequest = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -2669,7 +2685,9 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('dedupes terminal blocks without invalidating their pending ack', async () => {
-        let resolveRequest: (response: unknown) => void = () => undefined;
+        let resolveRequest: (response: unknown) => void = () => {
+            return undefined;
+        };
         const pendingRequest = new Promise<unknown>((resolve) => {
             resolveRequest = resolve;
         });

@@ -52,10 +52,14 @@ export async function checkUnusedMessages(): Promise<void> {
     const baseMessages = Object.keys(baseLocaleTranslations);
     const filesContents = getSrcFilesContents(SRC_ABSOLUTE_PATH);
 
-    const isPresentInFile = (message: string, file: string): boolean => file.includes(`'${message}'`) || file.includes(`"${message}"`);
+    const isPresentInFile = (message: string, file: string): boolean => {
+        return file.includes(`'${message}'`) || file.includes(`"${message}"`);
+    };
 
-    const isMessageUnused = (message: string): boolean => !PERSISTENT_MESSAGES.includes(message)
+    const isMessageUnused = (message: string): boolean => {
+        return !PERSISTENT_MESSAGES.includes(message)
         && !filesContents.some((file) => isPresentInFile(message, file));
+    };
 
     const unusedMessages = baseMessages.filter(isMessageUnused);
 

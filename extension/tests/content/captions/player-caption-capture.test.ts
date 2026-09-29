@@ -1135,9 +1135,11 @@ describe('PlayerCaptionCapture', () => {
         // otherwise the negative assertions below could pass for the wrong
         // reason, e.g. because the helper flushed too few microtask ticks.
         expect(countContentLogStage('activation-deferred')).toBe(1);
-        const countVisibilityListeners = (): number => addListener.mock.calls.filter(
-            (call) => call[0] === 'visibilitychange',
-        ).length;
+        const countVisibilityListeners = (): number => {
+            return addListener.mock.calls.filter(
+                (call) => call[0] === 'visibilitychange',
+            ).length;
+        };
         const parkedListeners = countVisibilityListeners();
 
         // The page can forge these: without an accepted activation they must

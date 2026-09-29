@@ -308,10 +308,12 @@ async function readPageBridgeInstallState(
     page: Page,
 ): Promise<PageBridgeInstallState> {
     return page.evaluate((flags) => {
-        const isNative = (value: unknown): boolean => typeof value === 'function'
+        const isNative = (value: unknown): boolean => {
+            return typeof value === 'function'
             && Function.prototype.toString
                 .call(value)
                 .includes('[native code]');
+        };
         return {
             installed: Reflect.get(globalThis, flags.installFlag) === true,
             fetchNative: isNative(Reflect.get(globalThis, 'fetch')),
@@ -556,7 +558,9 @@ function extensionContextOptions(headless = extensionHeadless) {
 }
 
 async function getExtensionId(context: BrowserContext): Promise<string> {
-    const fromUrl = (w: { url: () => string }) => new URL(w.url()).hostname;
+    const fromUrl = (w: { url: () => string }) => {
+        return new URL(w.url()).hostname;
+    };
 
     const existing = context
         .serviceWorkers()
@@ -867,13 +871,15 @@ async function seedFreshLocalServerCache(
                 throw new Error('Missing chrome.storage.local mutation API');
             }
 
-            const keyForHash = (hash: string): string => [
-                'topskip:server-result-cache',
-                fixture.algorithmVersion,
-                fixture.videoId,
-                fixture.languageCode,
-                hash,
-            ].join(':');
+            const keyForHash = (hash: string): string => {
+                return [
+                    'topskip:server-result-cache',
+                    fixture.algorithmVersion,
+                    fixture.videoId,
+                    fixture.languageCode,
+                    hash,
+                ].join(':');
+            };
             const key = keyForHash(fixture.transcriptHash);
             await new Promise<void>((resolve, reject) => {
                 Reflect.apply(remove, local, [

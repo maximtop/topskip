@@ -173,7 +173,9 @@ const SELECTED_MODEL_SAVER_BY_PROVIDER: Partial<
     },
 };
 
-const skipSelectedModelSave: SelectedModelSaver = () => Promise.resolve();
+const skipSelectedModelSave: SelectedModelSaver = () => {
+    return Promise.resolve();
+};
 
 /**
  * Handles model-first settings and connection messages.

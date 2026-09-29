@@ -154,14 +154,18 @@ describe('PromoDetectionStore Server sessions', () => {
         // (32): each caption_acquisition message for a new session retires the
         // previous active session, so 33 replacements retire 33 sessions and
         // must evict the single oldest one.
-        const sessionIdFor = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-        const acquisitionFor = (n: number) => ({
-            videoId: VIDEO_ID,
-            status: 'analyzing',
-            source: 'server',
-            sessionId: sessionIdFor(n),
-            serverAnalysisPhase: 'caption_acquisition',
-        }) as const;
+        const sessionIdFor = (n: number): string => {
+            return `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
+        };
+        const acquisitionFor = (n: number) => {
+            return {
+                videoId: VIDEO_ID,
+                status: 'analyzing',
+                source: 'server',
+                sessionId: sessionIdFor(n),
+                serverAnalysisPhase: 'caption_acquisition',
+            } as const;
+        };
 
         await PromoDetectionStore.set(TAB_ID, acquisitionFor(0));
         for (let n = 1; n <= 33; n++) {
@@ -462,7 +466,9 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
             retiredServerSessions: [],
         };
         sessionStorageData[SESSION_STORAGE_KEY] = persisted;
-        let resolveHydration = (): void => undefined;
+        let resolveHydration = (): void => {
+            return undefined;
+        };
         sessionGet.mockImplementationOnce(
             () => new Promise<Record<string, unknown>>((resolve) => {
                 resolveHydration = (): void => {
@@ -499,7 +505,9 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
             activeServerSession: [[TAB_ID, SESSION_A]],
             retiredServerSessions: [],
         };
-        let releaseWrite = (): void => undefined;
+        let releaseWrite = (): void => {
+            return undefined;
+        };
         sessionSet.mockImplementationOnce(
             () => new Promise<void>((resolve) => {
                 releaseWrite = resolve;
@@ -528,7 +536,9 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
 
     it('serializes snapshots so a slow older write cannot win', async () => {
         const writes: Record<string, unknown>[] = [];
-        let releaseFirstWrite = (): void => undefined;
+        let releaseFirstWrite = (): void => {
+            return undefined;
+        };
         sessionSet.mockImplementation((items: Record<string, unknown>) => {
             writes.push(structuredClone(items));
             if (writes.length === 1) {
@@ -579,7 +589,9 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
             serverAnalysisPhase: 'caption_acquisition',
         });
         vi.clearAllMocks();
-        let releaseWrite = (): void => undefined;
+        let releaseWrite = (): void => {
+            return undefined;
+        };
         sessionSet.mockImplementationOnce(
             (items: Record<string, unknown>) => new Promise<void>((resolve) => {
                 releaseWrite = (): void => {
@@ -627,7 +639,9 @@ describe('PromoDetectionStore persistence across worker restarts', () => {
             status: 'no_promo',
         });
         vi.clearAllMocks();
-        let releaseWrite = (): void => undefined;
+        let releaseWrite = (): void => {
+            return undefined;
+        };
         sessionSet.mockImplementationOnce(
             (items: Record<string, unknown>) => new Promise<void>((resolve) => {
                 releaseWrite = (): void => {

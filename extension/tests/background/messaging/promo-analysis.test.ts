@@ -6,7 +6,7 @@ import {
     describe,
     expect,
     it,
-    vi
+    vi,
 } from 'vitest';
 
 // ── Imports (after mocks) ──
@@ -159,14 +159,18 @@ type Payload = Extract<
     { ok: true }
 >;
 
-const baseSender = (tabId = 42): Runtime.MessageSender => ({ tab: { id: tabId } }) as Runtime.MessageSender;
+const baseSender = (tabId = 42): Runtime.MessageSender => {
+    return { tab: { id: tabId } } as Runtime.MessageSender;
+};
 
-const basePayload = (videoId = 'vid123'): Payload => ({
-    ok: true,
-    videoId,
-    languageCode: 'en',
-    segments: [{ text: 'Hello world', startSec: 0, durationSec: 2 }],
-});
+const basePayload = (videoId = 'vid123'): Payload => {
+    return {
+        ok: true,
+        videoId,
+        languageCode: 'en',
+        segments: [{ text: 'Hello world', startSec: 0, durationSec: 2 }],
+    };
+};
 
 type AnalyzeFnParams = Parameters<LlmProviderAdapter['analyzeTranscript']>[0];
 
@@ -287,8 +291,12 @@ describe('PromoAnalysis — adapter routing', () => {
         });
 
         it('rejects old same-video completion after a BYOK route is re-enabled', async () => {
-            let resolveOld: (result: AnalyzeTranscriptResult) => void = () => undefined;
-            let resolveReplacement: (result: AnalyzeTranscriptResult) => void = () => undefined;
+            let resolveOld: (result: AnalyzeTranscriptResult) => void = () => {
+                return undefined;
+            };
+            let resolveReplacement: (result: AnalyzeTranscriptResult) => void = () => {
+                return undefined;
+            };
             const oldResult = new Promise<AnalyzeTranscriptResult>(
                 (resolve) => {
                     resolveOld = resolve;
@@ -362,8 +370,12 @@ describe('PromoAnalysis — adapter routing', () => {
         });
 
         it('does not let an aborted prefs read reclaim a replacement run', async () => {
-            let resolveOldPrefs: (prefs: unknown) => void = () => undefined;
-            let resolveReplacement: (result: AnalyzeTranscriptResult) => void = () => undefined;
+            let resolveOldPrefs: (prefs: unknown) => void = () => {
+                return undefined;
+            };
+            let resolveReplacement: (result: AnalyzeTranscriptResult) => void = () => {
+                return undefined;
+            };
             const oldPrefs = new Promise<unknown>((resolve) => {
                 resolveOldPrefs = resolve;
             });
@@ -438,7 +450,9 @@ describe('PromoAnalysis — adapter routing', () => {
         });
 
         it('does not publish stale status after an aborted tab delivery settles', async () => {
-            let resolveOldDelivery: () => void = () => undefined;
+            let resolveOldDelivery: () => void = () => {
+                return undefined;
+            };
             const oldDelivery = new Promise<void>((resolve) => {
                 resolveOldDelivery = resolve;
             });

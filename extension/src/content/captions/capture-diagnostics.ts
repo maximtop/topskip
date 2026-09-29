@@ -285,7 +285,9 @@ export class CaptureDiagnostics {
      * @returns Whether every string is within the cap.
      */
     private static hasBoundedStrings(details: CaptureStageDetails): boolean {
-        const tooLong = (text: string): boolean => text.length > MAX_PAGE_DIAGNOSTIC_STRING_LENGTH;
+        const tooLong = (text: string): boolean => {
+            return text.length > MAX_PAGE_DIAGNOSTIC_STRING_LENGTH;
+        };
         for (const value of Object.values(details)) {
             if (typeof value === 'string' && tooLong(value)) {
                 return false;

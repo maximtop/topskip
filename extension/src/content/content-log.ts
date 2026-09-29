@@ -19,7 +19,7 @@ export const contentLog = {
      * Forwards an info-level log to the background.
      *
      * @param args - Values to log (same style as
-     *   `console.info`).
+     *   `console.info`); the background prints them with `console.debug`.
      */
     info(...args: unknown[]): void {
         send('info', args);

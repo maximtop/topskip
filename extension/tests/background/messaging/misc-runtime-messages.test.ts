@@ -43,7 +43,7 @@ const { ContentLogMessages, PromoDetectionRuntimeMessages } = await import('@/ba
 
 describe('ContentLogMessages.log', () => {
     beforeEach(() => {
-        vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        vi.spyOn(console, 'debug').mockImplementation(() => undefined);
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
     });
@@ -52,9 +52,9 @@ describe('ContentLogMessages.log', () => {
         vi.restoreAllMocks();
     });
 
-    it('calls console.info for level "info"', () => {
+    it('calls console.debug for level "info"', () => {
         ContentLogMessages.log('info', ['hello'], undefined);
-        expect(console.info).toHaveBeenCalledWith('[TopSkip content]', 'hello');
+        expect(console.debug).toHaveBeenCalledWith('[TopSkip content]', 'hello');
     });
 
     it('calls console.warn for level "warn"', () => {
@@ -72,12 +72,12 @@ describe('ContentLogMessages.log', () => {
 
     it('includes the tab id in the tag when tabId is provided', () => {
         ContentLogMessages.log('info', ['x'], 42);
-        expect(console.info).toHaveBeenCalledWith('[TopSkip content t42]', 'x');
+        expect(console.debug).toHaveBeenCalledWith('[TopSkip content t42]', 'x');
     });
 
     it('spreads multiple args into the console call', () => {
         ContentLogMessages.log('info', ['a', 'b', 'c'], undefined);
-        expect(console.info).toHaveBeenCalledWith(
+        expect(console.debug).toHaveBeenCalledWith(
             '[TopSkip content]',
             'a',
             'b',

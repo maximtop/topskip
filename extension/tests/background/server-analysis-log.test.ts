@@ -16,17 +16,17 @@ describe('BackgroundServerAnalysisLog', () => {
     });
 
     it('stays silent by default in the test/release build gate', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
         BackgroundServerAnalysisLog.info('http-start', {
             videoId: 'dQw4w9WgXcQ',
         });
 
-        expect(info).not.toHaveBeenCalled();
+        expect(debug).not.toHaveBeenCalled();
     });
 
     it('prints supplied fields inline as key=value pairs when dev logging is enabled', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
         BackgroundServerAnalysisLog.info(
             'http-start',
@@ -34,7 +34,7 @@ describe('BackgroundServerAnalysisLog', () => {
             true,
         );
 
-        expect(info).toHaveBeenCalledWith(
+        expect(debug).toHaveBeenCalledWith(
             '[TopSkip server-analysis]',
             'http-start',
             'videoId=dQw4w9WgXcQ tabId=42',

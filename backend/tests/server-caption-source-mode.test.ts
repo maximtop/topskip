@@ -123,7 +123,7 @@ describe('backend caption-source mode', () => {
         vi.spyOn(BackendPublicState, 'assertReady').mockImplementation(
             () => {},
         );
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         const assertAvailable = vi
             .spyOn(YtDlpBinary, 'assertAvailable')
             .mockReturnValue('v-test');
@@ -134,10 +134,10 @@ describe('backend caption-source mode', () => {
         expect(createSpy).toHaveBeenLastCalledWith({
             captionSource: BACKEND_CAPTION_SOURCE.ExtensionUpload,
         });
-        expect(info).toHaveBeenLastCalledWith(
+        expect(debug).toHaveBeenLastCalledWith(
             expect.stringContaining('captionSource extension_upload'),
         );
-        expect(info.mock.lastCall?.[0]).not.toContain('yt-dlp');
+        expect(debug.mock.lastCall?.[0]).not.toContain('yt-dlp');
 
         process.env.TOPSKIP_CAPTION_SOURCE = BACKEND_CAPTION_SOURCE.LegacyYtDlp;
         BackendHttpServer.listen();

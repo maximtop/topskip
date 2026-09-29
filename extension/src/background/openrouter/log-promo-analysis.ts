@@ -295,7 +295,7 @@ export function logChunkPromoEntry(
         rawT.text + rawT.note,
         '---------- end chunk ----------',
     ];
-    console.info(lines.join('\n'));
+    console.debug(lines.join('\n'));
 }
 
 /**
@@ -467,6 +467,6 @@ export class LogPromoAnalysis {
         if (!enabled) {
             return;
         }
-        console.info(bundle);
+        console.debug(bundle);
     }
 }

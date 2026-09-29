@@ -21,7 +21,7 @@ export class DevConsole {
         if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
             return;
         }
-        console.info(...parts);
+        console.debug(...parts);
     }
 
     /**

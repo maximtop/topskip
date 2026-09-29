@@ -140,7 +140,7 @@ export class BackendServerAnalysisLog {
         if (safeFields === null) {
             return;
         }
-        console.info(SERVER_ANALYSIS_LOG_PREFIX, event, safeFields);
+        console.debug(SERVER_ANALYSIS_LOG_PREFIX, event, safeFields);
     }
 
     /**

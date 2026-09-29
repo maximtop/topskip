@@ -16,15 +16,15 @@ describe('backend server analysis logging', () => {
     });
 
     it('is quiet until the local CLI enables it', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
 
         BackendServerAnalysisLog.info('http-received', { method: 'POST' });
 
-        expect(info).not.toHaveBeenCalled();
+        expect(debug).not.toHaveBeenCalled();
     });
 
     it('prints stable events with caller-selected scalar fields', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         BackendServerAnalysisLog.enable();
 
         BackendServerAnalysisLog.info('job-started', {
@@ -32,7 +32,7 @@ describe('backend server analysis logging', () => {
             jobId: 'local-dQw4w9WgXcQ-server-v4',
         });
 
-        expect(info).toHaveBeenCalledWith(
+        expect(debug).toHaveBeenCalledWith(
             '[TopSkip server-analysis]',
             'job-started',
             {
@@ -43,7 +43,7 @@ describe('backend server analysis logging', () => {
     });
 
     it('drops unknown and sensitive fields from a known event', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         BackendServerAnalysisLog.enable();
 
         BackendServerAnalysisLog.info('analysis-completed', {
@@ -62,7 +62,7 @@ describe('backend server analysis logging', () => {
             unknownField: 'unknown value',
         });
 
-        expect(info).toHaveBeenCalledWith(
+        expect(debug).toHaveBeenCalledWith(
             '[TopSkip server-analysis]',
             'analysis-completed',
             {
@@ -102,7 +102,7 @@ describe('backend server analysis logging', () => {
     });
 
     it('does not log unknown events', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         BackendServerAnalysisLog.enable();
 
         const infoMethod = Reflect.get(BackendServerAnalysisLog, 'info');
@@ -114,11 +114,11 @@ describe('backend server analysis logging', () => {
             { videoId: 'dQw4w9WgXcQ' },
         ]);
 
-        expect(info).not.toHaveBeenCalled();
+        expect(debug).not.toHaveBeenCalled();
     });
 
     it('drops raw paths, invalid video ids, and unbounded strings', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         BackendServerAnalysisLog.enable();
 
         BackendServerAnalysisLog.info('http-received', {
@@ -131,13 +131,13 @@ describe('backend server analysis logging', () => {
             resultStatus: 'x'.repeat(161),
         });
 
-        expect(info).toHaveBeenNthCalledWith(
+        expect(debug).toHaveBeenNthCalledWith(
             1,
             '[TopSkip server-analysis]',
             'http-received',
             { requestId: 'request-safe', method: 'GET' },
         );
-        expect(info).toHaveBeenNthCalledWith(
+        expect(debug).toHaveBeenNthCalledWith(
             2,
             '[TopSkip server-analysis]',
             'analysis-request-handled',
@@ -146,7 +146,7 @@ describe('backend server analysis logging', () => {
     });
 
     it('ignores accessors instead of evaluating caller-owned fields', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         const readVideoId = vi.fn(() => 'sensitive transcript');
         const fields = { languageCode: 'en' };
         Object.defineProperty(fields, 'videoId', {
@@ -158,7 +158,7 @@ describe('backend server analysis logging', () => {
         BackendServerAnalysisLog.info('yt-dlp-parse-completed', fields);
 
         expect(readVideoId).not.toHaveBeenCalled();
-        expect(info).toHaveBeenCalledWith(
+        expect(debug).toHaveBeenCalledWith(
             '[TopSkip server-analysis]',
             'yt-dlp-parse-completed',
             { languageCode: 'en' },

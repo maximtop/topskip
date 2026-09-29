@@ -18,7 +18,7 @@ export class ContentLogMessages {
      * Prints a content-script log line in the service-worker console,
      * prefixed with the originating tab id when available.
      *
-     * @param level - Console method to call (`info`, `warn`, or `error`).
+     * @param level - Content log level; `info` lines go to `console.debug`.
      * @param args - Arguments to forward verbatim to the console method.
      * @param tabId - Tab id from the sender, or `undefined` when not present.
      */
@@ -31,7 +31,16 @@ export class ContentLogMessages {
             ? `[TopSkip content t${tabId}]`
             : LOG_PREFIX_CONTENT;
 
-        console[level](tag, ...args);
+        switch (level) {
+            case 'warn':
+                console.warn(tag, ...args);
+                break;
+            case 'error':
+                console.error(tag, ...args);
+                break;
+            default:
+                console.debug(tag, ...args);
+        }
     }
 }
 

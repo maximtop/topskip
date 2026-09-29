@@ -33,21 +33,21 @@ export function spyOnAllConsole(): ConsoleSpies {
 }
 
 /**
- * Asserts release-like console quietness: `info` was called zero times or
+ * Asserts release-like console quietness: `debug` was called zero times or
  * exactly once with the startup line (and a build label), and no other
  * method was called at all.
  *
  * @param spies - Spies from {@link spyOnAllConsole}.
  */
 export function expectOnlyStartupLine(spies: ConsoleSpies): void {
-    const infoCalls = spies.info.mock.calls;
-    expect(infoCalls.length).toBeLessThanOrEqual(1);
-    for (const call of infoCalls) {
+    const debugCalls = spies.debug.mock.calls;
+    expect(debugCalls.length).toBeLessThanOrEqual(1);
+    for (const call of debugCalls) {
         expect(call[0]).toBe(STARTUP_LINE);
         expect(call).toHaveLength(2);
     }
     expect(spies.log).not.toHaveBeenCalled();
-    expect(spies.debug).not.toHaveBeenCalled();
+    expect(spies.info).not.toHaveBeenCalled();
     expect(spies.warn).not.toHaveBeenCalled();
     expect(spies.error).not.toHaveBeenCalled();
 }

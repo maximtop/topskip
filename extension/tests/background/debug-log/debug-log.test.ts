@@ -453,7 +453,7 @@ describe('DebugLog', () => {
         }
 
         DebugLog.record(DEBUG_LOG_EVENT.WorkerStarted, { build: 'b', first: false }, {}, true);
-        expect(spies.info).toHaveBeenCalledWith(
+        expect(spies.debug).toHaveBeenCalledWith(
             '[TopSkip debug]',
             'worker-started',
             'build=b first=false',

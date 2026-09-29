@@ -34,7 +34,7 @@ export function logTranscriptForDeveloper(
         undefined,
     );
 
-    console.info(LOG_PREFIX_CAPTIONS, {
+    console.debug(LOG_PREFIX_CAPTIONS, {
         videoId,
         languageCode: languageCode ?? null,
         segmentCount: segments.length,

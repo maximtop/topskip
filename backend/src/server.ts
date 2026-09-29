@@ -233,7 +233,7 @@ export class BackendHttpServer {
             DEFAULT_BACKEND_PORT,
         );
         server.listen(port, host, () => {
-            console.info(
+            console.debug(
                 `TopSkip backend listening on http://${host}:${port} (captionSource ${runtimeConfig.captionSource})`,
             );
         });

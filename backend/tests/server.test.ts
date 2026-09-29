@@ -194,7 +194,7 @@ describe('BackendHttpServer request body guard', () => {
     });
 
     it('keeps successful routine health probes out of request logs', async () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         BackendServerAnalysisLog.enable();
         const server = BackendHttpServer.create();
         servers.push(server);
@@ -205,11 +205,11 @@ describe('BackendHttpServer request body guard', () => {
         await waitForEventLoop();
 
         expect(response.status).toBe(200);
-        expect(info).not.toHaveBeenCalled();
+        expect(debug).not.toHaveBeenCalled();
     });
 
     it('preserves request logs for non-health routes', async () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         BackendServerAnalysisLog.enable();
         const server = BackendHttpServer.create();
         servers.push(server);
@@ -220,14 +220,14 @@ describe('BackendHttpServer request body guard', () => {
         await waitForEventLoop();
 
         expect(response.status).toBe(200);
-        expect(info).toHaveBeenCalledTimes(2);
-        expect(info).toHaveBeenNthCalledWith(
+        expect(debug).toHaveBeenCalledTimes(2);
+        expect(debug).toHaveBeenNthCalledWith(
             1,
             '[TopSkip server-analysis]',
             'http-received',
             expect.objectContaining({ method: 'GET', route: '/v1/config' }),
         );
-        expect(info).toHaveBeenNthCalledWith(
+        expect(debug).toHaveBeenNthCalledWith(
             2,
             '[TopSkip server-analysis]',
             'http-completed',
@@ -240,7 +240,7 @@ describe('BackendHttpServer request body guard', () => {
     });
 
     it('logs a health request when the probe fails', async () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         vi.spyOn(console, 'warn').mockImplementation(() => {});
         vi.spyOn(BackendAnalysisApi, 'health').mockImplementation(() => {
             throw new Error('health dependency unavailable');
@@ -255,14 +255,14 @@ describe('BackendHttpServer request body guard', () => {
         await waitForEventLoop();
 
         expect(response.status).toBe(500);
-        expect(info).toHaveBeenCalledTimes(2);
-        expect(info).toHaveBeenNthCalledWith(
+        expect(debug).toHaveBeenCalledTimes(2);
+        expect(debug).toHaveBeenNthCalledWith(
             1,
             '[TopSkip server-analysis]',
             'http-received',
             expect.objectContaining({ method: 'GET', route: '/v1/health' }),
         );
-        expect(info).toHaveBeenNthCalledWith(
+        expect(debug).toHaveBeenNthCalledWith(
             2,
             '[TopSkip server-analysis]',
             'http-completed',

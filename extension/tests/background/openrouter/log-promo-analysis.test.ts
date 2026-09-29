@@ -16,7 +16,7 @@ import {
 
 describe('developer logging gate', () => {
     it('emits transcript-bearing logs only when explicitly enabled', () => {
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         const chunk = {
             chunkIndex: 0,
             chunkCount: 1,
@@ -34,12 +34,12 @@ describe('developer logging gate', () => {
 
         logChunkPromoEntry(chunk, false);
         LogPromoAnalysis.logAnalysisBundle('private bundle', false);
-        expect(info).not.toHaveBeenCalled();
+        expect(debug).not.toHaveBeenCalled();
 
         logChunkPromoEntry(chunk, true);
         LogPromoAnalysis.logAnalysisBundle('private bundle', true);
-        expect(info).toHaveBeenCalledTimes(2);
-        info.mockRestore();
+        expect(debug).toHaveBeenCalledTimes(2);
+        debug.mockRestore();
     });
 });
 

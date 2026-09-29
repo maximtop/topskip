@@ -151,7 +151,7 @@ export class DebugLog {
     ): void {
         try {
             if (mirrorToConsole) {
-                console.info(DEBUG_LOG_CONSOLE_PREFIX, ...formatLogStage(event, fields));
+                console.debug(DEBUG_LOG_CONSOLE_PREFIX, ...formatLogStage(event, fields));
             }
             const entry: PendingRecord = {
                 event,

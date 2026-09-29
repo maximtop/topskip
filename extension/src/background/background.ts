@@ -33,7 +33,7 @@ export class Background {
         registerRuntimeMessages(defaultRegistry);
         PrefsPortHub.register();
         DebugLogLifecycle.register();
-        console.info(
+        console.debug(
             '[TopSkip] Service worker started',
             getExtensionBuildLabel(),
         );

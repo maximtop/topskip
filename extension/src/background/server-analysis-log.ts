@@ -24,7 +24,7 @@ export class BackgroundServerAnalysisLog {
         if (!enabled) {
             return;
         }
-        console.info(
+        console.debug(
             SERVER_ANALYSIS_LOG_PREFIX,
             ...formatLogStage(event, fields),
         );

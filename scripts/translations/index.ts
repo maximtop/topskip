@@ -1,3 +1,8 @@
+/**
+ * @file CLI entry point that wires the `download`, `upload`, `validate` and
+ * `info` translation-management commands to the commander program.
+ */
+
 import process from 'node:process';
 
 import { program } from 'commander';
@@ -16,8 +21,6 @@ const LOCALES = Object.keys(LANGUAGES);
  *
  * @param error - Thrown value.
  * @param prefix - Optional context for the message.
- *
- * @returns Never; the process exits.
  */
 function fail(error: unknown, prefix = ''): never {
     const message = error instanceof Error ? error.message : String(error);

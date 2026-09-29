@@ -1,3 +1,8 @@
+/**
+ * @file Persists the anonymous server installation credential, keeping it
+ * out of popup and content bundles.
+ */
+
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';

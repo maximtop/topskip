@@ -1,3 +1,8 @@
+/**
+ * @file Fans out the debug-log switch state to live tabs and open extension
+ * pages after it changes.
+ */
+
 import browser from '@/shared/browser';
 import {
     TOPSKIP_MESSAGE,

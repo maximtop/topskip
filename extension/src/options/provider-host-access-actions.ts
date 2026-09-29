@@ -1,3 +1,8 @@
+/**
+ * @file Coordinates user-initiated optional-host permission grants and
+ * connection key tests from inside the originating click gesture.
+ */
+
 import {
     type ConnectionProviderId,
     type ProviderHostAccessRequiredFailure,
@@ -16,8 +21,19 @@ import {
  * Current row facts needed to choose an explicit access/test route.
  */
 export interface ProviderHostAccessActionInput {
+    /**
+     * Provider the action applies to.
+     */
     providerId: ConnectionProviderId;
+
+    /**
+     * Whether a connection key is currently saved for this provider.
+     */
     hasCredential: boolean;
+
+    /**
+     * Current optional host permission grant state for this provider.
+     */
     hostAccessStatus: ProviderHostAccessStatus;
 }
 
@@ -63,7 +79,7 @@ export class ProviderHostAccessActions {
      * @param input - Provider row facts captured by the click handler.
      * @param effects - Injected permission and UI effects.
      *
-     * @returns Nothing; completion is reflected through effects.
+     * Completion is reflected through effects, not through a return value.
      */
     static grant(
         input: ProviderHostAccessActionInput,
@@ -88,7 +104,7 @@ export class ProviderHostAccessActions {
      * @param input - Provider row facts captured by the click handler.
      * @param effects - Injected permission, transport, and UI effects.
      *
-     * @returns Nothing; completion is reflected through effects.
+     * Completion is reflected through effects, not through a return value.
      */
     static test(
         input: ProviderHostAccessActionInput,
@@ -140,8 +156,6 @@ export class ProviderHostAccessActions {
      * to remain independent.
      *
      * @param providerId - Provider whose action reached a terminal path.
-     *
-     * @returns Nothing.
      */
     private static release(providerId: ConnectionProviderId): void {
         ProviderHostAccessActions.activeProviderIds.delete(providerId);

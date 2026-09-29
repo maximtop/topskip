@@ -8,10 +8,8 @@ import {
     vi,
 } from 'vitest';
 
-import {
-    ServerAnalysisClient,
-    ServerAnalysisClientError,
-} from '@/background/server-analysis-client';
+import { ServerAnalysisClient } from '@/background/server-analysis-client';
+import { ServerAnalysisClientError } from '@/background/server-analysis-client-error';
 import { ServerTranscriptIdentity } from '@/background/server-transcript-identity';
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
@@ -41,7 +39,7 @@ vi.mock('@/background/debug-log/debug-log', () => ({ DebugLog: debugLogMock }));
  * @returns Fully qualified endpoint URL.
  */
 function endpoint(path: string): string {
-    return `${__TOPSKIP_SERVER_BASE_URL__}${path}`;
+    return `${TOPSKIP_SERVER_BASE_URL}${path}`;
 }
 
 const fetchMock = vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
@@ -49,7 +47,7 @@ const fetchMock = vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof
 /**
  * Extracts the request URL from any `fetch` input form.
  *
- * @param input
+ * @param input Fetch call's first argument, in any of its accepted forms.
  */
 function requestUrl(input: RequestInfo | URL): string {
     if (typeof input === 'string') {
@@ -366,7 +364,9 @@ describe('ServerAnalysisClient', () => {
         expect(processing).toEqual(PROCESSING_RESPONSE);
 
         vi.resetModules();
-        const { ServerAnalysisClient: RestartedServerAnalysisClient } = await import('@/background/server-analysis-client');
+        const { ServerAnalysisClient: RestartedServerAnalysisClient } = await import(
+            '@/background/server-analysis-client'
+        );
         fetchMock.mockResolvedValueOnce(
             new Response(
                 JSON.stringify({
@@ -628,7 +628,9 @@ describe('ServerAnalysisClient', () => {
 
         expect(first.status).toBe('processing');
         expect(second.status).toBe('processing');
-        const registerCalls = fetchMock.mock.calls.filter(([input]) => requestUrl(input).includes('/v1/installations/register'));
+        const registerCalls = fetchMock.mock.calls.filter(
+            ([input]) => requestUrl(input).includes('/v1/installations/register'),
+        );
         expect(registerCalls).toHaveLength(1);
         expect(installationMocks.clear).toHaveBeenCalledOnce();
         expect(installationMocks.save).toHaveBeenCalledOnce();

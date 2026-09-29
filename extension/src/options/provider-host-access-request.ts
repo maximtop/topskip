@@ -1,3 +1,8 @@
+/**
+ * @file Requests an optional cross-origin host permission grant for a BYOK
+ * provider from inside the user gesture that triggered it.
+ */
+
 import browser from '@/shared/browser';
 import {
     PROVIDER_HOST_ACCESS_REQUEST_OUTCOME,

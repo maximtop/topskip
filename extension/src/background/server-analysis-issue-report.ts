@@ -1,3 +1,8 @@
+/**
+ * @file Builds the sanitized GitHub issue URL for a server-analysis failure
+ * report and opens it from the popup's trusted background state.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
@@ -39,10 +44,10 @@ export class ServerAnalysisIssueReport {
      * when one exists.
      *
      * @param input - Trusted background state and deterministic report time.
-     * @param input.baseUrl
-     * @param input.failure
-     * @param input.now
-     * @param input.hasDebugLog
+     * @param input.baseUrl - Configured GitHub "new issue" destination.
+     * @param input.failure - Server-analysis failure context to report.
+     * @param input.now - Report time, injectable for tests.
+     * @param input.hasDebugLog - Whether a debug log currently exists.
      *
      * @returns Prefilled GitHub URL, or `null` for an unsafe destination.
      */

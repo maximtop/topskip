@@ -1,3 +1,8 @@
+/**
+ * @file Shared read/write helpers and colour-coded console logging for the
+ * translation CLI scripts (`download`, `upload`, `validate`, `unused`).
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -10,7 +15,14 @@ import {
  * One entry of a Chrome `messages.json` file.
  */
 export interface LocaleMessage {
+    /**
+     * Translated (or source) text shown to the user.
+     */
     message: string;
+
+    /**
+     * Translator-facing note explaining the message's context; not shown to users.
+     */
     description?: string;
 }
 

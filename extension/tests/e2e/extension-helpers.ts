@@ -30,8 +30,8 @@ function isBackgroundWorker(worker: Worker): boolean {
  * "background"). Call immediately after creating the persistent context so
  * existing workers are hooked too.
  *
- * @param context
- * @param errors
+ * @param context Persistent browser context to observe.
+ * @param errors Array collecting formatted error lines as they occur.
  */
 export function trackServiceWorkerConsoleErrors(
     context: BrowserContext,
@@ -57,9 +57,9 @@ export function trackServiceWorkerConsoleErrors(
  * Record `error` / failed `assert` from `console` and uncaught exceptions on a
  * normal Page (popup, fixture tab, etc.).
  *
- * @param page
- * @param label
- * @param errors
+ * @param page Page to observe.
+ * @param label Prefix identifying the page in collected error lines.
+ * @param errors Array collecting formatted error lines as they occur.
  */
 export function trackPageErrors(
     page: Page,
@@ -205,7 +205,7 @@ export async function sendExtensionRuntimeMessage(
     extensionPage: Page,
     message: Record<string, unknown>,
 ): Promise<unknown> {
-    return extensionPage.evaluate(async (message) => {
+    return extensionPage.evaluate(async (evaluatedMessage) => {
         const chromeApi = Reflect.get(globalThis, 'chrome');
         if (typeof chromeApi !== 'object' || chromeApi === null) {
             throw new Error('Missing chrome API');
@@ -220,7 +220,7 @@ export async function sendExtensionRuntimeMessage(
         }
         return new Promise<unknown>((resolve, reject) => {
             Reflect.apply(sendMessage, runtime, [
-                message,
+                evaluatedMessage,
                 (result: unknown) => {
                     const lastError = Reflect.get(runtime, 'lastError');
                     if (typeof lastError === 'object' && lastError !== null) {
@@ -290,9 +290,9 @@ export async function installClipboardCapture(
     mode: ClipboardCaptureMode,
 ): Promise<void> {
     await page.addInitScript(
-        ({ key, mode }) => {
+        ({ key, mode: captureMode }) => {
             const writeText = (text: string): Promise<void> => {
-                if (mode === 'reject') {
+                if (captureMode === 'reject') {
                     return Promise.reject(
                         new DOMException(
                             'Write permission denied.',
@@ -412,12 +412,11 @@ export async function readDebugLogStorageBytes(
         const encoder = new TextEncoder();
         let bytes = 0;
         for (const [key, value] of Object.entries(all)) {
-            if (!key.startsWith(prefix)) {
-                continue;
+            if (key.startsWith(prefix)) {
+                bytes
+                    += encoder.encode(JSON.stringify(value)).byteLength
+                    + encoder.encode(key).byteLength;
             }
-            bytes
-                += encoder.encode(JSON.stringify(value)).byteLength
-                + encoder.encode(key).byteLength;
         }
         return bytes;
     }, keyPrefix);

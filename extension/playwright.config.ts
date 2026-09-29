@@ -1,3 +1,8 @@
+/**
+ * @file Playwright configuration for the extension's end-to-end tests: builds
+ * against a loopback fixture server instead of the shipped public backend.
+ */
+
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({

@@ -18,8 +18,8 @@ import {
 } from '../../helpers/runtime-senders';
 
 const extensionId = await vi.hoisted(async () => {
-    const { EXTENSION_ID } = await import('../../helpers/runtime-senders');
-    return EXTENSION_ID;
+    const { EXTENSION_ID: hoistedExtensionId } = await import('../../helpers/runtime-senders');
+    return hoistedExtensionId;
 });
 
 vi.mock('@/shared/browser', () => ({

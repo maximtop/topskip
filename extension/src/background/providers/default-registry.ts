@@ -1,3 +1,8 @@
+/**
+ * @file Builds the production provider registry from all enabled built-in
+ * LLM adapters.
+ */
+
 import { ChromePromptApiAdapter } from '@/background/providers/chrome-prompt-api-adapter';
 import { OpenAiAdapter } from '@/background/providers/openai-adapter';
 import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
@@ -18,7 +23,7 @@ const adapters: LlmProviderAdapter[] = [
 // and proposed cutting 12 contiguous minutes out of a 30-minute video. The
 // adapter is kept so a future Gemini Nano can be re-measured by flipping
 // `INCLUDE_CHROME_BUILTIN_PROVIDER` in `extension/build-modes.ts`.
-if (__TOPSKIP_INCLUDE_CHROME_BUILTIN__) {
+if (TOPSKIP_INCLUDE_CHROME_BUILTIN) {
     adapters.unshift(new ChromePromptApiAdapter());
 }
 

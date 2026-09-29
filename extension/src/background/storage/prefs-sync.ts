@@ -1,3 +1,8 @@
+/**
+ * @file Owns reading, validating, repairing and writing user preferences in
+ * `browser.storage.local`; the only module that touches that key.
+ */
+
 import * as v from 'valibot';
 
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';

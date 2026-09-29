@@ -1,3 +1,8 @@
+/**
+ * @file Content-side collector and batching client for allow-listed debug-log
+ * events: sanitises, coalesces and rate-limits before sending to background.
+ */
+
 import { contentLog } from '@/content/content-log';
 import browser from '@/shared/browser';
 import { MS_PER_SECOND } from '@/shared/constants';
@@ -50,15 +55,36 @@ export type DebugLogSeekKind = (typeof DEBUG_LOG_SEEK_KIND)[keyof typeof DEBUG_L
 /**
  * Seek position pair (seconds) for one seek or jump.
  */
-export interface DebugLogSeekFields { fromSec: number; toSec: number }
+export interface DebugLogSeekFields {
+    /**
+     * Media time in seconds before the seek or jump.
+     */
+    fromSec: number;
+
+    /**
+     * Media time in seconds after the seek or jump.
+     */
+    toSec: number;
+}
 
 /**
  * Optional identity attached to an event; undefined values are omitted and
  * malformed ids are dropped so the append envelope always validates.
  */
 export interface DebugLogEventIds {
+    /**
+     * Current watch video id, when known and valid (`VIDEO_ID_PATTERN`).
+     */
     video?: string;
+
+    /**
+     * Current watch session id, when known and valid (`UUID_PATTERN`).
+     */
     session?: string;
+
+    /**
+     * Current backend analysis job id, when known and valid (`JOB_ID_PATTERN`).
+     */
     job?: string;
 }
 
@@ -77,7 +103,15 @@ type DebugLogWireFields = Record<string, string | number | boolean>;
  * can back-date it with `ageMs`.
  */
 interface QueuedDebugLogEvent {
+    /**
+     * Wire-shaped event, minus `ageMs`, which is computed at flush time.
+     */
     event: Omit<DebugLogWireEvent, 'ageMs'>;
+
+    /**
+     * Wall-clock time (`Date.now()`) the event was recorded, used to
+     * back-date `ageMs` on flush.
+     */
     recordedAtMs: number;
 }
 
@@ -85,8 +119,20 @@ interface QueuedDebugLogEvent {
  * Drop counters reported with the next accepted batch.
  */
 interface DebugLogClientDropCounters {
+    /**
+     * Seek/jump events dropped by the per-second seek coalescer.
+     */
     coalesced: number;
+
+    /**
+     * Events dropped by the per-tab per-minute fixed-window ceiling.
+     */
     ceiling: number;
+
+    /**
+     * Events dropped because the queue was full while the background was
+     * not accepting batches.
+     */
     unreachable: number;
 }
 
@@ -358,7 +404,7 @@ export class DebugLogClient {
         fields: DebugLogFields,
         ids: DebugLogEventIds,
     ): void {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return;
         }
         contentLog.info(
@@ -429,18 +475,14 @@ export class DebugLogClient {
     private static boundFields(fields: DebugLogFields): DebugLogWireFields {
         const bounded: DebugLogWireFields = {};
         for (const [key, value] of Object.entries(fields)) {
-            if (key.length > DEBUG_LOG_MAX_FIELD_KEY_LENGTH) {
-                continue;
+            const keyWithinLimit = key.length <= DEBUG_LOG_MAX_FIELD_KEY_LENGTH;
+            const valuePresent = value !== undefined && value !== null;
+            const valueFinite = typeof value !== 'number' || Number.isFinite(value);
+            if (keyWithinLimit && valuePresent && valueFinite) {
+                bounded[key] = typeof value === 'string'
+                    ? value.slice(0, DEBUG_LOG_MAX_FIELD_STRING_LENGTH)
+                    : value;
             }
-            if (value === undefined || value === null) {
-                continue;
-            }
-            if (typeof value === 'number' && !Number.isFinite(value)) {
-                continue;
-            }
-            bounded[key] = typeof value === 'string'
-                ? value.slice(0, DEBUG_LOG_MAX_FIELD_STRING_LENGTH)
-                : value;
         }
         return bounded;
     }

@@ -1,3 +1,8 @@
+/**
+ * @file Manages long-lived port connections from extension pages for
+ * real-time preference synchronisation.
+ */
+
 import browser from '@/shared/browser';
 import { PREFS_PORT_NAME, type UserPreferences } from '@/shared/constants';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';

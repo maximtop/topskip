@@ -66,7 +66,7 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-vi.mock('@/background/debug-log/debug-log-export', () => ({
+vi.mock('@/background/debug-log/environment-probe', () => ({
     EnvironmentProbe: { collect: probeMocks.collect },
 }));
 
@@ -102,6 +102,8 @@ type InstalledListener = (details: {
 
 /**
  * The `onStartup` callback registered by the last `register()` call.
+ *
+ * @throws {Error} When `register()` has not been called yet.
  */
 function startupListener(): StartupListener {
     const listener = runtimeMocks.onStartup.mock.calls.at(-1)?.[0] as
@@ -115,6 +117,8 @@ function startupListener(): StartupListener {
 
 /**
  * The `onInstalled` callback registered by the last `register()` call.
+ *
+ * @throws {Error} When `register()` has not been called yet.
  */
 function installedListener(): InstalledListener {
     const listener = runtimeMocks.onInstalled.mock.calls.at(-1)?.[0] as
@@ -144,8 +148,8 @@ function resetLifetime(): void {
  * Completes a worker start: hydrate with the given profile default, then
  * run the lifecycle marker.
  *
- * @param buildLabel
- * @param defaultEnabled
+ * @param buildLabel Build label passed through to `markWorkerStarted`.
+ * @param defaultEnabled Debug-log-enabled default used to hydrate the store.
  */
 async function completeStart(buildLabel: string, defaultEnabled = false): Promise<void> {
     await DebugLogStore.ready(defaultEnabled);
@@ -335,7 +339,8 @@ describe('DebugLogLifecycle', () => {
         expect(DebugLogStore.isEnabled()).toBe(false);
     });
 
-    it('applies the dev default exactly like a user "on": snapshot marker first, earlier events discarded', async () => {
+    it('applies the dev default exactly like a user "on": snapshot marker first, earlier events '
+        + 'discarded', async () => {
         DebugLog.record(DEBUG_LOG_EVENT.WakeupProbe, { readyTabs: 1, unavailableTabs: 0 });
         TabAttributionRegistry.noteTab(TAB);
 

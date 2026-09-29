@@ -1,3 +1,8 @@
+/**
+ * @file Shared constants used across extension bundles: storage keys, unit
+ * conversions, log prefixes, and the user preferences schema.
+ */
+
 import * as v from 'valibot';
 
 import { DEFAULT_DETECTION_MODEL_ID } from '@/shared/detection-models';
@@ -160,8 +165,8 @@ export const CAPTION_TRANSCRIPT_DEV_ENABLED = true;
  * Emits safe stage-by-stage caption capture diagnostics only in development
  * builds without gating the production caption acquisition path.
  */
-export const CAPTION_CAPTURE_VERBOSE_LOGS = typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined'
-    && __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
+export const CAPTION_CAPTURE_VERBOSE_LOGS = typeof TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS !== 'undefined'
+    && TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS;
 
 /**
  * Well-known port name for long-lived preference-sync connections

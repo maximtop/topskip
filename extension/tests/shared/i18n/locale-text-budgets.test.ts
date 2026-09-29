@@ -25,6 +25,8 @@ const TEXT_MAX_LENGTH_MARKER = 'TEXT MAX LENGTH:';
  * @param key - Message key.
  *
  * @returns Message and description strings (empty when absent).
+ *
+ * @throws {Error} When the catalog file is not an object or lacks `key`.
  */
 function readLocaleEntry(
     locale: string,

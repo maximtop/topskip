@@ -1,3 +1,9 @@
+/**
+ * @file CLI wrapper that runs Rspack with the TOPSKIP_BUILD env var set, so the
+ * build profile (dev/beta/release) is picked with a single required argument
+ * instead of remembering the underlying rspack invocation.
+ */
+
 import { spawn } from 'node:child_process';
 import process from 'node:process';
 

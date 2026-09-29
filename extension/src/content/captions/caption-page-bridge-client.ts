@@ -1,3 +1,8 @@
+/**
+ * @file ISOLATED-side client for the caption page bridge: dispatches lifecycle
+ * commands to the MAIN-world bridge via `CustomEvent`s and correlates results.
+ */
+
 import {
     CAPTION_PAGE_BRIDGE_COMMAND,
     CAPTION_PAGE_BRIDGE_COMMAND_TIMEOUT_MS,
@@ -23,9 +28,24 @@ const BRIDGE_UNAVAILABLE_RESULT = Object.freeze({
  * Cleanup metadata keeps every pending command single-settlement and leak-free.
  */
 interface PendingCaptionPageBridgeCommand {
+    /**
+     * Settles the caller's promise with the eventual bridge result.
+     */
     resolve: (result: unknown) => void;
+
+    /**
+     * Timer that force-settles the command as bridge-unavailable on timeout.
+     */
     timeoutId: ReturnType<typeof globalThis.setTimeout>;
+
+    /**
+     * Owner-supplied cancellation for this command, if any was given.
+     */
     signal: AbortSignal | undefined;
+
+    /**
+     * Listener removed on settlement; unset when no `signal` was given.
+     */
     abortListener: (() => void) | undefined;
 }
 

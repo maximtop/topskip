@@ -1,3 +1,10 @@
+/**
+ * @file Valibot schemas and derived types for subtitle extraction: the
+ * transcript artifact contract shared by every strategy, the bounded
+ * diagnostics an attempt may retain, and the strategy interface the
+ * extraction pipeline drives.
+ */
+
 import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     type ServerAnalysisFailureCode,
@@ -211,8 +218,19 @@ export type SubtitleExtractionAttempt = v.InferOutput<
  * Shared input every deterministic extraction strategy receives.
  */
 export interface SubtitleExtractionStrategyInput {
+    /**
+     * YouTube video id the transcript is extracted for.
+     */
     videoId: string;
+
+    /**
+     * Server analysis algorithm version stamped onto any produced artifact.
+     */
     algorithmVersion: string;
+
+    /**
+     * Deterministic clock value the caller supplies so attempt timestamps stay reproducible in tests.
+     */
     nowMs: number;
 }
 
@@ -235,7 +253,14 @@ export type SubtitleExtractionStrategyResult = | { status: 'succeeded'; artifact
  * Strategy contract used by the backend-owned extraction pipeline.
  */
 export interface SubtitleExtractionStrategy {
+    /**
+     * Stable strategy id recorded on every attempt it produces.
+     */
     name: string;
+
+    /**
+     * Attempts to produce a transcript artifact for the given video, synchronously or asynchronously.
+     */
     extract: (
         input: SubtitleExtractionStrategyInput,
     ) =>

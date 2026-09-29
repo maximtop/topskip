@@ -1,3 +1,8 @@
+/**
+ * @file Runtime handlers for reading and writing user preferences, including
+ * the analysis-mode switch and its BYOK-abort side effect.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';

@@ -1,3 +1,8 @@
+/**
+ * @file Runtime handlers for model-first settings: model catalog, active
+ * model selection, and per-provider connection key save/test.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
@@ -64,7 +69,14 @@ type ConnectionHostAccess = Record<
  * Storage rows needed when persisting a provider-specific selected model.
  */
 interface ProviderStorageSnapshot {
+    /**
+     * Full OpenRouter config row, preserved except for the field being saved.
+     */
     openRouterConfig: OpenRouterConfig;
+
+    /**
+     * Full OpenAI config row, preserved except for the field being saved.
+     */
     openAiConfig: OpenAiConfig;
 }
 
@@ -80,8 +92,19 @@ type SelectedModelSaver = (
  * Provider-specific key operations used by the generic connection handler.
  */
 interface ConnectionProviderConfig {
+    /**
+     * Provider id this connection row represents.
+     */
     providerId: ConnectionProviderId;
+
+    /**
+     * Human label shown in the options connection row.
+     */
     providerLabel: string;
+
+    /**
+     * Message returned when the provider's key is required but missing.
+     */
     missingApiKeyError: string;
     loadApiKey(): Promise<string>;
     saveApiKey(apiKey: string): Promise<void>;
@@ -89,6 +112,15 @@ interface ConnectionProviderConfig {
     testApiKey(apiKey: string): Promise<TestConnectionKeyResponse>;
 }
 
+/**
+ * Prefers an in-progress draft key over the already-saved one, so testing a
+ * connection reflects what the user is about to save, not stale storage.
+ *
+ * @param apiKey - Draft key from the request, if the user is editing one.
+ * @param savedApiKey - Key currently persisted for this provider.
+ *
+ * @returns The key to test.
+ */
 const resolveConnectionTestKey = (
     apiKey: string | undefined,
     savedApiKey: string,
@@ -97,6 +129,14 @@ const resolveConnectionTestKey = (
     return draftApiKey.length > 0 ? draftApiKey : savedApiKey;
 };
 
+/**
+ * Confirms an OpenRouter key by fetching the model list, since OpenRouter has
+ * no dedicated auth-check endpoint.
+ *
+ * @param apiKey - Key to test.
+ *
+ * @returns Validation result.
+ */
 const testOpenRouterApiKey = async (
     apiKey: string,
 ): Promise<TestConnectionKeyResponse> => {
@@ -173,6 +213,11 @@ const SELECTED_MODEL_SAVER_BY_PROVIDER: Partial<
     },
 };
 
+/**
+ * No-op saver for providers without a provider-specific selected-model field.
+ *
+ * @returns Already-resolved promise.
+ */
 const skipSelectedModelSave: SelectedModelSaver = () => {
     return Promise.resolve();
 };

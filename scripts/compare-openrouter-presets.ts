@@ -1,13 +1,14 @@
 #!/usr/bin/env node
 
 /**
- * Maintainer-only: same merged transcript → every built-in OpenRouter preset
- * (FR-004). Reads `OPENROUTER_API_KEY` from `.env` (extension root) or the
+ * @file Maintainer-only: same merged transcript → every built-in OpenRouter
+ * preset. Reads `OPENROUTER_API_KEY` from `.env` (extension root) or the
  * process environment (shell wins if both set). Never bundled.
  *
  * Cost: one `chat/completions` call per preset (see openrouter.ai/models).
  * N calls per fixture run — opt-in only; not used during normal playback.
  */
+
 import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import process from 'node:process';
@@ -41,8 +42,6 @@ import {
 /**
  * Loads `.env` from the extension package root when the file exists. Existing
  * `process.env` entries are not overwritten (exported shell values win).
- *
- * @returns void
  */
 function loadExtensionDotEnv(): void {
     const extensionRoot = path.resolve(
@@ -71,59 +70,249 @@ function normalizeForwardedCliArgs(argv: readonly string[]): string[] {
     return argv.slice(i);
 }
 
+/**
+ * One promo block as predicted by a model.
+ */
+interface PredictedBlock {
+    /**
+     * Predicted block start time in seconds.
+     */
+    startSec: number;
+
+    /**
+     * Predicted block end time in seconds, when the model reported one.
+     */
+    endSec?: number;
+
+    /**
+     * Model-reported confidence label for this block, when reported.
+     */
+    confidence?: string;
+}
+
+/**
+ * One preset's outcome for the fixture: request timing, raw usage/pricing
+ * from OpenRouter, and (when a reference bundle was given) alignment against
+ * human-labeled blocks.
+ */
 interface Row {
+    /**
+     * OpenRouter model slug requested.
+     */
     model: string;
+
+    /**
+     * Model slug OpenRouter actually served the request with, when reported.
+     */
     responseModel?: string;
+
+    /**
+     * Wall-clock request duration in milliseconds.
+     */
     ms: number;
+
+    /**
+     * Whether the request succeeded and its response parsed as valid JSON.
+     */
     ok: boolean;
+
+    /**
+     * Failure message; set only when `ok` is false.
+     */
     error?: string;
+
+    /**
+     * Token usage reported by OpenRouter for this request, when available.
+     */
     usage?: {
+        /**
+         * Tokens in the request prompt.
+         */
         promptTokens: number;
+
+        /**
+         * Tokens in the model's completion.
+         */
         completionTokens: number;
+
+        /**
+         * `promptTokens + completionTokens`, as reported by OpenRouter.
+         */
         totalTokens: number;
+
+        /**
+         * Breakdown of prompt tokens by cache/media category, when reported.
+         */
         promptTokensDetails?: {
+            /**
+             * Prompt tokens served from cache.
+             */
             cachedTokens?: number;
+
+            /**
+             * Prompt tokens written to cache for reuse.
+             */
             cacheWriteTokens?: number;
+
+            /**
+             * Prompt tokens attributed to audio input.
+             */
             audioTokens?: number;
+
+            /**
+             * Prompt tokens attributed to video input.
+             */
             videoTokens?: number;
         };
+
+        /**
+         * Breakdown of completion tokens by category, when reported.
+         */
         completionTokensDetails?: {
+            /**
+             * Completion tokens spent on internal reasoning.
+             */
             reasoningTokens?: number;
+
+            /**
+             * Completion tokens attributed to audio output.
+             */
             audioTokens?: number;
+
+            /**
+             * Completion tokens attributed to image output.
+             */
             imageTokens?: number;
         };
+
+        /**
+         * Total cost in USD as reported directly by OpenRouter, when present.
+         */
         cost?: number;
+
+        /**
+         * Whether this request billed through the caller's own (BYOK) provider key.
+         */
         isByok?: boolean;
+
+        /**
+         * Cost breakdown for BYOK requests where the upstream provider bills separately.
+         */
         costDetails?: {
+            /**
+             * Total upstream inference cost in USD.
+             */
             upstreamInferenceCost?: number;
+
+            /**
+             * Upstream prompt-processing cost in USD.
+             */
             upstreamInferencePromptCost?: number;
+
+            /**
+             * Upstream completion-generation cost in USD.
+             */
             upstreamInferenceCompletionsCost?: number;
         };
     };
+
+    /**
+     * Per-token pricing for this model, fetched from the OpenRouter models list.
+     */
     pricing?: OpenRouterModelPricing;
+
+    /**
+     * Cost figures computed locally from `usage` and `pricing`, alongside the reported cost.
+     */
     costAnalysis?: {
+        /**
+         * Cost as reported directly by OpenRouter (same value as `usage.cost`).
+         */
         reportedCost?: number;
+
+        /**
+         * Total cost estimated from `usage` and `pricing`.
+         */
         estimatedCostUsd?: number;
+
+        /**
+         * Estimated cost attributable to prompt tokens.
+         */
         promptCostUsd?: number;
+
+        /**
+         * Estimated cost attributable to completion tokens.
+         */
         completionCostUsd?: number;
+
+        /**
+         * Estimated cost attributable to cache reads.
+         */
         cacheReadCostUsd?: number;
+
+        /**
+         * Estimated cost attributable to cache writes.
+         */
         cacheWriteCostUsd?: number;
+
+        /**
+         * Estimated cost attributable to internal reasoning tokens.
+         */
         internalReasoningCostUsd?: number;
+
+        /**
+         * Estimated flat per-request cost.
+         */
         requestCostUsd?: number;
     };
-    blocks?: { startSec: number; endSec?: number; confidence?: string }[];
+
+    /**
+     * Promo blocks the model predicted; empty array when it reported no promo.
+     */
+    blocks?: PredictedBlock[];
+
+    /**
+     * Per-block alignment metrics against the reference human blocks, when a reference was given.
+     */
     vsHuman?: AlignedBlockMetric[];
+
+    /**
+     * Note explaining a block-count mismatch against the human reference, when one exists.
+     */
     vsHumanNote?: string;
 }
 
+/**
+ * Narrows a value to a non-null, non-array object so its fields can be read.
+ *
+ * @param value - Value to check.
+ *
+ * @returns Whether the value is a plain object.
+ */
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Extracts a printable message from a caught value of unknown type.
+ *
+ * @param error - Caught value.
+ *
+ * @returns The error's message, or its string conversion when it is not an `Error`.
+ */
 function getErrorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * Ascending comparator for optional numbers, sorting `undefined` last so
+ * rows with no data settle to the bottom of a ranking instead of the top.
+ *
+ * @param left - First value.
+ * @param right - Second value.
+ *
+ * @returns Negative, zero, or positive per `Array.prototype.sort` convention.
+ */
 function compareOptionalAscending(
     left: number | undefined,
     right: number | undefined,
@@ -140,6 +329,13 @@ function compareOptionalAscending(
     return left - right;
 }
 
+/**
+ * Renders the reported or estimated cost of a row for a progress line.
+ *
+ * @param row - Row to summarize.
+ *
+ * @returns Cost text, or `undefined` when neither cost figure is available.
+ */
 function formatProgressCost(row: Row): string | undefined {
     const reported = row.usage?.cost;
     if (reported !== undefined) {
@@ -152,6 +348,14 @@ function formatProgressCost(row: Row): string | undefined {
     return undefined;
 }
 
+/**
+ * Renders one stderr progress line summarizing a completed request: timing,
+ * tokens, cost, and (when a reference exists) alignment metrics.
+ *
+ * @param row - Row to summarize.
+ *
+ * @returns Comma-separated progress line.
+ */
 function formatProgressLine(row: Row): string {
     const parts = [`${row.ms} ms`];
     if (row.usage !== undefined) {
@@ -176,6 +380,14 @@ function formatProgressLine(row: Row): string {
     return parts.join(', ');
 }
 
+/**
+ * Parses one OpenRouter models-list entry's `pricing` field, discarding it
+ * when none of the known rate fields are present.
+ *
+ * @param value - Raw `pricing` field from the OpenRouter models response.
+ *
+ * @returns Parsed pricing, or `undefined` when no rate field was present.
+ */
 function normalizePricing(value: unknown): OpenRouterModelPricing | undefined {
     if (!isRecord(value)) {
         return undefined;
@@ -203,6 +415,15 @@ function normalizePricing(value: unknown): OpenRouterModelPricing | undefined {
     return pricing;
 }
 
+/**
+ * Fetches OpenRouter's public models list and indexes pricing by both the
+ * model id and its canonical slug, so a response's `responseModel` (which
+ * may be either form) resolves to the same pricing.
+ *
+ * @returns Map of model id/canonical slug to pricing.
+ *
+ * @throws {Error} When the request fails, the response is not JSON, or its shape is unexpected.
+ */
 async function fetchOpenRouterPricingMap(): Promise<
     Map<string, OpenRouterModelPricing>
 > {
@@ -224,22 +445,23 @@ async function fetchOpenRouterPricingMap(): Promise<
 
     const pricingMap = new Map<string, OpenRouterModelPricing>();
     for (const item of json.data) {
-        if (!isRecord(item) || typeof item.id !== 'string') {
-            continue;
-        }
-        const pricing = normalizePricing(item.pricing);
-        if (pricing === undefined) {
-            continue;
-        }
-        pricingMap.set(item.id, pricing);
-        if (typeof item.canonical_slug === 'string') {
-            pricingMap.set(item.canonical_slug, pricing);
+        if (isRecord(item) && typeof item.id === 'string') {
+            const pricing = normalizePricing(item.pricing);
+            if (pricing !== undefined) {
+                pricingMap.set(item.id, pricing);
+                if (typeof item.canonical_slug === 'string') {
+                    pricingMap.set(item.canonical_slug, pricing);
+                }
+            }
         }
     }
     return pricingMap;
 }
 
 /**
+ * Passes a fixture through unchanged when it already carries the
+ * `videoId=`/`language=` headers; otherwise synthesizes them.
+ *
  * @param fixturePath - UTF-8: timed `[sec] text` lines or full user body
  * @param videoId - Synthetic id for the user message prefix
  * @param language - Language code for the user message prefix
@@ -392,134 +614,130 @@ async function runPresetComparison(): Promise<void> {
                     + `${String(models.length)}] `
                     + `${model} failed: ${chat.error}`,
             );
-            continue;
-        }
-
-        const costBreakdown = chat.usage !== undefined && pricing !== undefined
-            ? estimateCostFromUsageAndPricing(chat.usage, pricing)
-            : undefined;
-        const parsed = parseLlmPromoResponse(chat.rawContent, undefined);
-        if (!parsed.ok) {
-            const row = {
-                model,
-                responseModel: chat.responseModel,
-                ms,
-                ok: false,
-                error: parsed.error,
-                usage: chat.usage,
-                pricing,
-                costAnalysis:
-                    chat.usage?.cost !== undefined
-                    || costBreakdown !== undefined
-                        ? {
-                            reportedCost: chat.usage?.cost,
-                            estimatedCostUsd: costBreakdown?.totalUsd,
-                            promptCostUsd: costBreakdown?.promptCostUsd,
-                            completionCostUsd:
-                                  costBreakdown?.completionCostUsd,
-                            cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                            cacheWriteCostUsd:
-                                  costBreakdown?.cacheWriteCostUsd,
-                            internalReasoningCostUsd:
-                                  costBreakdown?.internalReasoningCostUsd,
-                            requestCostUsd: costBreakdown?.requestCostUsd,
-                        }
-                        : undefined,
-            } satisfies Row;
-            rows.push(row);
-            console.error(
-                `[${String(index + 1)}/`
-                    + `${String(models.length)}] `
-                    + `${model} parse failed: ${parsed.error}`,
-            );
-            continue;
-        }
-        if (!parsed.hasPromo) {
-            const row = {
-                model,
-                responseModel: chat.responseModel,
-                ms,
-                ok: true,
-                usage: chat.usage,
-                pricing,
-                costAnalysis:
-                    chat.usage?.cost !== undefined
-                    || costBreakdown !== undefined
-                        ? {
-                            reportedCost: chat.usage?.cost,
-                            estimatedCostUsd: costBreakdown?.totalUsd,
-                            promptCostUsd: costBreakdown?.promptCostUsd,
-                            completionCostUsd:
-                                  costBreakdown?.completionCostUsd,
-                            cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                            cacheWriteCostUsd:
-                                  costBreakdown?.cacheWriteCostUsd,
-                            internalReasoningCostUsd:
-                                  costBreakdown?.internalReasoningCostUsd,
-                            requestCostUsd: costBreakdown?.requestCostUsd,
-                        }
-                        : undefined,
-                blocks: [],
-                vsHuman: humanBlocks !== undefined ? [] : undefined,
-                vsHumanNote:
-                    humanBlocks !== undefined
-                        ? `humanBlocks=${String(humanBlocks.length)} vs predicted=0`
-                        : undefined,
-            } satisfies Row;
-            rows.push(row);
-            if (opts.progress) {
-                const progressLabel = `[${String(index + 1)}/`
-                    + `${String(models.length)}] `
-                    + `${model} done: ${formatProgressLine(row)}`;
-                console.error(progressLabel);
+        } else {
+            const costBreakdown = chat.usage !== undefined && pricing !== undefined
+                ? estimateCostFromUsageAndPricing(chat.usage, pricing)
+                : undefined;
+            const parsed = parseLlmPromoResponse(chat.rawContent, undefined);
+            if (!parsed.ok) {
+                const row = {
+                    model,
+                    responseModel: chat.responseModel,
+                    ms,
+                    ok: false,
+                    error: parsed.error,
+                    usage: chat.usage,
+                    pricing,
+                    costAnalysis:
+                        chat.usage?.cost !== undefined
+                        || costBreakdown !== undefined
+                            ? {
+                                reportedCost: chat.usage?.cost,
+                                estimatedCostUsd: costBreakdown?.totalUsd,
+                                promptCostUsd: costBreakdown?.promptCostUsd,
+                                completionCostUsd:
+                                      costBreakdown?.completionCostUsd,
+                                cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                                cacheWriteCostUsd:
+                                      costBreakdown?.cacheWriteCostUsd,
+                                internalReasoningCostUsd:
+                                      costBreakdown?.internalReasoningCostUsd,
+                                requestCostUsd: costBreakdown?.requestCostUsd,
+                            }
+                            : undefined,
+                } satisfies Row;
+                rows.push(row);
+                console.error(
+                    `[${String(index + 1)}/`
+                        + `${String(models.length)}] `
+                        + `${model} parse failed: ${parsed.error}`,
+                );
+            } else if (!parsed.hasPromo) {
+                const row = {
+                    model,
+                    responseModel: chat.responseModel,
+                    ms,
+                    ok: true,
+                    usage: chat.usage,
+                    pricing,
+                    costAnalysis:
+                        chat.usage?.cost !== undefined
+                        || costBreakdown !== undefined
+                            ? {
+                                reportedCost: chat.usage?.cost,
+                                estimatedCostUsd: costBreakdown?.totalUsd,
+                                promptCostUsd: costBreakdown?.promptCostUsd,
+                                completionCostUsd:
+                                      costBreakdown?.completionCostUsd,
+                                cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                                cacheWriteCostUsd:
+                                      costBreakdown?.cacheWriteCostUsd,
+                                internalReasoningCostUsd:
+                                      costBreakdown?.internalReasoningCostUsd,
+                                requestCostUsd: costBreakdown?.requestCostUsd,
+                            }
+                            : undefined,
+                    blocks: [],
+                    vsHuman: humanBlocks !== undefined ? [] : undefined,
+                    vsHumanNote:
+                        humanBlocks !== undefined
+                            ? `humanBlocks=${String(humanBlocks.length)} vs predicted=0`
+                            : undefined,
+                } satisfies Row;
+                rows.push(row);
+                if (opts.progress) {
+                    const progressLabel = `[${String(index + 1)}/`
+                        + `${String(models.length)}] `
+                        + `${model} done: ${formatProgressLine(row)}`;
+                    console.error(progressLabel);
+                }
+            } else {
+                const blocks = parsed.blocks.map((b) => ({
+                    startSec: b.startSec,
+                    endSec: b.endSec,
+                    confidence: b.confidence,
+                }));
+                const vsHuman = humanBlocks !== undefined
+                    ? compareHumanAlignedBlocks(humanBlocks, blocks)
+                    : undefined;
+                const row = {
+                    model,
+                    responseModel: chat.responseModel,
+                    ms,
+                    ok: true,
+                    usage: chat.usage,
+                    pricing,
+                    costAnalysis:
+                        chat.usage?.cost !== undefined || costBreakdown !== undefined
+                            ? {
+                                reportedCost: chat.usage?.cost,
+                                estimatedCostUsd: costBreakdown?.totalUsd,
+                                promptCostUsd: costBreakdown?.promptCostUsd,
+                                completionCostUsd: costBreakdown?.completionCostUsd,
+                                cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
+                                cacheWriteCostUsd: costBreakdown?.cacheWriteCostUsd,
+                                internalReasoningCostUsd:
+                                      costBreakdown?.internalReasoningCostUsd,
+                                requestCostUsd: costBreakdown?.requestCostUsd,
+                            }
+                            : undefined,
+                    blocks,
+                    vsHuman,
+                    vsHumanNote:
+                        humanBlocks !== undefined
+                        && humanBlocks.length !== blocks.length
+                            ? `humanBlocks=${String(humanBlocks.length)} `
+                              + `vs predicted=${String(blocks.length)}`
+                            : undefined,
+                } satisfies Row;
+                rows.push(row);
+                if (opts.progress) {
+                    const progressLabel = `[${String(index + 1)}/`
+                        + `${String(models.length)}] `
+                        + `${model} done: ${formatProgressLine(row)}`;
+                    console.error(progressLabel);
+                }
             }
-            continue;
-        }
-
-        const blocks = parsed.blocks.map((b) => ({
-            startSec: b.startSec,
-            endSec: b.endSec,
-            confidence: b.confidence,
-        }));
-        const vsHuman = humanBlocks !== undefined
-            ? compareHumanAlignedBlocks(humanBlocks, blocks)
-            : undefined;
-        const row = {
-            model,
-            responseModel: chat.responseModel,
-            ms,
-            ok: true,
-            usage: chat.usage,
-            pricing,
-            costAnalysis:
-                chat.usage?.cost !== undefined || costBreakdown !== undefined
-                    ? {
-                        reportedCost: chat.usage?.cost,
-                        estimatedCostUsd: costBreakdown?.totalUsd,
-                        promptCostUsd: costBreakdown?.promptCostUsd,
-                        completionCostUsd: costBreakdown?.completionCostUsd,
-                        cacheReadCostUsd: costBreakdown?.cacheReadCostUsd,
-                        cacheWriteCostUsd: costBreakdown?.cacheWriteCostUsd,
-                        internalReasoningCostUsd:
-                              costBreakdown?.internalReasoningCostUsd,
-                        requestCostUsd: costBreakdown?.requestCostUsd,
-                    }
-                    : undefined,
-            blocks,
-            vsHuman,
-            vsHumanNote:
-                humanBlocks !== undefined
-                && humanBlocks.length !== blocks.length
-                    ? `humanBlocks=${String(humanBlocks.length)} `
-                      + `vs predicted=${String(blocks.length)}`
-                    : undefined,
-        } satisfies Row;
-        rows.push(row);
-        if (opts.progress) {
-            const progressLabel = `[${String(index + 1)}/`
-                + `${String(models.length)}] `
-                + `${model} done: ${formatProgressLine(row)}`;
-            console.error(progressLabel);
         }
     }
 
@@ -580,7 +798,8 @@ async function runPresetComparison(): Promise<void> {
         rankedByReportedCost,
     };
     if (rankedByAlignment.length > 0) {
-        summary.bestAlignment = rankedByAlignment[0];
+        const [bestAlignment] = rankedByAlignment;
+        summary.bestAlignment = bestAlignment;
         summary.rankedByAlignment = rankedByAlignment;
     }
 

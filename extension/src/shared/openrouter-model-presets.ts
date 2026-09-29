@@ -1,6 +1,6 @@
 /**
- * Built-in OpenRouter model presets for the options UI and storage migration
- * (single source of truth for built-in slugs vs user-added models).
+ * @file Built-in OpenRouter model presets for the options UI and storage
+ * migration (single source of truth for built-in slugs vs user-added models).
  */
 export const OPENROUTER_MODEL_PRESETS = [
     // Google
@@ -34,7 +34,8 @@ export const OPENROUTER_BUILTIN_MODEL_SLUGS: readonly string[] = OPENROUTER_MODE
 /**
  * Default model when none is set or after removing a custom active model.
  */
-export const OPENROUTER_DEFAULT_MODEL_SLUG: string = OPENROUTER_MODEL_PRESETS[0]?.value ?? 'google/gemini-3.1-pro-preview';
+export const OPENROUTER_DEFAULT_MODEL_SLUG: string = OPENROUTER_MODEL_PRESETS[0]?.value
+    ?? 'google/gemini-3.1-pro-preview';
 
 /**
  * True when the slug is one of the shipped OpenRouter presets.

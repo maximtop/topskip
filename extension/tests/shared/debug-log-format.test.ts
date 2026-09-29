@@ -17,7 +17,7 @@ const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 /**
  * Fully attributed record with overridable parts.
  *
- * @param overrides
+ * @param overrides Record fields to override on top of the fully attributed defaults.
  */
 function record(overrides: Partial<DebugLogLineRecord> = {}): DebugLogLineRecord {
     return {

@@ -1,3 +1,8 @@
+/**
+ * @file Runtime handlers for Chrome Built-in model status queries and
+ * download triggers.
+ */
+
 import { DevConsole } from '@/background/dev-console';
 import {
     DOWNLOAD_PROGRESS_EVENT,
@@ -166,8 +171,9 @@ export class ChromePromptApiRuntimeMessages {
                                 const pct = ev.total > 0
                                     ? (ev.loaded / ev.total) * PERCENT_SCALE
                                     : ev.loaded * PERCENT_SCALE;
-                                ChromePromptApiRuntimeMessages.downloadProgress = Math.round(pct * PROGRESS_ROUND_FACTOR)
+                                const rounded = Math.round(pct * PROGRESS_ROUND_FACTOR)
                                     / PROGRESS_ROUND_FACTOR;
+                                ChromePromptApiRuntimeMessages.downloadProgress = rounded;
                             },
                         );
                     }

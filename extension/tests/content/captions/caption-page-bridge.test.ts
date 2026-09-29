@@ -22,6 +22,12 @@ import {
     parseCaptionPageBridgeCommandResult,
 } from '@/content/captions/caption-page-bridge-contract';
 
+import { TestCustomEvent } from '../../helpers/test-custom-event';
+import { TestDocument } from '../../helpers/test-document';
+import { TestElement } from '../../helpers/test-element';
+import { TestMediaElement } from '../../helpers/test-media-element';
+import { TestXmlHttpRequest } from '../../helpers/test-xml-http-request';
+
 // `expect.stringMatching` is typed `any`; widening it to `unknown` keeps the
 // expected diagnostic literal free of unsafe-assignment errors.
 const MESSAGE_ID_SHAPE: unknown = expect.stringMatching(/^[^:]+:\d+$/u);
@@ -55,85 +61,6 @@ const REFETCH_INIT: unknown = {
 const MOVIE_PLAYER_ID = 'movie_player';
 const HIDE_STYLE_ID = 'topskip-caption-hide-style';
 
-class TestCustomEvent<T = unknown> extends Event {
-    readonly detail: T | undefined;
-
-    constructor(type: string, init: { detail?: T } = {}) {
-        super(type);
-        this.detail = init.detail;
-    }
-}
-
-class TestElement extends EventTarget {
-    id = '';
-
-    textContent: string | null = null;
-
-    offsetParent: object | null = {};
-
-    readonly classList = {
-        contains: vi.fn(() => false),
-    };
-
-    private readonly attributes = new Map<string, string>();
-
-    private removeHandler: (() => void) | null = null;
-
-    setAttribute(name: string, value: string): void {
-        this.attributes.set(name, value);
-    }
-
-    getAttribute(name: string): string | null {
-        return this.attributes.get(name) ?? null;
-    }
-
-    setRemoveHandler(handler: () => void): void {
-        this.removeHandler = handler;
-    }
-
-    remove(): void {
-        this.removeHandler?.();
-    }
-
-    click(): void {
-        this.dispatchEvent(new Event('click'));
-    }
-}
-
-class TestVideoElement extends TestElement {
-    readyState = 1;
-}
-
-class TestMediaElement extends TestVideoElement {
-    static readonly HAVE_METADATA = 1;
-}
-
-class TestXmlHttpRequest extends EventTarget {
-    static readonly originalOpen = vi.fn();
-
-    static readonly originalSend = vi.fn();
-
-    response: unknown = '';
-
-    responseText = '';
-
-    responseURL = '';
-
-    status = 0;
-
-    open(...args: unknown[]): void {
-        TestXmlHttpRequest.originalOpen(...args);
-    }
-
-    send(...args: unknown[]): void {
-        TestXmlHttpRequest.originalSend(...args);
-    }
-
-    getResponseHeader(): string | null {
-        return 'application/json';
-    }
-}
-
 interface FetchResponseHarness {
     response: Response;
     clone: ReturnType<typeof vi.fn>;
@@ -156,56 +83,6 @@ interface BridgeHarness {
     setOption: ReturnType<typeof vi.fn>;
     originalXhrOpen: unknown;
     originalXhrSend: unknown;
-}
-
-class TestDocument extends EventTarget {
-    readonly documentElement: { append: (element: TestElement) => void };
-
-    readonly player: TestElement;
-
-    readonly button: TestElement;
-
-    readonly video = new TestMediaElement();
-
-    private readonly elementsById = new Map<string, TestElement>();
-
-    constructor(player: TestElement, button: TestElement) {
-        super();
-        this.player = player;
-        this.button = button;
-        this.documentElement = {
-            append: (element) => {
-                if (element.id.length === 0) {
-                    return;
-                }
-                this.elementsById.set(element.id, element);
-                element.setRemoveHandler(() => {
-                    this.elementsById.delete(element.id);
-                });
-            },
-        };
-    }
-
-    getElementById(id: string): TestElement | null {
-        if (id === MOVIE_PLAYER_ID) {
-            return this.player;
-        }
-        return this.elementsById.get(id) ?? null;
-    }
-
-    querySelector(selector: string): TestElement | null {
-        if (selector === '.ytp-subtitles-button[aria-pressed]') {
-            return this.button;
-        }
-        if (selector.includes('video.html5-main-video')) {
-            return this.video;
-        }
-        return null;
-    }
-
-    createElement(): TestElement {
-        return new TestElement();
-    }
 }
 
 function createResponse(
@@ -379,8 +256,8 @@ async function flushCapture(): Promise<void> {
  * Builds the response the bridge's own untranslated refetch receives; it
  * reads the body directly instead of through a clone.
  *
- * @param body
- * @param status
+ * @param body Response body text.
+ * @param status HTTP status code for the response.
  */
 function createRefetchResponse(body: string, status = 200): Response {
     const response = new Response(body, {
@@ -395,6 +272,8 @@ function createRefetchResponse(body: string, status = 200): Response {
  * A successful refetch response whose body read stays pending until the
  * caller resolves it, so a test can act while the generation is between the
  * response resolving and `response.text()` settling.
+ *
+ * @throws {Error} When the Promise executor did not run synchronously.
  */
 function createControllableRefetchResponse(): {
     response: Response;
@@ -989,7 +868,8 @@ describe('caption page bridge', () => {
         });
     });
 
-    it('sends an empty tokenless translated player body straight to the empty-body path without refetching', async () => {
+    it('sends an empty tokenless translated player body straight to the empty-body path without '
+        + 'refetching', async () => {
         const harness = installHarness();
         harness.originalFetch.mockResolvedValueOnce(
             createResponse('', TRANSLATED_URL_NO_POT).response,

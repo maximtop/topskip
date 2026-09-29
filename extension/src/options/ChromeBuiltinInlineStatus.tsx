@@ -1,3 +1,8 @@
+/**
+ * @file Compact inline Chrome built-in model download status shown alongside
+ * model selection.
+ */
+
 import {
     Alert,
     Badge,

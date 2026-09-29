@@ -84,8 +84,8 @@ interface StoredIndex {
 /**
  * The store is format-agnostic; any text works as a line in these tests.
  *
- * @param text
- * @param n
+ * @param text Line body to embed after the generated prefix.
+ * @param n Offset in milliseconds added to `NOW_MS` for the timestamp.
  */
 function line(text: string, n = 0): string {
     return `${new Date(NOW_MS + n).toISOString()} w0#${n} bg ${text}`;
@@ -94,7 +94,7 @@ function line(text: string, n = 0): string {
 /**
  * Storage key of one segment, mirroring the store's private helper.
  *
- * @param id
+ * @param id Segment id to build the key for.
  */
 function segmentKey(id: number): string {
     return `${STORAGE_KEY_DEBUG_LOG_SEGMENT_PREFIX}${id}`;
@@ -130,7 +130,7 @@ function storedIndex(): StoredIndex {
  * Accounted size definition from the spec: UTF-8 bytes of every line plus one
  * newline terminator per line.
  *
- * @param lines
+ * @param lines Lines to account for.
  */
 function accountedBytes(lines: readonly string[]): number {
     return lines.length === 0 ? 0 : utf8ByteLength(`${lines.join('\n')}\n`);
@@ -139,7 +139,7 @@ function accountedBytes(lines: readonly string[]): number {
 /**
  * Valid persisted index with every counter at its fresh value.
  *
- * @param overrides
+ * @param overrides Index fields to override on top of the fresh defaults.
  */
 function indexFixture(overrides: Partial<StoredIndex> = {}): Record<string, unknown> {
     return {
@@ -181,7 +181,7 @@ async function enabledStore(): Promise<void> {
  * cap; every batch is flushed so the next append evicts exactly one segment and
  * touches at most one segment key.
  *
- * @param store
+ * @param store Store instance under test.
  */
 async function fillToCap(store: typeof DebugLogStore): Promise<string> {
     const filler = line('c'.repeat(1000));
@@ -198,25 +198,24 @@ async function fillToCap(store: typeof DebugLogStore): Promise<string> {
 }
 
 /**
- * Deterministic PRNG so randomized sequences are reproducible.
+ * Deterministic PRNG (Park–Miller minimal standard) so randomized sequences are reproducible.
  *
- * @param seed
+ * @param seed Initial PRNG state, in `[1, 2^31 - 2]`.
  */
-function mulberry32(seed: number): () => number {
+function parkMiller(seed: number): () => number {
+    const modulus = 2147483647;
     let state = seed;
     return () => {
-        state = (state + 0x6d2b79f5) | 0;
-        let t = Math.imul(state ^ (state >>> 15), 1 | state);
-        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+        state = (state * 48271) % modulus;
+        return (state - 1) / (modulus - 1);
     };
 }
 
 /**
  * Random-length line mixing ASCII and multi-byte characters.
  *
- * @param rng
- * @param n
+ * @param rng Source of random numbers in `[0, 1)`.
+ * @param n Offset in milliseconds added to `NOW_MS` for the timestamp.
  */
 function randomLine(rng: () => number, n: number): string {
     const length = 40 + Math.floor(rng() * 1360);
@@ -596,7 +595,7 @@ describe('DebugLogStore ring buffer', () => {
             },
             NOW_MS,
         );
-        const rng = mulberry32(7);
+        const rng = parkMiller(7);
         for (let round = 0; round < 30; round += 1) {
             const batch = Array.from(
                 { length: 1 + Math.floor(rng() * 40) },
@@ -704,8 +703,8 @@ describe('DebugLogStore durability and reads', () => {
     /**
      * Fills enough 1 KiB lines to close `segments` segments and start another.
      *
-     * @param store
-     * @param segments
+     * @param store Store instance under test.
+     * @param segments Number of segments to close before returning.
      */
     async function fillSegments(store: typeof DebugLogStore, segments: number): Promise<number> {
         const filler = line('f'.repeat(1000));

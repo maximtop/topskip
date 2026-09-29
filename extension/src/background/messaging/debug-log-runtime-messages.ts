@@ -1,13 +1,16 @@
+/**
+ * @file Runtime handlers for the debug-log messages: append, status, preview,
+ * bundle export, enable/disable, and the dev-only seed command.
+ */
+
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogBroadcast } from '@/background/debug-log/debug-log-broadcast';
-import {
-    DebugLogExport,
-    EnvironmentProbe,
-} from '@/background/debug-log/debug-log-export';
+import { DebugLogExport } from '@/background/debug-log/debug-log-export';
 import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { EnvironmentProbe } from '@/background/debug-log/environment-probe';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { RuntimeSenderTrust } from '@/background/messaging/runtime-sender-trust';
 import { DEBUG_LOG_PREVIEW_TAIL_BYTES } from '@/shared/debug-log-constants';
@@ -190,7 +193,7 @@ export class DebugLogRuntimeMessages {
         payload: DevSeedDebugLogPayload,
         sender: Runtime.MessageSender,
     ): Promise<DevSeedDebugLogResponse> {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return { ok: false, error: DEV_SEED_DISABLED_ERROR };
         }
         if (!RuntimeSenderTrust.isExtensionPage(sender)) {

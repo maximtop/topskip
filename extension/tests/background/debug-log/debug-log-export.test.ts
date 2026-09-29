@@ -12,9 +12,9 @@ import {
     DEBUG_LOG_BUNDLE_EVENTS_MARKER,
     DEBUG_LOG_BUNDLE_NOTICE,
     DebugLogExport,
-    EnvironmentProbe,
     type DebugLogEnvironment,
 } from '@/background/debug-log/debug-log-export';
+import { EnvironmentProbe } from '@/background/debug-log/environment-probe';
 import { ANALYSIS_MODE } from '@/shared/constants';
 import { DEBUG_LOG_CAP_BYTES } from '@/shared/debug-log-constants';
 import { DEFAULT_DETECTION_MODEL_ID, buildOpenRouterModelId } from '@/shared/detection-models';
@@ -70,7 +70,7 @@ const ENV: DebugLogEnvironment = {
 /**
  * Snapshot with two lines and non-zero counters.
  *
- * @param overrides
+ * @param overrides Status fields to override on top of the default snapshot.
  */
 function snapshot(overrides: Partial<DebugLogSnapshot['status']> = {}): DebugLogSnapshot {
     return {
@@ -206,7 +206,8 @@ describe('DebugLogExport.buildBundle', () => {
             'exportedAt=2026-08-22T13:05:09.123Z extension="0.1.0 (dev build 1)" browser=140 os=mac locale=en-US',
             'analysisMode=server',
             `loggingEnabled=true enabledSince=${new Date(ENABLED_AT_MS).toISOString()} disabledAt=none`,
-            `capBytes=${DEBUG_LOG_CAP_BYTES} sizeBytes=20 events=2 evicted=7 oldestRetained=${new Date(ENABLED_AT_MS).toISOString()}`,
+            `capBytes=${DEBUG_LOG_CAP_BYTES} sizeBytes=20 events=2 evicted=7 `
+                + `oldestRetained=${new Date(ENABLED_AT_MS).toISOString()}`,
             'droppedCoalesced=4 droppedCeiling=5 droppedUnreachable=6 droppedOther=4',
             DEBUG_LOG_BUNDLE_NOTICE,
             DEBUG_LOG_BUNDLE_EVENTS_MARKER,

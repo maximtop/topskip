@@ -1,3 +1,8 @@
+/**
+ * @file Handles session-bound Server-mode analysis runtime messages,
+ * keeping every HTTP operation and route-ownership check in the background.
+ */
+
 import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     PROMO_DETECTION_STATUS,
@@ -93,6 +98,28 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
+     * Prefers the response-observed algorithm version over the cached config's,
+     * so a fresh server-reported version is never shadowed by a stale one.
+     *
+     * @param algorithmVersion - Version observed in config or a response.
+     * @param configAlgorithmVersion - Version from the cached compatibility config.
+     *
+     * @returns Spreadable field, or an empty object when neither is known.
+     */
+    private static resolveAlgorithmVersionField(
+        algorithmVersion: string | undefined,
+        configAlgorithmVersion: string | undefined,
+    ): { algorithmVersion: string } | Record<string, never> {
+        if (algorithmVersion !== undefined) {
+            return { algorithmVersion };
+        }
+        if (configAlgorithmVersion !== undefined) {
+            return { algorithmVersion: configAlgorithmVersion };
+        }
+        return {};
+    }
+
+    /**
      * Enriches stable failure details only from already validated local metadata.
      *
      * @param failure - Validated message-free failure details.
@@ -115,11 +142,10 @@ export class ServerAnalysisRuntimeMessages {
                 : { retryAfterSec: failure.retryAfterSec }),
             apiVersion: config?.apiVersion ?? SERVER_ANALYSIS_API_VERSION,
             extensionVersion: browser.runtime.getManifest().version,
-            ...(algorithmVersion === undefined
-                ? config?.algorithmVersion === undefined
-                    ? {}
-                    : { algorithmVersion: config.algorithmVersion }
-                : { algorithmVersion }),
+            ...ServerAnalysisRuntimeMessages.resolveAlgorithmVersionField(
+                algorithmVersion,
+                config?.algorithmVersion,
+            ),
             ...(config?.supportIssueBaseUrl === undefined
                 ? {}
                 : { supportIssueBaseUrl: config.supportIssueBaseUrl }),
@@ -130,11 +156,11 @@ export class ServerAnalysisRuntimeMessages {
      * Publishes one safe Server failure without retaining captions or raw responses.
      *
      * @param input - Target session, stable failure, and optional server version.
-     * @param input.tabId
-     * @param input.sessionId
-     * @param input.videoId
-     * @param input.failure
-     * @param input.algorithmVersion
+     * @param input.tabId - Source tab that owns the session.
+     * @param input.sessionId - Content-owned session id.
+     * @param input.videoId - Video id tied to the session.
+     * @param input.failure - Stable failure details to publish.
+     * @param input.algorithmVersion - Server-reported version, when known.
      *
      * @returns Whether the failure still belonged to the live content route.
      */
@@ -186,12 +212,12 @@ export class ServerAnalysisRuntimeMessages {
      * Delivers exact-session blocks through content and popup paths.
      *
      * @param input - Current tab/session, blocks, and cache origin.
-     * @param input.tabId
-     * @param input.sessionId
-     * @param input.videoId
-     * @param input.promoBlocks
-     * @param input.source
-     * @param input.durationSec
+     * @param input.tabId - Source tab that owns the session.
+     * @param input.sessionId - Content-owned session id.
+     * @param input.videoId - Video id the blocks apply to.
+     * @param input.promoBlocks - Detected promo blocks to deliver.
+     * @param input.source - Origin of these blocks (server, server cache, or local cache).
+     * @param input.durationSec - Video duration, when known.
      *
      * @returns Whether the exact live route accepted the delivery.
      */
@@ -397,12 +423,12 @@ export class ServerAnalysisRuntimeMessages {
      * Maps a validated backend response into one session-bound runtime acknowledgement.
      *
      * @param input - Tab/session request metadata and known response.
-     * @param input.tabId
-     * @param input.sessionId
-     * @param input.requestedVideoId
-     * @param input.response
-     * @param input.durationSec
-     * @param input.readySource
+     * @param input.tabId - Source tab that owns the session.
+     * @param input.sessionId - Content-owned session id.
+     * @param input.requestedVideoId - Video id the request was made for.
+     * @param input.response - Validated backend response to map.
+     * @param input.durationSec - Video duration, when known.
+     * @param input.readySource - Origin to record for a `ready` result.
      *
      * @returns Runtime acknowledgement consumed by the content-owned lifecycle.
      */
@@ -520,7 +546,9 @@ export class ServerAnalysisRuntimeMessages {
                     return { ok: true, status: 'inactive' };
                 }
                 return { ok: true, status: input.response.status };
+            // no default
         }
+        return { ok: true, status: 'inactive' };
     }
 
     /**

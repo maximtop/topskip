@@ -1,3 +1,8 @@
+/**
+ * @file Maps caption-capture stages (ISOLATED and MAIN-bridge) to the debug
+ * log vocabulary and gates page-forgeable bridge diagnostics before logging.
+ */
+
 import { CAPTION_PAGE_BRIDGE_DIAGNOSTIC_STAGE } from '@/content/captions/caption-page-bridge-contract';
 import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-constants';
 import {
@@ -42,7 +47,14 @@ export const PAGE_DIAGNOSTIC_STAGE_PREFIX = DEBUG_LOG_PAGE_STAGE_PREFIX;
  * Event plus bounded scalar fields ready for `DebugLogClient.log`.
  */
 export interface CaptureDebugLogEvent {
+    /**
+     * Debug log event this stage maps to.
+     */
     event: DebugLogEventName;
+
+    /**
+     * Bounded scalar fields to attach to the event.
+     */
     fields: DebugLogFields;
 }
 
@@ -160,28 +172,28 @@ export class CaptureDiagnostics {
         }
         const fields: CaptureScalarFields = {};
         if (event === DEBUG_LOG_EVENT.CaptureScheduled) {
-            CaptureDiagnostics.copyScalar(details, 'source', fields, 'trigger');
+            Object.assign(fields, CaptureDiagnostics.copyScalar(details, 'source', 'trigger'));
             return { event, fields };
         }
         if (event === DEBUG_LOG_EVENT.CaptureStage) {
             fields.stage = stage;
             if (stage === SCHEDULE_CLEAR_STAGE) {
-                CaptureDiagnostics.copyScalar(details, 'source', fields, 'reason');
+                Object.assign(fields, CaptureDiagnostics.copyScalar(details, 'source', 'reason'));
             }
         }
         if (event === DEBUG_LOG_EVENT.CaptureFailed) {
-            CaptureDiagnostics.copyScalar(details, 'stage', fields, 'stage');
+            Object.assign(fields, CaptureDiagnostics.copyScalar(details, 'stage', 'stage'));
         }
         for (const key of CAPTURE_SCALAR_FIELDS) {
-            CaptureDiagnostics.copyScalar(details, key, fields, key);
+            Object.assign(fields, CaptureDiagnostics.copyScalar(details, key, key));
         }
-        CaptureDiagnostics.copyScalar(details, 'languageCode', fields, 'lang');
-        CaptureDiagnostics.copyScalar(details, 'segmentCount', fields, 'segments');
+        Object.assign(fields, CaptureDiagnostics.copyScalar(details, 'languageCode', 'lang'));
+        Object.assign(fields, CaptureDiagnostics.copyScalar(details, 'segmentCount', 'segments'));
         const actions: unknown = details.actions;
         if (Array.isArray(actions)) {
             fields.actions = actions.length;
         }
-        CaptureDiagnostics.copyUrlShape(details.urlShape, fields);
+        Object.assign(fields, CaptureDiagnostics.copyUrlShape(details.urlShape));
         return { event, fields };
     }
 
@@ -234,46 +246,51 @@ export class CaptureDiagnostics {
     }
 
     /**
-     * Copies one bounded scalar (string, finite number, boolean) under a
+     * Reads one bounded scalar (string, finite number, boolean) under a
      * possibly renamed key; null, undefined and structured values are dropped.
      *
      * @param details - Source details.
      * @param key - Source key.
-     * @param fields - Destination fields.
      * @param targetKey - Destination key.
+     *
+     * @returns Single-entry field object, or an empty object when unbounded.
      */
     private static copyScalar(
         details: CaptureStageDetails,
         key: string,
-        fields: CaptureScalarFields,
         targetKey: string,
-    ): void {
+    ): Partial<CaptureScalarFields> {
         const value: unknown = details[key];
         if (
             typeof value === 'string'
             || typeof value === 'boolean'
             || (typeof value === 'number' && Number.isFinite(value))
         ) {
-            fields[targetKey] = value;
+            return { [targetKey]: value };
         }
+        return {};
     }
 
     /**
      * Splits the sanitized URL shape into the family's scalar fields.
      *
      * @param value - Candidate URL shape.
-     * @param fields - Destination fields.
+     *
+     * @returns URL-shape field entries, or an empty object when not a URL shape.
      */
-    private static copyUrlShape(value: unknown, fields: CaptureScalarFields): void {
+    private static copyUrlShape(value: unknown): Partial<CaptureScalarFields> {
         if (!CaptureDiagnostics.isUrlShape(value)) {
-            return;
+            return {};
         }
-        fields.urlPath = value.pathname;
-        fields.urlParams = value.paramNames.join(',');
+        const fields: Partial<CaptureScalarFields> = {
+            urlPath: value.pathname,
+            urlParams: value.paramNames.join(','),
+            hasPot: value.hasPot,
+        };
         if (value.fmt !== null) {
             fields.fmt = value.fmt;
         }
-        fields.hasPot = value.hasPot;
+        return fields;
     }
 
     /**

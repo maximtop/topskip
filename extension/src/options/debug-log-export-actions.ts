@@ -1,3 +1,7 @@
+/**
+ * @file Clipboard and file-download export actions for the debug-log bundle.
+ */
+
 import { OPTIONS_DOWNLOAD_URL_REVOKE_DELAY_MS } from '@/options/constants';
 import { MIME_TEXT_PLAIN_UTF8 } from '@/shared/constants';
 
@@ -9,8 +13,19 @@ const DOWNLOAD_ANCHOR_REL = 'noopener';
  * tests supply a fake because Vitest runs without a DOM.
  */
 export interface DownloadAnchor {
+    /**
+     * Object URL the anchor downloads from.
+     */
     href: string;
+
+    /**
+     * Suggested file name for the download.
+     */
     download: string;
+
+    /**
+     * Link relation attribute (e.g. `noopener`).
+     */
     rel: string;
     click(): void;
 }

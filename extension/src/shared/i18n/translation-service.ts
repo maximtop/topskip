@@ -1,3 +1,8 @@
+/**
+ * @file Loads and caches per-locale message files for synchronous, English-
+ * fallback translation lookup.
+ */
+
 import browser from '@/shared/browser';
 import { checkLocale } from '@/shared/i18n/check-locale';
 import {
@@ -147,6 +152,8 @@ export class TranslationService {
      * @param key - Translation message key
      *
      * @returns Translated message, or empty string if untranslated
+     *
+     * @throws {Error} When `key` is not present in the base (English) locale.
      */
     getMessage(locale: AvailableLocale, key: string): string {
         const baseMessages = this.localeCache.get(BASE_LOCALE);

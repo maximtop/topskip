@@ -1,3 +1,9 @@
+/**
+ * @file Loads local secrets from the root `.env` file and validates
+ * operator-configured server startup settings, failing closed before any I/O
+ * starts so misconfiguration cannot silently enable an unintended routing path.
+ */
+
 import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
@@ -47,6 +53,10 @@ export class BackendServerConfig {
      * @param envPath - Explicit path used by tests, or the workspace root `.env`.
      *
      * @returns Frozen process-wide caption source configuration.
+     *
+     * @throws {Error} When `OPENROUTER_API_KEY` is missing, when production is missing a
+     * sufficiently long `TOPSKIP_IP_HMAC_SECRET`, or when production has no configured
+     * `TOPSKIP_ALLOWED_EXTENSION_ORIGINS`.
      */
     static prepare(
         envPath = resolve(process.cwd(), ROOT_ENV_FILE_NAME),
@@ -87,6 +97,9 @@ export class BackendServerConfig {
      * Parses exact release extension origins without wildcard or whitespace matching.
      *
      * @returns Unique configured `chrome-extension://<id>` origins.
+     *
+     * @throws {Error} When any configured origin has surrounding whitespace, does not match
+     * the exact `chrome-extension://<id>` shape, or is duplicated.
      */
     static allowedExtensionOrigins(): readonly string[] {
         const raw = process.env[ALLOWED_EXTENSION_ORIGINS_ENVIRONMENT_VARIABLE] ?? '';
@@ -128,6 +141,9 @@ export class BackendServerConfig {
      * Accepts only exact operator values so typos cannot silently enable another path.
      *
      * @returns Valid process-wide caption source.
+     *
+     * @throws {Error} When `TOPSKIP_CAPTION_SOURCE` is set to a value other than
+     * `extension_upload` or `legacy_yt_dlp`.
      */
     private static captionSource(): BackendCaptionSource {
         const raw = process.env[CAPTION_SOURCE_ENVIRONMENT_VARIABLE];

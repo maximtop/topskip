@@ -1,3 +1,8 @@
+/**
+ * @file URL/hostname guards deciding whether the content script should
+ * activate on the current page and resolving the watch video id for it.
+ */
+
 import {
     DEV_E2E_FIXTURE_VIDEO_ID,
     DEV_E2E_ORIGIN,
@@ -47,9 +52,9 @@ export function getWatchVideoIdFromSearch(
  * fixture).
  *
  * @param input URL parts for the current document.
- * @param input.hostname
- * @param input.pathname
- * @param input.search
+ * @param input.hostname Current document hostname.
+ * @param input.pathname Current document pathname.
+ * @param input.search Current document search string (includes `?` prefix).
  *
  * @returns `true` when the script should activate on this page.
  */

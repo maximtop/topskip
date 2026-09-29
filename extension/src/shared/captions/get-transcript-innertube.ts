@@ -1,3 +1,9 @@
+/**
+ * @file Pure parsing helpers for YouTube's InnerTube `get_transcript` flow:
+ * locate the request `params` inside player JSON and turn the RPC's JSON
+ * response into caption segments. No network I/O.
+ */
+
 import { isPlayerRecord } from '@/shared/captions/player-json';
 import { MS_PER_SECOND } from '@/shared/constants';
 

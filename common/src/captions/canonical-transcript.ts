@@ -1,3 +1,9 @@
+/**
+ * @file Deterministic canonicalization and validation of an uploaded caption
+ * transcript, shared by the browser extension and the backend so both agree
+ * on one identity/hash of the same transcript.
+ */
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
@@ -29,11 +35,36 @@ const LOW_SURROGATE_END = 0xdfff;
  * Canonical transcript data shared by browser and backend identity code.
  */
 export interface CanonicalTranscript {
+    /**
+     * Lowercased, trimmed BCP-47-like language code of the caption track.
+     */
     languageCode: string;
+
+    /**
+     * Validated, order-preserved caption segments.
+     */
     segments: CaptionSegment[];
+
+    /**
+     * Deterministic JSON serialization of `segments` used as the identity
+     * input for hashing/caching.
+     */
     canonicalJson: string;
+
+    /**
+     * UTF-8 encoding of `canonicalJson`, ready for hashing or storage.
+     */
     canonicalBytes: Uint8Array;
+
+    /**
+     * Total Unicode scalar count across all segment text, bounded by
+     * `MAX_TRANSCRIPT_CHARACTER_COUNT`.
+     */
     characterCount: number;
+
+    /**
+     * Seconds from the start of the video to the end of the last segment.
+     */
     timelineEndSec: number;
 }
 
@@ -59,8 +90,8 @@ export class CaptionTranscriptCanonicalizer {
      * Validates and normalizes timed captions without sorting or runtime I/O.
      *
      * @param input - Untrusted language and ordered timed segments.
-     * @param input.languageCode
-     * @param input.segments
+     * @param input.languageCode Untrusted caption language spelling.
+     * @param input.segments Untrusted, order-sensitive timed caption cues.
      *
      * @returns Canonical transcript or a stable validation failure.
      */

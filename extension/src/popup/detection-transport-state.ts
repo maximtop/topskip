@@ -1,3 +1,9 @@
+/**
+ * @file Popup-owned transport health for the detection status read/push
+ * pipeline: distinguishes background reachability from the analysis result
+ * itself, and keeps a trustworthy snapshot visible across a lost reply.
+ */
+
 import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
 
 import {

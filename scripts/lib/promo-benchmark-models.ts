@@ -1,3 +1,8 @@
+/**
+ * @file Registry of the LLM models available to the promo-benchmark scripts, along with their
+ * supported reasoning levels and per-token pricing used to estimate benchmark run cost.
+ */
+
 export const BENCHMARK_REASONING_LEVELS = [
     'default',
     'none',
@@ -7,24 +12,67 @@ export const BENCHMARK_REASONING_LEVELS = [
     'xhigh',
 ] as const;
 
+/**
+ * Reasoning effort level a benchmark run can request from a model.
+ */
 export type BenchmarkReasoning = (typeof BENCHMARK_REASONING_LEVELS)[number];
 
+/**
+ * Reasoning effort level excluding `'default'`, i.e. the levels a model can explicitly declare
+ * support for.
+ */
 export type ExplicitBenchmarkReasoning = Exclude<
     BenchmarkReasoning,
     'default'
 >;
 
+/**
+ * Per-token USD pricing for a model, expressed per million tokens.
+ */
 export interface BenchmarkPricing {
+    /**
+     * USD cost per million input tokens.
+     */
     inputPerMillion: number;
+
+    /**
+     * USD cost per million output tokens.
+     */
     outputPerMillion: number;
+
+    /**
+     * USD cost per million cache-read tokens.
+     */
     cacheReadPerMillion: number;
+
+    /**
+     * USD cost per million cache-write tokens.
+     */
     cacheWritePerMillion: number;
+
+    /**
+     * USD cost per million reasoning tokens.
+     */
     reasoningPerMillion: number;
 }
 
+/**
+ * A model available for benchmarking: its id, the reasoning levels it supports, and its pricing.
+ */
 export interface BenchmarkModel {
+    /**
+     * Model identifier as used when requesting a benchmark run.
+     */
     id: string;
+
+    /**
+     * Reasoning effort levels this model accepts, excluding `'default'`.
+     */
     supportedReasoning: readonly ExplicitBenchmarkReasoning[];
+
+    /**
+     * Per-token pricing for this model.
+     */
     pricing: BenchmarkPricing;
 }
 

@@ -1,3 +1,8 @@
+/**
+ * @file Matches a browser-reported locale code against the extension's
+ * supported locales.
+ */
+
 import type { AvailableLocale } from '@/shared/i18n/locale-constants';
 
 /**

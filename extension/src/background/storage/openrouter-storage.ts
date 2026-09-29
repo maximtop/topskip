@@ -1,3 +1,8 @@
+/**
+ * @file Persists and validates OpenRouter connection settings in
+ * `browser.storage.local`, including the legacy-to-`customModels` migration.
+ */
+
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
@@ -9,7 +14,14 @@ import { isOpenRouterBuiltinModelSlug } from '@/shared/openrouter-model-presets'
  * only).
  */
 export interface OpenRouterConfig {
+    /**
+     * Raw OpenRouter API key, or empty string when not configured.
+     */
     apiKey: string;
+
+    /**
+     * Selected OpenRouter model slug, or empty string when not configured.
+     */
     model: string;
 
     /**

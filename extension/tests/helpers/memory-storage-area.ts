@@ -114,7 +114,9 @@ export function createMemoryStorageArea(): MemoryStorageArea {
                 }
                 return Promise.resolve();
             });
-            area.getBytesInUse.mockImplementation((keys) => Promise.resolve(bytesOf(data, new Set(toKeyList(keys, Object.keys(data))))));
+            area.getBytesInUse.mockImplementation(
+                (keys) => Promise.resolve(bytesOf(data, new Set(toKeyList(keys, Object.keys(data))))),
+            );
         },
         reset: () => {
             for (const key of Object.keys(data)) {

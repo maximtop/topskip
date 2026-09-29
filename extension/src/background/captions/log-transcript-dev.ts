@@ -1,3 +1,8 @@
+/**
+ * @file Dev-only console logging of caption capture timing, kept free of
+ * user-visible transcript text.
+ */
+
 import { LOG_PREFIX_CAPTIONS } from '@/shared/constants';
 
 import type { CaptionSegment } from '@topskip/common/caption-types';
@@ -14,7 +19,7 @@ export function logTranscriptForDeveloper(
     videoId: string,
     languageCode: string | undefined,
     segments: CaptionSegment[],
-    enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+    enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
 ): void {
     if (!enabled) {
         return;

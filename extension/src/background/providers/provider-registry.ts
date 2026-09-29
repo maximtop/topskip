@@ -1,3 +1,7 @@
+/**
+ * @file Immutable lookup of registered LLM provider adapters.
+ */
+
 import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
 
 /**

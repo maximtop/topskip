@@ -1,3 +1,10 @@
+/**
+ * @file Durable local repository for completed backend analysis artifacts. Validates,
+ * redacts, and persists finished job history (SQLite in production, an atomically
+ * written JSON file for isolated Vitest runs), applies retention and cache-freshness
+ * rules on read, and builds fixture records for tests.
+ */
+
 import { randomUUID } from 'node:crypto';
 import {
     chmodSync,
@@ -94,7 +101,14 @@ const operationalProviderSchema = v.pipe(
  * Only non-payload identifiers may survive in durable operational diagnostics.
  */
 interface SafeOperationalDiagnostics {
+    /**
+     * Which code path produced the artifact; absent when the caller did not report one.
+     */
     artifactSource?: v.InferOutput<typeof operationalArtifactSourceSchema>;
+
+    /**
+     * Analysis provider id, validated against the allow-listed provider format; absent when unset.
+     */
     provider?: string;
 }
 
@@ -284,7 +298,96 @@ const analysisArtifactBaseRecordSchema = v.strictObject({
 });
 
 /**
- * Ready records require worker artifacts; legacy terminal history remains readable but is revalidated before cache reuse.
+ * Enforces that successful cache records are backed by worker-produced artifacts.
+ *
+ * Declared above `analysisArtifactRecordSchema`, which calls it from a `v.check`
+ * validator, so the schema's first use does not precede this definition;
+ * `AnalysisArtifactStore.hasValidCacheArtifacts` below delegates to it to keep the
+ * same public API for external callers.
+ *
+ * @param record - Parsed base artifact record to validate across fields.
+ *
+ * @returns Whether the record is safe to persist.
+ */
+function hasValidCacheArtifacts(
+    record: v.InferOutput<typeof analysisArtifactBaseRecordSchema>,
+): boolean {
+    if (
+        record.terminalResponse.status !== 'ready'
+        && record.terminalResponse.status !== 'no_promo'
+    ) {
+        return false;
+    }
+    if (
+        record.selectedTranscriptArtifact === null
+        || record.analysisRun === null
+        || record.analysisRun.rawModelResponse === null
+        || record.analysisRun.parsedResult === null
+        || record.analysisRun.failureReason !== null
+    ) {
+        return false;
+    }
+    if (
+        record.selectedTranscriptArtifact.videoId
+            !== record.video.videoId
+        || record.analysisRun.videoId !== record.video.videoId
+        || record.terminalResponse.videoId !== record.video.videoId
+    ) {
+        return false;
+    }
+    if (
+        record.selectedTranscriptArtifact.algorithmVersion
+            !== record.video.algorithmVersion
+        || record.analysisRun.algorithmVersion
+            !== record.video.algorithmVersion
+        || record.terminalResponse.algorithmVersion
+            !== record.video.algorithmVersion
+    ) {
+        return false;
+    }
+    if (
+        record.analysisRun.transcriptArtifactId
+        !== record.selectedTranscriptArtifact.artifactId
+    ) {
+        return false;
+    }
+    if (
+        record.selectedTranscriptArtifact.sourceType
+        === 'extension_caption_upload'
+    ) {
+        if (
+            record.video.languageCode
+                !== record.selectedTranscriptArtifact.languageCode
+            || record.video.transcriptHash
+                !== record.selectedTranscriptArtifact.transcriptHash
+            || record.video.sourceType
+                !== record.selectedTranscriptArtifact.sourceType
+            || !('languageCode' in record.terminalResponse)
+            || record.terminalResponse.languageCode
+                !== record.selectedTranscriptArtifact.languageCode
+            || !('transcriptHash' in record.terminalResponse)
+            || record.terminalResponse.transcriptHash
+                !== record.selectedTranscriptArtifact.transcriptHash
+        ) {
+            return false;
+        }
+    }
+    if (record.terminalResponse.status === 'no_promo') {
+        return (
+            !record.analysisRun.parsedResult.hasPromo
+            && record.analysisRun.normalizedPromoBlocks.length === 0
+        );
+    }
+    return (
+        record.analysisRun.parsedResult.hasPromo
+        && JSON.stringify(record.analysisRun.normalizedPromoBlocks)
+            === JSON.stringify(record.terminalResponse.promoBlocks)
+    );
+}
+
+/**
+ * Ready records require worker artifacts; legacy terminal history remains
+ * readable but is revalidated before cache reuse.
  */
 export const analysisArtifactRecordSchema = v.pipe(
     analysisArtifactBaseRecordSchema,
@@ -302,7 +405,7 @@ export const analysisArtifactRecordSchema = v.pipe(
         ) {
             return true;
         }
-        return AnalysisArtifactStore.hasValidCacheArtifacts(record);
+        return hasValidCacheArtifacts(record);
     }),
 );
 
@@ -343,13 +446,43 @@ export type AnalysisArtifactRecordInput = v.InferInput<
  * Test helper input keeps fixtures concise while still passing production validation.
  */
 interface BuildRecordForTestsInput {
+    /**
+     * YouTube video id for the fixture record.
+     */
     videoId: string;
+
+    /**
+     * Algorithm version for the fixture record.
+     */
     algorithmVersion: string;
+
+    /**
+     * Terminal status the built fixture record should represent.
+     */
     terminalStatus: AnalysisArtifactTerminalResponse['status'];
+
+    /**
+     * Completion timestamp override; defaults to a fixed test timestamp when absent.
+     */
     completedAtMs?: number;
+
+    /**
+     * Explicit transcript artifact override; when omitted, one is generated for analyzed statuses.
+     */
     selectedTranscriptArtifact?: TranscriptArtifact | null;
+
+    /**
+     * Explicit analysis run override; when omitted, one is generated for analyzed statuses.
+     */
     analysisRun?: AnalysisRunArtifact | null;
+
+    /**
+     * Partial operational metadata overrides merged over the test defaults.
+     */
     operationalMetadata?: Partial<AnalysisOperationalMetadata> & {
+        /**
+         * Safe diagnostic entries merged into the redacted metadata's `diagnostics` field.
+         */
         diagnostics?: Record<string, string | number | boolean | null>;
     };
 }
@@ -358,7 +491,14 @@ interface BuildRecordForTestsInput {
  * Query key used by artifact history reads.
  */
 interface ArtifactVideoQuery {
+    /**
+     * YouTube video id to look up history for.
+     */
     videoId: string;
+
+    /**
+     * Restricts the lookup to one algorithm version; omitted returns every version.
+     */
     algorithmVersion?: string;
 }
 
@@ -366,9 +506,24 @@ interface ArtifactVideoQuery {
  * Exact uploaded-transcript identity prevents cache reuse across caption variants.
  */
 export interface ExactArtifactIdentity {
+    /**
+     * YouTube video id the transcript was extracted from.
+     */
     videoId: string;
+
+    /**
+     * Algorithm version the analysis was requested under.
+     */
     algorithmVersion: string;
+
+    /**
+     * BCP-47 language code of the uploaded caption track.
+     */
     languageCode: string;
+
+    /**
+     * Content hash of the uploaded transcript text, used to detect caption changes.
+     */
     transcriptHash: string;
 }
 
@@ -455,8 +610,8 @@ export class AnalysisArtifactStore {
      * Finds the newest cacheable ready artifact for a video and algorithm.
      *
      * @param input - Exact video and algorithm version cache key.
-     * @param input.videoId
-     * @param input.algorithmVersion
+     * @param input.videoId - YouTube video id to look up.
+     * @param input.algorithmVersion - Algorithm version to look up.
      *
      * @returns Latest ready artifact record, or `null` when absent.
      */
@@ -477,8 +632,8 @@ export class AnalysisArtifactStore {
      * Temporarily preserves the pre-v5 lookup until all legacy call sites are isolated.
      *
      * @param input - Exact video and algorithm version cache key.
-     * @param input.videoId
-     * @param input.algorithmVersion
+     * @param input.videoId - YouTube video id to look up.
+     * @param input.algorithmVersion - Algorithm version to look up.
      *
      * @returns Latest ready or no-promo artifact record, or `null` when absent.
      *
@@ -547,10 +702,10 @@ export class AnalysisArtifactStore {
      * Builds an opaque record id without embedding transcript identity.
      *
      * @param _input - Ignored historical identity retained for call-site compatibility.
-     * @param _input.videoId
-     * @param _input.algorithmVersion
-     * @param _input.jobId
-     * @param _input.terminalResponse
+     * @param _input.videoId - Ignored; retained for call-site compatibility.
+     * @param _input.algorithmVersion - Ignored; retained for call-site compatibility.
+     * @param _input.jobId - Ignored; retained for call-site compatibility.
+     * @param _input.terminalResponse - Ignored; retained for call-site compatibility.
      * @param _completedAtMs - Ignored historical timestamp retained for compatibility.
      *
      * @returns UUID-based artifact record id.
@@ -571,9 +726,9 @@ export class AnalysisArtifactStore {
      * Builds deterministic local metadata for completed MVP jobs.
      *
      * @param input - Job timing and optional analysis run.
-     * @param input.createdAtMs
-     * @param input.selectedTranscriptArtifact
-     * @param input.analysisRun
+     * @param input.createdAtMs - Job creation timestamp, in epoch milliseconds.
+     * @param input.selectedTranscriptArtifact - Transcript used for analysis, or `null` for a fixture completion.
+     * @param input.analysisRun - Completed model analysis run, or `null` for a fixture completion.
      * @param completedAtMs - Completion timestamp.
      *
      * @returns Safe default operational metadata.
@@ -659,8 +814,6 @@ export class AnalysisArtifactStore {
      * Selects an isolated durable repository file for one persistence test.
      *
      * @param storagePath - Absolute path used by the test's local repository.
-     *
-     * @returns Nothing.
      */
     static setStoragePathForTests(storagePath: string): void {
         AnalysisArtifactStore.storagePathForTests = storagePath;
@@ -669,8 +822,6 @@ export class AnalysisArtifactStore {
 
     /**
      * Drops the process cache while preserving the durable test repository.
-     *
-     * @returns Nothing.
      */
     static resetRuntimeCacheForTests(): void {
         AnalysisArtifactStore.recordsById = null;
@@ -678,8 +829,6 @@ export class AnalysisArtifactStore {
 
     /**
      * Restores production path resolution after an isolated persistence test.
-     *
-     * @returns Nothing.
      */
     static resetStoragePathForTests(): void {
         AnalysisArtifactStore.storagePathForTests = null;
@@ -699,28 +848,36 @@ export class AnalysisArtifactStore {
         const completedAtMs = input.completedAtMs ?? TEST_COMPLETED_AT_MS;
         const isAnalyzedResult = input.terminalStatus === 'ready'
             || input.terminalStatus === 'no_promo';
-        const selectedTranscriptArtifact = 'selectedTranscriptArtifact' in input
+        let selectedTranscriptArtifact: TranscriptArtifact | null;
+        if (
+            'selectedTranscriptArtifact' in input
             && input.selectedTranscriptArtifact !== undefined
-            ? input.selectedTranscriptArtifact
-            : isAnalyzedResult
-                ? AnalysisArtifactStore.buildTranscriptArtifactForTests(
-                    input,
-                    TEST_CREATED_AT_MS,
-                )
-                : null;
+        ) {
+            selectedTranscriptArtifact = input.selectedTranscriptArtifact;
+        } else if (isAnalyzedResult) {
+            selectedTranscriptArtifact = AnalysisArtifactStore.buildTranscriptArtifactForTests(
+                input,
+                TEST_CREATED_AT_MS,
+            );
+        } else {
+            selectedTranscriptArtifact = null;
+        }
         const terminalResponse = AnalysisArtifactStore.buildTerminalResponseForTests(
             input,
             selectedTranscriptArtifact,
         );
-        const analysisRun = 'analysisRun' in input && input.analysisRun !== undefined
-            ? input.analysisRun
-            : isAnalyzedResult && selectedTranscriptArtifact !== null
-                ? AnalysisArtifactStore.buildAnalysisRunForTests(
-                    input,
-                    selectedTranscriptArtifact,
-                    completedAtMs,
-                )
-                : null;
+        let analysisRun: AnalysisRunArtifact | null;
+        if ('analysisRun' in input && input.analysisRun !== undefined) {
+            analysisRun = input.analysisRun;
+        } else if (isAnalyzedResult && selectedTranscriptArtifact !== null) {
+            analysisRun = AnalysisArtifactStore.buildAnalysisRunForTests(
+                input,
+                selectedTranscriptArtifact,
+                completedAtMs,
+            );
+        } else {
+            analysisRun = null;
+        }
         const metadata = AnalysisArtifactStore.mergeOperationalMetadata(
             input,
             completedAtMs,
@@ -772,6 +929,10 @@ export class AnalysisArtifactStore {
     /**
      * Enforces that successful cache records are backed by worker-produced artifacts.
      *
+     * Delegates to the module-level `hasValidCacheArtifacts`, which is declared
+     * above `analysisArtifactRecordSchema` so the schema's own `v.check` validator
+     * can call it without a use-before-define ordering problem.
+     *
      * @param record - Parsed base artifact record to validate across fields.
      *
      * @returns Whether the record is safe to persist.
@@ -779,77 +940,7 @@ export class AnalysisArtifactStore {
     static hasValidCacheArtifacts(
         record: v.InferOutput<typeof analysisArtifactBaseRecordSchema>,
     ): boolean {
-        if (
-            record.terminalResponse.status !== 'ready'
-            && record.terminalResponse.status !== 'no_promo'
-        ) {
-            return false;
-        }
-        if (
-            record.selectedTranscriptArtifact === null
-            || record.analysisRun === null
-            || record.analysisRun.rawModelResponse === null
-            || record.analysisRun.parsedResult === null
-            || record.analysisRun.failureReason !== null
-        ) {
-            return false;
-        }
-        if (
-            record.selectedTranscriptArtifact.videoId
-                !== record.video.videoId
-            || record.analysisRun.videoId !== record.video.videoId
-            || record.terminalResponse.videoId !== record.video.videoId
-        ) {
-            return false;
-        }
-        if (
-            record.selectedTranscriptArtifact.algorithmVersion
-                !== record.video.algorithmVersion
-            || record.analysisRun.algorithmVersion
-                !== record.video.algorithmVersion
-            || record.terminalResponse.algorithmVersion
-                !== record.video.algorithmVersion
-        ) {
-            return false;
-        }
-        if (
-            record.analysisRun.transcriptArtifactId
-            !== record.selectedTranscriptArtifact.artifactId
-        ) {
-            return false;
-        }
-        if (
-            record.selectedTranscriptArtifact.sourceType
-            === 'extension_caption_upload'
-        ) {
-            if (
-                record.video.languageCode
-                    !== record.selectedTranscriptArtifact.languageCode
-                || record.video.transcriptHash
-                    !== record.selectedTranscriptArtifact.transcriptHash
-                || record.video.sourceType
-                    !== record.selectedTranscriptArtifact.sourceType
-                || !('languageCode' in record.terminalResponse)
-                || record.terminalResponse.languageCode
-                    !== record.selectedTranscriptArtifact.languageCode
-                || !('transcriptHash' in record.terminalResponse)
-                || record.terminalResponse.transcriptHash
-                    !== record.selectedTranscriptArtifact.transcriptHash
-            ) {
-                return false;
-            }
-        }
-        if (record.terminalResponse.status === 'no_promo') {
-            return (
-                !record.analysisRun.parsedResult.hasPromo
-                && record.analysisRun.normalizedPromoBlocks.length === 0
-            );
-        }
-        return (
-            record.analysisRun.parsedResult.hasPromo
-            && JSON.stringify(record.analysisRun.normalizedPromoBlocks)
-                === JSON.stringify(record.terminalResponse.promoBlocks)
-        );
+        return hasValidCacheArtifacts(record);
     }
 
     /**
@@ -954,11 +1045,10 @@ export class AnalysisArtifactStore {
         const nowMs = Date.now();
         let removed = false;
         for (const [recordId, record] of records) {
-            if (AnalysisArtifactStore.isRetained(record, nowMs)) {
-                continue;
+            if (!AnalysisArtifactStore.isRetained(record, nowMs)) {
+                records.delete(recordId);
+                removed = true;
             }
-            records.delete(recordId);
-            removed = true;
         }
 
         if (removed) {
@@ -1013,8 +1103,6 @@ export class AnalysisArtifactStore {
      * Writes repository state atomically so a completed job survives a restart.
      *
      * @param records - Validated records to persist.
-     *
-     * @returns Nothing.
      */
     private static persistRecords(
         records: Map<string, AnalysisArtifactRecord>,
@@ -1135,6 +1223,8 @@ export class AnalysisArtifactStore {
      * @param transcriptArtifact - Selected transcript used to choose exact or legacy shape.
      *
      * @returns Terminal response matching the requested state.
+     *
+     * @throws {Error} When the requested terminal status is not a supported fixture state.
      */
     private static buildTerminalResponseForTests(
         input: BuildRecordForTestsInput,
@@ -1196,6 +1286,8 @@ export class AnalysisArtifactStore {
                         code: 'fixture_error',
                     },
                 });
+            default:
+                throw new Error('Unsupported fixture terminal status.');
         }
     }
 

@@ -124,76 +124,163 @@ describe('validateExtensionManifest', () => {
     });
 
     it.each([
-        ['required tabs', (value: ManifestFixture) => value.permissions.push('tabs')],
-        ['duplicate API permission', (value: ManifestFixture) => value.permissions.push('storage')],
-        ['optional tabs', (value: ManifestFixture) => value.optional_permissions.push('tabs')],
-        ['optional scripting', (value: ManifestFixture) => value.optional_permissions.push('scripting')],
-        ['missing storage', (value: ManifestFixture) => value.permissions.splice(0)],
-        ['missing scripting', (value: ManifestFixture) => {
-            value.permissions = ['storage', 'activeTab', 'unlimitedStorage'];
+        ['required tabs', () => {
+            const manifest = validManifest();
+            manifest.permissions.push('tabs');
+            return manifest;
         }],
-        ['missing activeTab', (value: ManifestFixture) => {
-            value.permissions = ['storage', 'scripting', 'unlimitedStorage'];
+        ['duplicate API permission', () => {
+            const manifest = validManifest();
+            manifest.permissions.push('storage');
+            return manifest;
         }],
-        ['missing unlimitedStorage', (value: ManifestFixture) => {
-            value.permissions = ['storage', 'scripting', 'activeTab'];
+        ['optional tabs', () => {
+            const manifest = validManifest();
+            manifest.optional_permissions.push('tabs');
+            return manifest;
         }],
-        ['optional unlimitedStorage', (value: ManifestFixture) => value.optional_permissions.push('unlimitedStorage')],
-        ['required downloads', (value: ManifestFixture) => value.permissions.push('downloads')],
-        ['required OpenRouter', (value: ManifestFixture) => value.host_permissions.push('https://openrouter.ai/*')],
-        ['missing optional OpenAI', (value: ManifestFixture) => value.optional_host_permissions.pop()],
-        ['duplicate host', (value: ManifestFixture) => value.optional_host_permissions.push('https://openrouter.ai/*')],
-        ['unknown host', (value: ManifestFixture) => value.optional_host_permissions.push('https://unknown.example/*')],
-        ['HTTP release host', (value: ManifestFixture) => {
-            value.host_permissions = ['http://topskip.example.com/*'];
+        ['optional scripting', () => {
+            const manifest = validManifest();
+            manifest.optional_permissions.push('scripting');
+            return manifest;
         }],
-        ['release fixture', (value: ManifestFixture) => value.content_scripts[0]?.matches.push(DEV_FIXTURE_MATCH)],
-        ['wrong MAIN world', (value: ManifestFixture) => {
-            if (value.content_scripts[0]) {
-                value.content_scripts[0].world = 'ISOLATED';
+        ['missing storage', () => {
+            const manifest = validManifest();
+            manifest.permissions.splice(0);
+            return manifest;
+        }],
+        ['missing scripting', () => {
+            const manifest = validManifest();
+            manifest.permissions = ['storage', 'activeTab', 'unlimitedStorage'];
+            return manifest;
+        }],
+        ['missing activeTab', () => {
+            const manifest = validManifest();
+            manifest.permissions = ['storage', 'scripting', 'unlimitedStorage'];
+            return manifest;
+        }],
+        ['missing unlimitedStorage', () => {
+            const manifest = validManifest();
+            manifest.permissions = ['storage', 'scripting', 'activeTab'];
+            return manifest;
+        }],
+        ['optional unlimitedStorage', () => {
+            const manifest = validManifest();
+            manifest.optional_permissions.push('unlimitedStorage');
+            return manifest;
+        }],
+        ['required downloads', () => {
+            const manifest = validManifest();
+            manifest.permissions.push('downloads');
+            return manifest;
+        }],
+        ['required OpenRouter', () => {
+            const manifest = validManifest();
+            manifest.host_permissions.push('https://openrouter.ai/*');
+            return manifest;
+        }],
+        ['missing optional OpenAI', () => {
+            const manifest = validManifest();
+            manifest.optional_host_permissions.pop();
+            return manifest;
+        }],
+        ['duplicate host', () => {
+            const manifest = validManifest();
+            manifest.optional_host_permissions.push('https://openrouter.ai/*');
+            return manifest;
+        }],
+        ['unknown host', () => {
+            const manifest = validManifest();
+            manifest.optional_host_permissions.push('https://unknown.example/*');
+            return manifest;
+        }],
+        ['HTTP release host', () => {
+            const manifest = validManifest();
+            manifest.host_permissions = ['http://topskip.example.com/*'];
+            return manifest;
+        }],
+        ['release fixture', () => {
+            const manifest = validManifest();
+            manifest.content_scripts[0]?.matches.push(DEV_FIXTURE_MATCH);
+            return manifest;
+        }],
+        ['wrong MAIN world', () => {
+            const manifest = validManifest();
+            if (manifest.content_scripts[0]) {
+                manifest.content_scripts[0].world = 'ISOLATED';
             }
+            return manifest;
         }],
-        ['swapped content order', (value: ManifestFixture) => value.content_scripts.reverse()],
-        ['lower Chrome version', (value: ManifestFixture) => {
-            value.minimum_chrome_version = '110';
+        ['swapped content order', () => {
+            const manifest = validManifest();
+            manifest.content_scripts.reverse();
+            return manifest;
         }],
-        ['missing Chrome version', (value: ManifestFixture) => {
-            delete value.minimum_chrome_version;
+        ['lower Chrome version', () => {
+            const manifest = validManifest();
+            manifest.minimum_chrome_version = '110';
+            return manifest;
         }],
-        ['all frames', (value: ManifestFixture) => {
-            if (value.content_scripts[0]) {
-                value.content_scripts[0].all_frames = true;
+        ['missing Chrome version', () => {
+            const manifest = validManifest();
+            delete manifest.minimum_chrome_version;
+            return manifest;
+        }],
+        ['all frames', () => {
+            const manifest = validManifest();
+            if (manifest.content_scripts[0]) {
+                manifest.content_scripts[0].all_frames = true;
             }
+            return manifest;
         }],
-        ['about blank', (value: ManifestFixture) => {
-            if (value.content_scripts[0]) {
-                value.content_scripts[0].match_about_blank = true;
+        ['about blank', () => {
+            const manifest = validManifest();
+            if (manifest.content_scripts[0]) {
+                manifest.content_scripts[0].match_about_blank = true;
             }
+            return manifest;
         }],
-        ['origin fallback', (value: ManifestFixture) => {
-            if (value.content_scripts[0]) {
-                value.content_scripts[0].match_origin_as_fallback = true;
+        ['origin fallback', () => {
+            const manifest = validManifest();
+            if (manifest.content_scripts[0]) {
+                manifest.content_scripts[0].match_origin_as_fallback = true;
             }
+            return manifest;
         }],
-        ['extra JS', (value: ManifestFixture) => value.content_scripts[0]?.js.push('extra.js')],
-        ['extra CSS', (value: ManifestFixture) => {
-            if (value.content_scripts[0]) {
-                value.content_scripts[0].css = ['extra.css'];
+        ['extra JS', () => {
+            const manifest = validManifest();
+            manifest.content_scripts[0]?.js.push('extra.js');
+            return manifest;
+        }],
+        ['extra CSS', () => {
+            const manifest = validManifest();
+            if (manifest.content_scripts[0]) {
+                manifest.content_scripts[0].css = ['extra.css'];
             }
+            return manifest;
         }],
-        ['extra match', (value: ManifestFixture) => value.content_scripts[0]?.matches.push('https://example.com/*')],
-        ['wrong manifest version', (value: ManifestFixture) => {
-            value.manifest_version = 2;
+        ['extra match', () => {
+            const manifest = validManifest();
+            manifest.content_scripts[0]?.matches.push('https://example.com/*');
+            return manifest;
         }],
-        ['wrong profile name', (value: ManifestFixture) => {
-            value.name = 'TopSkip (Dev)';
+        ['wrong manifest version', () => {
+            const manifest = validManifest();
+            manifest.manifest_version = 2;
+            return manifest;
         }],
-        ['wrong service worker', (value: ManifestFixture) => {
-            value.background.service_worker = 'worker.js';
+        ['wrong profile name', () => {
+            const manifest = validManifest();
+            manifest.name = 'TopSkip (Dev)';
+            return manifest;
         }],
-    ])('rejects %s', (_label, mutate) => {
-        const manifest = validManifest();
-        mutate(manifest);
+        ['wrong service worker', () => {
+            const manifest = validManifest();
+            manifest.background.service_worker = 'worker.js';
+            return manifest;
+        }],
+    ])('rejects %s', (_label, buildInvalid) => {
+        const manifest = buildInvalid();
 
         expect(() => validateRelease(manifest)).toThrow();
     });

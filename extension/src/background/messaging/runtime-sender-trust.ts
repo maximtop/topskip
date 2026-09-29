@@ -1,3 +1,8 @@
+/**
+ * @file Decides which senders may control, read or feed the debug log,
+ * based only on browser-provided sender metadata.
+ */
+
 import browser from '@/shared/browser';
 import { TOP_FRAME_ID } from '@/shared/constants';
 import { isTopSkipContentDocumentUrl } from '@/shared/watch-route';

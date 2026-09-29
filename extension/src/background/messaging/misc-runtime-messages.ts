@@ -1,48 +1,16 @@
+/**
+ * @file Small runtime handler that doesn't warrant its own module:
+ * promo-detection status queries for the popup.
+ */
+
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import browser from '@/shared/browser';
-import { LOG_PREFIX_CONTENT } from '@/shared/constants';
 import { getErrorMessage } from '@/shared/error';
 import {
-    type ContentLogLevel,
     type GetDetectionStatusResponse,
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
-
-/**
- * Handles `TOPSKIP_CONTENT_LOG` messages from the content
- * script and replays them to the service worker console.
- */
-export class ContentLogMessages {
-    /**
-     * Prints a content-script log line in the service-worker console,
-     * prefixed with the originating tab id when available.
-     *
-     * @param level - Content log level; `info` lines go to `console.debug`.
-     * @param args - Arguments to forward verbatim to the console method.
-     * @param tabId - Tab id from the sender, or `undefined` when not present.
-     */
-    static log(
-        level: ContentLogLevel,
-        args: unknown[],
-        tabId: number | undefined,
-    ): void {
-        const tag = tabId !== undefined
-            ? `[TopSkip content t${tabId}]`
-            : LOG_PREFIX_CONTENT;
-
-        switch (level) {
-            case 'warn':
-                console.warn(tag, ...args);
-                break;
-            case 'error':
-                console.error(tag, ...args);
-                break;
-            default:
-                console.debug(tag, ...args);
-        }
-    }
-}
 
 /**
  * Handles promo detection status queries from the popup; not instantiable.
@@ -99,7 +67,7 @@ export class PromoDetectionRuntimeMessages {
         state: PromoDetectionStatePayload | null,
         tabId: number | undefined,
     ): Promise<{ ok: true } | { ok: false; error: string }> {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return {
                 ok: false,
                 error: 'Dev detection seeding is disabled.',

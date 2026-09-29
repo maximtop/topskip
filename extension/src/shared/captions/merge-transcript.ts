@@ -1,3 +1,8 @@
+/**
+ * @file Merges parsed caption segments into a single bounded transcript
+ * string for the LLM prompt.
+ */
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**

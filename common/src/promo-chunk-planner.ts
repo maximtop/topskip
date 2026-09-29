@@ -1,4 +1,10 @@
 /**
+ * @file Deterministic, line-aligned overlapping chunk planner for splitting a
+ * merged transcript into per-adapter-call slices that fit a character
+ * budget, shared by the server and BYOK promo-detection routes.
+ */
+
+/**
  * One line-aligned slice of the merged transcript for one adapter call.
  */
 export interface ChunkPlanItem {
@@ -6,11 +12,35 @@ export interface ChunkPlanItem {
      * Zero-based index in the plan
      */
     index: number;
+
+    /**
+     * Caption start time (seconds) of this chunk's first line.
+     */
     startSec: number;
+
+    /**
+     * Caption start time (seconds) of this chunk's last line.
+     */
     endSec: number;
+
+    /**
+     * Newline-joined transcript text for this chunk, as sent to the adapter.
+     */
     text: string;
+
+    /**
+     * UTF-16 length of `text`.
+     */
     chars: number;
+
+    /**
+     * Index of this chunk's first line in the original `lines` array.
+     */
     lineStartIndex: number;
+
+    /**
+     * Index of this chunk's last line in the original `lines` array.
+     */
     lineEndIndex: number;
 }
 
@@ -18,9 +48,26 @@ export interface ChunkPlanItem {
  * Deterministic chunk layout for a merged transcript string.
  */
 export interface ChunkPlan {
+    /**
+     * Planned chunk slices, in transcript order.
+     */
     chunks: ChunkPlanItem[];
+
+    /**
+     * Overlap window (seconds) actually used between adjacent chunks, after
+     * any shrink applied to satisfy `maxChunks`.
+     */
     overlapSec: number;
+
+    /**
+     * True when `chunks` was truncated to `maxChunks` and does not cover the
+     * full transcript.
+     */
     partialCoverage: boolean;
+
+    /**
+     * Number of chunks in `chunks` (mirrors `chunks.length`).
+     */
     plannedChunkCount: number;
 
     /**
@@ -34,7 +81,17 @@ export interface ChunkPlan {
  * Timestamped transcript row: `line` is the exact prompt line, `sec` its
  * caption start time.
  */
-export interface TimedLine { sec: number; line: string }
+export interface TimedLine {
+    /**
+     * Caption start time in seconds, parsed from the `[sec]` prefix.
+     */
+    sec: number;
+
+    /**
+     * Exact `[sec] text` prompt line, unmodified.
+     */
+    line: string;
+}
 
 /**
  * Overlap policy: fixed seconds (server route) or dynamic from the chunk
@@ -52,8 +109,20 @@ export type ChunkOverlapPolicy = | { kind: 'fixed'; sec: number }
  * Planner inputs; `maxChunks` bounds adapter calls per video.
  */
 export interface ChunkPlanOptions {
+    /**
+     * Max UTF-16 length of a single chunk's joined transcript text.
+     */
     budgetChars: number;
+
+    /**
+     * Max number of chunks to emit; overlap shrinks (down to
+     * `OVERLAP_SHRINK_FLOOR_SEC`) before coverage is truncated to this cap.
+     */
     maxChunks: number;
+
+    /**
+     * How much adjacent chunks overlap, in seconds.
+     */
     overlap: ChunkOverlapPolicy;
 }
 
@@ -82,7 +151,7 @@ export class ChunkPlanner {
         endIdx: number,
     ): string {
         const parts: string[] = [];
-        for (let i = startIdx; i <= endIdx; i++) {
+        for (let i = startIdx; i <= endIdx; i += 1) {
             const row = lines[i];
             if (row !== undefined) {
                 parts.push(row.line);
@@ -109,7 +178,7 @@ export class ChunkPlanner {
             return 0;
         }
         let n = 0;
-        for (let i = startIdx; i <= endIdx; i++) {
+        for (let i = startIdx; i <= endIdx; i += 1) {
             const row = lines[i];
             if (row !== undefined) {
                 n += row.line.length;
@@ -232,37 +301,36 @@ export class ChunkPlanner {
                 });
                 index += 1;
                 startIdx += 1;
-                continue;
-            }
+            } else {
+                const sFirst = lines[startIdx].sec;
+                const sLast = lines[endIdx].sec;
+                const text = ChunkPlanner.sliceLines(lines, startIdx, endIdx);
+                out.push({
+                    index,
+                    startSec: sFirst,
+                    endSec: sLast,
+                    text,
+                    chars: text.length,
+                    lineStartIndex: startIdx,
+                    lineEndIndex: endIdx,
+                });
+                index += 1;
 
-            const sFirst = lines[startIdx].sec;
-            const sLast = lines[endIdx].sec;
-            const text = ChunkPlanner.sliceLines(lines, startIdx, endIdx);
-            out.push({
-                index,
-                startSec: sFirst,
-                endSec: sLast,
-                text,
-                chars: text.length,
-                lineStartIndex: startIdx,
-                lineEndIndex: endIdx,
-            });
-            index += 1;
+                if (endIdx >= lines.length - 1) {
+                    break;
+                }
 
-            if (endIdx >= lines.length - 1) {
-                break;
+                let nextStart = ChunkPlanner.nextChunkStartIdx(
+                    lines,
+                    startIdx,
+                    endIdx,
+                    overlapSec,
+                );
+                if (nextStart <= startIdx) {
+                    nextStart = endIdx + 1;
+                }
+                startIdx = nextStart;
             }
-
-            let nextStart = ChunkPlanner.nextChunkStartIdx(
-                lines,
-                startIdx,
-                endIdx,
-                overlapSec,
-            );
-            if (nextStart <= startIdx) {
-                nextStart = endIdx + 1;
-            }
-            startIdx = nextStart;
         }
         return out;
     }
@@ -352,9 +420,7 @@ export class ChunkPlanner {
             partialCoverage = true;
         }
 
-        chunks.forEach((c, i) => {
-            c.index = i;
-        });
+        chunks = chunks.map((c, i) => ({ ...c, index: i }));
 
         let coverageFraction = 1;
         if (partialCoverage && chunks.length > 0) {

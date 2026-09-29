@@ -1,3 +1,8 @@
+/**
+ * @file MV3 service worker entry point: wires up messaging, storage and
+ * lifecycle listeners synchronously at worker start.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';

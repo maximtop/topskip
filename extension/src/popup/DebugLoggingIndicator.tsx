@@ -1,3 +1,7 @@
+/**
+ * @file Non-interactive popup status line shown while debug logging is on.
+ */
+
 import { Text } from '@mantine/core';
 
 import type { ReactElement } from 'react';
@@ -7,6 +11,9 @@ import type { ReactElement } from 'react';
  * (switch off, or background status not yet known).
  */
 interface DebugLoggingIndicatorProps {
+    /**
+     * Localized status text to render, or `null` to render nothing.
+     */
     label: string | null;
 }
 

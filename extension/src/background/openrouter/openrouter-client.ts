@@ -1,3 +1,8 @@
+/**
+ * @file Thin OpenRouter chat-completions client: request typing, response
+ * normalization (snake_case to camelCase), and error classification.
+ */
+
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
 
 const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/completions';
@@ -6,7 +11,14 @@ const OPENROUTER_CHAT_COMPLETIONS_URL = 'https://openrouter.ai/api/v1/chat/compl
  * Chat message shape accepted by OpenRouter chat completions.
  */
 export interface OpenRouterChatMessage {
+    /**
+     * Chat role for this message.
+     */
     role: 'system' | 'user' | 'assistant';
+
+    /**
+     * Message text.
+     */
     content: string;
 }
 
@@ -14,9 +26,24 @@ export interface OpenRouterChatMessage {
  * Token details reported for prompt-side multimodal/cached usage.
  */
 export interface OpenRouterPromptTokenDetails {
+    /**
+     * Prompt tokens served from cache, when the provider reports it.
+     */
     cachedTokens?: number;
+
+    /**
+     * Prompt tokens written to cache, when the provider reports it.
+     */
     cacheWriteTokens?: number;
+
+    /**
+     * Prompt tokens attributed to audio input, when the provider reports it.
+     */
     audioTokens?: number;
+
+    /**
+     * Prompt tokens attributed to video input, when the provider reports it.
+     */
     videoTokens?: number;
 }
 
@@ -24,8 +51,19 @@ export interface OpenRouterPromptTokenDetails {
  * Token details reported for completion-side reasoning or media usage.
  */
 export interface OpenRouterCompletionTokenDetails {
+    /**
+     * Completion tokens spent on reasoning, when the provider reports it.
+     */
     reasoningTokens?: number;
+
+    /**
+     * Completion tokens attributed to audio output, when the provider reports it.
+     */
     audioTokens?: number;
+
+    /**
+     * Completion tokens attributed to image output, when the provider reports it.
+     */
     imageTokens?: number;
 }
 
@@ -33,8 +71,20 @@ export interface OpenRouterCompletionTokenDetails {
  * Provider cost details returned by OpenRouter for BYOK accounting.
  */
 export interface OpenRouterCostDetails {
+    /**
+     * Total upstream inference cost in USD, when the provider reports it.
+     */
     upstreamInferenceCost?: number;
+
+    /**
+     * Upstream prompt-side inference cost in USD, when the provider reports it.
+     */
     upstreamInferencePromptCost?: number;
+
+    /**
+     * Upstream completion-side inference cost in USD, when the provider
+     * reports it.
+     */
     upstreamInferenceCompletionsCost?: number;
 }
 
@@ -42,13 +92,45 @@ export interface OpenRouterCostDetails {
  * Normalized token and cost usage parsed from OpenRouter responses.
  */
 export interface OpenRouterUsage {
+    /**
+     * Prompt tokens consumed by the call.
+     */
     promptTokens: number;
+
+    /**
+     * Completion tokens produced by the call.
+     */
     completionTokens: number;
+
+    /**
+     * Sum of prompt and completion tokens.
+     */
     totalTokens: number;
+
+    /**
+     * Prompt-side cache/media token breakdown, when the provider reports it.
+     */
     promptTokensDetails?: OpenRouterPromptTokenDetails;
+
+    /**
+     * Completion-side reasoning/media token breakdown, when the provider
+     * reports it.
+     */
     completionTokensDetails?: OpenRouterCompletionTokenDetails;
+
+    /**
+     * Total cost in USD, when the provider reports it.
+     */
     cost?: number;
+
+    /**
+     * Whether the call was billed through the user's own upstream key (BYOK).
+     */
     isByok?: boolean;
+
+    /**
+     * Upstream inference cost breakdown, when the provider reports it.
+     */
     costDetails?: OpenRouterCostDetails;
 }
 
@@ -56,9 +138,24 @@ export interface OpenRouterUsage {
  * Request values needed to call OpenRouter chat completions.
  */
 export interface CallOpenRouterChatParams {
+    /**
+     * Raw OpenRouter API key.
+     */
     apiKey: string;
+
+    /**
+     * OpenRouter model slug to call.
+     */
     model: string;
+
+    /**
+     * Chat messages in order (system prompt first, then user turn).
+     */
     messages: OpenRouterChatMessage[];
+
+    /**
+     * Optional reasoning effort hint, for models that support it.
+     */
     reasoningEffort?:
         | 'none'
         | 'minimal'
@@ -67,6 +164,10 @@ export interface CallOpenRouterChatParams {
         | 'high'
         | 'xhigh'
         | 'max';
+
+    /**
+     * Optional abort signal to cancel the in-flight request.
+     */
     signal?: AbortSignal;
 }
 

@@ -1,3 +1,8 @@
+/**
+ * @file Handles the BYOK preflight-setup runtime message, resolving provider
+ * readiness before caption acquisition can finish.
+ */
+
 import {
     PROMO_DETECTION_STATUS,
 } from '@topskip/common/promo-types';

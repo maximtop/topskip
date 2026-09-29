@@ -8,6 +8,8 @@ import {
     vi,
 } from 'vitest';
 
+import { ContentLogMessages } from '@/background/messaging/content-log-messages';
+
 const mocks = vi.hoisted(() => ({
     tabsQuery: vi.fn(),
     detectionReady: vi.fn(),
@@ -16,8 +18,8 @@ const mocks = vi.hoisted(() => ({
     debugLogIsEnabled: vi.fn(() => false),
 }));
 
-// Prevent webextension-polyfill from throwing in Node; ContentLogMessages does
-// not touch browser APIs, but this module pulls them in for its other exports.
+// Prevent webextension-polyfill from throwing in Node while this module pulls
+// in `browser` for its promo-detection status query.
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: {},
@@ -39,7 +41,9 @@ vi.mock('@/background/debug-log/debug-log-store', () => ({
     },
 }));
 
-const { ContentLogMessages, PromoDetectionRuntimeMessages } = await import('@/background/messaging/misc-runtime-messages');
+const { PromoDetectionRuntimeMessages } = await import(
+    '@/background/messaging/misc-runtime-messages'
+);
 
 describe('ContentLogMessages.log', () => {
     beforeEach(() => {

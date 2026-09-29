@@ -1,3 +1,7 @@
+/**
+ * @file Analysis mode (Server / Private BYOK) selector panel.
+ */
+
 import {
 
     Paper,
@@ -16,7 +20,14 @@ import type { ReactElement } from 'react';
  * Analysis mode selector state supplied by the options container.
  */
 interface AnalysisModePanelProps {
+    /**
+     * Currently selected analysis route.
+     */
     value: AnalysisMode;
+
+    /**
+     * Whether the selector is disabled (e.g. while saving).
+     */
     disabled: boolean;
     onChange(value: AnalysisMode): void;
 }

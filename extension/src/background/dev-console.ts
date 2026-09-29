@@ -1,7 +1,11 @@
 /**
+ * @file Dev-build-only console helpers gated on `TOPSKIP_INCLUDE_DEV_LOCAL`.
+ */
+
+/**
  * Dev-build-only console mirror for free-form background diagnostics.
  *
- * Holds the `__TOPSKIP_INCLUDE_DEV_LOCAL__` gate in one place, inside the
+ * Holds the `TOPSKIP_INCLUDE_DEV_LOCAL` gate in one place, inside the
  * method bodies, so call sites log like a plain logger with no gating
  * argument; in beta/release the define collapses the guard and both
  * methods become no-ops. Unlike an inline define block at the call site,
@@ -18,7 +22,7 @@ export class DevConsole {
      * @param parts - Console arguments forwarded verbatim.
      */
     static info(...parts: readonly unknown[]): void {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return;
         }
         console.debug(...parts);
@@ -30,7 +34,7 @@ export class DevConsole {
      * @param parts - Console arguments forwarded verbatim.
      */
     static warn(...parts: readonly unknown[]): void {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return;
         }
         console.warn(...parts);

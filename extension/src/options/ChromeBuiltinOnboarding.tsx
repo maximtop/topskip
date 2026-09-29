@@ -1,3 +1,7 @@
+/**
+ * @file Multi-state onboarding widget for the Chrome Built-in AI provider.
+ */
+
 import {
     Badge,
     Button,
@@ -17,8 +21,19 @@ import type { ReactElement } from 'react';
  * Prompt API onboarding state and download action passed from options.
  */
 interface ChromeBuiltinOnboardingProps {
+    /**
+     * Current Chrome Prompt API model availability.
+     */
     availability: ProviderAvailabilityMessage;
+
+    /**
+     * Download progress percentage (0-100), or `null` when not downloading.
+     */
     downloadProgress: number | null;
+
+    /**
+     * Starts the Chrome built-in model download.
+     */
     onDownload: () => void;
 }
 

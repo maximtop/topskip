@@ -44,7 +44,7 @@ describe('buildServerTranscriptChunks', () => {
         }
         expect(result.chunks.length).toBeGreaterThan(1);
         // Adjacent chunks overlap by at least ~240s of video time.
-        for (let i = 1; i < result.chunks.length; i++) {
+        for (let i = 1; i < result.chunks.length; i += 1) {
             const prev = result.chunks[i - 1];
             const next = result.chunks[i];
             expect(next.startSec).toBeLessThanOrEqual(prev.endSec - 239);

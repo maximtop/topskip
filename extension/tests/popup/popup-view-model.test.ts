@@ -39,7 +39,8 @@ vi.mock('@/shared/browser', () => ({
                         popup_detection_server_pending_headline:
                             'Server analysis is in progress.',
                         popup_detection_server_pending_body:
-                            'Skipping will start when the TopSkip backend has promo blocks for a future playback position.',
+                            'Skipping will start when the TopSkip backend has promo blocks for a future '
+                                + 'playback position.',
                         popup_detection_server_error_badge: 'Server',
                         popup_detection_server_error_title:
                             'Server analysis unavailable',
@@ -48,7 +49,8 @@ vi.mock('@/shared/browser', () => ({
                         popup_detection_server_error_headline:
                             'Server analysis failed.',
                         popup_detection_server_error_body:
-                            'The local TopSkip backend did not return a usable response. Playback continues without server-detected skips.',
+                            'The local TopSkip backend did not return a usable response. Playback continues '
+                                + 'without server-detected skips.',
                         popup_detection_server_cache_badge: 'Server cache',
                         popup_detection_server_cache_title:
                             'Server-detected blocks ready',

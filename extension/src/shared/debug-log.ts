@@ -1,3 +1,8 @@
+/**
+ * @file Fire-and-forget shipping of log lines to a local debug-log server
+ * during development.
+ */
+
 import { DEBUG_LOG_SERVER_URL, MIME_APPLICATION_JSON } from './constants';
 
 /**

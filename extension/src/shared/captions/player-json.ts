@@ -1,5 +1,5 @@
 /**
- * Pure helpers for reading InnerTube-style player JSON (no network).
+ * @file Pure helpers for reading InnerTube-style player JSON (no network).
  */
 
 /**

@@ -1,3 +1,9 @@
+/**
+ * @file Developer-facing plain-text log bundle builder for promo/OpenRouter
+ * analysis: per-chunk records, the aggregate bundle, and console emission.
+ * Never logs API keys or `Authorization` headers (FR-020).
+ */
+
 import type { PromoBlock } from '@topskip/common/promo-types';
 
 const BUNDLE_TITLE = '========== TopSkip promo analysis log bundle ==========';
@@ -17,8 +23,19 @@ export type ChunkLogOutcome = | 'success'
  * Timeline slice omitted from a complete analysis (spec FR-009 aggregate).
  */
 export interface PromoUncoveredRange {
+    /**
+     * Range start, in video seconds.
+     */
     startSec: number;
+
+    /**
+     * Range end, in video seconds.
+     */
     endSec: number;
+
+    /**
+     * Why this range was not covered by a successful chunk analysis.
+     */
     kind: 'dropped_tail' | 'failed_chunk' | 'irreducible_line';
 }
 
@@ -45,14 +62,12 @@ export function listTimedLinesFromMergedTranscript(
     for (const raw of mergedText.split('\n')) {
         const line = raw.trimEnd();
         const m = /^\[(\d+(?:\.\d+)?)\]\s*(.*)$/.exec(line);
-        if (!m) {
-            continue;
+        if (m) {
+            const sec = Number(m[1]);
+            if (Number.isFinite(sec)) {
+                rows.push({ sec, line });
+            }
         }
-        const sec = Number(m[1]);
-        if (!Number.isFinite(sec)) {
-            continue;
-        }
-        rows.push({ sec, line });
     }
     return rows;
 }
@@ -79,7 +94,7 @@ export function excerptTimedLinesAroundSec(
         return '(no [seconds] lines found in merged transcript)\n';
     }
     let anchor = 0;
-    for (let i = 0; i < timedLines.length; i++) {
+    for (let i = 0; i < timedLines.length; i += 1) {
         if (timedLines[i].sec <= targetSec) {
             anchor = i;
         } else {
@@ -181,7 +196,9 @@ function formatOutcomeLines(outcome: PromoAnalysisBundleOutcome): string[] {
                     );
                 }),
             ];
+        // no default
     }
+    return [];
 }
 
 /**
@@ -230,20 +247,20 @@ export function truncateForLog(
  * Emits one per-chunk or per-slice analysis record (spec FR-009).
  *
  * @param params - Chunk metadata, latency, optional payloads
- * @param params.chunkIndex
- * @param params.chunkCount
- * @param params.chunkStartSec
- * @param params.chunkEndSec
- * @param params.chunkChars
- * @param params.promptVersion
- * @param params.chunkText
- * @param params.chunkTextMaxChars
- * @param params.rawAssistant
- * @param params.rawAssistantMaxChars
- * @param params.adapterLatencyMs
- * @param params.outcome
- * @param params.parsedBlockCount
- * @param params.retryLabel
+ * @param params.chunkIndex - Zero-based index of this chunk.
+ * @param params.chunkCount - Total number of chunks planned for this analysis.
+ * @param params.chunkStartSec - Chunk's start offset in video seconds.
+ * @param params.chunkEndSec - Chunk's end offset in video seconds.
+ * @param params.chunkChars - Character length of the chunk's transcript text.
+ * @param params.promptVersion - System prompt version used for this call.
+ * @param params.chunkText - User-message transcript text sent to the model.
+ * @param params.chunkTextMaxChars - Cap applied when logging `chunkText`.
+ * @param params.rawAssistant - Raw model response, or `null` when unavailable.
+ * @param params.rawAssistantMaxChars - Cap applied when logging `rawAssistant`.
+ * @param params.adapterLatencyMs - Wall-clock time of the adapter call.
+ * @param params.outcome - Stable outcome label for this chunk.
+ * @param params.parsedBlockCount - Promo blocks parsed from this chunk, if any.
+ * @param params.retryLabel - Retry attempt label, when this call was a retry.
  * @param enabled - Explicit override used by unit tests.
  */
 export function logChunkPromoEntry(
@@ -263,7 +280,7 @@ export function logChunkPromoEntry(
         parsedBlockCount?: number;
         retryLabel?: string;
     },
-    enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+    enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
 ): void {
     if (!enabled) {
         return;
@@ -303,30 +320,30 @@ export function logChunkPromoEntry(
  *
  * @param params - Metadata, merged body, model, optional raw assistant,
  *   and outcome
- * @param params.videoId
- * @param params.languageCode
- * @param params.segmentCount
- * @param params.maxTranscriptChars
- * @param params.mergedText
- * @param params.mergedTruncated
- * @param params.providerId
- * @param params.model
- * @param params.rawAssistant
- * @param params.outcome
- * @param params.chunkedMeta
- * @param params.chunkedMeta.promptVersion
- * @param params.chunkedMeta.systemPromptFull
- * @param params.chunkedMeta.plannedBudgetChars
- * @param params.chunkedMeta.overlapSec
- * @param params.chunkedMeta.totalChunks
- * @param params.chunkedMeta.totalAdapterCalls
- * @param params.chunkedMeta.coverageFraction
- * @param params.chunkedMeta.partialCoverage
- * @param params.chunkedMeta.uncoveredRanges
- * @param params.chunkedMeta.totalAdapterLatencyMs
- * @param params.chunkedMeta.totalWallClockMs
- * @param params.chunkedMeta.globalTruncated
- * @param params.chunkedMeta.mergedTextLogMaxChars
+ * @param params.videoId - YouTube video id.
+ * @param params.languageCode - Caption track language code.
+ * @param params.segmentCount - Number of caption segments merged.
+ * @param params.maxTranscriptChars - Planning budget for the merged transcript.
+ * @param params.mergedText - Merged timed-line transcript body.
+ * @param params.mergedTruncated - Whether the merged text was cut to budget.
+ * @param params.providerId - Provider that ran the analysis.
+ * @param params.model - Model name or slug used for the call.
+ * @param params.rawAssistant - Raw aggregate/last-slice model response, or `null`.
+ * @param params.outcome - Final parsed/HTTP outcome for the bundle header.
+ * @param params.chunkedMeta - Multi-chunk aggregate telemetry, when chunked.
+ * @param params.chunkedMeta.promptVersion - System prompt version used.
+ * @param params.chunkedMeta.systemPromptFull - Full system prompt text.
+ * @param params.chunkedMeta.plannedBudgetChars - Planned per-chunk char budget.
+ * @param params.chunkedMeta.overlapSec - Overlap window between chunks, in seconds.
+ * @param params.chunkedMeta.totalChunks - Total chunks planned.
+ * @param params.chunkedMeta.totalAdapterCalls - Total adapter calls made.
+ * @param params.chunkedMeta.coverageFraction - Fraction of the transcript covered.
+ * @param params.chunkedMeta.partialCoverage - Whether coverage was incomplete.
+ * @param params.chunkedMeta.uncoveredRanges - Slices omitted from analysis.
+ * @param params.chunkedMeta.totalAdapterLatencyMs - Summed adapter call latency.
+ * @param params.chunkedMeta.totalWallClockMs - Total wall-clock time for chunking.
+ * @param params.chunkedMeta.globalTruncated - Whether the transcript was globally truncated.
+ * @param params.chunkedMeta.mergedTextLogMaxChars - Cap applied when logging the merged text.
  *
  * @returns Multiline string suitable for a single console copy/paste
  */
@@ -462,7 +479,7 @@ export class LogPromoAnalysis {
      */
     static logAnalysisBundle(
         bundle: string,
-        enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         if (!enabled) {
             return;

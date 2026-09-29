@@ -1,3 +1,9 @@
+/**
+ * @file Vitest configuration shared by the whole workspace: coverage
+ * thresholds, hermetic env vars for tests, and path aliases mirroring the
+ * package build config.
+ */
+
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -5,7 +11,7 @@ import { defineConfig } from 'vitest/config';
 
 import { DEV_E2E_FIXTURE_ORIGIN } from '@topskip/extension/build-modes';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const dirname = path.dirname(fileURLToPath(import.meta.url));
 const MISSING_TEST_YT_DLP_PATH = '/__topskip_test_missing__/yt-dlp';
 
 // Hermetic origin for tests: never the real deployment host, so assertions
@@ -14,11 +20,11 @@ const TEST_SERVER_ORIGIN = 'https://topskip.test';
 
 export default defineConfig({
     define: {
-        __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__: false,
-        __TOPSKIP_INCLUDE_DEV_LOCAL__: false,
-        __TOPSKIP_DEV_E2E_ORIGIN__: JSON.stringify(DEV_E2E_FIXTURE_ORIGIN),
-        __TOPSKIP_INCLUDE_CHROME_BUILTIN__: false,
-        __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(TEST_SERVER_ORIGIN),
+        TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS: false,
+        TOPSKIP_INCLUDE_DEV_LOCAL: false,
+        TOPSKIP_DEV_E2E_ORIGIN: JSON.stringify(DEV_E2E_FIXTURE_ORIGIN),
+        TOPSKIP_INCLUDE_CHROME_BUILTIN: false,
+        TOPSKIP_SERVER_BASE_URL: JSON.stringify(TEST_SERVER_ORIGIN),
     },
     test: {
         environment: 'node',
@@ -51,9 +57,9 @@ export default defineConfig({
     },
     resolve: {
         alias: {
-            '@': path.resolve(__dirname, 'extension/src'),
-            '@topskip/backend': path.resolve(__dirname, 'backend/src'),
-            '@topskip/common': path.resolve(__dirname, 'common/src'),
+            '@': path.resolve(dirname, 'extension/src'),
+            '@topskip/backend': path.resolve(dirname, 'backend/src'),
+            '@topskip/common': path.resolve(dirname, 'common/src'),
         },
     },
 });

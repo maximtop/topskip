@@ -1,3 +1,8 @@
+/**
+ * @file Diagnostics section container: owns debug-log state independently of
+ * the rest of options and wires it to the `DiagnosticsPanel` presentation.
+ */
+
 import {
 
     type ReactElement,

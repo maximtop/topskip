@@ -1,3 +1,8 @@
+/**
+ * @file Dev-only console logging for the content-side server-analysis flow,
+ * gated behind the local-dev build flag so it is a no-op in shipped builds.
+ */
+
 import { contentLog } from '@/content/content-log';
 import { formatLogStage } from '@/shared/log-fields';
 
@@ -19,7 +24,7 @@ export class ContentServerAnalysisLog {
     static info(
         event: string,
         fields: ServerAnalysisLogFields = {},
-        enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         if (!enabled) {
             return;
@@ -40,7 +45,7 @@ export class ContentServerAnalysisLog {
     static warn(
         event: string,
         fields: ServerAnalysisLogFields = {},
-        enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         if (!enabled) {
             return;

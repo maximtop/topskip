@@ -1,3 +1,9 @@
+/**
+ * @file Validates and normalizes model-produced promo blocks before the backend can deliver
+ * them to clients: bounds open-ended blocks to the known video duration, rejects unsafe timing,
+ * and deduplicates the result.
+ */
+
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
 import { sortAndDedupePromoBlocks } from '@topskip/common/promo-dedupe';
 import { promoBlockSchema } from '@topskip/common/server-analysis-contract';
@@ -18,7 +24,14 @@ const OPEN_ENDED_BLOCK_IMPLIED_DURATION_SEC = DEFAULT_PROMO_BLOCK_DURATION_SEC;
  * Input for backend promo block normalization.
  */
 export interface BackendPromoBlockNormalizationInput {
+    /**
+     * Raw promo blocks produced by the model, not yet validated or bounded.
+     */
     promoBlocks: PromoBlock[];
+
+    /**
+     * Known video duration in seconds, when the extension reported one.
+     */
     durationSec: number | undefined;
 }
 
@@ -29,26 +42,16 @@ export type BackendPromoBlockNormalizationResult = | { ok: true; promoBlocks: Pr
     | { ok: false; failureReason: BackendAnalysisFailureReason };
 
 /**
- * Normalizes model promo blocks before the backend can deliver them to clients.
+ * Mirrors content-side interpretation for blocks that omit an explicit end.
  *
- * @param input - Raw model blocks and optional known video duration.
+ * @param block - Validated promo block.
  *
- * @returns Sorted safe blocks, or a stable unsafe-block failure.
+ * @returns Explicit or implied timeline end.
  */
-export function normalizeBackendPromoBlocks(
-    input: BackendPromoBlockNormalizationInput,
-): BackendPromoBlockNormalizationResult {
-    const durationBoundBlocks = input.promoBlocks.map((block) => boundOpenEndedBlock(block, input.durationSec));
-    if (!durationBoundBlocks.every(isSafeBlock(input.durationSec))) {
-        return unsafeBlocks();
-    }
-
-    const normalized = sortAndDedupePromoBlocks(durationBoundBlocks);
-    if (!normalized.every(isSafeBlock(input.durationSec))) {
-        return unsafeBlocks();
-    }
-
-    return { ok: true, promoBlocks: normalized };
+function effectiveEndSec(block: PromoBlock): number {
+    return (
+        block.endSec ?? block.startSec + OPEN_ENDED_BLOCK_IMPLIED_DURATION_SEC
+    );
 }
 
 /**
@@ -115,19 +118,6 @@ function isSafeBlock(
 }
 
 /**
- * Mirrors content-side interpretation for blocks that omit an explicit end.
- *
- * @param block - Validated promo block.
- *
- * @returns Explicit or implied timeline end.
- */
-function effectiveEndSec(block: PromoBlock): number {
-    return (
-        block.endSec ?? block.startSec + OPEN_ENDED_BLOCK_IMPLIED_DURATION_SEC
-    );
-}
-
-/**
  * Keeps unsafe model timing failures mapped to one public terminal reason.
  *
  * @returns Stable unsafe-block normalization failure.
@@ -137,4 +127,27 @@ function unsafeBlocks(): BackendPromoBlockNormalizationResult {
         ok: false,
         failureReason: BACKEND_ANALYSIS_FAILURE_REASON.UnsafeModelBlocks,
     };
+}
+
+/**
+ * Normalizes model promo blocks before the backend can deliver them to clients.
+ *
+ * @param input - Raw model blocks and optional known video duration.
+ *
+ * @returns Sorted safe blocks, or a stable unsafe-block failure.
+ */
+export function normalizeBackendPromoBlocks(
+    input: BackendPromoBlockNormalizationInput,
+): BackendPromoBlockNormalizationResult {
+    const durationBoundBlocks = input.promoBlocks.map((block) => boundOpenEndedBlock(block, input.durationSec));
+    if (!durationBoundBlocks.every(isSafeBlock(input.durationSec))) {
+        return unsafeBlocks();
+    }
+
+    const normalized = sortAndDedupePromoBlocks(durationBoundBlocks);
+    if (!normalized.every(isSafeBlock(input.durationSec))) {
+        return unsafeBlocks();
+    }
+
+    return { ok: true, promoBlocks: normalized };
 }

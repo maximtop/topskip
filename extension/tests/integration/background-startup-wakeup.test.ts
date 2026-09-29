@@ -140,6 +140,8 @@ vi.mock('@/background/debug-log/tab-attribution-registry', () => ({
 
 /**
  * The `tabs.onRemoved` callback registered by the last `Background.init()`.
+ *
+ * @throws {Error} When `Background.init()` has not been called yet.
  */
 function tabRemovedListener(): (tabId: number) => void {
     const listener = browserMocks.addRemovedListener.mock.calls.at(-1)?.[0] as

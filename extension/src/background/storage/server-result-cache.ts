@@ -1,3 +1,8 @@
+/**
+ * @file Background-owned exact-match cache for terminal server analysis
+ * results, keyed by transcript identity and indexed to avoid full scans.
+ */
+
 import {
     noPromoResponseSchema,
     normalizedCaptionLanguageCodeSchema,
@@ -85,9 +90,24 @@ export type ServerResultCacheEntry = v.InferOutput<
  * Exact cache lookup key excludes captions while distinguishing their digest.
  */
 export interface ServerResultCacheIdentity {
+    /**
+     * YouTube video id.
+     */
     videoId: string;
+
+    /**
+     * Normalized caption track language code.
+     */
     languageCode: string;
+
+    /**
+     * Server-computed hash of the canonical transcript tuple.
+     */
     transcriptHash: string;
+
+    /**
+     * Server-owned analysis algorithm version that produced the cached result.
+     */
     algorithmVersion: string;
 }
 

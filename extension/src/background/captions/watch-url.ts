@@ -1,3 +1,7 @@
+/**
+ * @file Parses the YouTube watch-page video id out of a navigation URL.
+ */
+
 import { YOUTUBE_WATCH_VIDEO_ID_PARAM } from '@/shared/constants';
 
 /**

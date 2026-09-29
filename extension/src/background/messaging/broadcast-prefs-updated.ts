@@ -1,3 +1,7 @@
+/**
+ * @file Broadcasts a saved preferences change to every tab's content script.
+ */
+
 import browser from '@/shared/browser';
 import { TOPSKIP_MESSAGE, type TopSkipRuntimeMessage } from '@/shared/messages';
 

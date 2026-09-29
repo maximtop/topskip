@@ -1,3 +1,8 @@
+/**
+ * @file Server-side LLM analysis adapter that sends timed captions to a fixed OpenRouter model
+ * and normalizes its chat-completion response into the shared adapter result shape.
+ */
+
 import {
     PROMO_DETECTION_PROMPT_VERSION,
     PROMO_DETECTION_SYSTEM_PROMPT,
@@ -39,8 +44,20 @@ type FetchFunction = (
  * Construction values keep credentials process-local and make timeout tests deterministic.
  */
 interface OpenRouterAnalysisAdapterOptions {
+    /**
+     * OpenRouter API key used for the Authorization header; kept in memory only.
+     */
     apiKey: string;
+
+    /**
+     * Test-injectable fetch implementation; defaults to the global `fetch` when omitted.
+     */
     fetch?: FetchFunction;
+
+    /**
+     * Request timeout in milliseconds before the request is aborted; defaults to
+     * `DEFAULT_OPENROUTER_TIMEOUT_MS` when omitted.
+     */
     timeoutMs?: number;
 }
 
@@ -95,6 +112,8 @@ export class OpenRouterAnalysisAdapter implements BackendLlmAnalysisAdapter {
      * @param options - Credential and optional test dependencies.
      *
      * @returns Configured server analysis adapter.
+     *
+     * @throws {Error} When the API key is empty or whitespace-only.
      */
     static create(
         options: OpenRouterAnalysisAdapterOptions,
@@ -250,6 +269,8 @@ export class OpenRouterAnalysisAdapter implements BackendLlmAnalysisAdapter {
      * @param responseText - Bounded provider JSON response.
      *
      * @returns Raw assistant content and safe usage metadata.
+     *
+     * @throws {Error} When the response is not JSON, or its shape, choices, or content is invalid.
      */
     private static parseResponse(
         responseText: string,

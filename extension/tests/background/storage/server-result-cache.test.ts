@@ -256,13 +256,15 @@ describe('ServerResultCacheStorage', () => {
     });
 
     it('prunes the index when an invalid row is repaired', async () => {
-        storageGet.mockImplementation((keys: string | string[] | null) => Promise.resolve(
-            keys === CACHE_KEY
-                ? { [CACHE_KEY]: { nope: true } }
-                : keys === INDEX_KEY
-                    ? { [INDEX_KEY]: [CACHE_KEY, 'other'] }
-                    : {},
-        ));
+        storageGet.mockImplementation((keys: string | string[] | null) => {
+            if (keys === CACHE_KEY) {
+                return Promise.resolve({ [CACHE_KEY]: { nope: true } });
+            }
+            if (keys === INDEX_KEY) {
+                return Promise.resolve({ [INDEX_KEY]: [CACHE_KEY, 'other'] });
+            }
+            return Promise.resolve({});
+        });
 
         await expect(
             ServerResultCacheStorage.loadExact({

@@ -1,3 +1,8 @@
+/**
+ * @file Serializes attributed debug-log events into single-line text and
+ * formats sizes/file names for the debug-log export UI.
+ */
+
 import { BYTES_PER_KIB, BYTES_PER_MIB } from '@/shared/constants';
 import {
     DEBUG_LOG_FILE_EXTENSION,
@@ -15,16 +20,60 @@ import { formatLogFields } from '@/shared/log-fields';
  * One fully attributed event ready to be serialized as a log line.
  */
 export interface DebugLogLineRecord {
+    /**
+     * Event time in milliseconds since the epoch.
+     */
     tsMs: number;
+
+    /**
+     * Identifier of the service worker instance that emitted the event.
+     */
     worker: string;
+
+    /**
+     * Per-worker monotonic sequence number, for ordering lines from the
+     * same worker.
+     */
     seq: number;
+
+    /**
+     * Bundle that emitted the event (background, content, or bridge).
+     */
     src: DebugLogSource;
+
+    /**
+     * Id of the tab the event is attributed to, when known.
+     */
     tab?: number;
+
+    /**
+     * Id of the video the event is attributed to, when known.
+     */
     video?: string;
+
+    /**
+     * Id of the capture/analysis session the event belongs to, when known.
+     */
     session?: string;
+
+    /**
+     * Id of the background job the event belongs to, when known.
+     */
     job?: string;
+
+    /**
+     * Support/diagnostic identifier attached to the event, when set.
+     */
     support?: string;
+
+    /**
+     * Normative event name from the debug-log vocabulary.
+     */
     event: DebugLogEventName;
+
+    /**
+     * Sanitized structured fields to append to the line.
+     */
     fields: DebugLogFields;
 }
 
@@ -80,15 +129,15 @@ const BYTES_UNIT = 'B';
 const SIZE_DECIMALS = 1;
 
 /**
- * UTF-8 continuation bytes carry `10xxxxxx`; a tail slice must not start on
- * one.
+ * UTF-8 continuation bytes carry `10xxxxxx`, i.e. lie in `[0x80, 0xc0)`; a tail
+ * slice must not start on one.
  */
-const UTF8_CONTINUATION_MASK = 0xc0;
+const UTF8_CONTINUATION_MIN = 0x80;
 
 /**
- * Bit pattern of a UTF-8 continuation byte after masking.
+ * First byte value above the UTF-8 continuation range (exclusive bound).
  */
-const UTF8_CONTINUATION_BITS = 0x80;
+const UTF8_CONTINUATION_END = 0xc0;
 
 /**
  * One encoder per module; encoding is the unit of the ring-buffer cap.
@@ -183,6 +232,17 @@ export function buildDebugLogFileName(exportedAt: Date): string {
 }
 
 /**
+ * Tells whether a byte continues a multi-byte UTF-8 sequence.
+ *
+ * @param byte - Byte value, `undefined` past the end of the buffer.
+ *
+ * @returns `true` for bytes in `[0x80, 0xc0)`.
+ */
+function isUtf8ContinuationByte(byte: number | undefined): boolean {
+    return byte !== undefined && byte >= UTF8_CONTINUATION_MIN && byte < UTF8_CONTINUATION_END;
+}
+
+/**
  * Keeps the last `maxBytes` of `text` without splitting a UTF-8 sequence, and
  * reports both sizes for the "showing the last X of Y" note.
  *
@@ -203,7 +263,7 @@ export function sliceDebugLogTail(
     let start = totalBytes - Math.max(0, maxBytes);
     while (
         start < totalBytes
-        && (bytes[start] & UTF8_CONTINUATION_MASK) === UTF8_CONTINUATION_BITS
+        && isUtf8ContinuationByte(bytes[start])
     ) {
         start += 1;
     }

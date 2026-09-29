@@ -1,3 +1,8 @@
+/**
+ * @file Session/state helpers for the caption-capture flow: session tokens,
+ * stale-payload filtering, and whether cleanup should restore captions off.
+ */
+
 import type {
     CaptionCaptureSession,
     CaptionCaptureSnapshot,

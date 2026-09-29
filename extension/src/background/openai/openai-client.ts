@@ -1,3 +1,8 @@
+/**
+ * @file Thin OpenAI Responses/Models API client: calls the Responses API for
+ * promo detection and validates connection keys against the models endpoint.
+ */
+
 import { MIME_APPLICATION_JSON } from '@/shared/constants';
 import { getErrorMessage } from '@/shared/error';
 
@@ -11,10 +16,29 @@ const HTTP_SERVER_ERROR_MIN = 500;
  * Request values needed to call the OpenAI Responses API.
  */
 export interface CallOpenAiResponseParams {
+    /**
+     * Raw OpenAI API key.
+     */
     apiKey: string;
+
+    /**
+     * OpenAI model id to call.
+     */
     model: string;
+
+    /**
+     * System instructions (the promo-detection prompt).
+     */
     instructions: string;
+
+    /**
+     * User transcript text.
+     */
     input: string;
+
+    /**
+     * Optional abort signal to cancel the in-flight request.
+     */
     signal?: AbortSignal;
 }
 
@@ -64,25 +88,23 @@ function extractOutputText(value: unknown): string | undefined {
         return undefined;
     }
     for (const item of output) {
-        if (!isRecord(item)) {
-            continue;
-        }
-        const { content } = item;
-        if (!Array.isArray(content)) {
-            continue;
-        }
-        const textItem = content.find(
-            (entry): entry is Record<string, unknown> => {
-                return (
-                    isRecord(entry)
-                    && entry.type === 'output_text'
-                    && typeof entry.text === 'string'
+        if (isRecord(item)) {
+            const { content } = item;
+            if (Array.isArray(content)) {
+                const textItem = content.find(
+                    (entry): entry is Record<string, unknown> => {
+                        return (
+                            isRecord(entry)
+                            && entry.type === 'output_text'
+                            && typeof entry.text === 'string'
+                        );
+                    },
                 );
-            },
-        );
-        if (textItem) {
-            const { text } = textItem;
-            return typeof text === 'string' ? text : undefined;
+                if (textItem) {
+                    const { text } = textItem;
+                    return typeof text === 'string' ? text : undefined;
+                }
+            }
         }
     }
     return undefined;

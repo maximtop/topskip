@@ -1,3 +1,8 @@
+/**
+ * @file Maps the public server failure code vocabulary to popup-facing UX
+ * categories and report-button prominence, without exposing server details.
+ */
+
 import {
     SERVER_ANALYSIS_FAILURE_CODE,
     type ServerAnalysisFailureCode,
@@ -32,7 +37,9 @@ export type ServerFailureCategory = (typeof SERVER_FAILURE_CATEGORY)[keyof typeo
 /**
  * Report-button variants used without exposing server details to the UI.
  */
-export type ServerFailureReportAction = (typeof SERVER_FAILURE_REPORT_ACTION)[keyof typeof SERVER_FAILURE_REPORT_ACTION];
+export type ServerFailureReportAction = (typeof SERVER_FAILURE_REPORT_ACTION)[
+    keyof typeof SERVER_FAILURE_REPORT_ACTION
+];
 
 const VIDEO_LIMITATION_CODES = new Set<ServerAnalysisFailureCode>([
     SERVER_ANALYSIS_FAILURE_CODE.FixtureUnavailable,

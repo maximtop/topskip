@@ -1,3 +1,8 @@
+/**
+ * @file Parses and validates a raw model response into a typed promo-detection result, stripping
+ * markdown code fences and rejecting any shape the model contract does not allow.
+ */
+
 import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
 import * as v from 'valibot';
 

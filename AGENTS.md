@@ -190,13 +190,13 @@ autofixes. `pnpm run check` runs ESLint, markdownlint, and TypeScript.
   **activation** for real users is gated in code via **`shouldActivateTopSkip`**
   (`page-guards.ts`), not only by broad manifest patterns. Beta/release must
   contain YouTube only. The fixture origin reaches runtime code only through
-  the `__TOPSKIP_DEV_E2E_ORIGIN__` define (`null` in beta/release), so the
+  the `TOPSKIP_DEV_E2E_ORIGIN` define (`null` in beta/release), so the
   loopback literal never ships; build-time code reads `DEV_E2E_FIXTURE_ORIGIN`
   from `extension/build-modes.ts`. CI greps release artifacts for
   `127.0.0.1:(8787|4173)`.
 - **Manifest policy**: Emitted manifests have exactly `storage`, `scripting`,
   `activeTab`, and `unlimitedStorage` as required API permissions
-  (`REQUIRED_API_PERMISSIONS` in `extension/manifest-profile.ts`; no
+  (`REQUIRED_API_PERMISSIONS` in `extension/scripts/manifest-profile.ts`; no
   `downloads`, `tabs`, `alarms`, or `clipboardWrite`), the configured backend
   as the only required host, and OpenRouter plus OpenAI as optional hosts. Dev additionally permits only the exact
   loopback backend `http://127.0.0.1:8787` and fixture match; beta/release require

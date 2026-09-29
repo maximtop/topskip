@@ -1,3 +1,8 @@
+/**
+ * @file Bounded request asking the background to re-attach watch bundles
+ * into the active tab at popup start.
+ */
+
 import { POPUP_REATTACH_REQUEST_TIMEOUT_MS } from '@/popup/constants';
 import { requestPopupRuntimeMessage } from '@/popup/runtime-message-request';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';

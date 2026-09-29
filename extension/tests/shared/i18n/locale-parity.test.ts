@@ -11,7 +11,7 @@ const REFERENCE_LOCALE = 'en';
 /**
  * Reads one `messages.json` as an ordered entry list.
  *
- * @param locale
+ * @param locale Locale directory name under `_locales`.
  */
 function readMessages(locale: string): [string, { message: string }][] {
     const text = readFileSync(path.join(LOCALES_DIR, locale, 'messages.json'), 'utf8');

@@ -19,10 +19,12 @@ import { OpenRouterAdapter } from '@/background/providers/openrouter-adapter';
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { PROMO_DETECTION_SOURCE } from '@/shared/messages';
 
+import type * as LogPromoAnalysisModule from '@/background/openrouter/log-promo-analysis';
 import type {
     LlmProviderAdapter,
     AnalyzeTranscriptResult,
 } from '@/background/providers/llm-provider-adapter';
+import type { CaptionsFromContentPayload } from '@/shared/messages';
 import type { Runtime } from 'webextension-polyfill';
 
 // ── Hoisted mocks (must be defined before imports) ──
@@ -72,9 +74,7 @@ const logMocks = vi.hoisted(() => ({
 vi.mock(
     '@/background/openrouter/log-promo-analysis',
     async (importOriginal) => {
-        const mod = await importOriginal<
-                typeof import('@/background/openrouter/log-promo-analysis')
-        >();
+        const mod = await importOriginal<typeof LogPromoAnalysisModule>();
         return {
             ...mod,
             LogPromoAnalysis: { logAnalysisBundle: logMocks.logBundle },
@@ -154,10 +154,7 @@ vi.mock('@/background/openai/openai-client', () => ({
 
 // ── Test fixtures ──
 
-type Payload = Extract<
-    import('@/shared/messages').CaptionsFromContentPayload,
-    { ok: true }
->;
+type Payload = Extract<CaptionsFromContentPayload, { ok: true }>;
 
 const baseSender = (tabId = 42): Runtime.MessageSender => {
     return { tab: { id: tabId } } as Runtime.MessageSender;

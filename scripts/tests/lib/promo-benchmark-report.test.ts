@@ -28,7 +28,9 @@ const temporaryRoots: string[] = [];
 function responseStream(): Response {
     const text = [
         'data: {"choices":[{"delta":{"reasoning_content":"SECRET_REASONING_SENTINEL"}}]}\n',
-        'data: {"id":"REQUEST_ID_SENTINEL","model":"PROVIDER_SENTINEL","choices":[{"delta":{"content":"{\\"hasPromo\\":false}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110}}\n',
+        'data: {"id":"REQUEST_ID_SENTINEL","model":"PROVIDER_SENTINEL",'
+                + '"choices":[{"delta":{"content":"{\\"hasPromo\\":false}"},"finish_reason":"stop"}],'
+                + '"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110}}\n',
         'data: [DONE]\n',
     ].join('');
     return new Response(text, {

@@ -1,3 +1,8 @@
+/**
+ * @file Converts a thrown value of unknown shape into a loggable string
+ * message.
+ */
+
 import { isValiError } from 'valibot';
 
 import { extractMessageFromValiError } from '@/shared/valibot';

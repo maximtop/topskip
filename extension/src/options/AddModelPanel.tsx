@@ -1,3 +1,7 @@
+/**
+ * @file OpenRouter custom model add/remove panel.
+ */
+
 import {
     Badge,
     Button,
@@ -18,9 +22,24 @@ import type { ReactElement } from 'react';
  * State and callbacks for the custom model add/remove form.
  */
 interface AddModelPanelProps {
+    /**
+     * Saved custom OpenRouter model slugs.
+     */
     customModels: string[];
+
+    /**
+     * Current text of the new-model input.
+     */
     newModelDraft: string;
+
+    /**
+     * Whether an add-model request is in flight.
+     */
     addBusy: boolean;
+
+    /**
+     * Slug currently being removed, or `null` when none is in flight.
+     */
     removeBusySlug: string | null;
     onNewModelDraftChange(value: string): void;
     onAddCustomModel(): void;

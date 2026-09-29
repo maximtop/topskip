@@ -356,7 +356,8 @@ describe('backend promo analysis worker', () => {
             transcriptArtifact: artifact,
         });
         expect(result.rawModelResponse).toBe(
-            '{"hasPromo":true,"promoBlocks":[{"startSec":4,"endSec":24,"confidence":"high"},{"startSec":35,"endSec":45,"confidence":"medium"}]}',
+            '{"hasPromo":true,"promoBlocks":[{"startSec":4,"endSec":24,"confidence":"high"}'
+            + ',{"startSec":35,"endSec":45,"confidence":"medium"}]}',
         );
     });
 

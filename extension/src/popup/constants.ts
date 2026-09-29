@@ -1,4 +1,9 @@
 /**
+ * @file Timing constants for popup detection polling, retry, and request
+ * timeouts.
+ */
+
+/**
  * Reconciliation delay after a healthy detection status read or push.
  */
 export const POPUP_DETECTION_HEALTHY_RECONCILE_MS = 10_000;

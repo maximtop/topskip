@@ -1,3 +1,8 @@
+/**
+ * @file Options page root: the OpenRouter/model settings form, sidebar
+ * navigation, and per-section content, plus the `Options.init()` bootstrap.
+ */
+
 import '@mantine/core/styles.css';
 
 import {
@@ -182,8 +187,8 @@ export function shouldShowByokSettings(analysisMode: AnalysisMode): boolean {
  * Sidebar icons keep navigation recognizable without adding an icon package.
  *
  * @param props - Section identity plus active state.
- * @param props.sectionId
- * @param props.active
+ * @param props.sectionId - Section the icon represents.
+ * @param props.active - Whether the section is currently selected.
  *
  * @returns SVG icon for the section.
  */
@@ -206,6 +211,7 @@ function OptionsSectionIcon(props: {
             return <ActivityIcon size={16} color={color} />;
         case 'about':
             return <InfoIcon size={16} color={color} />;
+        // no default
     }
 }
 
@@ -213,8 +219,8 @@ function OptionsSectionIcon(props: {
  * Sidebar navigation for the options page sections.
  *
  * @param props - Active section and navigation callback.
- * @param props.activeSection
- * @param props.onSectionChange
+ * @param props.activeSection - Currently selected section.
+ * @param props.onSectionChange - Called when the user picks a section.
  *
  * @returns Options sidebar navigation.
  */
@@ -277,7 +283,7 @@ export function OptionsSidebar(props: {
  * Safe placeholder for future settings sections.
  *
  * @param props - Future section id to describe.
- * @param props.sectionId
+ * @param props.sectionId - Section the placeholder stands in for.
  *
  * @returns Placeholder settings content.
  */
@@ -301,7 +307,7 @@ export function PlaceholderSettingsSection(props: {
  * About content keeps extension metadata out of the compact popup.
  *
  * @param props - Runtime extension metadata.
- * @param props.extensionVersion
+ * @param props.extensionVersion - Installed extension version to display.
  *
  * @returns Minimal About settings content.
  */
@@ -334,9 +340,9 @@ export function AboutSettingsSection(props: {
  * Accessible provider selection cards.
  *
  * @param props - Provider list, active id, and selection callback.
- * @param props.providers
- * @param props.activeProviderId
- * @param props.onProviderChange
+ * @param props.providers - Providers available for selection.
+ * @param props.activeProviderId - Currently selected provider id.
+ * @param props.onProviderChange - Called when the user picks a provider.
  *
  * @returns Provider choice card group.
  */
@@ -644,34 +650,6 @@ export function isValidateOpenRouterModelOk(
         && 'valid' in res
         && typeof (res as { valid: unknown }).valid === 'boolean'
     );
-}
-
-/**
- * Options page root; not instantiable.
- */
-export class Options {
-    /**
-     * Mounts the options React app under `#root`.
-     *
-     * @returns Promise resolving after i18n init and render
-     */
-    static async init(): Promise<void> {
-        await i18n.init();
-        const rootEl = document.getElementById('root');
-        if (!rootEl) {
-            throw new Error('Missing #root');
-        }
-
-        createRoot(rootEl).render(
-            <StrictMode>
-                <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
-                    <ErrorBoundary>
-                        <OptionsApp />
-                    </ErrorBoundary>
-                </MantineProvider>
-            </StrictMode>,
-        );
-    }
 }
 
 /**
@@ -1092,6 +1070,93 @@ function OptionsApp(): ReactElement {
         }
     };
 
+    let sectionContent: ReactElement;
+    if (activeSection === 'general') {
+        sectionContent = (
+            <Stack gap="md">
+                <Stack gap={4}>
+                    <Title order={1} size="h3" c={OPTIONS_TEXT}>
+                        {translator.getMessage('options_general_heading')}
+                    </Title>
+                    <Text size="xs" c={OPTIONS_MUTED}>
+                        {translator.getMessage(
+                            'options_general_description',
+                        )}
+                    </Text>
+                </Stack>
+
+                {error ? (
+                    <Alert color="error" role="alert">
+                        {error}
+                    </Alert>
+                ) : null}
+                <AnalysisModePanel
+                    value={analysisMode}
+                    disabled={analysisModeSaving}
+                    onChange={(value) => {
+                        void onAnalysisModeChange(value);
+                    }}
+                />
+                {shouldShowByokSettings(analysisMode) ? (
+                    <>
+                        <ModelSelectionPanel
+                            activeModelId={activeModelId}
+                            models={models}
+                            missingConnectionProviderId={
+                                missingConnectionProviderId
+                            }
+                            onModelChange={(modelId) => {
+                                void onModelChange(modelId);
+                            }}
+                            onOpenConnection={(_providerId) => {
+                                setActiveSection('general');
+                            }}
+                        />
+                        <ConnectionsPanel
+                            connections={connections}
+                            drafts={connectionDrafts}
+                            busyProviderId={busyProviderId}
+                            testStates={testStates}
+                            onDraftChange={onConnectionDraftChange}
+                            onSave={(providerId) => {
+                                void onSaveConnection(providerId);
+                            }}
+                            onTest={(providerId) => {
+                                onTestConnection(providerId);
+                            }}
+                            onGrantHostAccess={(providerId) => {
+                                onGrantHostAccess(providerId);
+                            }}
+                        />
+                        <AddModelPanel
+                            customModels={customModels}
+                            newModelDraft={newModelDraft}
+                            addBusy={addBusy}
+                            removeBusySlug={removeBusySlug}
+                            onNewModelDraftChange={setNewModelDraft}
+                            onAddCustomModel={() => {
+                                void onAddCustomModel();
+                            }}
+                            onRemoveCustomModel={(slug) => {
+                                void onRemoveCustomModel(slug);
+                            }}
+                        />
+                    </>
+                ) : null}
+            </Stack>
+        );
+    } else if (activeSection === 'diagnostics') {
+        sectionContent = <DiagnosticsSection />;
+    } else if (activeSection === 'about') {
+        sectionContent = (
+            <AboutSettingsSection extensionVersion={extensionVersion} />
+        );
+    } else {
+        sectionContent = (
+            <PlaceholderSettingsSection sectionId={activeSection} />
+        );
+    }
+
     return (
         <Box
             data-testid="options-shell"
@@ -1144,91 +1209,37 @@ function OptionsApp(): ReactElement {
                     />
                 </Box>
                 <Box p="lg" style={{ minWidth: 0 }}>
-                    {activeSection === 'general' ? (
-                        <Stack gap="md">
-                            <Stack gap={4}>
-                                <Title order={1} size="h3" c={OPTIONS_TEXT}>
-                                    {translator.getMessage(
-                                        'options_general_heading',
-                                    )}
-                                </Title>
-                                <Text size="xs" c={OPTIONS_MUTED}>
-                                    {translator.getMessage(
-                                        'options_general_description',
-                                    )}
-                                </Text>
-                            </Stack>
-
-                            {error ? (
-                                <Alert color="error" role="alert">
-                                    {error}
-                                </Alert>
-                            ) : null}
-                            <AnalysisModePanel
-                                value={analysisMode}
-                                disabled={analysisModeSaving}
-                                onChange={(value) => {
-                                    void onAnalysisModeChange(value);
-                                }}
-                            />
-                            {shouldShowByokSettings(analysisMode) ? (
-                                <>
-                                    <ModelSelectionPanel
-                                        activeModelId={activeModelId}
-                                        models={models}
-                                        missingConnectionProviderId={
-                                            missingConnectionProviderId
-                                        }
-                                        onModelChange={(modelId) => {
-                                            void onModelChange(modelId);
-                                        }}
-                                        onOpenConnection={(_providerId) => {
-                                            setActiveSection('general');
-                                        }}
-                                    />
-                                    <ConnectionsPanel
-                                        connections={connections}
-                                        drafts={connectionDrafts}
-                                        busyProviderId={busyProviderId}
-                                        testStates={testStates}
-                                        onDraftChange={onConnectionDraftChange}
-                                        onSave={(providerId) => {
-                                            void onSaveConnection(providerId);
-                                        }}
-                                        onTest={(providerId) => {
-                                            onTestConnection(providerId);
-                                        }}
-                                        onGrantHostAccess={(providerId) => {
-                                            onGrantHostAccess(providerId);
-                                        }}
-                                    />
-                                    <AddModelPanel
-                                        customModels={customModels}
-                                        newModelDraft={newModelDraft}
-                                        addBusy={addBusy}
-                                        removeBusySlug={removeBusySlug}
-                                        onNewModelDraftChange={setNewModelDraft}
-                                        onAddCustomModel={() => {
-                                            void onAddCustomModel();
-                                        }}
-                                        onRemoveCustomModel={(slug) => {
-                                            void onRemoveCustomModel(slug);
-                                        }}
-                                    />
-                                </>
-                            ) : null}
-                        </Stack>
-                    ) : activeSection === 'diagnostics' ? (
-                        <DiagnosticsSection />
-                    ) : activeSection === 'about' ? (
-                        <AboutSettingsSection
-                            extensionVersion={extensionVersion}
-                        />
-                    ) : (
-                        <PlaceholderSettingsSection sectionId={activeSection} />
-                    )}
+                    {sectionContent}
                 </Box>
             </Box>
         </Box>
     );
+}
+
+/**
+ * Options page root; not instantiable.
+ */
+export class Options {
+    /**
+     * Mounts the options React app under `#root`.
+     *
+     * @returns Promise resolving after i18n init and render
+     */
+    static async init(): Promise<void> {
+        await i18n.init();
+        const rootEl = document.getElementById('root');
+        if (!rootEl) {
+            throw new Error('Missing #root');
+        }
+
+        createRoot(rootEl).render(
+            <StrictMode>
+                <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
+                    <ErrorBoundary>
+                        <OptionsApp />
+                    </ErrorBoundary>
+                </MantineProvider>
+            </StrictMode>,
+        );
+    }
 }

@@ -1,3 +1,8 @@
+/**
+ * @file Wraps Chrome's built-in `LanguageModel` (Gemini Nano) behind the
+ * `LlmProviderAdapter` interface for on-device promo detection.
+ */
+
 import { parseLlmPromoResponse } from '@/background/openrouter/parse-llm-promo-response';
 import { PROMO_DETECTION_SYSTEM_PROMPT } from '@/background/openrouter/promo-detection-system-prompt';
 import {

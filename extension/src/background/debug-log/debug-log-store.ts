@@ -1,3 +1,9 @@
+/**
+ * @file Background-owned debug-log store: switch, index and segmented lines
+ * in `storage.local`, bounded by a byte-accounted ring with whole-segment
+ * eviction.
+ */
+
 import * as v from 'valibot';
 
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
@@ -140,7 +146,14 @@ type DebugLogIndex = v.InferOutput<typeof debugLogIndexSchema>;
  * `persistedCount` tracks how many leading lines storage already holds.
  */
 interface SegmentBuffer {
+    /**
+     * All lines accepted for this segment, in append order.
+     */
     lines: string[];
+
+    /**
+     * How many leading lines of `lines` storage already holds.
+     */
     persistedCount: number;
 }
 
@@ -148,7 +161,14 @@ interface SegmentBuffer {
  * Open segment pair resolved for an append.
  */
 interface OpenSegment {
+    /**
+     * Persisted-shape descriptor (id, accounted bytes/count, first timestamp).
+     */
     info: DebugLogSegmentInfo;
+
+    /**
+     * In-memory lines backing this segment.
+     */
     buffer: SegmentBuffer;
 }
 
@@ -156,8 +176,19 @@ interface OpenSegment {
  * Lines collected for a read plus the repair performed for missing segments.
  */
 interface CollectedLines {
+    /**
+     * Lines in order across every requested segment.
+     */
     lines: string[];
+
+    /**
+     * Events dropped because their segment was missing or invalid.
+     */
     lostCount: number;
+
+    /**
+     * Accounted bytes dropped along with `lostCount`.
+     */
     lostBytes: number;
 }
 
@@ -166,7 +197,14 @@ interface CollectedLines {
  * the returned lines.
  */
 export interface DebugLogSnapshot {
+    /**
+     * Every retained line, in order.
+     */
     lines: string[];
+
+    /**
+     * Status describing exactly the returned lines.
+     */
     status: DebugLogStatusPayload;
 }
 
@@ -174,9 +212,24 @@ export interface DebugLogSnapshot {
  * Bounded tail for the Options preview.
  */
 export interface DebugLogPreview {
+    /**
+     * Tail text, newline-joined.
+     */
     text: string;
+
+    /**
+     * Bytes actually shown (may be less than `maxBytes` requested).
+     */
     shownBytes: number;
+
+    /**
+     * Total accounted size of the whole log, not just the shown tail.
+     */
     totalBytes: number;
+
+    /**
+     * Index revision the preview was read at.
+     */
     revision: number;
 }
 

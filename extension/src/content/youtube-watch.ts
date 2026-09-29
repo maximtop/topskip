@@ -1,3 +1,9 @@
+/**
+ * @file YouTube watch-page orchestration: binds the `<video>` element,
+ * routes fixed-window and server/promo-block skip logic, drives server-mode
+ * analysis submission/polling/retry, and reports content lifecycle state.
+ */
+
 import * as v from 'valibot';
 
 import {
@@ -220,7 +226,14 @@ type ServerAnalysisTerminalEventDeliveryOutcome = | { status: typeof CONTENT_RUN
  * from releasing ownership held by its replacement.
  */
 interface ServerAnalysisOperationOwner {
+    /**
+     * Session that owns the operation.
+     */
     session: ServerAnalysisSession;
+
+    /**
+     * Local operation identity captured at scheduling.
+     */
     operationId: number;
 }
 
@@ -228,7 +241,14 @@ interface ServerAnalysisOperationOwner {
  * Attempt ownership prevents late terminal-event completions crossing routes.
  */
 interface ServerAnalysisTerminalEventDeliveryOwner {
+    /**
+     * Session that owns the delivery attempt.
+     */
     session: ServerAnalysisSession;
+
+    /**
+     * Local attempt identity captured when delivery started.
+     */
     attemptId: number;
 }
 
@@ -236,7 +256,14 @@ interface ServerAnalysisTerminalEventDeliveryOwner {
  * Retry timer ownership prevents an old route from clearing replacement work.
  */
 interface ServerAnalysisTerminalEventRetryTimer {
+    /**
+     * Session that owns the retry timer.
+     */
     session: ServerAnalysisSession;
+
+    /**
+     * Timer id returned by `setTimeout`, so only its owner can clear it.
+     */
     timerId: number;
 }
 
@@ -273,18 +300,47 @@ export const PROMO_BLOCKS_REJECTION_CAUSE = {
 /**
  * Rejection cause literal union.
  */
-export type PromoBlocksRejectionCause = (typeof PROMO_BLOCKS_REJECTION_CAUSE)[keyof typeof PROMO_BLOCKS_REJECTION_CAUSE];
+export type PromoBlocksRejectionCause = (typeof PROMO_BLOCKS_REJECTION_CAUSE)[
+    keyof typeof PROMO_BLOCKS_REJECTION_CAUSE
+];
 
 /**
  * Route identity compared against the delivered block-message identity.
  */
 export interface PromoBlocksAcceptanceInput {
+    /**
+     * Video id bound to the active route, or `null` off watch.
+     */
     currentVideoId: string | null;
+
+    /**
+     * Video id carried by the delivered block message.
+     */
     messageVideoId: string;
+
+    /**
+     * Where the delivered blocks came from (server or promo detection).
+     */
     source: PromoDetectionSource;
+
+    /**
+     * Whether TopSkip is currently enabled.
+     */
     enabled: boolean;
+
+    /**
+     * Route already assigned to the active video, or `null` before routing.
+     */
     analysisMode: AnalysisMode | null;
+
+    /**
+     * Session id owned by the active route, or `null` outside server mode.
+     */
     activeSessionId: string | null;
+
+    /**
+     * Session id carried by the delivered message, when the source reports one.
+     */
     messageSessionId?: string;
 }
 
@@ -494,7 +550,7 @@ export class YoutubeWatch {
      * @returns The video id from the URL, or `null`.
      */
     private static getWatchVideoId(): string | null {
-        return getWatchVideoIdFromSearch(location.hostname, location.search);
+        return getWatchVideoIdFromSearch(globalThis.location.hostname, globalThis.location.search);
     }
 
     /**
@@ -560,9 +616,9 @@ export class YoutubeWatch {
      */
     static shouldActivateForPage(): boolean {
         return shouldActivateTopSkip({
-            hostname: location.hostname,
-            pathname: location.pathname,
-            search: location.search,
+            hostname: globalThis.location.hostname,
+            pathname: globalThis.location.pathname,
+            search: globalThis.location.search,
         });
     }
 
@@ -589,9 +645,9 @@ export class YoutubeWatch {
      * @returns The main player video element, or `null` if not found.
      */
     private static getMainVideo(): HTMLVideoElement | null {
-        if (location.hostname === E2E_HOST) {
-            const v = document.querySelector('video');
-            return v instanceof HTMLVideoElement ? v : null;
+        if (globalThis.location.hostname === E2E_HOST) {
+            const videoElement = document.querySelector('video');
+            return videoElement instanceof HTMLVideoElement ? videoElement : null;
         }
         const el = document.querySelector(YOUTUBE_VIDEO_ELEMENT_SELECTOR);
         return el instanceof HTMLVideoElement ? el : null;
@@ -1209,6 +1265,12 @@ export class YoutubeWatch {
 
         return new Promise((resolve) => {
             let settled = false;
+            // Forward-declared: `finish` below must clear the eventual timer
+            // and remove the eventual abort listener, both of which close
+            // over `finish` themselves, so the three cannot be declared in
+            // reference order.
+            let timeoutId: number;
+            let onAbort: () => void;
             const finish = (outcome: ServerAnalysisRuntimeOutcome): void => {
                 if (settled) {
                     return;
@@ -1218,10 +1280,10 @@ export class YoutubeWatch {
                 session.signal.removeEventListener('abort', onAbort);
                 resolve(outcome);
             };
-            const onAbort = (): void => {
+            onAbort = (): void => {
                 finish({ status: CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled });
             };
-            const timeoutId = window.setTimeout(() => {
+            timeoutId = window.setTimeout(() => {
                 finish({
                     status: CONTENT_RUNTIME_OUTCOME_STATUS.Failed,
                     reason: CONTENT_RUNTIME_FAILURE_REASON.WatchdogTimeout,
@@ -1327,8 +1389,8 @@ export class YoutubeWatch {
      * Schedules the next status refresh while the current video stays active.
      *
      * @param input - Polling job id, video id, and server interval.
-     * @param input.session
-     * @param input.pollAfterSec
+     * @param input.session - Session owning the pinned job to poll.
+     * @param input.pollAfterSec - Server-directed delay in seconds before the next poll.
      */
     private static scheduleServerAnalysisStatusRefresh(input: {
         session: ServerAnalysisSession;
@@ -1781,6 +1843,12 @@ export class YoutubeWatch {
         }
         return new Promise((resolve) => {
             let settled = false;
+            // Forward-declared: `finish` below must clear the eventual timer
+            // and remove the eventual abort listener, both of which close
+            // over `finish` themselves, so the three cannot be declared in
+            // reference order.
+            let timeoutId: number;
+            let onAbort: () => void;
             const finish = (
                 outcome: ServerAnalysisTerminalEventDeliveryOutcome,
             ): void => {
@@ -1792,10 +1860,10 @@ export class YoutubeWatch {
                 signal.removeEventListener('abort', onAbort);
                 resolve(outcome);
             };
-            const onAbort = (): void => {
+            onAbort = (): void => {
                 finish({ status: CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled });
             };
-            const timeoutId = window.setTimeout(() => {
+            timeoutId = window.setTimeout(() => {
                 finish({
                     status: CONTENT_RUNTIME_OUTCOME_STATUS.Failed,
                     reason: CONTENT_RUNTIME_FAILURE_REASON.WatchdogTimeout,
@@ -2088,11 +2156,11 @@ export class YoutubeWatch {
      * Emits route state only when a meaningful watch prerequisite changes.
      *
      * @param input - Current video identity, prerequisite state, and outcome.
-     * @param input.videoId
-     * @param input.outcome
-     * @param input.hasVideo
-     * @param input.enabled
-     * @param input.analysisMode
+     * @param input.videoId - Current watch video id, or `null` off watch.
+     * @param input.outcome - Routing outcome reached for this evaluation.
+     * @param input.hasVideo - Whether a bound `<video>` element is present.
+     * @param input.enabled - Whether TopSkip is currently enabled.
+     * @param input.analysisMode - Route assigned to the current video, if any.
      */
     private static logServerAnalysisRoute(input: {
         videoId: string | null;

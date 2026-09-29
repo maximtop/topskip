@@ -1,3 +1,9 @@
+/**
+ * @file Deterministic, offline extraction strategy backed by hard-coded
+ * fixture transcripts; used in tests and local development so extraction
+ * jobs never need live YouTube access.
+ */
+
 import * as v from 'valibot';
 
 import {
@@ -22,10 +28,28 @@ export const LOCAL_TRANSCRIPT_FIXTURE_VIDEO_IDS = {
  * Minimal fixture transcript shape before strategy output validation.
  */
 interface LocalTranscriptFixture {
+    /**
+     * BCP-47-ish language code carried onto the produced artifact.
+     */
     languageCode: string;
+
+    /**
+     * Ordered caption segments the fixture strategy returns verbatim.
+     */
     segments: {
+        /**
+         * Segment start offset, in seconds from the start of the video.
+         */
         startSec: number;
+
+        /**
+         * Segment duration, in seconds.
+         */
         durationSec: number;
+
+        /**
+         * Caption text for this segment.
+         */
         text: string;
     }[];
 }

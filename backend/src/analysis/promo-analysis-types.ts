@@ -1,3 +1,8 @@
+/**
+ * @file Shared types and Valibot schemas for the backend LLM analysis adapter boundary and the
+ * stored analysis run artifact, so every adapter and consumer agrees on one wire/storage shape.
+ */
+
 import {
     promoBlockSchema,
     youtubeVideoIdSchema,
@@ -94,6 +99,9 @@ export const analysisRunArtifactSchema = v.strictObject({
  * Input passed to backend-owned analysis adapters.
  */
 export interface BackendLlmAnalysisAdapterInput {
+    /**
+     * Canonical transcript artifact selected for this analysis run.
+     */
     transcriptArtifact: TranscriptArtifact;
 }
 
@@ -101,8 +109,20 @@ export interface BackendLlmAnalysisAdapterInput {
  * Provider accounting retained without storing request credentials or reasoning text.
  */
 export interface BackendLlmAnalysisUsage {
+    /**
+     * Number of prompt tokens billed for this analysis request, as reported by the provider.
+     */
     inputTokens: number;
+
+    /**
+     * Number of completion tokens billed for this analysis request, as reported by the provider.
+     */
     outputTokens: number;
+
+    /**
+     * Provider-reported cost in US dollars for this request; absent when the provider did not
+     * report cost.
+     */
     costUsd?: number;
 }
 
@@ -110,8 +130,19 @@ export interface BackendLlmAnalysisUsage {
  * Adapter output couples the raw assistant JSON with stable model diagnostics.
  */
 export interface BackendLlmAnalysisAdapterResult {
+    /**
+     * Raw assistant JSON text returned by the model, retained unparsed for storage/diagnostics.
+     */
     rawModelResponse: string;
+
+    /**
+     * Model identifier actually used to serve the request, as reported by the provider.
+     */
     model: string;
+
+    /**
+     * Token/cost accounting for this request; absent when the provider returned no usage metadata.
+     */
     usage?: BackendLlmAnalysisUsage;
 }
 
@@ -119,9 +150,24 @@ export interface BackendLlmAnalysisAdapterResult {
  * Backend-only adapter boundary for deterministic or future model analysis.
  */
 export interface BackendLlmAnalysisAdapter {
+    /**
+     * Stable provider identity stored in backend analysis artifacts.
+     */
     providerId: string;
+
+    /**
+     * Model identifier this adapter is configured to use, before any provider override.
+     */
     model: string;
+
+    /**
+     * Prompt identity stored alongside analysis runs, known before the request is sent.
+     */
     promptVersion: string;
+
+    /**
+     * Runs one analysis request against the configured provider for the given transcript.
+     */
     analyze: (
         input: BackendLlmAnalysisAdapterInput,
     ) => Promise<BackendLlmAnalysisAdapterResult>;

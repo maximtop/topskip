@@ -1,3 +1,8 @@
+/**
+ * @file Background-owned HTTP client for the configured TopSkip backend:
+ * installation registration/token refresh, analysis requests and polling.
+ */
+
 import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     SERVER_ANALYSIS_MAX_REQUEST_BODY_BYTES,
@@ -9,7 +14,6 @@ import {
     serverAnalysisResponseSchema,
     serverConfigResponseSchema,
     type InstallationRegistrationResponse,
-    type ServerAnalysisFailure,
     type ServerAnalysisResponse,
     type ServerConfigResponse,
     type ServerTranscriptIdentity,
@@ -17,6 +21,7 @@ import {
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
+import { ServerAnalysisClientError } from '@/background/server-analysis-client-error';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
 import { ServerInstallationStorage } from '@/background/storage/server-installation-storage';
@@ -27,7 +32,7 @@ import type { CaptionSegment } from '@topskip/common/caption-types';
 
 const SERVER_ANALYSIS_REQUEST_TIMEOUT_MS = 15_000;
 const SERVER_ANALYSIS_CAPABILITIES_HEADER_VALUE = SERVER_ANALYSIS_SUPPORTED_CAPABILITIES.join(',');
-const SERVER_ANALYSIS_BASE_URL = __TOPSKIP_SERVER_BASE_URL__;
+const SERVER_ANALYSIS_BASE_URL = TOPSKIP_SERVER_BASE_URL;
 
 /**
  * Safe operation labels used by development diagnostics.
@@ -46,7 +51,14 @@ const SERVER_OPERATION_MAX_ATTEMPTS = {
  * Minimal decoded HTTP result passed to endpoint-specific validators.
  */
 interface BackendJsonResult {
+    /**
+     * Raw HTTP success flag (`response.ok`), before endpoint-specific parsing.
+     */
     ok: boolean;
+
+    /**
+     * Decoded response body, not yet validated against an endpoint schema.
+     */
     json: unknown;
 }
 
@@ -57,27 +69,6 @@ type IdentifiedServerAnalysisResponse = Extract<
     ServerAnalysisResponse,
     { languageCode: string }
 >;
-
-/**
- * Carries only allow-listed diagnostics when transport or validation fails.
- */
-export class ServerAnalysisClientError extends Error {
-    /**
-     * Stable details safe to map into popup state.
-     */
-    readonly failure: ServerAnalysisFailure;
-
-    /**
-     * Creates a sanitized client failure without retaining raw response text.
-     *
-     * @param failure - Stable server-analysis failure details.
-     */
-    constructor(failure: ServerAnalysisFailure) {
-        super('TopSkip server request failed.');
-        this.name = 'ServerAnalysisClientError';
-        this.failure = failure;
-    }
-}
 
 /**
  * Background-owned client for the configured TopSkip backend; static API only.
@@ -109,12 +100,12 @@ export class ServerAnalysisClient {
      * raw provider or backend error bodies.
      *
      * @param input - Safe operation metadata and fetch configuration.
-     * @param input.operation
-     * @param input.videoId
-     * @param input.jobId
-     * @param input.tabId
-     * @param input.path
-     * @param input.init
+     * @param input.operation - Safe operation label for diagnostics.
+     * @param input.videoId - Video id for diagnostics, when known.
+     * @param input.jobId - Backend job id for diagnostics, when known.
+     * @param input.tabId - Originating tab id for debug-log attribution.
+     * @param input.path - Backend path appended to the base URL.
+     * @param input.init - Fetch options for the request.
      * @param attempt - One-based transport attempt for safe diagnostics.
      *
      * @returns HTTP success flag and opaque decoded JSON.
@@ -248,14 +239,16 @@ export class ServerAnalysisClient {
      * single-shot and keeping HTTP or malformed JSON outcomes authoritative.
      *
      * @param input - Safe operation metadata and fetch configuration.
-     * @param input.operation
-     * @param input.videoId
-     * @param input.jobId
-     * @param input.tabId
-     * @param input.path
-     * @param input.init
+     * @param input.operation - Safe operation label for diagnostics.
+     * @param input.videoId - Video id for diagnostics, when known.
+     * @param input.jobId - Backend job id for diagnostics, when known.
+     * @param input.tabId - Originating tab id for debug-log attribution.
+     * @param input.path - Backend path appended to the base URL.
+     * @param input.init - Fetch options for the request.
      *
      * @returns HTTP success flag and opaque decoded JSON.
+     *
+     * @throws {ServerAnalysisClientError} When every attempt fails transport.
      */
     private static async fetchBackendJson(input: {
         operation: ServerOperation;
@@ -288,6 +281,8 @@ export class ServerAnalysisClient {
      * @param json - Opaque decoded response.
      *
      * @returns Validated analysis response.
+     *
+     * @throws {ServerAnalysisClientError} When the response fails schema validation.
      */
     private static parseAnalysisResponse(
         json: unknown,
@@ -327,6 +322,9 @@ export class ServerAnalysisClient {
      * @param result - Decoded HTTP result with its success flag.
      *
      * @returns Validated analysis response.
+     *
+     * @throws {ServerAnalysisClientError} When a non-2xx response lacks a
+     * typed failure body.
      */
     private static parseAuthenticatedResult(
         result: BackendJsonResult,
@@ -369,6 +367,8 @@ export class ServerAnalysisClient {
      * @param expected - Browser-computed identity excluding server algorithm.
      *
      * @returns The unchanged known response fields.
+     *
+     * @throws {ServerAnalysisClientError} When the identity does not match.
      */
     private static validateInitialIdentity(
         response: ServerAnalysisResponse,
@@ -394,6 +394,9 @@ export class ServerAnalysisClient {
      * @param expected - Full identity from the validated processing response.
      *
      * @returns The unchanged known response fields.
+     *
+     * @throws {ServerAnalysisClientError} When the algorithm version or
+     * identity does not match.
      */
     private static validatePolledIdentity(
         response: ServerAnalysisResponse,
@@ -521,13 +524,13 @@ export class ServerAnalysisClient {
      * server reports an expired installation credential.
      *
      * @param input - Operation metadata and token-aware request factory.
-     * @param input.operation
-     * @param input.videoId
-     * @param input.jobId
-     * @param input.tabId
-     * @param input.path
-     * @param input.method
-     * @param input.body
+     * @param input.operation - Safe operation label for diagnostics.
+     * @param input.videoId - Video id for diagnostics, when known.
+     * @param input.jobId - Backend job id for diagnostics, when known.
+     * @param input.tabId - Originating tab id for debug-log attribution.
+     * @param input.path - Backend path appended to the base URL.
+     * @param input.method - HTTP method for the request.
+     * @param input.body - Optional pre-serialized JSON request body.
      * @param canRetryToken - Whether the one safe auth retry remains.
      *
      * @returns Validated analysis response.
@@ -624,12 +627,12 @@ export class ServerAnalysisClient {
      * Requests the current server analysis state for a video.
      *
      * @param input - Current video metadata, extension version, and timed captions.
-     * @param input.videoId
-     * @param input.durationSec
-     * @param input.extensionVersion
-     * @param input.languageCode
-     * @param input.segments
-     * @param input.tabId
+     * @param input.videoId - YouTube video id.
+     * @param input.durationSec - Video duration in seconds, when known.
+     * @param input.extensionVersion - Installed extension version.
+     * @param input.languageCode - Caption track language code.
+     * @param input.segments - Timed caption segments to canonicalize and upload.
+     * @param input.tabId - Originating tab id for debug-log attribution.
      *
      * @returns Validated server analysis response.
      */
@@ -688,9 +691,9 @@ export class ServerAnalysisClient {
      * Requests the latest state for an existing backend analysis job.
      *
      * @param input - Poll handle plus authoritative identity retained by content.
-     * @param input.jobId
-     * @param input.identity
-     * @param input.tabId
+     * @param input.jobId - Backend job id returned by the initial analysis request.
+     * @param input.identity - Full transcript identity from the validated response.
+     * @param input.tabId - Originating tab id for debug-log attribution.
      *
      * @returns Validated server analysis response.
      */

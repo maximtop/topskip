@@ -1,3 +1,9 @@
+/**
+ * @file OpenRouter adapter behind the `LlmProviderAdapter` interface,
+ * wrapping extension-owned configuration, permission and response-parsing
+ * boundaries.
+ */
+
 import { callOpenRouterChat } from '@/background/openrouter/openrouter-client';
 import { parseLlmPromoResponse } from '@/background/openrouter/parse-llm-promo-response';
 import { PROMO_DETECTION_SYSTEM_PROMPT } from '@/background/openrouter/promo-detection-system-prompt';

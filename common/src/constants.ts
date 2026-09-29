@@ -1,4 +1,9 @@
 /**
+ * @file Shared numeric and protocol constants used by both the backend and
+ * the extension.
+ */
+
+/**
  * Milliseconds per second for shared timer and timeline conversions.
  */
 export const MS_PER_SECOND = 1000;

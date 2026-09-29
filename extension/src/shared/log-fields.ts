@@ -1,4 +1,9 @@
 /**
+ * @file Formats structured diagnostic fields as single-line `key=value`
+ * console output.
+ */
+
+/**
  * Matches values that can sit bare inside `key=value` pairs without blurring
  * into a neighbouring pair or looking like another key.
  */

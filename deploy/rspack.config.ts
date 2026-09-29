@@ -1,3 +1,8 @@
+/**
+ * @file Rspack build configuration for the standalone Node deployment
+ * bundle of the backend server.
+ */
+
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 

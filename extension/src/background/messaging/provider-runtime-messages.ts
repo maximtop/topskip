@@ -1,3 +1,8 @@
+/**
+ * @file Runtime handlers for provider-selection messages: active provider
+ * lookup, availability listing, and switching the user's chosen provider.
+ */
+
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';

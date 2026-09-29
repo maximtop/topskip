@@ -1,3 +1,9 @@
+/**
+ * @file XState machine modelling the Chrome Built-in (Gemini Nano) model
+ * download lifecycle, calling `LanguageModel` APIs directly from the options
+ * page.
+ */
+
 import {
 
     assign,
@@ -19,8 +25,21 @@ import { getErrorMessage } from '@/shared/error';
  * Download progress and error state for the Prompt API model setup flow.
  */
 interface DownloadContext {
+    /**
+     * Download progress percentage (0-100).
+     */
     progress: number;
+
+    /**
+     * Whether Chrome is extracting/loading the model after download reached
+     * 100% (progress alone cannot represent this stage).
+     */
     extracting: boolean;
+
+    /**
+     * Safe diagnostic from the last failed download, or `null` when none
+     * failed.
+     */
     error: string | null;
 }
 

@@ -1,3 +1,9 @@
+/**
+ * @file Build-time TopSkip build profile resolution: reads and validates the
+ * `TOPSKIP_BUILD` and `TOPSKIP_SERVER_ORIGIN` environment variables that the
+ * manifest and Rspack config compile into the extension bundle.
+ */
+
 import { isIP } from 'node:net';
 import process from 'node:process';
 
@@ -25,6 +31,9 @@ export const TopSkipBuild = {
     Release: 'release',
 } as const;
 
+/**
+ * One of the `TopSkipBuild` profile names.
+ */
 export type TopSkipBuildMode = (typeof TopSkipBuild)[keyof typeof TopSkipBuild];
 
 /**
@@ -41,7 +50,7 @@ const DEV_LOOPBACK_SERVER_ORIGIN = 'http://127.0.0.1:8787';
 /**
  * Exact local origin reserved for deterministic browser fixtures. Only the dev
  * manifest and dev bundles may reference it: runtime code receives it through
- * the `__TOPSKIP_DEV_E2E_ORIGIN__` define, which is `null` for beta/release so
+ * the `TOPSKIP_DEV_E2E_ORIGIN` define, which is `null` for beta/release so
  * no loopback endpoint literal ships in a user-facing artifact.
  */
 export const DEV_E2E_FIXTURE_ORIGIN = 'http://127.0.0.1:4173';
@@ -92,6 +101,8 @@ const SPECIAL_USE_DNS_SUFFIXES = new Set([
  * @param raw - Untrusted `TOPSKIP_BUILD` environment value.
  *
  * @returns Validated extension build profile.
+ *
+ * @throws {Error} When `raw` is set but is not one of the known build profiles.
  */
 export function resolveTopSkipBuild(
     raw: string | undefined,
@@ -161,7 +172,7 @@ function isPublicLookingDnsHostname(hostname: string): boolean {
  *
  * @param raw - Rejected backend origin.
  *
- * @returns Never returns because an invalid origin stops the build.
+ * @throws {Error} Always, because an invalid origin stops the build.
  */
 function rejectNonPublicOrigin(raw: string): never {
     throw new Error(
@@ -178,6 +189,9 @@ function rejectNonPublicOrigin(raw: string): never {
  * @param raw - Untrusted build-time backend origin.
  *
  * @returns Canonical bare origin accepted for the selected profile.
+ *
+ * @throws {Error} When `raw` is unset, malformed, not a bare origin, or does
+ * not satisfy the public HTTPS DNS policy for the selected profile.
  */
 export function validateServerOrigin(
     build: TopSkipBuildMode,

@@ -1,3 +1,9 @@
+/**
+ * @file Maintenance CLI that fetches the latest yt-dlp nightly release
+ * metadata and checksums from GitHub and rewrites the pinned tag/SHA-256
+ * constants in `scripts/lib/yt-dlp-release.ts`.
+ */
+
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -81,6 +87,8 @@ class YtDlpPinRefresher {
      * @param input - Untrusted GitHub JSON response.
      *
      * @returns Nightly release tag.
+     *
+     * @throws {Error} When the response has no non-empty `tag_name` string.
      */
     private static readTag(input: unknown): string {
         if (
@@ -124,6 +132,8 @@ class YtDlpPinRefresher {
      * @param assetName - Required standalone artifact name.
      *
      * @returns Verified-format SHA-256 digest.
+     *
+     * @throws {Error} When the manifest has no entry for `assetName`.
      */
     private static requireChecksum(
         checksums: ReadonlyMap<string, string>,

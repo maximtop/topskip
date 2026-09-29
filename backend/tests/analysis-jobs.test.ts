@@ -606,11 +606,15 @@ describe('BackendAnalysisJobs', () => {
         });
         expect(BackendAnalysisJobs.canAcceptColdJob()).toBe(false);
 
+        const waitForRelease = (expectedCount: number) => {
+            return vi.waitFor(() => {
+                expect(releases.length).toBeGreaterThan(expectedCount);
+            });
+        };
+
         let releasedCount = 0;
         while (releasedCount < processingJobs.length) {
-            await vi.waitFor(() => {
-                expect(releases.length).toBeGreaterThan(releasedCount);
-            });
+            await waitForRelease(releasedCount);
             releases[releasedCount]?.();
             releasedCount += 1;
         }

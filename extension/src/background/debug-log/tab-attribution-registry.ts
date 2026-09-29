@@ -1,3 +1,8 @@
+/**
+ * @file Per-tab attribution state for the debug log: incognito exclusion and
+ * the per-tab content-event ceiling, mirrored in `storage.session`.
+ */
+
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
@@ -38,8 +43,19 @@ const persistedTabsSchema = v.array(
  * one tab; created on the tab's first message, released on tab removal.
  */
 interface TabAttribution {
+    /**
+     * Browser-provided incognito flag for this tab; never changes for a tab.
+     */
     incognito: boolean;
+
+    /**
+     * Start of the current one-minute ceiling window, in epoch ms.
+     */
     windowStartMs: number;
+
+    /**
+     * Content-sourced events admitted within the current ceiling window.
+     */
     count: number;
 }
 

@@ -1,3 +1,8 @@
+/**
+ * @file Builds the runtime messages the content script sends to background
+ * to request server-mode analysis and to poll a submitted job's status.
+ */
+
 import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
 
 import { ANALYSIS_MODE, type UserPreferences } from '@/shared/constants';
@@ -21,11 +26,11 @@ export function shouldUseServerAnalysis(prefs: UserPreferences): boolean {
  * Builds the runtime message sent from content to background for server mode.
  *
  * @param input - Current watch video id and optional finite duration.
- * @param input.sessionId
- * @param input.videoId
- * @param input.durationSec
- * @param input.languageCode
- * @param input.segments
+ * @param input.sessionId - Watch session correlation id.
+ * @param input.videoId - Current YouTube watch video id.
+ * @param input.durationSec - Finite media duration in seconds, when known.
+ * @param input.languageCode - Selected caption track language.
+ * @param input.segments - Canonical caption segments to submit for analysis.
  *
  * @returns Runtime message for the background server-analysis handler.
  */
@@ -58,10 +63,10 @@ export function buildRequestServerAnalysisMessage(input: {
  * Builds the runtime message sent from content to background for job polling.
  *
  * @param input - Current watch video id and backend job id.
- * @param input.sessionId
- * @param input.videoId
- * @param input.jobId
- * @param input.identity
+ * @param input.sessionId - Watch session correlation id.
+ * @param input.videoId - Current YouTube watch video id.
+ * @param input.jobId - Backend job id returned by the initial analysis request.
+ * @param input.identity - Transcript identity used to detect a stale job.
  *
  * @returns Runtime message for the background server-analysis status handler.
  */

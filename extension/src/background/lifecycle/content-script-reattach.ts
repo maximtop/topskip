@@ -1,3 +1,8 @@
+/**
+ * @file Re-injects the watch content-script bundles into the active tab on
+ * the user's explicit request (popup "reattach" action).
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
@@ -56,7 +61,14 @@ export const CONTENT_SCRIPT_REATTACH_SETTLE_POLL_MS = 100;
  * Active tab identity plus whatever URL Chrome chose to expose for it.
  */
 interface ActiveTabTarget {
+    /**
+     * Active tab's browser id.
+     */
     tabId: number;
+
+    /**
+     * Tab URL, or `undefined` when Chrome did not grant `activeTab` visibility.
+     */
     url: string | undefined;
 }
 

@@ -1,3 +1,8 @@
+/**
+ * @file Authoritative transcript hashing kept in the Node-owned backend boundary,
+ * used to derive the stable identity behind exact cache and job lookups.
+ */
+
 import { createHash } from 'node:crypto';
 
 /**

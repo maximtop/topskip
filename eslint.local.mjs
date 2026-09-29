@@ -51,7 +51,6 @@ export default [
         files: [
             'backend/**',
             'extension/build-modes.ts',
-            'extension/manifest-profile.ts',
         ],
         languageOptions: { globals: globals.node },
     },

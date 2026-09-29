@@ -16,10 +16,10 @@ const runtimeState = vi.hoisted(
 );
 
 const { disposeWatch, initWatch, teardownPageBridge } = vi.hoisted(() => {
-    const disposeWatch = vi.fn();
+    const disposeWatchMock = vi.fn();
     return {
-        disposeWatch,
-        initWatch: vi.fn(() => disposeWatch),
+        disposeWatch: disposeWatchMock,
+        initWatch: vi.fn(() => disposeWatchMock),
         teardownPageBridge: vi.fn(() => Promise.resolve()),
     };
 });

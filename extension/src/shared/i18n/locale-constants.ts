@@ -1,3 +1,8 @@
+/**
+ * @file Locale identity derived from the repository's `.twosky.json`
+ * languages configuration.
+ */
+
 import twosky from '../../../.twosky.json';
 
 /**

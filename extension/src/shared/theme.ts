@@ -1,3 +1,7 @@
+/**
+ * @file Mantine theme (colors, fonts) shared by the popup and options UIs.
+ */
+
 import { createTheme, type MantineColorsTuple } from '@mantine/core';
 
 const fontStack = [

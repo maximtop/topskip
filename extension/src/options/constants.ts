@@ -1,4 +1,9 @@
 /**
+ * @file Timing constants for the options page's Diagnostics refresh and
+ * request timeouts.
+ */
+
+/**
  * Bounded re-read cadence for the Diagnostics status while the section is
  * visible. The spec caps it at five seconds; the status read is cheap and
  * never carries the preview tail or the bundle.

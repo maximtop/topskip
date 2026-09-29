@@ -1,3 +1,8 @@
+/**
+ * @file Splits a canonical transcript into fixed-overlap chunks sized for one model call each,
+ * so the server-side prompt budget can be planned independently of a video's total length.
+ */
+
 import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
 import {
     SERVER_CHUNK_BUDGET_CHARS,
@@ -11,9 +16,24 @@ import type { CaptionSegment } from '@topskip/common/caption-types';
  * One transcript slice for one model call, with its caption time range.
  */
 export interface ServerTranscriptChunk {
+    /**
+     * Zero-based position of this chunk within the plan's chunk sequence.
+     */
     index: number;
+
+    /**
+     * Start of this chunk's caption time range, in seconds.
+     */
     startSec: number;
+
+    /**
+     * End of this chunk's caption time range, in seconds.
+     */
     endSec: number;
+
+    /**
+     * Canonical transcript segments covered by this chunk, including fixed overlap.
+     */
     segments: CaptionSegment[];
 }
 

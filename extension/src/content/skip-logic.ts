@@ -1,3 +1,8 @@
+/**
+ * @file Legacy fixed-window (30s-60s) skip decision logic, kept alongside the
+ * promo-detection skip logic for videos without a usable transcript.
+ */
+
 import { SKIP_END_SEC, SKIP_START_SEC } from '@/shared/constants';
 
 /**
@@ -33,10 +38,29 @@ export function computeSkipTarget(duration: number): number | null {
  * Playback state needed to decide whether fixed-window skip should fire.
  */
 export interface ShouldFireSkipInput {
+    /**
+     * Media time in seconds at the previous `timeupdate`.
+     */
     prevTime: number;
+
+    /**
+     * Media time in seconds at the current `timeupdate`.
+     */
     currentTime: number;
+
+    /**
+     * Whether the fixed-window skip already fired for this playback.
+     */
     skipFired: boolean;
+
+    /**
+     * Whether fixed-window skip is enabled for this video/session.
+     */
     enabled: boolean;
+
+    /**
+     * Media duration in seconds.
+     */
     duration: number;
 
     /**

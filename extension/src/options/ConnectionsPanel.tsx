@@ -1,3 +1,7 @@
+/**
+ * @file Provider API-key connections management panel.
+ */
+
 import {
     Badge,
     Button,
@@ -92,6 +96,8 @@ function getConnectionFeedback(
         case 'idle':
         case undefined:
             return null;
+        default:
+            return null;
     }
 }
 
@@ -99,9 +105,24 @@ function getConnectionFeedback(
  * Connection rows, draft keys, and actions for the API key section.
  */
 interface ConnectionsPanelProps {
+    /**
+     * Connection row per BYOK provider.
+     */
     connections: ConnectionEntryMessage[];
+
+    /**
+     * Draft (unsaved) API key text per provider.
+     */
     drafts: Record<ConnectionProviderId, string>;
+
+    /**
+     * Provider whose save/test request is in flight, or `null` when idle.
+     */
     busyProviderId: ConnectionProviderId | null;
+
+    /**
+     * Last classified key-test outcome per provider, when one was run.
+     */
     testStates: Partial<Record<ConnectionProviderId, ConnectionTestState>>;
     onDraftChange(providerId: ConnectionProviderId, value: string): void;
     onSave(providerId: ConnectionProviderId): void;

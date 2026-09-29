@@ -1,4 +1,10 @@
-import { PROVIDER_ID } from './providers.ts';
+/**
+ * @file Optional cross-origin host permissions for BYOK providers, shared by
+ * manifest composition and the options connection UI.
+ */
+
+// Type-only, so Node never resolves it when manifest composition loads this module during the build.
+import type { PROVIDER_ID } from './providers';
 
 /**
  * Providers whose cross-origin network access is granted independently.
@@ -27,14 +33,15 @@ export interface ProviderHostPermissionDefinition {
 }
 
 /**
- * Provider hosts remain optional until an explicit Private BYOK action.
+ * Provider hosts remain optional until an explicit Private BYOK action. The keys are the `PROVIDER_ID` values;
+ * `satisfies` below keeps them in sync.
  */
 export const PROVIDER_HOST_PERMISSION = {
-    [PROVIDER_ID.OpenRouter]: {
+    openrouter: {
         origin: 'https://openrouter.ai/*',
         hostLabel: 'openrouter.ai',
     },
-    [PROVIDER_ID.OpenAI]: {
+    openai: {
         origin: 'https://api.openai.com/*',
         hostLabel: 'api.openai.com',
     },

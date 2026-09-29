@@ -25,6 +25,80 @@ import type {
 const VIDEO_ID = 'dQw4w9WgXcQ';
 const NOW_MS = 1_900_000_000_000;
 
+function succeeded(stdout: string): YtDlpRunResult {
+    return { status: 'succeeded', stdout };
+}
+
+function createDownloadFailureRunner(): YtDlpRunner {
+    let callCount = 0;
+    return () => {
+        callCount += 1;
+        if (callCount === 1) {
+            return Promise.resolve(
+                succeeded(
+                    JSON.stringify({
+                        duration: 120,
+                        language: 'en',
+                        subtitles: { en: [{}] },
+                    }),
+                ),
+            );
+        }
+        return Promise.resolve({
+            status: 'failed',
+            code: 'process_failed',
+        });
+    };
+}
+
+function createInvalidTranscriptRunner(): YtDlpRunner {
+    let callCount = 0;
+    return async (request) => {
+        callCount += 1;
+        if (callCount === 1) {
+            return succeeded(
+                JSON.stringify({
+                    duration: 120,
+                    language: 'en',
+                    subtitles: { en: [{}] },
+                }),
+            );
+        }
+        const pathsIndex = request.args.indexOf('--paths');
+        const pathsValue = request.args[pathsIndex + 1];
+        if (pathsValue === undefined) {
+            throw new Error('Missing subtitle path argument.');
+        }
+        const directory = pathsValue.replace(/^subtitle:/u, '');
+        await writeFile(path.join(directory, `${VIDEO_ID}.en.json3`), '{}');
+        return succeeded('secret-token must not be retained');
+    };
+}
+
+function createTranscriptRunner(raw: string): YtDlpRunner {
+    let callCount = 0;
+    return async (request) => {
+        callCount += 1;
+        if (callCount === 1) {
+            return succeeded(
+                JSON.stringify({
+                    duration: 18_000,
+                    language: 'en',
+                    subtitles: { en: [{}] },
+                }),
+            );
+        }
+        const pathsIndex = request.args.indexOf('--paths');
+        const pathsValue = request.args[pathsIndex + 1];
+        if (pathsValue === undefined) {
+            throw new Error('Missing subtitle path argument.');
+        }
+        const directory = pathsValue.replace(/^subtitle:/u, '');
+        await writeFile(path.join(directory, `${VIDEO_ID}.en.json3`), raw);
+        return succeeded('');
+    };
+}
+
 describe('yt-dlp subtitle track selection', () => {
     it('prefers manual captions in the original language', () => {
         expect(
@@ -335,77 +409,3 @@ describe('yt-dlp subtitle extraction strategy', () => {
         });
     });
 });
-
-function succeeded(stdout: string): YtDlpRunResult {
-    return { status: 'succeeded', stdout };
-}
-
-function createDownloadFailureRunner(): YtDlpRunner {
-    let callCount = 0;
-    return () => {
-        callCount += 1;
-        if (callCount === 1) {
-            return Promise.resolve(
-                succeeded(
-                    JSON.stringify({
-                        duration: 120,
-                        language: 'en',
-                        subtitles: { en: [{}] },
-                    }),
-                ),
-            );
-        }
-        return Promise.resolve({
-            status: 'failed',
-            code: 'process_failed',
-        });
-    };
-}
-
-function createInvalidTranscriptRunner(): YtDlpRunner {
-    let callCount = 0;
-    return async (request) => {
-        callCount += 1;
-        if (callCount === 1) {
-            return succeeded(
-                JSON.stringify({
-                    duration: 120,
-                    language: 'en',
-                    subtitles: { en: [{}] },
-                }),
-            );
-        }
-        const pathsIndex = request.args.indexOf('--paths');
-        const pathsValue = request.args[pathsIndex + 1];
-        if (pathsValue === undefined) {
-            throw new Error('Missing subtitle path argument.');
-        }
-        const directory = pathsValue.replace(/^subtitle:/u, '');
-        await writeFile(path.join(directory, `${VIDEO_ID}.en.json3`), '{}');
-        return succeeded('secret-token must not be retained');
-    };
-}
-
-function createTranscriptRunner(raw: string): YtDlpRunner {
-    let callCount = 0;
-    return async (request) => {
-        callCount += 1;
-        if (callCount === 1) {
-            return succeeded(
-                JSON.stringify({
-                    duration: 18_000,
-                    language: 'en',
-                    subtitles: { en: [{}] },
-                }),
-            );
-        }
-        const pathsIndex = request.args.indexOf('--paths');
-        const pathsValue = request.args[pathsIndex + 1];
-        if (pathsValue === undefined) {
-            throw new Error('Missing subtitle path argument.');
-        }
-        const directory = pathsValue.replace(/^subtitle:/u, '');
-        await writeFile(path.join(directory, `${VIDEO_ID}.en.json3`), raw);
-        return succeeded('');
-    };
-}

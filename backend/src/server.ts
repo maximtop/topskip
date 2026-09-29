@@ -1,3 +1,9 @@
+/**
+ * @file Local HTTP server for the TopSkip backend: routes health/config/registration/analysis
+ * requests, enforces auth, CORS, and body-size/timeout limits, and maps results onto the
+ * process-selected caption-source response contract.
+ */
+
 import { createHmac, randomUUID } from 'node:crypto';
 import {
     createServer,
@@ -77,8 +83,19 @@ type ReadJsonBodyResult = | { ok: true; body: unknown }
  * Raw reader settings keep the large public upload isolated from small fixture routes.
  */
 interface ReadJsonBodyOptions {
+    /**
+     * Maximum accepted request body size in bytes; larger uploads are rejected.
+     */
     maxBytes: number;
+
+    /**
+     * Milliseconds to wait for the body to finish before failing the read with a timeout.
+     */
     timeoutMs: number;
+
+    /**
+     * Whether this read must hold one of the bounded concurrent analysis-body read slots.
+     */
     reserveAnalysisSlot: boolean;
 }
 
@@ -86,10 +103,29 @@ interface ReadJsonBodyOptions {
  * Server factory options keep public auth tests explicit while preserving local fixtures.
  */
 interface BackendHttpServerOptions {
+    /**
+     * Whether analysis/polling routes require a bearer credential; defaults to non-test `NODE_ENV`.
+     */
     requireAuth?: boolean;
+
+    /**
+     * Deterministic clock override for tests; defaults to `Date.now`.
+     */
     now?: () => number;
+
+    /**
+     * Whether production CORS/host policy applies; defaults to `NODE_ENV === 'production'`.
+     */
     production?: boolean;
+
+    /**
+     * Caption source the analysis boundary validates requests/responses against.
+     */
     captionSource?: BackendCaptionSource;
+
+    /**
+     * Milliseconds allowed to read an analysis request body; defaults to `ANALYSIS_BODY_READ_TIMEOUT_MS`.
+     */
     analysisBodyReadTimeoutMs?: number;
 }
 
@@ -97,7 +133,14 @@ interface BackendHttpServerOptions {
  * Authenticated request identity contains hashes only.
  */
 interface AuthenticatedRequest {
+    /**
+     * Hash of the caller's installation credential, used for ownership and quota keys.
+     */
     installationHash: string;
+
+    /**
+     * HMAC hash of the caller's IP address, used for cold-start quota keys.
+     */
     ipHash: string;
 }
 
@@ -105,12 +148,39 @@ interface AuthenticatedRequest {
  * Request-scoped negotiation and correlation prevent capabilities leaking across calls.
  */
 interface BackendHttpRequestContext {
+    /**
+     * Whether this request must present a valid bearer credential.
+     */
     requireAuth: boolean;
+
+    /**
+     * Whether production CORS/host policy applies to this request.
+     */
     production: boolean;
+
+    /**
+     * Deterministic clock used for all timestamps derived while handling this request.
+     */
     now: () => number;
+
+    /**
+     * Caption source this request's analysis boundary validates against.
+     */
     captionSource: BackendCaptionSource;
+
+    /**
+     * Opaque per-request correlation identifier used in logs and error responses.
+     */
     requestId: string;
+
+    /**
+     * Extension version reported by the parsed analysis request body, once parsed; `undefined` until then.
+     */
     extensionVersion: string | undefined;
+
+    /**
+     * Milliseconds allowed to read this request's analysis body.
+     */
     analysisBodyReadTimeoutMs: number;
 }
 
@@ -212,8 +282,6 @@ export class BackendHttpServer {
 
     /**
      * Starts the local backend on the configured development address.
-     *
-     * @returns Nothing.
      */
     static listen(): void {
         const runtimeConfig = BackendServerConfig.prepare();
@@ -760,6 +828,15 @@ export class BackendHttpServer {
             let byteLength = 0;
             let settled = false;
 
+            // Forward-declared so `cleanup` can reference them; each is assigned
+            // its handler below before any listener is attached or can fire.
+            let timeout: ReturnType<typeof setTimeout>;
+            let onData: (chunk: Buffer) => void;
+            let onEnd: () => void;
+            let onAborted: () => void;
+            let onClose: () => void;
+            let onError: () => void;
+
             const cleanup = (): void => {
                 clearTimeout(timeout);
                 req.off('data', onData);
@@ -787,7 +864,7 @@ export class BackendHttpServer {
                     ...(closeConnection ? { closeConnection: true } : {}),
                 });
             };
-            const onData = (chunk: Buffer): void => {
+            onData = (chunk: Buffer): void => {
                 byteLength += chunk.byteLength;
                 if (byteLength > options.maxBytes) {
                     req.pause();
@@ -803,7 +880,7 @@ export class BackendHttpServer {
                 }
                 chunks.push(chunk);
             };
-            const onEnd = (): void => {
+            onEnd = (): void => {
                 if (byteLength === 0) {
                     finish({ ok: true, body: {} });
                     return;
@@ -820,18 +897,18 @@ export class BackendHttpServer {
                     invalidRequest(false);
                 }
             };
-            const onAborted = (): void => {
+            onAborted = (): void => {
                 return invalidRequest(true);
             };
-            const onClose = (): void => {
+            onClose = (): void => {
                 if (!req.complete) {
                     invalidRequest(true);
                 }
             };
-            const onError = (): void => {
+            onError = (): void => {
                 return invalidRequest(true);
             };
-            const timeout = setTimeout(() => {
+            timeout = setTimeout(() => {
                 req.pause();
                 finish({
                     ok: false,
@@ -899,8 +976,6 @@ export class BackendHttpServer {
      * @param req - Incoming body stream to stop reusing.
      * @param res - Response whose completion precedes socket destruction.
      * @param failure - Body-read failure carrying the connection policy.
-     *
-     * @returns Nothing.
      */
     private static prepareBodyReadFailureConnection(
         req: IncomingMessage,
@@ -920,8 +995,6 @@ export class BackendHttpServer {
      * @param res - Node response writer.
      * @param statusCode - HTTP status code.
      * @param body - JSON-serializable response body.
-     *
-     * @returns Nothing.
      */
     private static sendJson(
         res: ServerResponse,
@@ -1234,6 +1307,8 @@ export class BackendHttpServer {
      * @param req - Incoming request received from loopback/cloudflared.
      *
      * @returns HMAC identity safe for quota persistence.
+     *
+     * @throws {Error} When running in production without a configured 32+ character HMAC secret.
      */
     private static hashRequestIp(req: IncomingMessage): string {
         const header = req.headers['cf-connecting-ip'];
@@ -1310,6 +1385,8 @@ export class BackendHttpServer {
      * @param fallback - Development port used when absent.
      *
      * @returns Valid TCP port.
+     *
+     * @throws {Error} When `raw` is present but not a valid TCP port number.
      */
     private static readPort(raw: string | undefined, fallback: number): number {
         if (raw === undefined) {

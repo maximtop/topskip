@@ -33,9 +33,9 @@ const hoisted = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
         '../../helpers/memory-storage-area'
     );
-    const { EXTENSION_ID } = await import('../../helpers/runtime-senders');
+    const { EXTENSION_ID: hoistedExtensionId } = await import('../../helpers/runtime-senders');
     return {
-        extensionId: EXTENSION_ID,
+        extensionId: hoistedExtensionId,
         local: createMemoryStorageArea(),
         session: createMemoryStorageArea(),
         tabsQuery: vi.fn(),
@@ -67,12 +67,9 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-vi.mock('@/background/debug-log/debug-log-export', async (importOriginal) => {
-    const original = await importOriginal<
-        typeof import('@/background/debug-log/debug-log-export')
-    >();
-    return { ...original, EnvironmentProbe: { collect: hoisted.collect } };
-});
+vi.mock('@/background/debug-log/environment-probe', () => ({
+    EnvironmentProbe: { collect: hoisted.collect },
+}));
 
 vi.mock('@/background/debug-log/debug-log-broadcast', () => ({
     DebugLogBroadcast: { notifyStateChanged: hoisted.notifyStateChanged },
@@ -395,7 +392,7 @@ describe('DebugLogRuntimeMessages', () => {
         });
 
         it('seeds in dev builds for extension pages only and validates the payload', async () => {
-            vi.stubGlobal('__TOPSKIP_INCLUDE_DEV_LOCAL__', true);
+            vi.stubGlobal('TOPSKIP_INCLUDE_DEV_LOCAL', true);
             await startWorker();
 
             await expect(

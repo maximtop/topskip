@@ -1,3 +1,9 @@
+/**
+ * @file Coordinates player-mediated caption capture from the content script:
+ * bridge activation, page-message handling, empty-body reload recovery, and
+ * bounded diagnostics.
+ */
+
 import { parseTranscriptJson3 } from '@topskip/common/captions/transcript-json3';
 
 import {
@@ -115,6 +121,9 @@ const BRIDGE_UNAVAILABLE_RESULT = Object.freeze({
  * Optional timing knobs for caption capture tests and runtime calls.
  */
 interface CaptureOptions {
+    /**
+     * Bounded wait in ms for the player-mediated capture request, when set.
+     */
     captureTimeoutMs?: number;
 }
 
@@ -131,10 +140,29 @@ interface CaptureOptions {
  * which is the same identity every other ownership check uses.
  */
 interface ActiveCaptureWait {
+    /**
+     * Session this waiter belongs to; every ownership check compares identity.
+     */
     session: CaptionCaptureSession;
+
+    /**
+     * Capture-budget timer id; `null` until activation is accepted.
+     */
     timeoutId: ReturnType<typeof setTimeout> | null;
+
+    /**
+     * Route-owned cancellation signal for this capture.
+     */
     signal: AbortSignal;
+
+    /**
+     * Listener removed once the waiter settles.
+     */
     abortListener: () => void;
+
+    /**
+     * Settles the caller's promise with the terminal capture result.
+     */
     resolve: (result: CaptionCaptureResult) => void;
 
     /**
@@ -184,21 +212,84 @@ type BridgeCommandName = | typeof CAPTION_PAGE_BRIDGE_COMMAND.Activate
  * Safe diagnostic fields forwarded from page-world capture.
  */
 interface PageDiagnosticDetails {
+    /**
+     * MAIN-bridge diagnostic stage name.
+     */
     stage: string;
+
+    /**
+     * Video id the page reported, when present.
+     */
     videoId?: string | null;
+
+    /**
+     * Caption track language the page reported, when present.
+     */
     languageCode?: string | null;
+
+    /**
+     * Transport used for the request (e.g. `fetch`, `xhr`), when reported.
+     */
     transport?: string;
+
+    /**
+     * HTTP status of the timedtext response, when reported.
+     */
     status?: number;
+
+    /**
+     * Response body length, when reported.
+     */
     bodyLength?: number;
+
+    /**
+     * Response `Content-Type` header, when reported.
+     */
     contentType?: string | null;
+
+    /**
+     * Sanitized request URL metadata, when reported.
+     */
     urlShape?: CapturedTimedtextUrlShape;
+
+    /**
+     * Whether the page-reported operation succeeded, when reported.
+     */
     ok?: boolean;
+
+    /**
+     * Page-reported diagnostic reason, when present.
+     */
     reason?: string;
+
+    /**
+     * Whether captions were on before the page touched the player, when reported.
+     */
     wasOn?: boolean | null;
+
+    /**
+     * Whether the user changed the caption toggle, when reported.
+     */
     userIntervened?: boolean;
+
+    /**
+     * Caption-menu button the page pressed, when reported.
+     */
     buttonPressed?: string | null;
+
+    /**
+     * Whether the page's hide-captions style was present, when reported.
+     */
     hideStylePresent?: boolean;
+
+    /**
+     * Number of caption tracks the page observed, when reported.
+     */
     hasTracks?: number | null;
+
+    /**
+     * Page-reported action names, when present.
+     */
     actions?: string[];
 }
 
@@ -206,8 +297,19 @@ interface PageDiagnosticDetails {
  * Failure payload returned by bridge command handlers.
  */
 interface BridgeCommandFailure {
+    /**
+     * Fixed discriminant marking this as a failure.
+     */
     ok: false;
+
+    /**
+     * Normalized shared failure reason.
+     */
     reason: CaptionCaptureFailureReason;
+
+    /**
+     * Bounded, non-sensitive failure text.
+     */
     error: string;
 }
 
@@ -215,10 +317,29 @@ interface BridgeCommandFailure {
  * Optional bridge command details used for cleanup diagnostics.
  */
 interface BridgeCommandDetails {
+    /**
+     * Whether the bridge command succeeded, when known.
+     */
     ok?: boolean;
+
+    /**
+     * Whether captions were on before the command ran, when known.
+     */
     wasOn?: boolean | null;
+
+    /**
+     * Whether the user changed the caption toggle, when known.
+     */
     userIntervened?: boolean;
+
+    /**
+     * Number of caption tracks observed, when known.
+     */
     hasTracks?: number | null;
+
+    /**
+     * Action names the bridge performed, when known.
+     */
     actions?: string[];
 }
 
@@ -1146,9 +1267,9 @@ export class PlayerCaptionCapture {
                     videoId: session.videoId,
                 });
                 visibleSince = Date.now();
-                continue;
+            } else {
+                await PlayerCaptionCapture.delay(ACTIVATION_RETRY_DELAY_MS);
             }
-            await PlayerCaptionCapture.delay(ACTIVATION_RETRY_DELAY_MS);
         }
     }
 
@@ -1357,7 +1478,10 @@ export class PlayerCaptionCapture {
         // Every path that settles a wait — capture, parse failure, timeout,
         // `cancel`, `dispose`, `resetForTest` — comes through here, so no
         // empty-body reload can outlive the wait it was scheduled for.
-        PlayerCaptionCapture.clearPendingEmptyBodyReload(activeWait);
+        if (activeWait.reloadTimeoutId !== null) {
+            globalThis.clearTimeout(activeWait.reloadTimeoutId);
+            activeWait.reloadTimeoutId = null;
+        }
         if (activeWait.timeoutId !== null) {
             globalThis.clearTimeout(activeWait.timeoutId);
         }
@@ -1683,7 +1807,16 @@ export class PlayerCaptionCapture {
         const budgetLeft = MAX_POT_EMPTY_BODY_RELOADS - wait.potEmptyBodyReloads;
         if (hasPot) {
             if (budgetLeft <= 0) {
-                PlayerCaptionCapture.logReloadBudgetSpent(wait);
+                // Reported once per session so a capture that goes quiet
+                // after three reloads is distinguishable in the log from one
+                // that never saw an empty body at all.
+                if (!wait.reloadBudgetSkipLogged) {
+                    wait.reloadBudgetSkipLogged = true;
+                    PlayerCaptionCapture.log('reload-skipped', {
+                        videoId: wait.session.videoId,
+                        reason: RELOAD_BUDGET_SKIP_REASON,
+                    });
+                }
                 return;
             }
             wait.potEmptyBodyReloads += 1;
@@ -1708,24 +1841,6 @@ export class PlayerCaptionCapture {
     }
 
     /**
-     * Reports the exhausted pot-bearing reload budget once per session, so a
-     * capture that goes quiet after three reloads is distinguishable in the
-     * log from one that never saw an empty body at all.
-     *
-     * @param wait Waiter whose budget is spent.
-     */
-    private static logReloadBudgetSpent(wait: ActiveCaptureWait): void {
-        if (wait.reloadBudgetSkipLogged) {
-            return;
-        }
-        wait.reloadBudgetSkipLogged = true;
-        PlayerCaptionCapture.log('reload-skipped', {
-            videoId: wait.session.videoId,
-            reason: RELOAD_BUDGET_SKIP_REASON,
-        });
-    }
-
-    /**
      * Widens the gap before each reload: the base delay doubles per empty body
      * seen in the session, capped at {@link EMPTY_BODY_RELOAD_MAX_DELAY_MS}.
      * Every empty body a session sees is consecutive by definition — a parsed
@@ -1742,21 +1857,6 @@ export class PlayerCaptionCapture {
             EMPTY_BODY_RELOAD_BASE_DELAY_MS * growth,
             EMPTY_BODY_RELOAD_MAX_DELAY_MS,
         );
-    }
-
-    /**
-     * Drops a reload the settled or replaced waiter will never want.
-     *
-     * @param wait Waiter losing ownership, or `null` when there is none.
-     */
-    private static clearPendingEmptyBodyReload(
-        wait: ActiveCaptureWait | null,
-    ): void {
-        if (wait === null || wait.reloadTimeoutId === null) {
-            return;
-        }
-        globalThis.clearTimeout(wait.reloadTimeoutId);
-        wait.reloadTimeoutId = null;
     }
 
     /**

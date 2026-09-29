@@ -20,7 +20,7 @@ import { TOPSKIP_MESSAGE } from '@/shared/messages';
  * `browser.runtime.Port` so PrefsPortHub can be tested
  * without the real extension runtime.
  *
- * @param name
+ * @param name Port name to expose on the fake port.
  */
 function createMockPort(name: string = PREFS_PORT_NAME) {
     const onDisconnectListeners: ((port: unknown) => void)[] = [];
@@ -59,7 +59,7 @@ function createMockPort(name: string = PREFS_PORT_NAME) {
          * Triggers stored onMessage listeners so tests can inject
          * arbitrary payloads without a real browser runtime.
          *
-         * @param msg
+         * @param msg Payload to deliver to stored listeners.
          */
         simulateMessage: (msg: unknown) => {
             for (const fn of onMessageListeners) {

@@ -1,3 +1,9 @@
+/**
+ * @file Measures translation readiness per locale against the base locale
+ * (missing keys, invalid translations, max-length markers) and backfills
+ * persistent message keys into locales that are missing them.
+ */
+
 import { validator, type Locale } from '@adguard/translate';
 
 import {
@@ -28,7 +34,14 @@ const TEXT_MAX_LENGTH_MARKER = 'TEXT MAX LENGTH:';
  * One message that failed validation.
  */
 interface InvalidTranslation {
+    /**
+     * Message key that failed validation.
+     */
     key: string;
+
+    /**
+     * Human-readable reason the translation was rejected.
+     */
     error: string;
 }
 
@@ -36,13 +49,24 @@ interface InvalidTranslation {
  * Per-locale outcome of a validation pass.
  */
 export interface ValidationResult {
+    /**
+     * Locale code this result is for.
+     */
     locale: string;
 
     /**
      * Percentage of base messages that are present and valid.
      */
     level: number;
+
+    /**
+     * Base-locale keys with no translation at all in this locale.
+     */
     untranslatedStrings: string[];
+
+    /**
+     * Keys present in this locale but that failed validation.
+     */
     invalidTranslations: InvalidTranslation[];
 }
 
@@ -66,8 +90,6 @@ export interface ValidationFlags {
  *
  * @param results - Results to print.
  * @param isMinimum - Suppresses the invalid-translation detail when true.
- *
- * @returns Nothing.
  */
 function printTranslationsResults(
     results: ValidationResult[],
@@ -78,19 +100,19 @@ function printTranslationsResults(
         const record = `${res.locale} -- ${res.level}%`;
         if (res.level >= THRESHOLD_PERCENTAGE) {
             cliLog.success(record);
-            continue;
-        }
-        cliLog.error(record);
-        if (res.untranslatedStrings.length > 0) {
-            cliLog.warning('  untranslated:');
-            for (const str of res.untranslatedStrings) {
-                cliLog.warning(`    - ${str}`);
+        } else {
+            cliLog.error(record);
+            if (res.untranslatedStrings.length > 0) {
+                cliLog.warning('  untranslated:');
+                for (const str of res.untranslatedStrings) {
+                    cliLog.warning(`    - ${str}`);
+                }
             }
-        }
-        if (!isMinimum && res.invalidTranslations.length > 0) {
-            cliLog.warning('  invalid:');
-            for (const obj of res.invalidTranslations) {
-                cliLog.warning(`    - ${obj.key} -- ${obj.error}`);
+            if (!isMinimum && res.invalidTranslations.length > 0) {
+                cliLog.warning('  invalid:');
+                for (const obj of res.invalidTranslations) {
+                    cliLog.warning(`    - ${obj.key} -- ${obj.error}`);
+                }
             }
         }
     }
@@ -100,8 +122,6 @@ function printTranslationsResults(
  * Logs locales that contain structurally invalid translations.
  *
  * @param criticals - Results carrying invalid translations.
- *
- * @returns Nothing.
  */
 function printCriticalResults(criticals: ValidationResult[]): void {
     cliLog.warning('Invalid translated string:');
@@ -227,16 +247,16 @@ export async function checkTranslations(
             for (const baseKey of baseMessages) {
                 if (!localeMessages.includes(baseKey)) {
                     untranslatedStrings.push(baseKey);
-                    continue;
-                }
-                const validationError = validateMessage(
-                    baseKey,
-                    baseLocaleTranslations,
-                    locale,
-                    localeTranslations,
-                );
-                if (validationError !== undefined) {
-                    invalidTranslations.push(validationError);
+                } else {
+                    const validationError = validateMessage(
+                        baseKey,
+                        baseLocaleTranslations,
+                        locale,
+                        localeTranslations,
+                    );
+                    if (validationError !== undefined) {
+                        invalidTranslations.push(validationError);
+                    }
                 }
             }
 
@@ -318,17 +338,15 @@ export async function addRequiredFields(locales: string[]): Promise<string> {
             const localeMessages = await readMessagesByLocale(locale);
             const additions: string[] = [];
             for (const requiredField of PERSISTENT_MESSAGES) {
-                if (localeMessages[requiredField] !== undefined) {
-                    continue;
+                if (localeMessages[requiredField] === undefined) {
+                    const baseEntry = baseLocaleMessages[requiredField];
+                    if (baseEntry !== undefined) {
+                        additions.push(
+                            `From base locale to ${locale} copied: "${requiredField}"`,
+                        );
+                        localeMessages[requiredField] = baseEntry;
+                    }
                 }
-                const baseEntry = baseLocaleMessages[requiredField];
-                if (baseEntry === undefined) {
-                    continue;
-                }
-                additions.push(
-                    `From base locale to ${locale} copied: "${requiredField}"`,
-                );
-                localeMessages[requiredField] = baseEntry;
             }
             await writeMessagesByLocale(localeMessages, locale);
             return additions.join('\n');

@@ -132,7 +132,8 @@ async function openHeldAnalysisUpload(baseUrl: string): Promise<Socket> {
         socket.once('error', reject);
         socket.once('connect', () => {
             socket.write(
-                `POST /v1/analysis HTTP/1.1\r\nHost: ${url.host}\r\nContent-Type: application/json\r\nTransfer-Encoding: chunked\r\n\r\n1\r\n{\r\n`,
+                `POST /v1/analysis HTTP/1.1\r\nHost: ${url.host}\r\nContent-Type: application/json\r\n`
+                + 'Transfer-Encoding: chunked\r\n\r\n1\r\n{\r\n',
             );
             resolve(socket);
         });
@@ -140,8 +141,12 @@ async function openHeldAnalysisUpload(baseUrl: string): Promise<Socket> {
 }
 
 async function waitForEventLoop(): Promise<void> {
-    await new Promise<void>((resolve) => setImmediate(resolve));
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+    });
+    await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+    });
 }
 
 function validTranscriptUpload(
@@ -431,7 +436,9 @@ describe('BackendHttpServer request body guard', () => {
             error: { code: 'capacity_limited', retryAfterSec: 3 },
         });
 
-        await new Promise<void>((resolve) => setTimeout(resolve, 150));
+        await new Promise<void>((resolve) => {
+            setTimeout(resolve, 150);
+        });
         for (const socket of held) {
             socket.destroy();
         }

@@ -1,3 +1,9 @@
+/**
+ * @file Local HTTP sink for browser/extension debug logs during manual
+ * testing: accepts POSTed log lines over CORS and appends them to a file and
+ * stdout so a developer can tail one place instead of a devtools console.
+ */
+
 import fs from 'node:fs';
 import http from 'node:http';
 

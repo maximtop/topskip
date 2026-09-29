@@ -1,7 +1,12 @@
+/**
+ * @file Owns the worker/browser/extension restart markers and the debug log's
+ * own enable/disable markers.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogBroadcast } from '@/background/debug-log/debug-log-broadcast';
-import { EnvironmentProbe } from '@/background/debug-log/debug-log-export';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { EnvironmentProbe } from '@/background/debug-log/environment-probe';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import browser from '@/shared/browser';
 import { SESSION_STORAGE_KEY_DEBUG_LOG_WORKER } from '@/shared/constants';

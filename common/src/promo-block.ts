@@ -1,4 +1,9 @@
 /**
+ * @file Shared promo-block constants used by both the backend and the
+ * extension.
+ */
+
+/**
  * Canonical fallback duration (seconds) used when a promo block's end
  * time is unknown.
  *

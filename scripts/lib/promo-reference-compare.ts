@@ -1,11 +1,25 @@
 /**
- * Pure helpers: compare model promo blocks to human-annotated intervals (IoU,
- * start/end deltas). Used by the maintainer compare CLI.
+ * @file Pure helpers to compare model promo blocks to human-annotated
+ * intervals (IoU, start/end deltas). Used by the maintainer compare CLI.
  */
 
+/**
+ * Human-annotated reference block for a promo segment, as recorded in the reference fixture JSON.
+ */
 export interface HumanRefBlock {
+    /**
+     * Stable identifier for this reference block, matched by index against `firstRunModel.blocks`.
+     */
     id: string;
+
+    /**
+     * Reference start time in seconds, as annotated by a human reviewer.
+     */
     startSec: number;
+
+    /**
+     * Reference end time in seconds, as annotated by a human reviewer.
+     */
     endSec: number;
 
     /**
@@ -19,29 +33,98 @@ export interface HumanRefBlock {
     endCue?: string;
 }
 
+/**
+ * Model-predicted promo block, as recorded under `firstRunModel.blocks` in the reference fixture JSON.
+ */
 export interface ReferencePredBlock {
+    /**
+     * Predicted start time in seconds.
+     */
     startSec: number;
+
+    /**
+     * Predicted end time in seconds. Absent when the model did not report an end boundary.
+     */
     endSec?: number;
 }
 
+/**
+ * Parsed reference fixture for one video: human annotations plus an optional first model run to compare against.
+ */
 export interface ReferenceBundle {
+    /**
+     * Video identifier, when present in the fixture.
+     */
     videoId?: string;
+
+    /**
+     * Human-annotated reference blocks for this video, in timeline order.
+     */
     humanBlocks: HumanRefBlock[];
+
+    /**
+     * Optional first model run recorded for comparison against the human blocks.
+     */
     firstRunModel?: {
+        /**
+         * Identifier of the model that produced this run.
+         */
         model: string;
+
+        /**
+         * Predicted blocks from this model run, in timeline order.
+         */
         blocks: ReferencePredBlock[];
     };
 }
 
+/**
+ * Per-block comparison of one model prediction against its aligned human-annotated reference.
+ */
 export interface AlignedBlockMetric {
+    /**
+     * Identifier of the human reference block this row was aligned to.
+     */
     id: string;
+
+    /**
+     * Human-annotated start time in seconds.
+     */
     humanStartSec: number;
+
+    /**
+     * Human-annotated end time in seconds.
+     */
     humanEndSec: number;
+
+    /**
+     * Predicted start time in seconds.
+     */
     predStartSec: number;
+
+    /**
+     * Predicted end time in seconds; falls back to the human end time when the prediction omitted it.
+     */
     predEndSec: number;
+
+    /**
+     * Whether `predEndSec` was assumed from the human block because the prediction had no `endSec`.
+     */
     predEndAssumed: boolean;
+
+    /**
+     * Predicted minus human start time, in seconds.
+     */
     startDeltaSec: number;
+
+    /**
+     * Predicted minus human end time, in seconds.
+     */
     endDeltaSec: number;
+
+    /**
+     * Intersection-over-union between the predicted and human intervals.
+     */
     iouWithHuman: number;
 }
 
@@ -87,7 +170,7 @@ export function compareHumanAlignedBlocks(
 ): AlignedBlockMetric[] {
     const n = Math.min(human.length, pred.length);
     const out: AlignedBlockMetric[] = [];
-    for (let i = 0; i < n; i++) {
+    for (let i = 0; i < n; i += 1) {
         const h = human[i];
         const p = pred[i];
         const assumed = p.endSec === undefined;
@@ -113,15 +196,26 @@ export function compareHumanAlignedBlocks(
     return out;
 }
 
+/**
+ * Narrows a value to a non-null, non-array object so its properties can be read safely.
+ *
+ * @param x - Value to check.
+ *
+ * @returns Whether `x` is a plain object (not `null` and not an array).
+ */
 function isRecord(x: unknown): x is Record<string, unknown> {
     return x !== null && typeof x === 'object' && !Array.isArray(x);
 }
 
 /**
+ * Parses and validates one element of the `humanBlocks` array from the reference fixture JSON.
+ *
  * @param item - One element of `humanBlocks` in the JSON file
  * @param index - 0-based index for error messages
  *
  * @returns Parsed human block
+ *
+ * @throws {Error} When `item` is not an object, or its `id`/`startSec`/`endSec` fields are missing or invalid.
  */
 function parseHumanBlock(item: unknown, index: number): HumanRefBlock {
     if (!isRecord(item)) {
@@ -160,10 +254,14 @@ function parseHumanBlock(item: unknown, index: number): HumanRefBlock {
 }
 
 /**
+ * Parses and validates one block under `firstRunModel.blocks` from the reference fixture JSON.
+ *
  * @param item - One block under firstRunModel.blocks
  * @param index - Index for error messages
  *
  * @returns Parsed predicted block
+ *
+ * @throws {Error} When `item` is not an object, or its `startSec`/`endSec` fields are missing or invalid.
  */
 function parsePredBlock(item: unknown, index: number): ReferencePredBlock {
     if (!isRecord(item)) {
@@ -192,9 +290,13 @@ function parsePredBlock(item: unknown, index: number): ReferencePredBlock {
 }
 
 /**
+ * Parses and validates a reference fixture JSON document into a `ReferenceBundle`.
+ *
  * @param jsonText - UTF-8 JSON matching the promo reference fixture shape
  *
  * @returns Parsed bundle
+ *
+ * @throws {Error} When `jsonText` is not valid JSON, or the parsed document does not match the fixture shape.
  */
 export function parseReferenceBundleJson(jsonText: string): ReferenceBundle {
     let raw: unknown;

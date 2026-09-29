@@ -1,3 +1,7 @@
+/**
+ * @file Popup bundle bootstrap: mounts the React app under `#root`.
+ */
+
 import '@mantine/core/styles.css';
 
 import { MantineProvider } from '@mantine/core';

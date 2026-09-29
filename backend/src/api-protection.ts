@@ -1,3 +1,9 @@
+/**
+ * @file Local, in-process request cost accounting: separates cheap cache/join
+ * lookups from cold-start job creation and enforces a fixed-window limit on
+ * the latter so future extraction/model work stays bounded.
+ */
+
 import { MS_PER_SECOND } from '@topskip/common/constants';
 
 import { BackendPublicState } from '@topskip/backend/public-state';
@@ -57,10 +63,11 @@ export class BackendApiProtection {
      * Evaluates and records a local request cost class.
      *
      * @param input - Request cost class and the time used for fixed-window accounting.
-     * @param input.costClass
-     * @param input.nowMs
-     * @param input.installationHash
-     * @param input.ipHash
+     * @param input.costClass Cost class of the incoming request.
+     * @param input.nowMs Timestamp used for fixed-window accounting.
+     * @param input.installationHash Installation identity; when present with `ipHash`, cold-start
+     * quota is charged against the shared per-installation/IP bucket instead of the local counter.
+     * @param input.ipHash Request IP identity; see `installationHash`.
      *
      * @returns Allow/deny decision for the local backend request.
      */

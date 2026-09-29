@@ -1,3 +1,9 @@
+/**
+ * @file CLI that installs the repository-pinned `yt-dlp` binary into
+ * `.tools/`, verifying the download's SHA-256 against the reviewed pin before
+ * trusting it, so operator-only extraction never runs an unverified binary.
+ */
+
 import { spawnSync } from 'node:child_process';
 import {
     chmod,

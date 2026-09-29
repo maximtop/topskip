@@ -1,3 +1,9 @@
+/**
+ * @file Filters promo blocks reported for one caption chunk down to the
+ * blocks that plausibly belong to that chunk's time range, before
+ * cross-chunk merge.
+ */
+
 import type { PromoBlock } from '@topskip/common/promo-types';
 
 /**

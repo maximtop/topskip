@@ -1,3 +1,8 @@
+/**
+ * @file Builds the catalog of detection models offered to users: built-in
+ * presets per provider plus user-added OpenRouter slugs.
+ */
+
 import { CHROME_PROMPT_API_MODEL_NAME } from '@/shared/chrome-prompt-api';
 import {
     OPENROUTER_DEFAULT_MODEL_SLUG,
@@ -13,11 +18,34 @@ import {
  * Model option shown to users while keeping provider routing metadata hidden.
  */
 export interface DetectionModel {
+    /**
+     * Stable provider-prefixed identifier persisted as the active model.
+     */
     id: string;
+
+    /**
+     * User-facing model name shown in selection UI.
+     */
     label: string;
+
+    /**
+     * Provider this model routes through.
+     */
     providerId: ProviderId;
+
+    /**
+     * User-facing name of the provider this model routes through.
+     */
     providerLabel: string;
+
+    /**
+     * Provider-native model name (not the prefixed id) sent in requests.
+     */
     modelName: string;
+
+    /**
+     * Whether using this model requires a configured provider connection.
+     */
     requiresConnection: boolean;
 }
 

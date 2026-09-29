@@ -1,3 +1,7 @@
+/**
+ * @file Helpers for turning Valibot validation errors into readable messages.
+ */
+
 import {
     summarize,
     type BaseIssue,

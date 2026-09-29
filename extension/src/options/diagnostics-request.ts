@@ -1,3 +1,8 @@
+/**
+ * @file Bounded, validated requests to the background debug-log endpoints
+ * (status, preview, bundle, switch) used by the Diagnostics section.
+ */
+
 import * as v from 'valibot';
 
 import {
@@ -61,9 +66,24 @@ const okBundleReplySchema = v.object({
  * Most recent part of the bundle plus the store revision it was read at.
  */
 export interface DebugLogPreviewResult {
+    /**
+     * Bundle tail text.
+     */
     text: string;
+
+    /**
+     * Bytes of the tail actually shown.
+     */
     shownBytes: number;
+
+    /**
+     * Total bytes of the full bundle the tail was taken from.
+     */
     totalBytes: number;
+
+    /**
+     * Store revision the preview was read at.
+     */
     revision: number;
 }
 
@@ -72,7 +92,14 @@ export interface DebugLogPreviewResult {
  * and used for the download file name.
  */
 export interface DebugLogBundleResult {
+    /**
+     * Full plain-text bundle.
+     */
     text: string;
+
+    /**
+     * Instant the bundle was snapshotted, as written in its header.
+     */
     exportedAtMs: number;
 }
 
@@ -85,6 +112,9 @@ export interface DebugLogBundleResult {
  * @param reply - Untyped worker reply.
  *
  * @returns Parsed reply.
+ *
+ * @throws {Error} When `reply` does not match `schema` (refusal, malformed
+ * shape, or timeout all surface this way).
  */
 function parseOkReply<TSchema extends v.GenericSchema>(
     schema: TSchema,

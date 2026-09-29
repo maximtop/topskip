@@ -1,3 +1,8 @@
+/**
+ * @file OpenRouter API key, model selection, and custom-model management
+ * panel.
+ */
+
 import {
     ActionIcon,
     Alert,
@@ -28,7 +33,14 @@ import type { ReactElement } from 'react';
  * Select option shape for built-in and custom OpenRouter models.
  */
 interface OpenRouterSelectOption {
+    /**
+     * OpenRouter model slug submitted on selection.
+     */
     value: string;
+
+    /**
+     * Display label shown in the select control.
+     */
     label: string;
 }
 
@@ -36,20 +48,80 @@ interface OpenRouterSelectOption {
  * OpenRouter form state and callbacks owned by the options container.
  */
 interface OpenRouterConfigPanelProps {
+    /**
+     * Draft (unsaved) API key text.
+     */
     apiKey: string;
+
+    /**
+     * Whether the API key input shows plain text instead of masked dots.
+     */
     apiKeyVisible: boolean;
+
+    /**
+     * Masked form of the saved API key, or `null` when none is saved.
+     */
     savedApiKeyMasked: string | null;
+
+    /**
+     * Currently selected model slug.
+     */
     modelChoice: string;
+
+    /**
+     * Options offered by the model select control (built-in and custom).
+     */
     modelSelectData: OpenRouterSelectOption[];
+
+    /**
+     * Saved custom OpenRouter model slugs.
+     */
     customModels: string[];
+
+    /**
+     * Current text of the new-model input.
+     */
     newModelDraft: string;
+
+    /**
+     * Whether an add-model request is in flight.
+     */
     addBusy: boolean;
+
+    /**
+     * Whether an API key save request is in flight.
+     */
     saveBusy: boolean;
+
+    /**
+     * Slug currently being removed, or `null` when none is in flight.
+     */
     removeBusySlug: string | null;
+
+    /**
+     * Slug currently being edited inline, or `null` when none is.
+     */
     editingModelSlug: string | null;
+
+    /**
+     * Draft text for the slug being edited inline.
+     */
     editingModelDraft: string;
+
+    /**
+     * Slug whose inline edit is being saved, or `null` when none is.
+     */
     updateBusySlug: string | null;
+
+    /**
+     * Safe validation error message, or `null` when the last check passed.
+     */
     validationError: string | null;
+
+    /**
+     * Custom model slugs whose validity could not be confirmed against the
+     * OpenRouter API.
+     */
     unverifiedModels: Set<string>;
     onApiKeyChange(value: string): void;
     onToggleApiKeyVisibility(): void;

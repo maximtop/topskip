@@ -70,7 +70,7 @@ export function makeContentSender(options: ContentSenderOptions): Runtime.Messag
  * Sender of the Options page, which always lives in a tab.
  *
  * @param options - Tab id hosting the Options page.
- * @param options.tabId
+ * @param options.tabId Id of the tab hosting the Options page.
  *
  * @returns Sender as Chrome would populate it.
  */

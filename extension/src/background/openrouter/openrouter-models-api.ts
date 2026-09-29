@@ -1,4 +1,9 @@
 /**
+ * @file Fetches and session-caches the OpenRouter model list used for
+ * custom-model slug validation.
+ */
+
+/**
  * Session-scoped cache: maps API key to models array.
  * Cleared on service worker restart (natural MV3 lifecycle).
  */

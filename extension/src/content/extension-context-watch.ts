@@ -1,3 +1,8 @@
+/**
+ * @file Polls for the content script's extension runtime being invalidated
+ * (reload/update/removal) and notifies once, since no event announces it.
+ */
+
 import browser from '@/shared/browser';
 
 /**

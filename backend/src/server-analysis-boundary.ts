@@ -1,3 +1,9 @@
+/**
+ * @file Selects the immutable public-upload or private-legacy parse/serialize
+ * contract for a caption source, so request parsing and response
+ * serialization can never mix contracts within a process.
+ */
+
 import {
     serverAnalysisRequestSchema,
     serverAnalysisResponseEmissionSchema,
@@ -32,7 +38,10 @@ export type BackendServerAnalysisResponse = | ServerAnalysisResponse
 /**
  * Boundary parsing intentionally omits validation details from HTTP diagnostics.
  */
-export type BackendServerAnalysisRequestParseResult = | Readonly<{ success: true; output: BackendServerAnalysisRequest }>
+export type BackendServerAnalysisRequestParseResult = | Readonly<{
+    success: true;
+    output: BackendServerAnalysisRequest;
+}>
     | Readonly<{ success: false }>;
 
 /**
@@ -50,7 +59,10 @@ const PUBLIC_UPLOAD_CONTRACT: BackendServerAnalysisContract = Object.freeze({
             ? { success: true, output: parsed.output }
             : { success: false };
     },
-    serializeResponse: (raw: unknown): BackendServerAnalysisResponse => v.parse(serverAnalysisResponseEmissionSchema, raw),
+    serializeResponse: (raw: unknown): BackendServerAnalysisResponse => v.parse(
+        serverAnalysisResponseEmissionSchema,
+        raw,
+    ),
 });
 
 const PRIVATE_LEGACY_CONTRACT: BackendServerAnalysisContract = Object.freeze({
@@ -60,7 +72,10 @@ const PRIVATE_LEGACY_CONTRACT: BackendServerAnalysisContract = Object.freeze({
             ? { success: true, output: parsed.output }
             : { success: false };
     },
-    serializeResponse: (raw: unknown): BackendServerAnalysisResponse => v.parse(legacyServerAnalysisResponseSchema, raw),
+    serializeResponse: (raw: unknown): BackendServerAnalysisResponse => v.parse(
+        legacyServerAnalysisResponseSchema,
+        raw,
+    ),
 });
 
 const CONTRACT_BY_CAPTION_SOURCE: Readonly<

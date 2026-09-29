@@ -1,3 +1,8 @@
+/**
+ * @file Valibot schema for validating the promo-detection JSON returned by
+ * the OpenRouter/LLM promo detector before it is trusted downstream.
+ */
+
 import * as v from 'valibot';
 
 const confidenceSchema = v.picklist(['low', 'medium', 'high'] as const);

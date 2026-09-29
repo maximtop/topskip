@@ -11,10 +11,10 @@ import {
 import { DebugLog } from '@/background/debug-log/debug-log';
 import {
     DebugLogExport,
-    EnvironmentProbe,
     type DebugLogEnvironment,
 } from '@/background/debug-log/debug-log-export';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { EnvironmentProbe } from '@/background/debug-log/environment-probe';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
 import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
@@ -184,6 +184,15 @@ const ENV: DebugLogEnvironment = {
 };
 
 /**
+ * Sender for the trusted content tab.
+ *
+ * @returns Message sender as Chrome would populate it.
+ */
+function contentSender(): ReturnType<typeof makeContentSender> {
+    return makeContentSender({ tabId: TAB_ID, videoId: VIDEO_ID });
+}
+
+/**
  * Hydrates store and registry, turns the switch on, opens the facade and
  * makes the content tab known (non-incognito) so its events are kept.
  *
@@ -207,15 +216,6 @@ async function exportBundle(): Promise<string> {
     await DebugLogStore.flush();
     const snapshot = await DebugLogStore.readSnapshot();
     return DebugLogExport.buildBundle(snapshot, ENV, NOW_MS);
-}
-
-/**
- * Sender for the trusted content tab.
- *
- * @returns Message sender as Chrome would populate it.
- */
-function contentSender(): ReturnType<typeof makeContentSender> {
-    return makeContentSender({ tabId: TAB_ID, videoId: VIDEO_ID });
 }
 
 /**
@@ -249,6 +249,36 @@ function captionsPayload(): Parameters<typeof PromoAnalysis.onCaptionsReady>[1] 
         languageCode: 'en',
         segments: [{ text: SENTINEL.CaptionBody, startSec: 0, durationSec: 2 }],
     };
+}
+
+/**
+ * Routes one ISOLATED `capture-failed` stage through the same mapping and
+ * append path the runtime uses.
+ *
+ * @param details - Structured stage details, including free-form inputs.
+ */
+function appendCaptureFailure(details: Record<string, unknown>): void {
+    const mapped = CaptureDiagnostics.toDebugLogEvent('capture-failed', details);
+    expect(mapped).not.toBeNull();
+    if (mapped === null) {
+        return;
+    }
+    DebugLog.appendFromContent(
+        TAB_ID,
+        {
+            events: [
+                {
+                    event: mapped.event,
+                    ageMs: 0,
+                    video: VIDEO_ID,
+                    // The mapping only ever emits bounded scalars, so the
+                    // wire schema's stricter field type is already satisfied.
+                    fields: mapped.fields as DebugLogAppendPayload['events'][number]['fields'],
+                },
+            ],
+        },
+        NOW_MS,
+    );
 }
 
 /**
@@ -307,36 +337,6 @@ async function driveAllEmitters(): Promise<void> {
         cookie: SENTINEL.Cookie,
         token: SENTINEL.InstallToken,
     });
-}
-
-/**
- * Routes one ISOLATED `capture-failed` stage through the same mapping and
- * append path the runtime uses.
- *
- * @param details - Structured stage details, including free-form inputs.
- */
-function appendCaptureFailure(details: Record<string, unknown>): void {
-    const mapped = CaptureDiagnostics.toDebugLogEvent('capture-failed', details);
-    expect(mapped).not.toBeNull();
-    if (mapped === null) {
-        return;
-    }
-    DebugLog.appendFromContent(
-        TAB_ID,
-        {
-            events: [
-                {
-                    event: mapped.event,
-                    ageMs: 0,
-                    video: VIDEO_ID,
-                    // The mapping only ever emits bounded scalars, so the
-                    // wire schema's stricter field type is already satisfied.
-                    fields: mapped.fields as DebugLogAppendPayload['events'][number]['fields'],
-                },
-            ],
-        },
-        NOW_MS,
-    );
 }
 
 describe('sentinel injection (FR-046, SC-002)', () => {

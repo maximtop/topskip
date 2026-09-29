@@ -1,3 +1,8 @@
+/**
+ * @file Persists the public server compatibility config and its refresh
+ * attempt timestamp in background-owned storage.
+ */
+
 import {
     serverConfigResponseSchema,
     type ServerConfigResponse,

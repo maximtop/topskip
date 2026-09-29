@@ -1,3 +1,7 @@
+/**
+ * @file Formats promo block time ranges for popup/options display.
+ */
+
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
 
 import { SECONDS_PER_HOUR, SECONDS_PER_MINUTE } from '@/shared/constants';

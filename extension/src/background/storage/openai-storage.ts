@@ -1,3 +1,8 @@
+/**
+ * @file Persists and validates OpenAI connection settings in
+ * `browser.storage.local`.
+ */
+
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
@@ -8,7 +13,14 @@ import { STORAGE_KEY_OPENAI } from '@/shared/constants';
  * provider credentials.
  */
 export interface OpenAiConfig {
+    /**
+     * Raw OpenAI API key, or empty string when not configured.
+     */
     apiKey: string;
+
+    /**
+     * Selected OpenAI model id, or empty string when not configured.
+     */
     model: string;
 }
 

@@ -1,3 +1,9 @@
+/**
+ * @file In-memory local backend job scheduler for cold-miss server analysis. Owns
+ * job dedupe/join, bounded concurrent extraction and model-analysis work, terminal
+ * fixture completion for tests, and persisting finished jobs into artifact history.
+ */
+
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -110,15 +116,54 @@ export type ExactTranscriptIdentity = ServerTranscriptIdentity;
  * Upload jobs receive the already-validated artifact and never enter extraction.
  */
 export interface UploadAnalysisJobStartInput {
+    /**
+     * Discriminant selecting the upload job path.
+     */
     source: 'extension_upload';
+
+    /**
+     * Authoritative identity computed by the caller for the uploaded transcript.
+     */
     identity: ExactTranscriptIdentity;
+
+    /**
+     * Already-validated transcript artifact supplied by the extension upload.
+     */
     transcriptArtifact: TranscriptArtifact;
+
+    /**
+     * Hash identifying the requesting installation, used for job ownership checks.
+     */
     installationHash: string;
+
+    /**
+     * Hash of the requester's IP address, retained for abuse diagnostics only.
+     */
     ipHash: string;
+
+    /**
+     * Deterministic creation timestamp, in epoch milliseconds.
+     */
     nowMs: number;
+
+    /**
+     * Extension version reported by the caller, when available.
+     */
     extensionVersion?: string;
+
+    /**
+     * Video duration in seconds, when known ahead of analysis.
+     */
     durationSec?: number;
+
+    /**
+     * Overrides the default model analysis adapter; used by tests.
+     */
     analysisAdapter?: BackendLlmAnalysisAdapter;
+
+    /**
+     * Caller-supplied correlation id echoed into operational logs.
+     */
     requestId?: string;
 }
 
@@ -126,16 +171,59 @@ export interface UploadAnalysisJobStartInput {
  * Explicit legacy jobs retain metadata-owned extraction for isolated operators.
  */
 export interface LegacyAnalysisJobStartInput {
+    /**
+     * Discriminant selecting the legacy yt-dlp extraction job path.
+     */
     source: 'legacy_yt_dlp';
+
+    /**
+     * YouTube video id the legacy job extracts and analyzes.
+     */
     videoId: string;
+
+    /**
+     * Algorithm version the client requested, used for dedupe and cache keys.
+     */
     algorithmVersion: string;
+
+    /**
+     * Hash identifying the requesting installation, used for job ownership checks.
+     */
     installationHash: string;
+
+    /**
+     * Hash of the requester's IP address, retained for abuse diagnostics only.
+     */
     ipHash: string;
+
+    /**
+     * Deterministic creation timestamp, in epoch milliseconds.
+     */
     nowMs: number;
+
+    /**
+     * Extension version reported by the caller, when available.
+     */
     extensionVersion?: string;
+
+    /**
+     * Video duration in seconds, when known ahead of extraction.
+     */
     durationSec?: number;
+
+    /**
+     * Overrides the default model analysis adapter; used by tests.
+     */
     analysisAdapter?: BackendLlmAnalysisAdapter;
+
+    /**
+     * Ordered extraction strategies to try; defaults to the pipeline's own order when absent.
+     */
     extractionStrategies?: readonly SubtitleExtractionStrategy[];
+
+    /**
+     * Caller-supplied correlation id echoed into operational logs.
+     */
     requestId?: string;
 }
 
@@ -164,12 +252,39 @@ export type AnalysisJobFindInput = | {
  * Stable test-only diagnostics for proving extraction side effects.
  */
 interface AnalysisJobDiagnostics {
+    /**
+     * Current cold-work stage of the job.
+     */
     stage: AnalysisJobStage;
+
+    /**
+     * Every extraction attempt made so far, in the order they ran.
+     */
     extractionAttempts: SubtitleExtractionAttempt[];
+
+    /**
+     * Transcript artifact chosen for analysis, or `null` before one is selected.
+     */
     selectedTranscriptArtifact: TranscriptArtifact | null;
+
+    /**
+     * Completed model analysis run, or `null` before analysis finishes.
+     */
     analysisRun: AnalysisRunArtifact | null;
+
+    /**
+     * Terminal completion timestamp in epoch milliseconds, or `null` while still in progress.
+     */
     completedAtMs: number | null;
+
+    /**
+     * Status of the terminal response, or `null` while still in progress.
+     */
     terminalStatus: BackendAnalysisTerminalResponse['status'] | null;
+
+    /**
+     * Number of additional requests that joined this job instead of starting a new one.
+     */
     joinedRequestCount: number;
 }
 
@@ -177,29 +292,124 @@ interface AnalysisJobDiagnostics {
  * Internal in-memory record keyed by video id and algorithm version.
  */
 interface AnalysisJobRecord {
+    /**
+     * Which job path created this record; upload jobs never extract, legacy jobs always do.
+     */
     source: 'extension_upload' | 'legacy_yt_dlp';
+
+    /**
+     * Authoritative upload identity, or `null` for legacy jobs that have none.
+     */
     identity: ExactTranscriptIdentity | null;
+
+    /**
+     * Deterministic local job id returned to callers for polling.
+     */
     jobId: string;
+
+    /**
+     * Dedupe map key derived from the job's video and algorithm version.
+     */
     jobKey: string;
+
+    /**
+     * YouTube video id under analysis.
+     */
     videoId: string;
+
+    /**
+     * Algorithm version requested for this job.
+     */
     algorithmVersion: string;
+
+    /**
+     * Extension version reported by the job's creator, when available.
+     */
     extensionVersion: string | undefined;
+
+    /**
+     * Video duration in seconds, filled in once extraction or the upload artifact provides it.
+     */
     durationSec: number | undefined;
+
+    /**
+     * Seconds the client should wait before polling again.
+     */
     pollAfterSec: number;
+
+    /**
+     * Job creation timestamp, in epoch milliseconds.
+     */
     createdAtMs: number;
+
+    /**
+     * Terminal completion timestamp in epoch milliseconds, or `null` while still in progress.
+     */
     completedAtMs: number | null;
+
+    /**
+     * Number of times this job has been retried; reserved for future retry support.
+     */
     retryCount: number;
+
+    /**
+     * Number of additional requests that joined this job instead of starting a new one.
+     */
     joinedRequestCount: number;
+
+    /**
+     * Current cold-work stage of the job.
+     */
     stage: AnalysisJobStage;
+
+    /**
+     * Every extraction attempt made so far, in the order they ran.
+     */
     extractionAttempts: SubtitleExtractionAttempt[];
+
+    /**
+     * Transcript artifact chosen for analysis, or `null` before one is selected.
+     */
     selectedTranscriptArtifact: TranscriptArtifact | null;
+
+    /**
+     * Completed model analysis run, or `null` before analysis finishes.
+     */
     analysisRun: AnalysisRunArtifact | null;
+
+    /**
+     * Overrides the default model analysis adapter; used by tests.
+     */
     analysisAdapter: BackendLlmAnalysisAdapter | undefined;
+
+    /**
+     * Ordered extraction strategies to try; `undefined` uses the pipeline's own order.
+     */
     extractionStrategies: readonly SubtitleExtractionStrategy[] | undefined;
+
+    /**
+     * Installation hashes of every request that has started or joined this job.
+     */
     ownerInstallationHashes: Set<string>;
+
+    /**
+     * Caller-supplied correlation id echoed into operational logs.
+     */
     requestId: string | undefined;
+
+    /**
+     * Processing envelope returned to clients while the job has not completed.
+     */
     processingResponse: BackendAnalysisProcessingResponse;
+
+    /**
+     * Terminal response once the job completes, or `null` while still in progress.
+     */
     terminalResponse: BackendAnalysisTerminalResponse | null;
+
+    /**
+     * Promise resolved once background extraction/analysis finishes; used by tests to wait.
+     */
     extractionPromise: Promise<void> | null;
 }
 
@@ -367,8 +577,8 @@ export class BackendAnalysisJobs {
      *
      * @param jobId - Deterministic local job id returned by `start`.
      * @param options - Optional deterministic clock used by tests.
-     * @param options.nowMs
-     * @param options.ownerInstallationHash
+     * @param options.nowMs - Unused; reserved for a future deterministic clock override.
+     * @param options.ownerInstallationHash - Installation hash to authorize against; defaults to the local dev hash.
      *
      * @returns Current job response, or `null` when unknown.
      */
@@ -402,9 +612,9 @@ export class BackendAnalysisJobs {
      * Moves a local job to a deterministic terminal fixture state.
      *
      * @param input - Job id, requested terminal state, and completion timestamp.
-     * @param input.jobId
-     * @param input.status
-     * @param input.nowMs
+     * @param input.jobId - Deterministic local job id returned by `start`.
+     * @param input.status - Terminal fixture state to move the job to.
+     * @param input.nowMs - Deterministic completion timestamp.
      *
      * @returns Terminal response, or `null` when the job id is unknown.
      */
@@ -503,22 +713,30 @@ export class BackendAnalysisJobs {
     /**
      * Routes uploads directly to analysis while legacy jobs alone may extract captions.
      *
-     * @param record - New in-memory job record to update.
+     * Looks the record up by id (instead of receiving it as a parameter) so its own
+     * stage/artifact mutations land on a local binding rather than a function
+     * parameter, matching the pattern `completeFixture` already uses.
+     *
+     * @param jobId - Deterministic local job id of the record to update.
      * @param nowMs - Deterministic extraction timestamp.
      *
      * @returns Completion after analysis or a terminal legacy extraction result.
      */
     private static async runJob(
-        record: AnalysisJobRecord,
+        jobId: string,
         nowMs: number,
     ): Promise<void> {
+        const record = BackendAnalysisJobs.jobsById.get(jobId);
+        if (record === undefined) {
+            return;
+        }
         try {
             if (record.terminalResponse !== null) {
                 return;
             }
             if (record.source === 'extension_upload') {
                 record.stage = ANALYSIS_JOB_STAGE.AwaitingAnalysis;
-                await BackendAnalysisJobs.runAnalysis(record, Date.now());
+                await BackendAnalysisJobs.runAnalysis(jobId, Date.now());
                 return;
             }
             record.stage = ANALYSIS_JOB_STAGE.Extracting;
@@ -545,7 +763,7 @@ export class BackendAnalysisJobs {
                 if (durationFailureCode !== null) {
                     record.selectedTranscriptArtifact = null;
                     BackendAnalysisJobs.completeUnavailable(
-                        record,
+                        jobId,
                         durationFailureCode,
                         nowMs,
                     );
@@ -570,12 +788,12 @@ export class BackendAnalysisJobs {
                 record.stage = ANALYSIS_JOB_STAGE.AwaitingAnalysis;
                 record.selectedTranscriptArtifact = extraction.artifact;
                 record.durationSec = extraction.artifact.videoDurationSec ?? record.durationSec;
-                await BackendAnalysisJobs.runAnalysis(record, Date.now());
+                await BackendAnalysisJobs.runAnalysis(jobId, Date.now());
                 return;
             }
 
             BackendAnalysisJobs.completeUnavailable(
-                record,
+                jobId,
                 extraction.code,
                 nowMs,
             );
@@ -588,7 +806,7 @@ export class BackendAnalysisJobs {
                 supportId: BackendAnalysisJobs.readTerminalSupportId(record),
             });
         } catch {
-            BackendAnalysisJobs.completeUnexpectedFailure(record, Date.now());
+            BackendAnalysisJobs.completeUnexpectedFailure(jobId, Date.now());
             BackendServerAnalysisLog.warn('job-failed', {
                 requestId: record.requestId,
                 videoId: record.videoId,
@@ -601,15 +819,25 @@ export class BackendAnalysisJobs {
     /**
      * Runs model analysis once for jobs that already selected a transcript.
      *
-     * @param record - In-memory job record to complete.
+     * Looks the record up by id (instead of receiving it as a parameter) so its own
+     * stage/result mutations land on a local binding rather than a function parameter.
+     *
+     * @param jobId - Deterministic local job id of the record to complete.
      * @param nowMs - Deterministic analysis timestamp.
      *
      * @returns Terminal worker response.
+     *
+     * @throws {Error} When the job record no longer exists, has no selected transcript,
+     * or the analysis worker did not return a result.
      */
     private static async runAnalysis(
-        record: AnalysisJobRecord,
+        jobId: string,
         nowMs: number,
     ): Promise<BackendAnalysisTerminalResponse> {
+        const record = BackendAnalysisJobs.jobsById.get(jobId);
+        if (record === undefined) {
+            throw new Error('Cannot analyze a job that no longer exists.');
+        }
         if (record.terminalResponse !== null) {
             return record.terminalResponse;
         }
@@ -673,7 +901,7 @@ export class BackendAnalysisJobs {
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         if (record.terminalResponse.status === 'error') {
             BackendAnalysisJobs.attachSupportIdSafely(
-                record,
+                jobId,
                 record.terminalResponse.error.code,
                 result.analysisRun.completedAtMs,
             );
@@ -801,14 +1029,18 @@ export class BackendAnalysisJobs {
     /**
      * Converts unexpected detached-worker failures into terminal API state.
      *
-     * @param record - Job whose background work failed.
+     * Looks the record up by id (instead of receiving it as a parameter) so its own
+     * stage/result mutations land on a local binding rather than a function parameter.
+     *
+     * @param jobId - Deterministic local job id of the job whose background work failed.
      * @param completedAtMs - Failure timestamp.
      */
     private static completeUnexpectedFailure(
-        record: AnalysisJobRecord,
+        jobId: string,
         completedAtMs: number,
     ): void {
-        if (record.terminalResponse !== null) {
+        const record = BackendAnalysisJobs.jobsById.get(jobId);
+        if (record === undefined || record.terminalResponse !== null) {
             return;
         }
 
@@ -819,7 +1051,7 @@ export class BackendAnalysisJobs {
             SERVER_ANALYSIS_ERROR_CODE.InternalError,
         );
         BackendAnalysisJobs.attachSupportIdSafely(
-            record,
+            jobId,
             SERVER_ANALYSIS_ERROR_CODE.InternalError,
             completedAtMs,
         );
@@ -833,14 +1065,12 @@ export class BackendAnalysisJobs {
      */
     private static pruneTerminalJobs(nowMs: number): void {
         for (const [jobId, record] of BackendAnalysisJobs.jobsById) {
-            if (
-                record.completedAtMs === null
-                || nowMs - record.completedAtMs < TERMINAL_JOB_RETENTION_MS
-            ) {
-                continue;
+            const isExpired = record.completedAtMs !== null
+                && nowMs - record.completedAtMs >= TERMINAL_JOB_RETENTION_MS;
+            if (isExpired) {
+                BackendAnalysisJobs.jobsById.delete(jobId);
+                BackendAnalysisJobs.jobIdsByKey.delete(record.jobKey);
             }
-            BackendAnalysisJobs.jobsById.delete(jobId);
-            BackendAnalysisJobs.jobIdsByKey.delete(record.jobKey);
         }
     }
 
@@ -905,6 +1135,8 @@ export class BackendAnalysisJobs {
      * @param artifact - Validated uploaded transcript candidate.
      *
      * @returns Parsed canonical upload artifact.
+     *
+     * @throws {Error} When the parsed artifact's identity does not match the computed identity.
      */
     private static validateUploadArtifact(
         identity: ExactTranscriptIdentity,
@@ -929,13 +1161,15 @@ export class BackendAnalysisJobs {
      * Builds the mode-specific processing envelope from stored authoritative state.
      *
      * @param input - Stored source, identity, and opaque job id.
-     * @param input.source
-     * @param input.identity
-     * @param input.videoId
-     * @param input.algorithmVersion
-     * @param input.jobId
+     * @param input.source - Job path that determines which contract to validate against.
+     * @param input.identity - Authoritative upload identity, or `null` for legacy jobs.
+     * @param input.videoId - YouTube video id under analysis.
+     * @param input.algorithmVersion - Algorithm version requested for this job.
+     * @param input.jobId - Deterministic local job id returned by `start`.
      *
      * @returns Strict processing response for the selected process mode.
+     *
+     * @throws {Error} When an upload job is missing its authoritative identity.
      */
     private static buildProcessingResponse(input: {
         source: AnalysisJobRecord['source'];
@@ -971,6 +1205,9 @@ export class BackendAnalysisJobs {
      * @param response - Validated worker result containing only safe terminal data.
      *
      * @returns Strict mode-specific terminal response.
+     *
+     * @throws {Error} When an upload job is missing its authoritative identity, or the worker
+     * response status is outside the terminal statuses the worker contract allows.
      */
     private static mapWorkerTerminalResponse(
         record: AnalysisJobRecord,
@@ -984,6 +1221,8 @@ export class BackendAnalysisJobs {
                     return v.parse(legacyNoPromoResponseSchema, response);
                 case 'error':
                     return v.parse(legacyTerminalErrorResponseSchema, response);
+                default:
+                    throw new Error('Unsupported legacy worker terminal status.');
             }
         }
         const { identity } = record;
@@ -1013,6 +1252,8 @@ export class BackendAnalysisJobs {
                     ...identity,
                     error: response.error,
                 });
+            default:
+                throw new Error('Unsupported worker terminal status.');
         }
     }
 
@@ -1023,6 +1264,8 @@ export class BackendAnalysisJobs {
      * @param code - Stable safe terminal error code.
      *
      * @returns Strict mode-specific error response.
+     *
+     * @throws {Error} When an upload job is missing its authoritative identity.
      */
     private static buildTerminalErrorResponse(
         record: AnalysisJobRecord,
@@ -1053,6 +1296,8 @@ export class BackendAnalysisJobs {
      * @param record - Upload job record expected to own complete identity.
      *
      * @returns Stored exact transcript identity.
+     *
+     * @throws {Error} When the job record has no stored identity.
      */
     private static requireUploadIdentity(
         record: AnalysisJobRecord,
@@ -1068,9 +1313,11 @@ export class BackendAnalysisJobs {
      *
      * @param record - Stored job record to complete.
      * @param input - Requested terminal fixture state.
-     * @param input.status
+     * @param input.status - Terminal fixture state to build a response for.
      *
      * @returns Validated terminal response.
+     *
+     * @throws {Error} When the requested fixture status is not a supported terminal state.
      */
     private static buildFixtureTerminalResponse(
         record: AnalysisJobRecord,
@@ -1163,6 +1410,8 @@ export class BackendAnalysisJobs {
                         code: SERVER_ANALYSIS_ERROR_CODE.InternalError,
                     },
                 });
+            default:
+                throw new Error('Unsupported fixture completion status.');
         }
     }
 
@@ -1194,7 +1443,7 @@ export class BackendAnalysisJobs {
         return new Promise((resolve) => {
             const start = (): void => {
                 BackendAnalysisJobs.activeJobCount += 1;
-                void BackendAnalysisJobs.runJob(record, nowMs).finally(() => {
+                void BackendAnalysisJobs.runJob(record.jobId, nowMs).finally(() => {
                     BackendAnalysisJobs.activeJobCount = Math.max(
                         0,
                         BackendAnalysisJobs.activeJobCount - 1,
@@ -1240,15 +1489,22 @@ export class BackendAnalysisJobs {
     /**
      * Publishes terminal unavailable state before attempting optional durable writes.
      *
-     * @param record - Job whose extraction path cannot continue.
+     * Looks the record up by id (instead of receiving it as a parameter) so its own
+     * stage/result mutations land on a local binding rather than a function parameter.
+     *
+     * @param jobId - Deterministic local job id of the job whose extraction path cannot continue.
      * @param code - Stable public unavailable code.
      * @param completedAtMs - Failure timestamp.
      */
     private static completeUnavailable(
-        record: AnalysisJobRecord,
+        jobId: string,
         code: ServerAnalysisFailureCode,
         completedAtMs: number,
     ): void {
+        const record = BackendAnalysisJobs.jobsById.get(jobId);
+        if (record === undefined) {
+            return;
+        }
         record.stage = ANALYSIS_JOB_STAGE.Complete;
         record.selectedTranscriptArtifact = null;
         record.completedAtMs = completedAtMs;
@@ -1268,7 +1524,7 @@ export class BackendAnalysisJobs {
             code === SERVER_ANALYSIS_UNAVAILABLE_REASON.CaptionExtractionFailed
         ) {
             BackendAnalysisJobs.attachSupportIdSafely(
-                record,
+                jobId,
                 code,
                 completedAtMs,
             );
@@ -1279,15 +1535,23 @@ export class BackendAnalysisJobs {
     /**
      * Adds support correlation only after the terminal response is observable.
      *
-     * @param record - Already-completed job response to enrich.
+     * Looks the record up by id (instead of receiving it as a parameter) so the
+     * enriched terminal response is assigned to a local binding rather than a
+     * function parameter.
+     *
+     * @param jobId - Deterministic local job id of the already-completed job to enrich.
      * @param code - Stable public failure code.
      * @param nowMs - Failure timestamp.
      */
     private static attachSupportIdSafely(
-        record: AnalysisJobRecord,
+        jobId: string,
         code: string,
         nowMs: number,
     ): void {
+        const record = BackendAnalysisJobs.jobsById.get(jobId);
+        if (record === undefined) {
+            return;
+        }
         const { terminalResponse } = record;
         if (
             terminalResponse === null

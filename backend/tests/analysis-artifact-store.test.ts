@@ -63,6 +63,23 @@ function buildUploadedTranscriptArtifact(
     return artifact;
 }
 
+/**
+ * Keeps per-test durable repository setup independent from the workspace data path.
+ */
+class AnalysisArtifactStoreTestHarness {
+    /**
+     * Configures a unique local repository file for one persistence test.
+     *
+     * @returns Directory and absolute path of the configured artifact file.
+     */
+    static configureStore(): { directory: string; storagePath: string } {
+        const directory = mkdtempSync(join(tmpdir(), 'topskip-artifacts-'));
+        const storagePath = join(directory, 'analysis-artifacts.json');
+        AnalysisArtifactStore.setStoragePathForTests(storagePath);
+        return { directory, storagePath };
+    }
+}
+
 describe('AnalysisArtifactStore', () => {
     let persistenceDirectory: string | null = null;
 
@@ -596,20 +613,3 @@ describe('AnalysisArtifactStore', () => {
         expect(existsSync(persistence.storagePath)).toBe(true);
     });
 });
-
-/**
- * Keeps per-test durable repository setup independent from the workspace data path.
- */
-class AnalysisArtifactStoreTestHarness {
-    /**
-     * Configures a unique local repository file for one persistence test.
-     *
-     * @returns Directory and absolute path of the configured artifact file.
-     */
-    static configureStore(): { directory: string; storagePath: string } {
-        const directory = mkdtempSync(join(tmpdir(), 'topskip-artifacts-'));
-        const storagePath = join(directory, 'analysis-artifacts.json');
-        AnalysisArtifactStore.setStoragePathForTests(storagePath);
-        return { directory, storagePath };
-    }
-}

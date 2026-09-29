@@ -1,3 +1,8 @@
+/**
+ * @file Wire contract (valibot schemas and request/response types) for the
+ * public server promo-analysis API, shared by the backend and the extension.
+ */
+
 import * as v from 'valibot';
 
 import {
@@ -761,13 +766,16 @@ export function isValidYouTubeVideoId(videoId: string): boolean {
  * Builds the official request from one canonicalized timed-caption payload.
  *
  * @param input - Current video metadata and captured caption payload.
- * @param input.videoId
- * @param input.durationSec
- * @param input.extensionVersion
- * @param input.languageCode
- * @param input.segments
+ * @param input.videoId YouTube watch-page video identifier.
+ * @param input.durationSec Reported video duration in seconds, when known.
+ * @param input.extensionVersion Installed extension version making the request.
+ * @param input.languageCode Untrusted caption language spelling to canonicalize.
+ * @param input.segments Untrusted, order-sensitive timed caption cues to canonicalize.
  *
  * @returns Strict public request without client hash or algorithm fields.
+ *
+ * @throws {Error} When the caption transcript fails canonicalization (too
+ * many segments, transcript too large, video too long, or invalid input).
  */
 export function buildServerAnalysisRequest(input: {
     videoId: string;

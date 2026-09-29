@@ -1,3 +1,9 @@
+/**
+ * @file Backend orchestration that runs configured subtitle extraction
+ * strategies in order until one yields a valid transcript artifact, mapping
+ * failures into the public unavailable-reason vocabulary.
+ */
+
 import { SERVER_ANALYSIS_UNAVAILABLE_REASON } from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
@@ -35,10 +41,10 @@ export class BackendSubtitleExtractionPipeline {
      * Runs configured strategies until one produces a valid transcript artifact.
      *
      * @param input - Video/version key, deterministic clock, and optional strategy list.
-     * @param input.videoId
-     * @param input.algorithmVersion
-     * @param input.nowMs
-     * @param input.strategies
+     * @param input.videoId - YouTube video id the transcript is extracted for.
+     * @param input.algorithmVersion - Server analysis algorithm version stamped onto the artifact.
+     * @param input.nowMs - Deterministic clock value used for every attempt timestamp.
+     * @param input.strategies - Override for the default strategy registry; used by tests.
      *
      * @returns Selected transcript artifact or terminal unavailable diagnostics.
      */
@@ -96,9 +102,9 @@ export class BackendSubtitleExtractionPipeline {
      *
      * @param strategy - Extraction strategy to execute.
      * @param input - Video/version key and deterministic clock.
-     * @param input.videoId
-     * @param input.algorithmVersion
-     * @param input.nowMs
+     * @param input.videoId - YouTube video id the transcript is extracted for.
+     * @param input.algorithmVersion - Server analysis algorithm version stamped onto the artifact.
+     * @param input.nowMs - Deterministic clock value used for the attempt timestamp.
      *
      * @returns Validated attempt data, plus selected artifact when available.
      */
@@ -279,10 +285,10 @@ export class BackendSubtitleExtractionPipeline {
      * Builds a failed attempt with only stable diagnostic codes.
      *
      * @param input - Strategy name, timestamp, and safe failure code.
-     * @param input.strategy
-     * @param input.nowMs
-     * @param input.failureReason
-     * @param input.diagnosticCode
+     * @param input.strategy - Strategy id stored on the attempt.
+     * @param input.nowMs - Deterministic attempt timestamp.
+     * @param input.failureReason - Stable, non-sensitive failure classification.
+     * @param input.diagnosticCode - Stable diagnostic code stored alongside the failure reason.
      *
      * @returns Validated extraction attempt.
      */

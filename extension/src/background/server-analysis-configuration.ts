@@ -1,3 +1,8 @@
+/**
+ * @file Negotiates and caches server-owned analysis compatibility config,
+ * refreshing at most once per hour and decoupled from the extension release.
+ */
+
 import { ServerAnalysisClient } from '@/background/server-analysis-client';
 import { ServerConfigStorage } from '@/background/storage/server-config-storage';
 import { ServerResultCacheStorage } from '@/background/storage/server-result-cache';

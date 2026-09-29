@@ -1,3 +1,9 @@
+/**
+ * @file Popup root component: derives the status view model from
+ * preferences and detection state, polls/reconciles detection status over
+ * runtime messaging, and renders the popup UI.
+ */
+
 import {
     ActionIcon,
     Badge,
@@ -19,6 +25,7 @@ import { observer } from 'mobx-react-lite';
 import {
 
     type ReactElement,
+    type ReactNode,
     useEffect,
     useMemo,
     useState,
@@ -237,17 +244,66 @@ type PopupTone = | 'brand'
  * Fully resolved display state consumed by the popup component.
  */
 interface PopupStatusViewModel {
+    /**
+     * Color tone driving the status card's surface, icon, and title colors.
+     */
     tone: PopupTone;
+
+    /**
+     * Short localized text for the status badge.
+     */
     badgeLabel: string;
+
+    /**
+     * Mantine color name for the status badge.
+     */
     badgeColor: string;
+
+    /**
+     * Localized status card title.
+     */
     title: string;
+
+    /**
+     * Localized status card description.
+     */
     description: string;
+
+    /**
+     * Localized label for the activity indicator (active/paused/unavailable).
+     */
     activityLabel: string;
+
+    /**
+     * Localized headline shown in the expanded status detail.
+     */
     statusHeadline: string;
+
+    /**
+     * Localized body text for the expanded status detail, or `null` when
+     * there is nothing more to say.
+     */
     statusBody: string | null;
+
+    /**
+     * Localized label for the settings/open-options action.
+     */
     settingsLabel: string;
+
+    /**
+     * Localized name of the active provider shown in the status detail.
+     */
     providerLabel: string;
+
+    /**
+     * Prominence of the optional issue-report button, when the failure is
+     * reportable.
+     */
     reportAction?: ServerFailureReportAction;
+
+    /**
+     * Localized label for the issue-report button, when reportable.
+     */
     reportLabel?: string;
 }
 
@@ -265,16 +321,61 @@ type PopupViewModel = PopupStatusViewModel & {
  * `debugLoggingEnabled` is `null` while the background status is unknown.
  */
 interface PopupViewModelArgs {
+    /**
+     * Whether promo detection is turned on in preferences.
+     */
     enabled: boolean;
+
+    /**
+     * Currently selected detection route (Server or Private BYOK).
+     */
     analysisMode: AnalysisMode;
+
+    /**
+     * Latest detection snapshot for the active tab, or `null` when unknown.
+     */
     detectionState: PromoDetectionStatePayload | null;
+
+    /**
+     * Safe diagnostic from the last failed preferences read, when one failed.
+     */
     prefsError: string | null;
+
+    /**
+     * Safe diagnostic from the last failed detection status read, when one
+     * failed.
+     */
     detectionError: string | null;
+
+    /**
+     * Whether the shown detection snapshot is stale (transport unreachable
+     * since the last successful read).
+     */
     detectionStale: boolean;
+
+    /**
+     * Active provider identifier.
+     */
     providerId: string;
+
+    /**
+     * Localized display name of the active provider.
+     */
     providerDisplayName: string;
+
+    /**
+     * Localized display name of the active model.
+     */
     modelDisplayName: string;
+
+    /**
+     * Chrome built-in model availability, or `null` when not applicable.
+     */
     chromeModelAvailability: ProviderAvailabilityMessage | null;
+
+    /**
+     * Whether the Debug logging switch is on, or `null` while unknown.
+     */
     debugLoggingEnabled: boolean | null;
 }
 
@@ -282,10 +383,13 @@ interface PopupViewModelArgs {
  * Builds localized public-server failure copy from stable codes only.
  *
  * @param input - Typed failure state and provider label used by the popup.
- * @param input.state
- * @param input.providerLabel
+ * @param input.state - Detection state carrying the server failure to render.
+ * @param input.providerLabel - Localized name of the active provider.
  *
  * @returns Safe popup view model without raw backend text.
+ *
+ * @throws {Error} When `input.state` has no `serverFailure` (caller must
+ * check for one first).
  */
 function buildServerFailureViewModel(input: {
     state: PromoDetectionStatePayload;
@@ -434,6 +538,9 @@ function buildServerFailureViewModel(input: {
  * @param args - Current prefs and detection state.
  *
  * @returns The resolved view-model.
+ *
+ * @throws {Error} When `args.detectionState.status` is not one of the known
+ * `PromoDetectionStatus` values (never happens for a validated state).
  */
 function buildPopupStatusViewModel(
     args: PopupViewModelArgs,
@@ -485,7 +592,7 @@ function buildPopupStatusViewModel(
             activityLabel: ACTIVITY_LABEL_PAUSED,
             statusHeadline: 'Automatic sponsor skipping is currently off.',
             statusBody:
-                'You can still open settings and ' + 'review your model setup.',
+                'You can still open settings and review your model setup.',
             settingsLabel: 'Open settings',
             providerLabel,
         };
@@ -830,7 +937,7 @@ function buildPopupStatusViewModel(
                 badgeColor: 'error',
                 title: 'Detection error',
                 description:
-                    'TopSkip could not analyze the ' + 'current transcript.',
+                    'TopSkip could not analyze the current transcript.',
                 activityLabel: getUnavailableActivityLabel(),
                 statusHeadline:
                     detectionState.error ?? 'Detection failed for this tab.',
@@ -840,6 +947,8 @@ function buildPopupStatusViewModel(
                 settingsLabel: 'Open settings',
                 providerLabel,
             };
+        default:
+            throw new Error('Unhandled detection status.');
     }
 }
 
@@ -877,8 +986,8 @@ export function buildPopupViewModel(args: PopupViewModelArgs): PopupViewModel {
  * Renders a visual timeline bar of detected promo blocks.
  *
  * @param props - Contains the blocks and authoritative video duration.
- * @param props.blocks
- * @param props.durationSec
+ * @param props.blocks - Detected promo blocks to plot on the timeline.
+ * @param props.durationSec - Authoritative video duration in seconds.
  *
  * @returns The timeline element, or null without safe scale metadata.
  */
@@ -965,10 +1074,33 @@ function PromoTimeline({
     );
 }
 
+/**
+ * Picks the glyph or icon shown inside the status card's round badge.
+ *
+ * @param tone - Resolved popup status tone.
+ * @param iconTextColor - Foreground color for the check icon.
+ *
+ * @returns Glyph text for danger/paused/warning tones, else the check icon.
+ */
+function renderStatusIconGlyph(
+    tone: PopupTone,
+    iconTextColor: string,
+): ReactNode {
+    if (tone === 'danger') {
+        return '!';
+    }
+    if (tone === 'paused' || tone === 'warning') {
+        return 'i';
+    }
+    return <CheckIcon size={12} color={iconTextColor} />;
+}
+
 export const PopupApp = observer(() => {
     const store = useMemo(() => new PreferencesStore(), []);
     const [prefsError, setPrefsError] = useState<string | null>(null);
-    const [detectionTransport, setDetectionTransport] = useState<DetectionTransportState>(INITIAL_DETECTION_TRANSPORT_STATE);
+    const [detectionTransport, setDetectionTransport] = useState<DetectionTransportState>(
+        INITIAL_DETECTION_TRANSPORT_STATE,
+    );
     // Last switch state read from the background; left untouched on failed
     // reads so a stale popup keeps the last known value.
     const [debugLoggingEnabled, setDebugLoggingEnabled] = useState<
@@ -1031,6 +1163,10 @@ export const PopupApp = observer(() => {
             }
         };
 
+        // The refresh steps call each other in a cycle: schedule → refresh → run → schedule.
+        let runDetectionRefresh: () => Promise<void>;
+        let refreshDetection: () => void;
+
         const scheduleRefresh = (delayMs: number): void => {
             clearRefreshTimer();
             refreshTimerId = window.setTimeout(() => {
@@ -1058,7 +1194,7 @@ export const PopupApp = observer(() => {
             }
         };
 
-        const runDetectionRefresh = async (): Promise<void> => {
+        runDetectionRefresh = async (): Promise<void> => {
             const startedPushRevision = pushRevision;
             try {
                 const res = await requestDetectionStatusWithTimeout();
@@ -1103,7 +1239,7 @@ export const PopupApp = observer(() => {
             }
         };
 
-        const refreshDetection = (): void => {
+        refreshDetection = (): void => {
             if (!detectionRefreshGuard.requestRefresh()) {
                 return;
             }
@@ -1274,18 +1410,7 @@ export const PopupApp = observer(() => {
                                     fontWeight: 900,
                                 }}
                             >
-                                {view.tone === 'danger' ? (
-                                    '!'
-                                ) : view.tone === 'paused' ? (
-                                    'i'
-                                ) : view.tone === 'warning' ? (
-                                    'i'
-                                ) : (
-                                    <CheckIcon
-                                        size={12}
-                                        color={toneStyle.iconText}
-                                    />
-                                )}
+                                {renderStatusIconGlyph(view.tone, toneStyle.iconText)}
                             </Box>
                             <Stack gap={3} style={{ minWidth: 0 }}>
                                 <Text size="sm" fw={700} c={toneStyle.title}>

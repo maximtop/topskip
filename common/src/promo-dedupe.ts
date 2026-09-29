@@ -1,3 +1,9 @@
+/**
+ * @file Sorts and merges overlapping or nearby promo blocks into a single
+ * canonical, non-overlapping timeline, shared by the server and BYOK
+ * detection paths.
+ */
+
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
 
 import type { PromoBlock, PromoConfidence } from '@topskip/common/promo-types';
@@ -52,19 +58,19 @@ export function sortAndDedupePromoBlocks(blocks: PromoBlock[]): PromoBlock[] {
     for (const b of sorted) {
         if (out.length === 0) {
             out.push({ ...b });
-            continue;
-        }
-        const last = out.at(-1);
-        if (last === undefined) {
-            out.push({ ...b });
-            continue;
-        }
-        const lastEnd = impliedEnd(last);
-        if (b.startSec < lastEnd) {
-            const mergedEnd = Math.max(lastEnd, impliedEnd(b));
-            last.endSec = mergedEnd;
         } else {
-            out.push({ ...b });
+            const last = out.at(-1);
+            if (last === undefined) {
+                out.push({ ...b });
+            } else {
+                const lastEnd = impliedEnd(last);
+                if (b.startSec < lastEnd) {
+                    const mergedEnd = Math.max(lastEnd, impliedEnd(b));
+                    last.endSec = mergedEnd;
+                } else {
+                    out.push({ ...b });
+                }
+            }
         }
     }
     return out;
@@ -97,21 +103,21 @@ export function mergePromoBlocksWithGap(
     for (const b of sorted) {
         if (out.length === 0) {
             out.push({ ...b });
-            continue;
-        }
-        const last = out[out.length - 1];
-        if (last === undefined) {
-            out.push({ ...b });
-            continue;
-        }
-        const lastEnd = impliedEnd(last);
-        const gap = b.startSec - lastEnd;
-        if (gap <= gapSec) {
-            const mergedEnd = Math.max(lastEnd, impliedEnd(b));
-            last.endSec = mergedEnd;
-            last.confidence = maxConfidence(last.confidence, b.confidence);
         } else {
-            out.push({ ...b });
+            const last = out[out.length - 1];
+            if (last === undefined) {
+                out.push({ ...b });
+            } else {
+                const lastEnd = impliedEnd(last);
+                const gap = b.startSec - lastEnd;
+                if (gap <= gapSec) {
+                    const mergedEnd = Math.max(lastEnd, impliedEnd(b));
+                    last.endSec = mergedEnd;
+                    last.confidence = maxConfidence(last.confidence, b.confidence);
+                } else {
+                    out.push({ ...b });
+                }
+            }
         }
     }
     return out;

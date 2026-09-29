@@ -22,6 +22,11 @@ import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-con
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
+import { TestCustomEvent } from '../../helpers/test-custom-event';
+import { TestMessageEvent } from '../../helpers/test-message-event';
+
+import type * as ConstantsModule from '@/shared/constants';
+
 const {
     mockActivateBridge,
     mockDeactivateBridge,
@@ -57,7 +62,7 @@ vi.mock('@/shared/browser', () => ({
 }));
 
 vi.mock('@/shared/constants', async (importOriginal) => {
-    const constants = await importOriginal<typeof import('@/shared/constants')>();
+    const constants = await importOriginal<typeof ConstantsModule>();
     return {
         ...constants,
         CAPTION_CAPTURE_VERBOSE_LOGS: true,
@@ -79,7 +84,7 @@ const { contentLogInfo } = vi.hoisted(() => ({
     contentLogInfo: vi.fn<(...args: unknown[]) => void>(),
 }));
 
-// The CONTENT_LOG relay is dev-gated (`__TOPSKIP_INCLUDE_DEV_LOCAL__` is
+// The CONTENT_LOG relay is dev-gated (`TOPSKIP_INCLUDE_DEV_LOCAL` is
 // false under vitest), so the exact verbose dev lines are observed at the
 // contentLog module boundary instead of through runtime.sendMessage.
 vi.mock('@/content/content-log', () => ({
@@ -103,29 +108,6 @@ const ANY_NUMBER: unknown = expect.any(Number);
 
 type WindowListener = (event: MessageEvent<unknown>) => void;
 type BridgeTransport = 'window' | 'document';
-
-class TestMessageEvent<T = unknown> {
-    readonly type: string;
-
-    readonly data: T | undefined;
-
-    readonly source: unknown;
-
-    constructor(type: string, init: { data?: T; source?: unknown } = {}) {
-        this.type = type;
-        this.data = init.data;
-        this.source = init.source;
-    }
-}
-
-class TestCustomEvent<T = unknown> extends Event {
-    readonly detail: T | undefined;
-
-    constructor(type: string, init: { detail?: T } = {}) {
-        super(type);
-        this.detail = init.detail;
-    }
-}
 
 function installWindowStub(): void {
     const listeners = new Map<string, WindowListener[]>();
@@ -268,8 +250,8 @@ function dispatchPageDiagnostic(
  * Dispatches one empty-body diagnostic whose sanitized URL shape reports
  * whether the player had already minted the `pot` token.
  *
- * @param messageId
- * @param hasPot
+ * @param messageId Diagnostic message id to dispatch.
+ * @param hasPot Whether the reported URL shape should include a `pot` param.
  */
 function dispatchEmptyBody(messageId: string, hasPot: boolean): void {
     dispatchPageDiagnostic(messageId, 'window', {
@@ -321,7 +303,7 @@ function pageStageCalls(): unknown[][] {
  * Reports the tab as hidden or visible to the activation loop; the stubbed
  * document has no visibility state of its own.
  *
- * @param state
+ * @param state Visibility state to report.
  */
 function setVisibilityState(state: 'hidden' | 'visible'): void {
     Object.defineProperty(document, 'visibilityState', {
@@ -347,7 +329,7 @@ function captureStageNames(): string[] {
  * Starts an owned capture and waits for activation; the run promise is
  * wrapped so the async helper does not adopt (and await) it.
  *
- * @param videoId
+ * @param videoId Video id to start capture for.
  */
 async function startCapture(videoId: string): Promise<{ run: Promise<unknown> }> {
     const run = PlayerCaptionCapture.capture({

@@ -17,7 +17,7 @@ import {
     REQUIRED_API_PERMISSIONS,
     TOPSKIP_MINIMUM_CHROME_VERSION,
     composeExtensionManifest,
-} from '../manifest-profile';
+} from '../scripts/manifest-profile';
 
 const EXPECTED_PROVIDER_HOSTS = [
     'https://openrouter.ai/*',

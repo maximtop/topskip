@@ -1,3 +1,8 @@
+/**
+ * @file Wakes already-live declarative content scripts at worker start
+ * without dynamic injection, and attributes the tabs that answer.
+ */
+
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';

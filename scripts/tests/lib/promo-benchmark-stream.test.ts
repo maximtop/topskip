@@ -38,7 +38,9 @@ describe('promo benchmark streaming client', () => {
             'data: {"choices":[{"delta":{"reasoning_content":"secret"}}]}\n',
             'data: {"choices":[{"delta":{"content":"{\\"hasPromo\\":"}}]}\n',
             'data: {"choices":[{"delta":{"content":"false}"},"finish_reason":"stop"}]}\n',
-            'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110,"prompt_tokens_details":{"cached_tokens":20,"cache_write_tokens":5},"completion_tokens_details":{"reasoning_tokens":4}}}\n',
+            'data: {"choices":[],"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110,'
+                + '"prompt_tokens_details":{"cached_tokens":20,"cache_write_tokens":5},'
+                + '"completion_tokens_details":{"reasoning_tokens":4}}}\n',
             'data: [DONE]\n',
         ]);
         const times = [0, 100, 600];

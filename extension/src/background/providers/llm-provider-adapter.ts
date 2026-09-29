@@ -1,3 +1,8 @@
+/**
+ * @file Provider-agnostic contract, shared roles and result types for
+ * LLM-backed transcript analysis adapters.
+ */
+
 import type { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import type { ProviderId } from '@/shared/providers';
 import type { PromoBlock } from '@topskip/common/promo-types';
@@ -32,7 +37,14 @@ export const LLM_ROLE = {
  * Metadata about the provider that ran an analysis (for logging).
  */
 export interface ProviderMeta {
+    /**
+     * Provider id that ran the analysis.
+     */
     id: ProviderId;
+
+    /**
+     * Model name or slug used for the call.
+     */
     model: string;
 }
 
@@ -52,12 +64,39 @@ export const PROVIDER_HOST_ACCESS_REQUIRED_ERROR = 'Provider host access is requ
  * A revoked optional host grant stops BYOK analysis before provider I/O.
  */
 export interface ProviderHostAccessRequiredAnalysisResult {
+    /**
+     * Always `false`: the call never reached the provider.
+     */
     ok: false;
+
+    /**
+     * Discriminates this result from an ordinary provider/parsing failure.
+     */
     failureCode: typeof PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired;
+
+    /**
+     * Safe diagnostic message ({@link PROVIDER_HOST_ACCESS_REQUIRED_ERROR}).
+     */
     error: string;
+
+    /**
+     * Never set for this result variant.
+     */
     tooLarge?: never;
+
+    /**
+     * Never set for this result variant.
+     */
     rawAssistant?: never;
+
+    /**
+     * Never set for this result variant.
+     */
     status?: never;
+
+    /**
+     * Never set for this result variant.
+     */
     kind?: never;
 }
 
@@ -65,8 +104,19 @@ export interface ProviderHostAccessRequiredAnalysisResult {
  * Ordinary provider and parsing failures retain partial-analysis behavior.
  */
 interface ProviderAnalysisFailure {
+    /**
+     * Always `false`: the analysis did not produce a usable result.
+     */
     ok: false;
+
+    /**
+     * Human-readable failure description.
+     */
     error: string;
+
+    /**
+     * Whether the transcript exceeded the provider's context budget.
+     */
     tooLarge?: boolean;
 
     /**
@@ -83,6 +133,11 @@ interface ProviderAnalysisFailure {
      * Stable transport/parse classification for BYOK metadata.
      */
     kind?: 'http' | 'network' | 'timeout' | 'parse' | 'aborted';
+
+    /**
+     * Never set for this result variant (distinguishes it from a host-access
+     * failure).
+     */
     failureCode?: never;
 }
 

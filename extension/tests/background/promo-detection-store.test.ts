@@ -51,8 +51,6 @@ const SESSION_B = '00000000-0000-4000-8000-000000000002';
 /**
  * Restores the ordinary in-memory implementation after tests replace a
  * storage method with a deferred or rejected operation.
- *
- * @returns Nothing.
  */
 function restoreSessionStorageMocks(): void {
     sessionGet.mockImplementation((key: string) => Promise.resolve(
@@ -168,7 +166,7 @@ describe('PromoDetectionStore Server sessions', () => {
         };
 
         await PromoDetectionStore.set(TAB_ID, acquisitionFor(0));
-        for (let n = 1; n <= 33; n++) {
+        for (let n = 1; n <= 33; n += 1) {
             await PromoDetectionStore.set(TAB_ID, acquisitionFor(n));
         }
         expect(PromoDetectionStore.get(TAB_ID)).toEqual(acquisitionFor(33));

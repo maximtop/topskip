@@ -1,3 +1,7 @@
+/**
+ * @file Derives the Diagnostics section's UI phase from background status.
+ */
+
 import type { DebugLogStatusPayload } from '@/shared/messages';
 
 /**

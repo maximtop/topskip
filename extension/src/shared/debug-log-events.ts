@@ -1,3 +1,8 @@
+/**
+ * @file Normative debug-log event vocabulary and field allow-list/sanitizer
+ * used to keep the debug log free of unstructured or oversized data.
+ */
+
 import * as v from 'valibot';
 
 import {
@@ -502,12 +507,11 @@ export function sanitizeDebugLogFields(
 ): DebugLogFields {
     const sanitized: Record<string, string | number | boolean | null> = {};
     for (const [key, value] of Object.entries(fields)) {
-        if (!isAllowedDebugLogField(event, key)) {
-            continue;
-        }
-        const safe = sanitizeDebugLogValue(key, value);
-        if (safe !== undefined) {
-            sanitized[key] = safe;
+        if (isAllowedDebugLogField(event, key)) {
+            const safe = sanitizeDebugLogValue(key, value);
+            if (safe !== undefined) {
+                sanitized[key] = safe;
+            }
         }
     }
     return sanitized;

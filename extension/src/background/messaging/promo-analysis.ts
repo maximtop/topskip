@@ -1,3 +1,9 @@
+/**
+ * @file Orchestrates BYOK LLM promo analysis after captions arrive: chunk
+ * planning, per-chunk adapter calls with tooLarge split-retry, block merging
+ * and delivery, and terminal debug-log/status reporting.
+ */
+
 import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
 import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
 import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
@@ -266,17 +272,17 @@ export class PromoAnalysis {
      * Records the terminal BYOK metadata summary (no prompt/assistant text).
      *
      * @param input - Terminal run counters and stable outcome.
-     * @param input.tabId
-     * @param input.videoId
-     * @param input.provider
-     * @param input.model
-     * @param input.chunks
-     * @param input.parsedBlocks
-     * @param input.coverage
-     * @param input.uncovered
-     * @param input.blocks
-     * @param input.totalLatencyMs
-     * @param input.outcome
+     * @param input.tabId - Source tab the run analyzed.
+     * @param input.videoId - Video id analyzed.
+     * @param input.provider - Provider id that ran the analysis.
+     * @param input.model - Model name used for the run's chunk calls.
+     * @param input.chunks - Total chunks planned for this run.
+     * @param input.parsedBlocks - Total promo blocks parsed across chunks.
+     * @param input.coverage - Fraction of the transcript covered.
+     * @param input.uncovered - Number of uncovered ranges recorded.
+     * @param input.blocks - Final merged promo blocks.
+     * @param input.totalLatencyMs - Summed adapter call latency for the run.
+     * @param input.outcome - Stable terminal outcome token.
      */
     private static recordByokRunEnded(input: {
         tabId: number;
@@ -672,7 +678,7 @@ export class PromoAnalysis {
                 });
 
                 const aborted = !PromoAnalysis.isCurrentRun(tabId, abort);
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                     if (result.ok) {
                         lastRawAssistant = result.rawAssistant;
                     } else if (result.rawAssistant !== undefined) {
@@ -771,162 +777,153 @@ export class PromoAnalysis {
                 });
             };
 
-            for (let i = 0; i < plan.chunks.length; i++) {
+            for (let i = 0; i < plan.chunks.length; i += 1) {
                 const chunk = plan.chunks[i];
-                if (chunk === undefined) {
-                    continue;
-                }
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
-
-                const t0 = performance.now();
-                const first = await adapter.analyzeTranscript({
-                    ...baseParams,
-                    transcript: chunk.text,
-                });
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
-                const firstLatency = performance.now() - t0;
-                totalAdapterCalls += 1;
-                totalAdapterLatencyMs += firstLatency;
-
-                recordChunk({
-                    result: first,
-                    aborted: !PromoAnalysis.isCurrentRun(tabId, abort),
-                    chunkIndex: i,
-                    startSec: chunk.startSec,
-                    endSec: chunk.endSec,
-                    chars: chunk.text.length,
-                    latencyMs: firstLatency,
-                });
-
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
-                    if (first.ok) {
-                        lastRawAssistant = first.rawAssistant;
-                    } else if (first.rawAssistant !== undefined) {
-                        lastRawAssistant = first.rawAssistant;
+                if (chunk !== undefined) {
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
                     }
 
-                    let parsedCount: number | undefined;
-                    if (first.ok && first.hasPromo) {
-                        parsedCount = first.blocks.length;
-                    } else if (first.ok && !first.hasPromo) {
-                        parsedCount = 0;
-                    }
-                    logChunkPromoEntry({
-                        chunkIndex: i,
-                        chunkCount,
-                        chunkStartSec: chunk.startSec,
-                        chunkEndSec: chunk.endSec,
-                        chunkChars: chunk.text.length,
-                        promptVersion: PROMO_DETECTION_PROMPT_VERSION,
-                        chunkText: chunk.text,
-                        chunkTextMaxChars: LOG_CHUNK_TEXT_MAX_CHARS,
-                        rawAssistant: first.ok
-                            ? first.rawAssistant
-                            : (first.rawAssistant ?? null),
-                        rawAssistantMaxChars: LOG_RAW_ASSISTANT_MAX_CHARS,
-                        adapterLatencyMs: firstLatency,
-                        outcome: PromoAnalysis.chunkOutcomeForLog(
-                            first,
-                            abort.signal.aborted,
-                        ),
-                        parsedBlockCount: parsedCount,
-                        retryLabel: undefined,
+                    const t0 = performance.now();
+                    const first = await adapter.analyzeTranscript({
+                        ...baseParams,
+                        transcript: chunk.text,
                     });
-                }
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
+                    }
+                    const firstLatency = performance.now() - t0;
+                    totalAdapterCalls += 1;
+                    totalAdapterLatencyMs += firstLatency;
 
-                if (await stopForMissingProviderHostAccess(first)) {
-                    return;
-                }
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
+                    recordChunk({
+                        result: first,
+                        aborted: !PromoAnalysis.isCurrentRun(tabId, abort),
+                        chunkIndex: i,
+                        startSec: chunk.startSec,
+                        endSec: chunk.endSec,
+                        chars: chunk.text.length,
+                        latencyMs: firstLatency,
+                    });
 
-                if (!first.ok && first.tooLarge === true) {
-                    const halves = PromoAnalysis.splitTranscriptLinesInHalf(
-                        chunk.text,
-                    );
-                    if (halves === null) {
+                    if (TOPSKIP_INCLUDE_DEV_LOCAL) {
+                        if (first.ok) {
+                            lastRawAssistant = first.rawAssistant;
+                        } else if (first.rawAssistant !== undefined) {
+                            lastRawAssistant = first.rawAssistant;
+                        }
+
+                        let parsedCount: number | undefined;
+                        if (first.ok && first.hasPromo) {
+                            parsedCount = first.blocks.length;
+                        } else if (first.ok && !first.hasPromo) {
+                            parsedCount = 0;
+                        }
+                        logChunkPromoEntry({
+                            chunkIndex: i,
+                            chunkCount,
+                            chunkStartSec: chunk.startSec,
+                            chunkEndSec: chunk.endSec,
+                            chunkChars: chunk.text.length,
+                            promptVersion: PROMO_DETECTION_PROMPT_VERSION,
+                            chunkText: chunk.text,
+                            chunkTextMaxChars: LOG_CHUNK_TEXT_MAX_CHARS,
+                            rawAssistant: first.ok
+                                ? first.rawAssistant
+                                : (first.rawAssistant ?? null),
+                            rawAssistantMaxChars: LOG_RAW_ASSISTANT_MAX_CHARS,
+                            adapterLatencyMs: firstLatency,
+                            outcome: PromoAnalysis.chunkOutcomeForLog(
+                                first,
+                                abort.signal.aborted,
+                            ),
+                            parsedBlockCount: parsedCount,
+                            retryLabel: undefined,
+                        });
+                    }
+
+                    if (await stopForMissingProviderHostAccess(first)) {
+                        return;
+                    }
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
+                    }
+
+                    if (!first.ok && first.tooLarge === true) {
+                        const halves = PromoAnalysis.splitTranscriptLinesInHalf(
+                            chunk.text,
+                        );
+                        if (halves === null) {
+                            chunkFailures += 1;
+                            anyPartial = true;
+                            uncoveredRanges.push({
+                                startSec: chunk.startSec,
+                                endSec: chunk.endSec,
+                                kind: 'irreducible_line',
+                            });
+                            DevConsole.warn(
+                                '[TopSkip] irreducible_chunk: single line exceeds budget',
+                                { chunkIndex: i },
+                            );
+                        } else {
+                            const [aText, bText] = halves;
+                            await processSlice(aText, i, chunkCount, 'retry-split-a');
+                            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                                return;
+                            }
+                            if (providerHostAccessRequired) {
+                                return;
+                            }
+                            await processSlice(bText, i, chunkCount, 'retry-split-b');
+                            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                                return;
+                            }
+                            if (providerHostAccessRequired) {
+                                return;
+                            }
+                        }
+                    } else if (!first.ok) {
                         chunkFailures += 1;
-                        anyPartial = true;
                         uncoveredRanges.push({
                             startSec: chunk.startSec,
                             endSec: chunk.endSec,
-                            kind: 'irreducible_line',
+                            kind: 'failed_chunk',
                         });
-                        DevConsole.warn(
-                            '[TopSkip] irreducible_chunk: single line exceeds budget',
-                            { chunkIndex: i },
+                    } else if (first.hasPromo) {
+                        const filtered = ChunkMerge.filterPromoBlocksForChunkTimeRange(
+                            first.blocks,
+                            chunk.startSec,
+                            chunk.endSec,
+                            CHUNK_BLOCK_TOLERANCE_SEC,
                         );
-                        continue;
-                    }
-                    const [aText, bText] = halves;
-                    await processSlice(aText, i, chunkCount, 'retry-split-a');
-                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                        return;
-                    }
-                    if (providerHostAccessRequired) {
-                        return;
-                    }
-                    await processSlice(bText, i, chunkCount, 'retry-split-b');
-                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                        return;
-                    }
-                    if (providerHostAccessRequired) {
-                        return;
-                    }
-                    continue;
-                }
+                        mergedBlocks = mergePromoBlocksWithGap(
+                            [...mergedBlocks, ...filtered],
+                            BLOCK_MERGE_GAP_SEC,
+                        );
 
-                if (!first.ok) {
-                    chunkFailures += 1;
-                    uncoveredRanges.push({
-                        startSec: chunk.startSec,
-                        endSec: chunk.endSec,
-                        kind: 'failed_chunk',
-                    });
-                    continue;
-                }
+                        try {
+                            await browser.tabs.sendMessage(tabId, {
+                                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                                source: PROMO_DETECTION_SOURCE.LocalProvider,
+                                videoId,
+                                promoBlocks: mergedBlocks,
+                                partialCoverage: anyPartial,
+                            } satisfies TopSkipRuntimeMessage);
+                        } catch {
+                            // tab closed
+                        }
+                        if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                            return;
+                        }
 
-                if (!first.hasPromo) {
-                    continue;
+                        await setStatus({
+                            videoId,
+                            status: PROMO_DETECTION_STATUS.Detected,
+                            promoBlocks: mergedBlocks,
+                            partialCoverage: anyPartial,
+                        });
+                    }
                 }
-
-                const filtered = ChunkMerge.filterPromoBlocksForChunkTimeRange(
-                    first.blocks,
-                    chunk.startSec,
-                    chunk.endSec,
-                    CHUNK_BLOCK_TOLERANCE_SEC,
-                );
-                mergedBlocks = mergePromoBlocksWithGap(
-                    [...mergedBlocks, ...filtered],
-                    BLOCK_MERGE_GAP_SEC,
-                );
-
-                try {
-                    await browser.tabs.sendMessage(tabId, {
-                        type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
-                        source: PROMO_DETECTION_SOURCE.LocalProvider,
-                        videoId,
-                        promoBlocks: mergedBlocks,
-                        partialCoverage: anyPartial,
-                    } satisfies TopSkipRuntimeMessage);
-                } catch {
-                    // tab closed
-                }
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
-
-                await setStatus({
-                    videoId,
-                    status: PROMO_DETECTION_STATUS.Detected,
-                    promoBlocks: mergedBlocks,
-                    partialCoverage: anyPartial,
-                });
             }
 
             if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
@@ -935,15 +932,20 @@ export class PromoAnalysis {
 
             const totalWallClockMs = performance.now() - runStartedAt;
 
-            const outcomeBlocks = mergedBlocks.length > 0
-                ? { type: 'promo_blocks' as const, blocks: mergedBlocks }
-                : chunkFailures >= plan.chunks.length
-                        && plan.chunks.length > 0
-                    ? {
-                        type: 'adapter_error' as const,
-                        error: 'All transcript chunks failed',
-                    }
-                    : { type: 'no_promo' as const };
+            let outcomeBlocks:
+                | { type: 'promo_blocks'; blocks: PromoBlock[] }
+                | { type: 'adapter_error'; error: string }
+                | { type: 'no_promo' };
+            if (mergedBlocks.length > 0) {
+                outcomeBlocks = { type: 'promo_blocks', blocks: mergedBlocks };
+            } else if (chunkFailures >= plan.chunks.length && plan.chunks.length > 0) {
+                outcomeBlocks = {
+                    type: 'adapter_error',
+                    error: 'All transcript chunks failed',
+                };
+            } else {
+                outcomeBlocks = { type: 'no_promo' };
+            }
 
             if (chunkFailures >= plan.chunks.length && plan.chunks.length > 0) {
                 await setStatus({
@@ -955,7 +957,7 @@ export class PromoAnalysis {
                 if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                     LogPromoAnalysis.logAnalysisBundle(
                         buildPromoAnalysisLogBundle({
                             videoId,
@@ -1020,7 +1022,7 @@ export class PromoAnalysis {
                     totalLatencyMs: totalAdapterLatencyMs,
                     outcome: BYOK_OUTCOME.Success,
                 });
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                     LogPromoAnalysis.logAnalysisBundle(
                         buildPromoAnalysisLogBundle({
                             videoId,
@@ -1069,7 +1071,7 @@ export class PromoAnalysis {
                 return;
             }
 
-            if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+            if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                 LogPromoAnalysis.logAnalysisBundle(
                     buildPromoAnalysisLogBundle({
                         videoId,
@@ -1133,7 +1135,7 @@ export class PromoAnalysis {
                 return;
             }
             const msg = e instanceof Error ? e.message : String(e);
-            if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+            if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                 console.error('[TopSkip] Promo analysis failed', msg);
             } else {
                 console.error(

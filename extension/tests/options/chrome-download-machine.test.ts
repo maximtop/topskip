@@ -88,7 +88,7 @@ describe('chromeDownloadMachine', () => {
     });
 
     it(
-        'transitions to downloadable when availability is' + ' downloadable',
+        'transitions to downloadable when availability is downloadable',
         async () => {
             availabilityResult = 'downloadable';
 
@@ -104,7 +104,7 @@ describe('chromeDownloadMachine', () => {
     );
 
     it(
-        'transitions to unavailable when availability is' + ' unavailable',
+        'transitions to unavailable when availability is unavailable',
         async () => {
             availabilityResult = 'unavailable';
 
@@ -133,7 +133,7 @@ describe('chromeDownloadMachine', () => {
     });
 
     it(
-        'transitions to downloading when availability is' + ' downloading',
+        'transitions to downloading when availability is downloading',
         async () => {
             availabilityResult = 'downloading';
 
@@ -207,7 +207,7 @@ describe('chromeDownloadMachine', () => {
     });
 
     it(
-        'tracks progress from monitor events and marks' + ' extracting at 100%',
+        'tracks progress from monitor events and marks extracting at 100%',
         async () => {
             availabilityResult = 'downloadable';
             createBehavior = 'hang';

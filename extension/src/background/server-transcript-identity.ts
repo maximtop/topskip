@@ -1,4 +1,9 @@
 /**
+ * @file Computes the browser-owned transcript fingerprint used for server
+ * cache identity.
+ */
+
+/**
  * Computes browser-owned fingerprints without exposing canonical captions on the wire.
  */
 export class ServerTranscriptIdentity {

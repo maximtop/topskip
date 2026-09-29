@@ -106,7 +106,7 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
         });
         expect(adapter.calls.length).toBeGreaterThan(1);
         // Adjacent chunk calls overlap by ~240s.
-        for (let i = 1; i < adapter.calls.length; i++) {
+        for (let i = 1; i < adapter.calls.length; i += 1) {
             expect(adapter.calls[i].firstSec).toBeLessThanOrEqual(
                 adapter.calls[i - 1].lastSec - 239,
             );

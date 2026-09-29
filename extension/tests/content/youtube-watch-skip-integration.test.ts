@@ -103,12 +103,12 @@ vi.mock('@/content/watch-captions', () => ({
  * the real code path in youtube-watch.ts.
  *
  * @param params - Playback state and block data
- * @param params.prevTime
- * @param params.currentTime
- * @param params.duration
- * @param params.isSeeking
- * @param params.firedStartKeys
- * @param params.blocks
+ * @param params.prevTime Video time in seconds before this tick.
+ * @param params.currentTime Video time in seconds at this tick.
+ * @param params.duration Video duration in seconds.
+ * @param params.isSeeking Whether the player currently reports a seek in progress.
+ * @param params.firedStartKeys Block start keys already fired, mutated in place on backward seeks.
+ * @param params.blocks Promo blocks to evaluate for this tick.
  *
  * @returns Skip decision
  */
@@ -322,7 +322,7 @@ describe('onTimeUpdate skip pipeline integration (pure-function replay, not real
     );
 
     it(
-        'FR-004: backward seek resets fired indices' + ' (pure function)',
+        'FR-004: backward seek resets fired indices (pure function)',
         () => {
             const blocks: PromoBlock[] = [{ startSec: 45, endSec: 75 }];
             const fired = new Set([45]);
@@ -1091,7 +1091,7 @@ describe('per-video analysis route lifecycle', () => {
     }
 
     const NEVER_RESPOND: ServerRuntimeResponder = () => {
-        return new Promise<unknown>(() => undefined);
+        return new Promise<unknown>(() => {});
     };
 
     /**
@@ -1263,7 +1263,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('times out a lost preferences reply and eventually routes once', async () => {
         let attempt = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -1427,7 +1427,7 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('cancels preferences timeout and retry ownership on dispose', async () => {
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -1674,7 +1674,7 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('does not let an unresolved acquisition event block the request', async () => {
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -1898,7 +1898,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('retries a timed-out poll with the same job and identity', async () => {
         let pollCount = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -2019,7 +2019,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('recovers an unresolved submit after the runtime watchdog', async () => {
         let submitCount = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -2221,7 +2221,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('retries interruption delivery after its acknowledgement times out', async () => {
         let deliveryAttempt = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -3308,7 +3308,9 @@ describe('per-video analysis route lifecycle', () => {
         });
 
         it('emits the final summary with reason navigation when the route is cancelled', async () => {
-            const harness = await createLoggingHarness((message) => Promise.resolve(processingAck('job-nav', payloadVideoId(message))));
+            const harness = await createLoggingHarness(
+                (message) => Promise.resolve(processingAck('job-nav', payloadVideoId(message))),
+            );
             try {
                 await harness.advanceBindingTime(MS_PER_SECOND);
                 await harness.advanceBindingTime(MS_PER_SECOND);
@@ -3378,7 +3380,9 @@ describe('per-video analysis route lifecycle', () => {
         });
 
         it('summarizes the deadline final poll once', async () => {
-            const harness = await createLoggingHarness((message) => Promise.resolve(processingAck('job-deadline', payloadVideoId(message), 60 * 60)));
+            const harness = await createLoggingHarness(
+                (message) => Promise.resolve(processingAck('job-deadline', payloadVideoId(message), 60 * 60)),
+            );
             try {
                 await harness.advanceBindingTime(SERVER_ANALYSIS_SESSION_DEADLINE_MS);
                 await harness.advanceBindingTime(DEBUG_LOG_CLIENT_FLUSH_DELAY_MS);
@@ -3438,7 +3442,9 @@ describe('per-video analysis route lifecycle', () => {
         });
 
         it('emits an interim summary every DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS polls', async () => {
-            const harness = await createLoggingHarness((message) => Promise.resolve(processingAck('job-interim', payloadVideoId(message))));
+            const harness = await createLoggingHarness(
+                (message) => Promise.resolve(processingAck('job-interim', payloadVideoId(message))),
+            );
             try {
                 for (let poll = 0; poll < DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS + 2; poll += 1) {
                     await harness.advanceBindingTime(MS_PER_SECOND);

@@ -1,3 +1,8 @@
+/**
+ * @file Shared caption/transcript types and the valibot schema for caption
+ * segments crossing the content → background message boundary.
+ */
+
 import * as v from 'valibot';
 
 /**

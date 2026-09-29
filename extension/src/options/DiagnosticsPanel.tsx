@@ -1,3 +1,9 @@
+/**
+ * @file Presentational Diagnostics panel: renders the debug-log switch,
+ * status, counters, preview and export actions from container-resolved
+ * state.
+ */
+
 import {
     Alert,
     Button,
@@ -41,8 +47,19 @@ export type DiagnosticsFeedback = | 'copied'
  * marks a truncated tail.
  */
 export interface DiagnosticsPreview {
+    /**
+     * Bundle tail text to show read-only.
+     */
     text: string;
+
+    /**
+     * Bytes of the tail actually shown.
+     */
     shownBytes: number;
+
+    /**
+     * Total bytes of the full bundle the tail was taken from.
+     */
     totalBytes: number;
 }
 
@@ -52,10 +69,30 @@ export interface DiagnosticsPreview {
  * a transient failure does not visually flip the switch).
  */
 export interface DiagnosticsPanelState {
+    /**
+     * Current UI phase driving which controls are enabled and what status
+     * line renders.
+     */
     phase: DiagnosticsPhase;
+
+    /**
+     * Last validated background status read, kept while unavailable.
+     */
     status: DebugLogStatusPayload | null;
+
+    /**
+     * Bundle tail to show, when one has been read.
+     */
     preview: DiagnosticsPreview | null;
+
+    /**
+     * Outcome of the last toggle/copy/download action, when one occurred.
+     */
     feedback: DiagnosticsFeedback | null;
+
+    /**
+     * Whether a toggle, copy or download request is in flight.
+     */
     busy: boolean;
 }
 
@@ -63,6 +100,9 @@ export interface DiagnosticsPanelState {
  * Diagnostics section inputs supplied by the options container.
  */
 export interface DiagnosticsPanelProps {
+    /**
+     * Resolved Diagnostics section state to render.
+     */
     state: DiagnosticsPanelState;
     onToggle(enabled: boolean): void;
     onCopy(): void;
@@ -120,6 +160,8 @@ function getDiagnosticsFeedback(
             };
         case null:
             return null;
+        default:
+            return null;
     }
 }
 
@@ -159,6 +201,9 @@ function countDropped(dropped: DebugLogDroppedCounters): number {
  * @param status - Last status, when known.
  *
  * @returns Localized status line.
+ *
+ * @throws {Error} When `phase` is not one of the known `DiagnosticsPhase`
+ * values (never happens for a validated phase).
  */
 function getStatusLine(
     phase: DiagnosticsPhase,
@@ -188,6 +233,8 @@ function getStatusLine(
                     time: formatLocalTime(status?.disabledAtMs ?? null),
                 },
             );
+        default:
+            throw new Error('Unhandled diagnostics phase.');
     }
 }
 
@@ -196,7 +243,7 @@ function getStatusLine(
  * exclusion is visible to the user).
  *
  * @param props - Status to render.
- * @param props.status
+ * @param props.status - Current debug-log status payload.
  *
  * @returns Counter lines.
  */
@@ -241,7 +288,7 @@ function DiagnosticsCounters(props: {
  * the page never scrolls horizontally; a note says when it is a tail.
  *
  * @param props - Preview to render.
- * @param props.preview
+ * @param props.preview - Bundle tail to show read-only.
  *
  * @returns Preview block.
  */

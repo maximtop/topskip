@@ -413,7 +413,7 @@ describe('DebugLogClient', () => {
         DebugLogClient.log(DEBUG_LOG_EVENT.SkipApplied, { block: 0 }, { video: VIDEO_ID });
         expect(contentLogInfo).not.toHaveBeenCalled();
 
-        vi.stubGlobal('__TOPSKIP_INCLUDE_DEV_LOCAL__', true);
+        vi.stubGlobal('TOPSKIP_INCLUDE_DEV_LOCAL', true);
         DebugLogClient.log(DEBUG_LOG_EVENT.SkipApplied, { block: 0 }, { video: VIDEO_ID });
 
         expect(contentLogInfo).toHaveBeenCalledWith(

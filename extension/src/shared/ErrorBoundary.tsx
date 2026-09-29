@@ -1,3 +1,8 @@
+/**
+ * @file React error boundary shared by popup and options: shows a recovery
+ * UI instead of a blank screen on an uncaught render error.
+ */
+
 import {
 
     Alert,
@@ -7,11 +12,23 @@ import {
 } from '@mantine/core';
 import { Component, type ErrorInfo, type ReactNode } from 'react';
 
+/**
+ * Props for {@link ErrorBoundary}.
+ */
 interface ErrorBoundaryProps {
+    /**
+     * Subtree the boundary guards.
+     */
     children: ReactNode;
 }
 
+/**
+ * State for {@link ErrorBoundary}.
+ */
 interface ErrorBoundaryState {
+    /**
+     * Error caught from a descendant render, or `null` when none is active.
+     */
     error: Error | null;
 }
 
@@ -24,6 +41,8 @@ export class ErrorBoundary extends Component<
     ErrorBoundaryState
 > {
     /**
+     * Creates the boundary with no active error.
+     *
      * @param props - Component props.
      */
     constructor(props: ErrorBoundaryProps) {

@@ -1,3 +1,8 @@
+/**
+ * @file Restricts `browser.storage.local` to trusted contexts before any
+ * background code reads secrets from it.
+ */
+
 import browser from '@/shared/browser';
 
 const TRUSTED_STORAGE_ACCESS_LEVEL = 'TRUSTED_CONTEXTS';

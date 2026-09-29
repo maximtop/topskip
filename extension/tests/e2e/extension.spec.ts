@@ -60,8 +60,8 @@ import {
 } from './extension-helpers';
 import { E2E_BACKEND_ORIGIN } from './global-setup';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const extensionPath = path.resolve(__dirname, '../../dist');
+const currentDir = path.dirname(fileURLToPath(import.meta.url));
+const extensionPath = path.resolve(currentDir, '../../dist');
 const E2E_SERVER_API_VERSION = 1;
 const E2E_SERVER_ALGORITHM_VERSION = 'server-v8';
 const E2E_VIDEO_ID = 'e2eFixture1';
@@ -228,6 +228,7 @@ async function probeDeclarativeCaptionBridge(page: Page): Promise<unknown> {
     return page.evaluate(
         async (contract) => new Promise<unknown>((resolve, reject) => {
             const requestId = 'e2e-declarative-main-probe';
+            let onResult: (event: Event) => void;
             const timeoutId = globalThis.setTimeout(() => {
                 document.removeEventListener(
                     contract.resultEvent,
@@ -235,7 +236,7 @@ async function probeDeclarativeCaptionBridge(page: Page): Promise<unknown> {
                 );
                 reject(new Error('Timed out waiting for MAIN bridge'));
             }, contract.timeoutMs);
-            const onResult = (event: Event): void => {
+            onResult = (event: Event): void => {
                 if (!(event instanceof CustomEvent)) {
                     return;
                 }
@@ -586,7 +587,7 @@ async function seedPopupState(
     extensionPage: Page,
     state: unknown,
 ): Promise<void> {
-    await extensionPage.evaluate(async (state) => {
+    await extensionPage.evaluate(async (evaluatedState) => {
         const chromeApi = Reflect.get(globalThis, 'chrome');
         if (typeof chromeApi !== 'object' || chromeApi === null) {
             throw new Error('Missing chrome API');
@@ -602,7 +603,7 @@ async function seedPopupState(
 
         const message = {
             type: 'TOPSKIP_DEV_SET_DETECTION_STATUS',
-            state,
+            state: evaluatedState,
         };
         const response: unknown = await new Promise((resolve, reject) => {
             Reflect.apply(sendMessage, runtime, [
@@ -649,7 +650,7 @@ async function installRuntimeMessageGate(
     await popupPage.addInitScript(
         ({
 
-            messageType,
+            messageType: gatedMessageType,
             stateKey,
             releaseKey,
             heldState,
@@ -674,7 +675,7 @@ async function installRuntimeMessageGate(
                 const matchingMessage = args.find(
                     (argument) => typeof argument === 'object'
                         && argument !== null
-                        && Reflect.get(argument, 'type') === messageType,
+                        && Reflect.get(argument, 'type') === gatedMessageType,
                 );
                 if (matchingMessage === undefined) {
                     return Reflect.apply(sendMessage, runtime, args);
@@ -1068,6 +1069,8 @@ function readBundleHeaderValue(
  * @param key - Header key without the `=`.
  *
  * @returns The value.
+ *
+ * @throws {Error} When the header does not contain `key=`.
  */
 function requireBundleHeaderValue(
     header: readonly string[],

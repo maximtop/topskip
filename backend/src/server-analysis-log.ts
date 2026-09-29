@@ -1,3 +1,9 @@
+/**
+ * @file Opt-in, allow-listed backend tracing: per-event field contracts keep
+ * arbitrary caller text and nested payloads (response bodies, transcripts)
+ * out of the console, and logging stays silent unless a caller enables it.
+ */
+
 const SERVER_ANALYSIS_LOG_PREFIX = '[TopSkip server-analysis]';
 
 const SERVER_ANALYSIS_LOG_FIELDS_BY_EVENT = {
@@ -188,14 +194,12 @@ export class BackendServerAnalysisLog {
                 fields,
                 fieldName,
             );
-            if (descriptor === undefined || !('value' in descriptor)) {
-                continue;
+            if (descriptor !== undefined && 'value' in descriptor) {
+                const value: unknown = descriptor.value;
+                if (BackendServerAnalysisLog.isSafeFieldValue(fieldName, value)) {
+                    safeFields[fieldName] = value;
+                }
             }
-            const value: unknown = descriptor.value;
-            if (!BackendServerAnalysisLog.isSafeFieldValue(fieldName, value)) {
-                continue;
-            }
-            safeFields[fieldName] = value;
         }
         return safeFields;
     }

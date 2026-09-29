@@ -1,3 +1,8 @@
+/**
+ * @file Parses and validates the LLM's promo-detection JSON response,
+ * stripping markdown fences and clamping blocks to the known duration.
+ */
+
 import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
 import { sortAndDedupePromoBlocks } from '@topskip/common/promo-dedupe';
 import { parse, ValiError } from 'valibot';
@@ -51,15 +56,17 @@ export function refinePromoBlocks(
             }
         }
         let block: PromoBlock = { ...b };
+        let withinDuration = true;
         if (durationSec !== undefined && Number.isFinite(durationSec)) {
             if (block.startSec >= durationSec) {
-                continue;
-            }
-            if (block.endSec !== undefined && block.endSec > durationSec) {
+                withinDuration = false;
+            } else if (block.endSec !== undefined && block.endSec > durationSec) {
                 block = { ...block, endSec: durationSec };
             }
         }
-        refined.push(block);
+        if (withinDuration) {
+            refined.push(block);
+        }
     }
     return { ok: true, blocks: sortAndDedupePromoBlocks(refined) };
 }

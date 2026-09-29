@@ -26,7 +26,7 @@ const repositoryRoot = path.resolve(
  * precedence over the root `.env` because dotenv does not override values that
  * are already set.
  *
- * @returns Nothing; throws when the build fails.
+ * @throws {Error} When the build exits with a non-zero status.
  */
 export default function globalSetup(): void {
     const result = spawnSync(

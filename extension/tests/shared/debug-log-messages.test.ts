@@ -33,7 +33,7 @@ const VIDEO_ID = 'dQw4w9WgXcQ';
 /**
  * Minimal valid content event.
  *
- * @param fields
+ * @param fields Event-specific fields payload.
  */
 function event(fields: Record<string, unknown> = {}): Record<string, unknown> {
     return { event: DEBUG_LOG_EVENT.SkipApplied, ageMs: 0, fields };
@@ -42,7 +42,7 @@ function event(fields: Record<string, unknown> = {}): Record<string, unknown> {
 /**
  * Minimal valid append payload around the given events.
  *
- * @param events
+ * @param events Events to wrap in the payload.
  */
 function payload(events: unknown[]): unknown {
     return { events };

@@ -1,3 +1,8 @@
+/**
+ * @file Sends a runtime message to the background with a bounded timeout so
+ * a lost MV3 reply cannot hold popup UI state indefinitely.
+ */
+
 import browser from '@/shared/browser';
 import { getErrorMessage } from '@/shared/error';
 

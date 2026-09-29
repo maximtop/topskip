@@ -6,7 +6,7 @@
     "description": "Chrome extension that skips detected YouTube promo blocks",
     "exports": {
         "./build-modes": "./build-modes.ts",
-        "./manifest-profile": "./manifest-profile.ts"
+        "./manifest-profile": "./scripts/manifest-profile.ts"
     },
     "dependencies": {
         "@adguard/translate": "^2.0.1",

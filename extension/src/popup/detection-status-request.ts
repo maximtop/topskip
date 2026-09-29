@@ -1,3 +1,8 @@
+/**
+ * @file Bounded request reading the current detection status from the
+ * background.
+ */
+
 import { POPUP_DETECTION_REQUEST_TIMEOUT_MS } from '@/popup/constants';
 import { requestPopupRuntimeMessage } from '@/popup/runtime-message-request';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';

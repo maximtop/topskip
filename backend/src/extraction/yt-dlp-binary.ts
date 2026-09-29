@@ -1,3 +1,8 @@
+/**
+ * @file Resolves the yt-dlp executable path (operator override or the
+ * repo-managed tool) and verifies it is actually runnable at startup.
+ */
+
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 
@@ -33,6 +38,8 @@ export class YtDlpBinary {
      * its only production extractor.
      *
      * @returns Detected yt-dlp version.
+     *
+     * @throws {Error} When the executable is missing, exits non-zero, or reports no version.
      */
     static assertAvailable(): string {
         const result = spawnSync(YtDlpBinary.resolvePath(), ['--version'], {

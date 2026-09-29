@@ -16,7 +16,7 @@
         "common/src/**/*.ts",
         "common/tests/**/*.ts",
         "extension/build-modes.ts",
-        "extension/manifest-profile.ts",
+        "extension/scripts/**/*.ts",
         "extension/src/**/*.ts",
         "extension/src/**/*.tsx",
         "extension/src/**/*.d.ts",

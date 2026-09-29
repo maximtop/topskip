@@ -1,4 +1,9 @@
 /**
+ * @file YouTube watch-page route constants shared by the manifest composer
+ * and runtime code.
+ */
+
+/**
  * Exact YouTube origin receiving the declarative TopSkip bundles.
  */
 export const YOUTUBE_ORIGIN = 'https://www.youtube.com';
@@ -24,9 +29,9 @@ export const YOUTUBE_WATCH_VIDEO_ID_PARAM = 'v';
  * manifest composition reads it from `extension/build-modes.ts` instead. The
  * `typeof` guard keeps this module importable by that Node-side tooling.
  */
-export const DEV_E2E_ORIGIN: string | null = typeof __TOPSKIP_DEV_E2E_ORIGIN__ === 'undefined'
+export const DEV_E2E_ORIGIN: string | null = typeof TOPSKIP_DEV_E2E_ORIGIN === 'undefined'
     ? null
-    : __TOPSKIP_DEV_E2E_ORIGIN__;
+    : TOPSKIP_DEV_E2E_ORIGIN;
 
 /**
  * Stable synthetic identity used by the local fixture page.

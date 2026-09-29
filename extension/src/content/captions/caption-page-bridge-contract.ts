@@ -1,3 +1,8 @@
+/**
+ * @file Wire contract for the ISOLATED/MAIN caption page bridge: command and
+ * result envelope shapes, protocol constants, and their valibot parsers.
+ */
+
 import * as v from 'valibot';
 
 /**
@@ -94,10 +99,29 @@ export type CaptionPageBridgeCommand = (typeof CAPTION_PAGE_BRIDGE_COMMAND)[keyo
  * Strict local request transported from ISOLATED to MAIN as JSON event detail.
  */
 export interface CaptionPageBridgeCommandRequest {
+    /**
+     * Fixed world tag rejecting traffic that did not originate from ISOLATED.
+     */
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Isolated;
+
+    /**
+     * Fixed message kind distinguishing this envelope from a command result.
+     */
     kind: typeof CAPTION_PAGE_BRIDGE_KIND.Command;
+
+    /**
+     * Protocol version the sender was built against.
+     */
     protocolVersion: typeof CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION;
+
+    /**
+     * Correlation id matched against the eventual command result.
+     */
     requestId: string;
+
+    /**
+     * Lifecycle command the MAIN bridge should execute.
+     */
     command: CaptionPageBridgeCommand;
 }
 
@@ -106,10 +130,29 @@ export interface CaptionPageBridgeCommandRequest {
  * detail.
  */
 export interface CaptionPageBridgeCommandResult {
+    /**
+     * Fixed world tag rejecting traffic that did not originate from MAIN.
+     */
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Main;
+
+    /**
+     * Fixed message kind distinguishing this envelope from a command request.
+     */
     kind: typeof CAPTION_PAGE_BRIDGE_KIND.CommandResult;
+
+    /**
+     * Protocol version the sender was built against.
+     */
     protocolVersion: typeof CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION;
+
+    /**
+     * Correlation id matching the originating command request.
+     */
     requestId: string;
+
+    /**
+     * Command-specific result, left opaque to the transport layer.
+     */
     result: unknown;
 }
 

@@ -1,3 +1,8 @@
+/**
+ * @file CLI check that flags base-locale message keys with no reference in
+ * any source file, so stale translations can be removed before they ship.
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 

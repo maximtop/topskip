@@ -114,7 +114,8 @@ describe('PreferencesStore', () => {
         expect(store.analysisMode).toBe(ANALYSIS_MODE.Byok);
     });
 
-    it('load prefers GET_MODEL_SETTINGS and does not fall back to GET_ACTIVE_PROVIDER when the active model is found', async () => {
+    it('load prefers GET_MODEL_SETTINGS and does not fall back to GET_ACTIVE_PROVIDER when the '
+        + 'active model is found', async () => {
         mocks.sendMessage.mockImplementation((msg: unknown) => {
             const type: unknown = msg && typeof msg === 'object'
                 ? Reflect.get(msg, 'type')

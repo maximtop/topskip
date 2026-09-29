@@ -1,3 +1,8 @@
+/**
+ * @file HTTP-facing entry points that validate incoming analysis requests, route them between
+ * the upload and legacy processing paths, and translate job/cache state into typed API results.
+ */
+
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -69,8 +74,19 @@ export type BackendApiResult = | {
  * Hashed request identities connect public quota and ownership checks without raw credentials.
  */
 export interface BackendAnalysisRequestContext {
+    /**
+     * Salted hash identifying the requesting installation; set by the caller from its auth context.
+     */
     installationHash: string;
+
+    /**
+     * Salted hash of the requester's IP address; set by the caller from its auth context.
+     */
     ipHash: string;
+
+    /**
+     * Client-supplied correlation id echoed into logs; absent when the caller sent none.
+     */
     requestId?: string;
 }
 
@@ -92,9 +108,9 @@ export class BackendAnalysisApi {
      *
      * @param raw - Untrusted JSON body from the HTTP server.
      * @param options - Deterministic clock, ownership context, and immutable source mode.
-     * @param options.nowMs
-     * @param options.context
-     * @param options.captionSource
+     * @param options.nowMs - Clock reading in epoch ms; defaults to `Date.now()` when omitted.
+     * @param options.context - Hashed ownership context; defaults to the local-development identity when omitted.
+     * @param options.captionSource - Immutable request source mode; defaults to extension upload when omitted.
      *
      * @returns Typed API result for the HTTP layer.
      */
@@ -172,8 +188,8 @@ export class BackendAnalysisApi {
      *
      * @param jobId - Opaque job id from a previous processing response.
      * @param options - Optional deterministic clock and installation ownership hash.
-     * @param options.nowMs
-     * @param options.installationHash
+     * @param options.nowMs - Clock reading in epoch ms; defaults to the job store's own clock when omitted.
+     * @param options.installationHash - Owning installation hash; defaults to the local-development identity.
      *
      * @returns Current job state or typed not-found error.
      */
@@ -243,9 +259,9 @@ export class BackendAnalysisApi {
      *
      * @param request - Strict public upload request.
      * @param options - Hashed ownership and deterministic request metadata.
-     * @param options.nowMs
-     * @param options.context
-     * @param options.publicContext
+     * @param options.nowMs - Clock reading in epoch ms used for admission and job bookkeeping.
+     * @param options.context - Hashed installation/IP ownership context for this request.
+     * @param options.publicContext - Whether the caller supplied an explicit ownership context.
      *
      * @returns Exact cache, join, admission, or new-job response.
      */
@@ -384,13 +400,13 @@ export class BackendAnalysisApi {
      * Builds the only transcript artifact allowed to enter default-mode model analysis.
      *
      * @param input - Canonical request data and its authoritative identity.
-     * @param input.request
-     * @param input.identity
-     * @param input.canonical
-     * @param input.canonical.languageCode
-     * @param input.canonical.segments
-     * @param input.canonical.timelineEndSec
-     * @param input.nowMs
+     * @param input.request - Original strict public upload request.
+     * @param input.identity - Authoritative identity computed from the canonical transcript.
+     * @param input.canonical - Canonicalized transcript fields the artifact is built from.
+     * @param input.canonical.languageCode - Canonical BCP-47 language code of the transcript.
+     * @param input.canonical.segments - Canonical timed caption segments.
+     * @param input.canonical.timelineEndSec - Duration in seconds of the canonical transcript timeline.
+     * @param input.nowMs - Clock reading in epoch ms used to stamp the artifact's acquisition time.
      *
      * @returns Strict canonical extension-caption artifact.
      */
@@ -429,6 +445,8 @@ export class BackendAnalysisApi {
      * @param statusCode - HTTP status selected by the orchestration state.
      *
      * @returns Strict public response with no request-echo identity fields.
+     *
+     * @throws {Error} When the response's identity fields do not match the authoritative identity.
      */
     private static uploadResponseResult(
         identity: ExactTranscriptIdentity,

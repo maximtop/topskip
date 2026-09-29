@@ -1,3 +1,9 @@
+/**
+ * @file Rspack build configuration: compiles the extension's entry points,
+ * defines the build-time globals consumed by runtime code, and emits the
+ * profile-specific `manifest.json` via `topSkipManifestPlugin`.
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,13 +28,13 @@ import {
     shouldEnableCaptionCaptureVerboseLogs,
     type TopSkipBuildMode,
 } from './build-modes.ts';
-import { composeExtensionManifest } from './manifest-profile.ts';
+import { composeExtensionManifest } from './scripts/manifest-profile.ts';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const moduleDirname = path.dirname(fileURLToPath(import.meta.url));
 
 // The backend origin is configuration, not source. Local builds read it from
 // the gitignored root `.env`; CI exports it instead.
-loadDotEnv({ path: path.resolve(__dirname, '..', '.env'), quiet: true });
+loadDotEnv({ path: path.resolve(moduleDirname, '..', '.env'), quiet: true });
 
 /**
  * Emits `manifest.json` through the same exact profile boundary used by
@@ -56,7 +62,7 @@ function topSkipManifestPlugin(
                         },
                         () => {
                             const manifestPath = path.resolve(
-                                __dirname,
+                                moduleDirname,
                                 'src/manifest.json',
                             );
                             compilation.fileDependencies.add(manifestPath);
@@ -89,7 +95,7 @@ const topSkipServerOrigin = getServerAnalysisBaseUrl(topSkipBuildMode);
 export default defineConfig({
     mode: topSkipBuildMode === TopSkipBuild.Dev ? 'development' : 'production',
     devtool: topSkipBuildMode === TopSkipBuild.Dev ? 'source-map' : false,
-    context: __dirname,
+    context: moduleDirname,
     entry: {
         background: './src/background/index.ts',
         content: './src/content/index.ts',
@@ -98,14 +104,14 @@ export default defineConfig({
         options: './src/options/main.tsx',
     },
     output: {
-        path: path.resolve(__dirname, 'dist'),
+        path: path.resolve(moduleDirname, 'dist'),
         filename: '[name].js',
         clean: true,
     },
     resolve: {
         extensions: ['.tsx', '.ts', '.jsx', '.js'],
         alias: {
-            '@': path.resolve(__dirname, 'src'),
+            '@': path.resolve(moduleDirname, 'src'),
         },
     },
     module: {
@@ -139,19 +145,19 @@ export default defineConfig({
             filename: '[name].css',
         }),
         new rspack.DefinePlugin({
-            __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__: JSON.stringify(
+            TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS: JSON.stringify(
                 shouldEnableCaptionCaptureVerboseLogs(topSkipBuildMode),
             ),
-            __TOPSKIP_INCLUDE_DEV_LOCAL__: JSON.stringify(
+            TOPSKIP_INCLUDE_DEV_LOCAL: JSON.stringify(
                 topSkipBuildMode === TopSkipBuild.Dev,
             ),
-            __TOPSKIP_DEV_E2E_ORIGIN__: JSON.stringify(
+            TOPSKIP_DEV_E2E_ORIGIN: JSON.stringify(
                 getDevE2eOrigin(topSkipBuildMode),
             ),
-            __TOPSKIP_SERVER_BASE_URL__: JSON.stringify(
+            TOPSKIP_SERVER_BASE_URL: JSON.stringify(
                 topSkipServerOrigin,
             ),
-            __TOPSKIP_INCLUDE_CHROME_BUILTIN__: JSON.stringify(
+            TOPSKIP_INCLUDE_CHROME_BUILTIN: JSON.stringify(
                 INCLUDE_CHROME_BUILTIN_PROVIDER,
             ),
         }),

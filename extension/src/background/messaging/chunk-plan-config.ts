@@ -1,4 +1,9 @@
 /**
+ * @file Tunables for transcript chunking and the safety caps applied to
+ * chunk-related log fields.
+ */
+
+/**
  * Tunables for transcript chunking (spec FR-010).
  * Change only with evaluation data.
  */

@@ -1,3 +1,8 @@
+/**
+ * @file In-memory, session-mirrored store of per-tab promo detection state,
+ * including Server-mode session identity and stale/retired session tracking.
+ */
+
 import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
 import * as v from 'valibot';
 
@@ -514,8 +519,6 @@ export class PromoDetectionStore {
      * Moves the current identity to the stale set before route replacement.
      *
      * @param tabId - Browser tab whose active Server session ends.
-     *
-     * @returns Nothing.
      */
     private static retireActiveSession(tabId: number): void {
         const active = PromoDetectionStore.activeServerSession.get(tabId);

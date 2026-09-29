@@ -1,10 +1,11 @@
+/**
+ * @file Wire contract for every `runtime.sendMessage`/port message the
+ * extension bundles exchange: message type strings, request/response types,
+ * and the Valibot schemas that validate them at the trust boundary.
+ */
+
 import { captionSegmentSchema } from '@topskip/common/caption-types';
 import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
-import {
-    type PromoBlock,
-    type PromoDetectionStatus,
-    PROMO_DETECTION_STATUS
-} from '@topskip/common/promo-types';
 import {
     extensionVersionSchema,
     serverTranscriptIdentitySchema,
@@ -38,6 +39,11 @@ import type {
     ConnectionProviderId,
     ProviderHostAccessStatus,
 } from './provider-host-permissions';
+import type {
+    PromoBlock,
+    PromoDetectionStatus,
+    PROMO_DETECTION_STATUS,
+} from '@topskip/common/promo-types';
 
 export type { ConnectionProviderId } from './provider-host-permissions';
 
@@ -171,7 +177,9 @@ export const CAPTION_CAPTURE_FAILURE_REASON = {
 /**
  * Failure reason literals accepted in caption capture diagnostics.
  */
-export type CaptionCaptureFailureReason = (typeof CAPTION_CAPTURE_FAILURE_REASON)[keyof typeof CAPTION_CAPTURE_FAILURE_REASON];
+export type CaptionCaptureFailureReason = (typeof CAPTION_CAPTURE_FAILURE_REASON)[
+    keyof typeof CAPTION_CAPTURE_FAILURE_REASON
+];
 
 const captionCaptureFailureReasonSchema = v.picklist([
     CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady,
@@ -338,12 +346,40 @@ export type ServerPromoDetectionSource = Exclude<
  * reporting.
  */
 export interface ServerAnalysisFailureContext {
+    /**
+     * Stable server failure code driving popup copy and category.
+     */
     code: ServerAnalysisFailureCode;
+
+    /**
+     * Opaque id for correlating a user issue report with server logs, when
+     * the server attached one.
+     */
     supportId?: string;
+
+    /**
+     * Seconds to wait before retrying, when the server requested a delay.
+     */
     retryAfterSec?: number;
+
+    /**
+     * Server API version that produced the failure.
+     */
     apiVersion: number;
+
+    /**
+     * Detection algorithm version in effect, when the server reported one.
+     */
     algorithmVersion?: string;
+
+    /**
+     * Extension version that submitted the failed request.
+     */
     extensionVersion: string;
+
+    /**
+     * Base URL for filing a support issue, when the server allows reporting.
+     */
     supportIssueBaseUrl?: string;
 }
 
@@ -369,10 +405,30 @@ export type ServerAnalysisPhase = (typeof SERVER_ANALYSIS_PHASE)[keyof typeof SE
  * Fields shared by every detection snapshot shown for the active tab.
  */
 interface PromoDetectionStateBase {
+    /**
+     * YouTube video id the snapshot describes.
+     */
     videoId: string;
+
+    /**
+     * Detected promo blocks, when analysis has produced results.
+     */
     promoBlocks?: PromoBlock[];
+
+    /**
+     * Video duration in seconds, when known.
+     */
     durationSec?: number;
+
+    /**
+     * User-facing error message, when the latest attempt failed.
+     */
     error?: string;
+
+    /**
+     * Structured server failure context, when the failure came from Server
+     * mode.
+     */
     serverFailure?: ServerAnalysisFailureContext;
 
     /**
@@ -458,7 +514,9 @@ export const CONTENT_SCRIPT_REATTACH_OUTCOME = {
 /**
  * Outcome reported for one re-attach request.
  */
-export type ContentScriptReattachOutcome = (typeof CONTENT_SCRIPT_REATTACH_OUTCOME)[keyof typeof CONTENT_SCRIPT_REATTACH_OUTCOME];
+export type ContentScriptReattachOutcome = (typeof CONTENT_SCRIPT_REATTACH_OUTCOME)[
+    keyof typeof CONTENT_SCRIPT_REATTACH_OUTCOME
+];
 
 /**
  * Popup response describing what the background did for the active tab.
@@ -486,8 +544,19 @@ export type ReattachContentScriptResponse = v.InferOutput<
  * Tab-scoped detection push sent over the extension-global runtime channel.
  */
 export interface PromoDetectionUpdatedMessage {
+    /**
+     * Discriminant identifying this message.
+     */
     type: typeof TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED;
+
+    /**
+     * Tab the detection state belongs to.
+     */
     tabId: number;
+
+    /**
+     * Latest detection snapshot for the tab, or `null` when cleared.
+     */
     payload: PromoDetectionStatePayload | null;
 }
 
@@ -597,6 +666,9 @@ export const requestServerAnalysisRuntimeMessageSchema = v.strictObject({
  * Watch-open readiness probe for a video assigned to the Private BYOK route.
  */
 export interface PreflightByokSetupPayload {
+    /**
+     * Video the readiness probe is scoped to.
+     */
     videoId: string;
 }
 
@@ -756,8 +828,19 @@ export type ProviderAvailabilityMessage = (typeof PROVIDER_AVAILABILITY)[keyof t
  * Provider registry item exposed to extension UI.
  */
 export interface ProviderListItem {
+    /**
+     * Provider identifier.
+     */
     id: string;
+
+    /**
+     * User-facing provider name.
+     */
     displayName: string;
+
+    /**
+     * Current serialized availability of this provider.
+     */
     availability: ProviderAvailabilityMessage;
 }
 
@@ -805,12 +888,39 @@ export type ValidateOpenRouterModelResponse = | { ok: true; valid: boolean; erro
  * User-facing model option serialized for options and popup UI.
  */
 export interface DetectionModelMessage {
+    /**
+     * Stable provider-prefixed identifier persisted as the active model.
+     */
     id: string;
+
+    /**
+     * User-facing model name shown in selection UI.
+     */
     label: string;
+
+    /**
+     * Provider this model routes through.
+     */
     providerId: ProviderId;
+
+    /**
+     * User-facing name of the provider this model routes through.
+     */
     providerLabel: string;
+
+    /**
+     * Provider-native model name (not the prefixed id) sent in requests.
+     */
     modelName: string;
+
+    /**
+     * Whether using this model requires a configured provider connection.
+     */
     requiresConnection: boolean;
+
+    /**
+     * Current serialized availability of this model's provider.
+     */
     availability: ProviderAvailabilityMessage;
 }
 
@@ -828,11 +938,34 @@ export type ConnectionStatus = (typeof CONNECTION_STATUS)[keyof typeof CONNECTIO
  * Provider connection row sent to the model-first settings UI.
  */
 export interface ConnectionEntryMessage {
+    /**
+     * Provider this connection row configures.
+     */
     providerId: ConnectionProviderId;
+
+    /**
+     * User-facing name of the provider this connection row configures.
+     */
     providerLabel: string;
+
+    /**
+     * Whether the currently active model needs this connection to work.
+     */
     requiredForActiveModel: boolean;
+
+    /**
+     * Masked form of the saved API key for display, or `null` when unset.
+     */
     apiKeyMasked: string | null;
+
+    /**
+     * Whether a key is currently saved for this provider.
+     */
     status: ConnectionStatus;
+
+    /**
+     * Whether the optional host permission for this provider is granted.
+     */
     hostAccessStatus: ProviderHostAccessStatus;
 }
 
@@ -871,8 +1004,19 @@ export const PROVIDER_CONNECTION_FAILURE_CODE = {
  * A revoked optional grant tells options to restore an explicit access action.
  */
 export interface ProviderHostAccessRequiredFailure {
+    /**
+     * Discriminates this failure from a successful result.
+     */
     ok: false;
+
+    /**
+     * Marks the failure as a revoked optional host permission.
+     */
     code: typeof PROVIDER_CONNECTION_FAILURE_CODE.HostAccessRequired;
+
+    /**
+     * Provider whose host permission was revoked.
+     */
     providerId: ConnectionProviderId;
 }
 
@@ -1124,7 +1268,14 @@ export type CaptionsFromContentAck = | { ok: true }
  * connected extension pages.
  */
 export interface PrefsPortMessage {
+    /**
+     * Discriminant identifying this message.
+     */
     type: typeof TOPSKIP_MESSAGE.PREFS_UPDATED;
+
+    /**
+     * Full updated preferences broadcast to connected pages.
+     */
     prefs: UserPreferences;
 }
 

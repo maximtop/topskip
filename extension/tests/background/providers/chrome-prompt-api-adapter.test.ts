@@ -17,7 +17,7 @@ import {
 /**
  * Minimal mock for a LanguageModel session.
  *
- * @param overrides
+ * @param overrides Session fields to override on top of the fitting defaults.
  */
 function makeSession(
     overrides?: Partial<{
@@ -51,7 +51,7 @@ function makeSession(
 /**
  * Minimal mock for the LanguageModel static interface.
  *
- * @param overrides
+ * @param overrides Static-interface fields to override on top of the available defaults.
  */
 function makeLanguageModelGlobal(
     overrides?: Partial<{

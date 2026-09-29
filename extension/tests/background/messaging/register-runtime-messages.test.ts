@@ -83,8 +83,10 @@ vi.mock('@/background/storage/background-storage-access', () => ({
 vi.mock('@/background/lifecycle/content-script-reattach', () => ({
     ContentScriptReattach: { handleRequest: vi.fn() },
 }));
-vi.mock('@/background/messaging/misc-runtime-messages', () => ({
+vi.mock('@/background/messaging/content-log-messages', () => ({
     ContentLogMessages: { log: vi.fn() },
+}));
+vi.mock('@/background/messaging/misc-runtime-messages', () => ({
     PromoDetectionRuntimeMessages: { handleGet: vi.fn(), handleDevSet: vi.fn() },
 }));
 vi.mock('@/background/messaging/caption-runtime-messages', () => ({
@@ -119,6 +121,8 @@ type Listener = (message: unknown, sender: unknown) => Promise<unknown> | undefi
 
 /**
  * Registers the dispatcher and returns the listener it installed.
+ *
+ * @throws {Error} When the listener was not registered.
  */
 function installDispatcher(): Listener {
     registerRuntimeMessages({} as never);

@@ -1,3 +1,8 @@
+/**
+ * @file React-aware translator instance shared by popup and options
+ * components.
+ */
+
 import { translate, type I18nInterface } from '@adguard/translate';
 import React from 'react';
 

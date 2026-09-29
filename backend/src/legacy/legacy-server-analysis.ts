@@ -1,3 +1,9 @@
+/**
+ * @file Orchestrates the private, operator-only legacy metadata-extraction path:
+ * cache lookup, job join, quota admission, and cold-job start, kept isolated
+ * from the public caption-upload path.
+ */
+
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_FAILURE_CODE,
@@ -29,7 +35,14 @@ const CAPACITY_RETRY_AFTER_SEC = 3;
  * Legacy orchestration returns only the private process-selected response contract.
  */
 export interface BackendLegacyAnalysisResult {
+    /**
+     * HTTP status code matching `body.status` for the legacy response.
+     */
     statusCode: 200 | 202 | 422 | 429;
+
+    /**
+     * Private legacy response payload to return as-is.
+     */
     body: LegacyServerAnalysisResponse;
 }
 
@@ -42,11 +55,12 @@ export class BackendLegacyServerAnalysis {
      *
      * @param request - Private metadata request accepted by a legacy-mode process.
      * @param options - Hashed ownership context and deterministic request time.
-     * @param options.nowMs
-     * @param options.installationHash
-     * @param options.ipHash
-     * @param options.requestId
-     * @param options.publicContext
+     * @param options.nowMs Deterministic timestamp used for quota accounting.
+     * @param options.installationHash Hashed installation identity used for job-join and quota lookups.
+     * @param options.ipHash Hashed request IP used for job-join and quota lookups.
+     * @param options.requestId Safe request correlation identifier used only for logging.
+     * @param options.publicContext Whether cold-start quota should be charged against the
+     * installation/IP bucket instead of the local process counter.
      *
      * @returns Private legacy response with its HTTP status.
      */

@@ -1,3 +1,9 @@
+/**
+ * @file Valibot schemas and types for the private, operator-only legacy
+ * metadata-extraction request/response contract, kept isolated from the
+ * public caption-upload schemas.
+ */
+
 import {
     extensionVersionSchema,
     promoBlockSchema,

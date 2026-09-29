@@ -1,3 +1,8 @@
+/**
+ * @file MobX store synchronizing user preferences with the background
+ * service worker over a long-lived port.
+ */
+
 import { makeAutoObservable, runInAction } from 'mobx';
 
 import { POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS } from '@/popup/constants';

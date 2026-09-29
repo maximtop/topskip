@@ -1,3 +1,8 @@
+/**
+ * @file Per-context i18n facade that falls back to `browser.i18n` before the
+ * translation service has initialized.
+ */
+
 import browser from '@/shared/browser';
 import {
     type AvailableLocale,

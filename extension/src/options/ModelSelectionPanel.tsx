@@ -1,3 +1,7 @@
+/**
+ * @file Primary model-first detection selector panel for the options page.
+ */
+
 import {
     Alert,
     Badge,
@@ -20,8 +24,20 @@ import type { ReactElement } from 'react';
  * Model selector state and callbacks supplied by the options container.
  */
 interface ModelSelectionPanelProps {
+    /**
+     * Currently active detection model id.
+     */
     activeModelId: string;
+
+    /**
+     * Available detection models across providers.
+     */
     models: DetectionModelMessage[];
+
+    /**
+     * Provider whose connection is missing for the active model, or `null`
+     * when none is missing.
+     */
     missingConnectionProviderId: ConnectionProviderId | null;
     onModelChange(modelId: string): void;
     onOpenConnection(providerId: ConnectionProviderId): void;

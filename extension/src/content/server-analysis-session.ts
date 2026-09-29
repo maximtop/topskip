@@ -1,3 +1,9 @@
+/**
+ * @file Per-video content-side session for server-mode analysis: retains one
+ * accepted caption payload and its immutable in-flight runtime operation
+ * across polling and MV3 transport recovery.
+ */
+
 import {
     CaptionTranscriptCanonicalizer,
     MAX_TRANSCRIPT_TIMELINE_SEC,
@@ -12,17 +18,13 @@ import {
     refreshServerAnalysisStatusPayloadSchema,
     requestServerAnalysisPayloadSchema,
     serverAnalysisSessionIdSchema,
+    type CaptionsFromContentSuccessPayload,
     type RefreshServerAnalysisStatusPayload,
     type RequestServerAnalysisPayload,
+    type SERVER_ANALYSIS_SESSION_EVENT,
     type ServerAnalysisSessionEventPayload,
-
 } from '@/shared/messages';
 
-import type {
-    CaptionsFromContentSuccessPayload,
-    SERVER_ANALYSIS_SESSION_EVENT
-
-} from '@/shared/messages';
 import type { ServerTranscriptIdentity } from '@topskip/common/server-analysis-contract';
 
 /**
@@ -69,10 +71,21 @@ const SERVER_ANALYSIS_SESSION_STATE = {
  * Request operations retain the exact canonical captions used by the first POST.
  */
 interface ServerAnalysisRequestOperation {
+    /**
+     * Monotonic local identity rejecting completions from superseded operations.
+     */
     operationId: number;
+
+    /**
+     * Whether this is the initial submission or the one exact recovery resubmit.
+     */
     kind:
         | typeof SERVER_ANALYSIS_OPERATION_KIND.Submit
         | typeof SERVER_ANALYSIS_OPERATION_KIND.ExactResubmit;
+
+    /**
+     * Canonical caption request retained for replay.
+     */
     payload: RequestServerAnalysisPayload;
 }
 
@@ -80,8 +93,19 @@ interface ServerAnalysisRequestOperation {
  * Poll operations retain the server-authoritative job and transcript identity.
  */
 interface ServerAnalysisPollOperation {
+    /**
+     * Monotonic local identity rejecting completions from superseded operations.
+     */
     operationId: number;
+
+    /**
+     * Fixed poll kind, distinguishing this from a request operation.
+     */
     kind: typeof SERVER_ANALYSIS_OPERATION_KIND.Poll;
+
+    /**
+     * Server-authoritative job and transcript identity to poll with.
+     */
     payload: RefreshServerAnalysisStatusPayload;
 }
 
@@ -95,8 +119,19 @@ export type ServerAnalysisPendingOperation = | ServerAnalysisRequestOperation
  * A bounded retry carries the same operation and its deterministic delay.
  */
 export interface ServerAnalysisTransportRetry {
+    /**
+     * Defensive copy of the operation to replay.
+     */
     operation: ServerAnalysisPendingOperation;
+
+    /**
+     * Deterministic delay in ms before the retry should be attempted.
+     */
     retryAfterMs: number;
+
+    /**
+     * 1-based count of this retry within the bounded backoff schedule.
+     */
     retryNumber: number;
 }
 
@@ -128,7 +163,14 @@ export type ServerAnalysisTerminalEvent = | {
  * A bounded terminal-event retry reuses the same safe transport delays.
  */
 export interface ServerAnalysisTerminalEventDeliveryRetry {
+    /**
+     * Deterministic delay in ms before the retry should be attempted.
+     */
     retryAfterMs: number;
+
+    /**
+     * 1-based count of this retry within the current wake cycle's budget.
+     */
     retryNumber: number;
 }
 
@@ -148,10 +190,29 @@ const PINNED_JOB_INITIAL_STATUS = 'processing';
  * polling memory, so the content session is the only place these are known.
  */
 interface ServerAnalysisPollJob {
+    /**
+     * Opaque backend job identifier for the pinned processing job.
+     */
     jobId: string;
+
+    /**
+     * Wall-clock time (ms) the job was first pinned, for `totalMs`.
+     */
     startedAtMs: number;
+
+    /**
+     * Acknowledged polls counted toward this job.
+     */
     polls: number;
+
+    /**
+     * Transport retries counted toward this job.
+     */
     retries: number;
+
+    /**
+     * Most recently observed contract status, or `failed` for a retry.
+     */
     lastStatus: string;
 }
 
@@ -159,10 +220,29 @@ interface ServerAnalysisPollJob {
  * Snapshot for the `poll-summary` event.
  */
 export interface ServerAnalysisPollSummary {
+    /**
+     * Opaque backend job identifier the summary is for.
+     */
     job: string;
+
+    /**
+     * Acknowledged polls counted toward this job.
+     */
     polls: number;
+
+    /**
+     * Transport retries counted toward this job.
+     */
     retries: number;
+
+    /**
+     * Elapsed ms since the job was pinned.
+     */
     totalMs: number;
+
+    /**
+     * Most recently observed contract status, or `failed` for a retry.
+     */
     lastStatus: string;
 }
 

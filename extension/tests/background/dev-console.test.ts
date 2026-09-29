@@ -13,7 +13,7 @@ describe('DevConsole', () => {
         vi.restoreAllMocks();
     });
 
-    // Vitest compiles __TOPSKIP_INCLUDE_DEV_LOCAL__ to false (release-like),
+    // Vitest compiles TOPSKIP_INCLUDE_DEV_LOCAL to false (release-like),
     // so the observable contract here is silence; the dev branch is a
     // compile-time constant with no logic beyond console.* spreading.
     it('prints nothing under release-like defines', () => {

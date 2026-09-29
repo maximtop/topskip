@@ -1,3 +1,8 @@
+/**
+ * @file Bounded polling loop that keeps the Diagnostics section's status and
+ * preview in sync with the background while the section is visible.
+ */
+
 import { OPTIONS_DIAGNOSTICS_REFRESH_MS } from '@/options/constants';
 import {
     requestDebugLogPreview,

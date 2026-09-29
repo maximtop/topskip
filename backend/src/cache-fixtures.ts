@@ -1,3 +1,9 @@
+/**
+ * @file Seeded in-memory legacy server-cache fixture used by the Playwright watch
+ * fixture in test mode only, so e2e runs get a deterministic "ready" response
+ * without exercising the real extraction/analysis pipeline.
+ */
+
 import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
@@ -32,8 +38,8 @@ export class BackendCacheFixtures {
      * Returns a ready cache response when the fixture key matches exactly.
      *
      * @param input - Validated request cache key.
-     * @param input.videoId
-     * @param input.algorithmVersion
+     * @param input.videoId Video identifier to match against the seeded fixture.
+     * @param input.algorithmVersion Analysis algorithm version to match against the seeded fixture.
      *
      * @returns Legacy ready response for the seeded video, otherwise `null`.
      */

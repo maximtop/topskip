@@ -1,3 +1,8 @@
+/**
+ * @file CLI helper that fetches translated locale data for the given locales
+ * from the localization service and writes each into its locale directory.
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 

@@ -1,3 +1,8 @@
+/**
+ * @file Handles caption payloads sent from the watch content script and
+ * forwards valid transcripts into the promo analysis pipeline.
+ */
+
 import { logTranscriptForDeveloper } from '@/background/captions/log-transcript-dev';
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
@@ -58,7 +63,7 @@ export class CaptionRuntimeMessages {
             return { ok: true };
         }
 
-        if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (TOPSKIP_INCLUDE_DEV_LOCAL) {
             logTranscriptForDeveloper(
                 payload.videoId,
                 payload.languageCode,

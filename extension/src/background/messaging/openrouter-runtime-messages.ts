@@ -1,3 +1,8 @@
+/**
+ * @file Runtime handlers for OpenRouter options messaging: config
+ * read/write, custom model list mutation, and model slug validation.
+ */
+
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { fetchOpenRouterModelList } from '@/background/openrouter/openrouter-models-api';

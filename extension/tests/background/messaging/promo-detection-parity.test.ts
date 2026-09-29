@@ -21,6 +21,7 @@ import {
 } from '@/shared/constants';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
+import type * as LogPromoAnalysisModule from '@/background/openrouter/log-promo-analysis';
 import type { PromoBlock } from '@topskip/common/promo-types';
 
 // ------------------------------------------------------------------
@@ -86,9 +87,7 @@ vi.mock('@/background/openrouter/parse-llm-promo-response', () => ({
 vi.mock(
     '@/background/openrouter/log-promo-analysis',
     async (importOriginal) => {
-        const mod = await importOriginal<
-                typeof import('@/background/openrouter/log-promo-analysis')
-        >();
+        const mod = await importOriginal<typeof LogPromoAnalysisModule>();
         return {
             ...mod,
             buildPromoAnalysisLogBundle: vi.fn().mockReturnValue(''),

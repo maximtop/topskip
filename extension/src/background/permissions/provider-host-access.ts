@@ -1,3 +1,8 @@
+/**
+ * @file Reads optional host-permission grants for BYOK providers at the
+ * background-owned network boundary.
+ */
+
 import browser from '@/shared/browser';
 import {
     PROVIDER_HOST_ACCESS_STATUS,

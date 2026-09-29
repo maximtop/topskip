@@ -1,3 +1,8 @@
+/**
+ * @file Single diagnostics entry point for the background: stamps, gates,
+ * sanitizes and formats debug-log events before handing lines to the store.
+ */
+
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { DEBUG_LOG_PREHYDRATION_QUEUE_LIMIT } from '@/shared/debug-log-constants';
@@ -69,12 +74,39 @@ const RESTART_CAUSE_EVENTS: ReadonlySet<DebugLogEventName> = new Set([
  * back-dates batched content events.
  */
 export interface DebugLogContext {
+    /**
+     * Origin of the event; defaults to `background` when omitted.
+     */
     src?: DebugLogSource;
+
+    /**
+     * Browser tab this event is attributed to, when known.
+     */
     tab?: number;
+
+    /**
+     * YouTube video id; stripped unless `tab` is also set.
+     */
     video?: string;
+
+    /**
+     * Server-analysis session id, kept only when it matches its fixed pattern.
+     */
     session?: string;
+
+    /**
+     * Server-analysis job id, kept only when it matches its fixed pattern.
+     */
     job?: string;
+
+    /**
+     * Support/report id, kept only when it matches its fixed pattern.
+     */
     support?: string;
+
+    /**
+     * Back-dated event time in epoch ms; defaults to the current receipt time.
+     */
     tsMs?: number;
 }
 
@@ -82,9 +114,24 @@ export interface DebugLogContext {
  * One record held until the facade opens or committed right away.
  */
 interface PendingRecord {
+    /**
+     * Event name from the normative vocabulary.
+     */
     event: DebugLogEventName;
+
+    /**
+     * Bounded scalar fields, sanitized only when the record is written.
+     */
     fields: DebugLogFields;
+
+    /**
+     * Background-resolved attribution for this record.
+     */
     ctx: DebugLogContext;
+
+    /**
+     * Event time in epoch ms (may be back-dated for batched content events).
+     */
     tsMs: number;
 }
 
@@ -147,7 +194,7 @@ export class DebugLog {
         event: DebugLogEventName,
         fields: DebugLogFields = {},
         ctx: DebugLogContext = {},
-        mirrorToConsole = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        mirrorToConsole = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         try {
             if (mirrorToConsole) {
@@ -208,23 +255,23 @@ export class DebugLog {
                 return;
             }
             for (const event of payload.events) {
-                if (!TabAttributionRegistry.allowContentEvent(tabId, nowMs)) {
+                if (TabAttributionRegistry.allowContentEvent(tabId, nowMs)) {
+                    DebugLog.record(
+                        event.event,
+                        event.fields,
+                        {
+                            src: DebugLog.contentSource(event.fields),
+                            tab: tabId,
+                            video: event.video,
+                            session: event.session,
+                            job: event.job,
+                            tsMs: Math.max(0, nowMs - event.ageMs),
+                        },
+                        false,
+                    );
+                } else {
                     DebugLogStore.noteDropped(DEBUG_LOG_DROP_REASON.Ceiling);
-                    continue;
                 }
-                DebugLog.record(
-                    event.event,
-                    event.fields,
-                    {
-                        src: DebugLog.contentSource(event.fields),
-                        tab: tabId,
-                        video: event.video,
-                        session: event.session,
-                        job: event.job,
-                        tsMs: Math.max(0, nowMs - event.ageMs),
-                    },
-                    false,
-                );
             }
         } catch {
             // Diagnostics must never break the message handler.

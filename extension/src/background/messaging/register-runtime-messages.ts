@@ -1,3 +1,8 @@
+/**
+ * @file Single `runtime.onMessage` listener that narrows and dispatches every
+ * incoming message to its owning handler behind the storage-ready barrier.
+ */
+
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
@@ -6,11 +11,9 @@ import { ContentScriptReattach } from '@/background/lifecycle/content-script-rea
 import { ByokSetupRuntimeMessages } from '@/background/messaging/byok-setup-runtime-messages';
 import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
 import { ChromePromptApiRuntimeMessages } from '@/background/messaging/chrome-prompt-api-runtime-messages';
+import { ContentLogMessages } from '@/background/messaging/content-log-messages';
 import { DebugLogRuntimeMessages } from '@/background/messaging/debug-log-runtime-messages';
-import {
-    ContentLogMessages,
-    PromoDetectionRuntimeMessages,
-} from '@/background/messaging/misc-runtime-messages';
+import { PromoDetectionRuntimeMessages } from '@/background/messaging/misc-runtime-messages';
 import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
 import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
@@ -92,7 +95,7 @@ async function dispatchRuntimeMessage(
     switch (msg.type) {
         case TOPSKIP_MESSAGE.CONTENT_LOG:
             ContentLogMessages.log(msg.level, msg.args, sender.tab?.id);
-            return;
+            return undefined;
         case TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT:
             return CaptionRuntimeMessages.handle(msg.payload, sender);
         case TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP:

@@ -828,6 +828,7 @@ export class DebugLogStore {
         const bytes = utf8ByteLength(line) + 1;
         const tailFull = DebugLogStore.unflushedLineCount() >= DEBUG_LOG_MEMORY_TAIL_LIMIT;
         if (bytes > DEBUG_LOG_MAX_LINE_BYTES || tailFull) {
+            // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
             index.dropped[DEBUG_LOG_DROP_REASON.Lost] += 1;
             DebugLogStore.touchIndex(index);
             return;
@@ -858,7 +859,9 @@ export class DebugLogStore {
         open.buffer.lines.push(line);
         open.info.bytes += bytes;
         open.info.count += 1;
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.sizeBytes += bytes;
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.eventCount += 1;
         DebugLogStore.evictToFit(index);
         DebugLogStore.touchIndex(index);
@@ -894,6 +897,7 @@ export class DebugLogStore {
      */
     private static openSegment(index: DebugLogIndex, tsMs: number): OpenSegment {
         const id = index.nextSegmentId;
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.nextSegmentId += 1;
         const info: DebugLogSegmentInfo = {
 
@@ -921,8 +925,11 @@ export class DebugLogStore {
             if (oldest === undefined) {
                 return;
             }
+            // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
             index.sizeBytes -= oldest.bytes;
+            // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
             index.eventCount -= oldest.count;
+            // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
             index.evictedCount += oldest.count;
             DebugLogStore.buffers.delete(oldest.id);
             index.retiredSegmentIds.push(oldest.id);
@@ -949,7 +956,9 @@ export class DebugLogStore {
      * @param index - Live index.
      */
     private static touchIndex(index: DebugLogIndex): void {
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.revision += 1;
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.oldestRetainedMs = index.segments[0]?.firstTsMs ?? null;
     }
 
@@ -1142,8 +1151,11 @@ export class DebugLogStore {
             return;
         }
         index.segments.splice(position, 1);
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.sizeBytes -= info.bytes;
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.eventCount -= info.count;
+        // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
         index.dropped[DEBUG_LOG_DROP_REASON.Lost] += info.count;
         index.retiredSegmentIds.push(info.id);
         if (DebugLogStore.openSegmentId === info.id) {
@@ -1264,7 +1276,9 @@ export class DebugLogStore {
         const lines = raw.split('\n');
         const bytes = lines.reduce((sum, line) => sum + utf8ByteLength(line) + 1, 0);
         if (bytes !== last.bytes || lines.length !== last.count) {
+            // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
             index.sizeBytes += bytes - last.bytes;
+            // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
             index.eventCount += lines.length - last.count;
             last.bytes = bytes;
             last.count = lines.length;
@@ -1291,6 +1305,7 @@ export class DebugLogStore {
             const result = await browser.storage.local.get(orphanKey);
             if (Reflect.get(result, orphanKey) !== undefined) {
                 index.retiredSegmentIds.push(orphanId);
+                // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
                 index.nextSegmentId += 1;
                 DebugLogStore.touchIndex(index);
             }
@@ -1304,6 +1319,7 @@ export class DebugLogStore {
         const remaining = await DebugLogStore.removeSegments(retired);
         if (remaining.length !== retired.length) {
             const keep = new Set(remaining);
+            // eslint-disable-next-line no-param-reassign -- the live index is updated in place, also across awaits
             index.retiredSegmentIds = index.retiredSegmentIds.filter((id) => keep.has(id));
             DebugLogStore.touchIndex(index);
         }

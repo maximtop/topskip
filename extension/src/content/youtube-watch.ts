@@ -711,6 +711,7 @@ export class YoutubeWatch {
         video: HTMLVideoElement,
         targetTime: number,
     ): void {
+        // eslint-disable-next-line no-param-reassign -- seeking means setting currentTime on the player element
         video.currentTime = targetTime;
         YoutubeWatch.lastTime = targetTime;
         YoutubeWatch.showSkipToast();

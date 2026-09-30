@@ -1,14 +1,25 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { Content } from '@/content/content';
+import { EXTENSION_CONTEXT_POLL_INTERVAL_MS } from '@/content/extension-context-watch';
 
 const runtimeState = vi.hoisted(
     (): { id: string | undefined } => ({ id: 'extension-id' }),
 );
 
 const { disposeWatch, initWatch, teardownPageBridge } = vi.hoisted(() => {
-    const disposeWatch = vi.fn();
+    const disposeWatchMock = vi.fn();
     return {
-        disposeWatch,
-        initWatch: vi.fn(() => disposeWatch),
+        disposeWatch: disposeWatchMock,
+        initWatch: vi.fn(() => disposeWatchMock),
         teardownPageBridge: vi.fn(() => Promise.resolve()),
     };
 });
@@ -36,9 +47,6 @@ const { debugLogDispose } = vi.hoisted(() => ({ debugLogDispose: vi.fn() }));
 vi.mock('@/content/debug-log-client', () => ({
     DebugLogClient: { dispose: debugLogDispose },
 }));
-
-import { Content } from '@/content/content';
-import { EXTENSION_CONTEXT_POLL_INTERVAL_MS } from '@/content/extension-context-watch';
 
 describe('Content', () => {
     beforeEach(() => {
@@ -82,10 +90,10 @@ describe('Content', () => {
         expect(teardownPageBridge).toHaveBeenCalledOnce();
         expect(debugLogDispose).toHaveBeenCalledOnce();
         expect(debugLogDispose.mock.invocationCallOrder[0]).toBeLessThan(
-            disposeWatch.mock.invocationCallOrder[0],
+            disposeWatch.mock.invocationCallOrder[0]!,
         );
         expect(disposeWatch.mock.invocationCallOrder[0]).toBeLessThan(
-            teardownPageBridge.mock.invocationCallOrder[0],
+            teardownPageBridge.mock.invocationCallOrder[0]!,
         );
 
         vi.advanceTimersByTime(EXTENSION_CONTEXT_POLL_INTERVAL_MS * 3);

@@ -2,7 +2,7 @@
     {
         "project_id": "topskip-extension",
         "base_locale": "en",
-        "localizable_files": ["extension/src/_locales/en/messages.json"],
+        "localizable_files": ["src/_locales/en/messages.json"],
         "languages": {
             "ar": "Arabic",
             "de": "German",

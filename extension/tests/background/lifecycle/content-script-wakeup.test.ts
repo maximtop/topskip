@@ -1,4 +1,19 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+} from '@/shared/messages';
 
 const browserMocks = vi.hoisted(() => ({
     getManifest: vi.fn(() => ({ version: '0.1.0' })),
@@ -41,13 +56,6 @@ vi.mock('@/background/debug-log/tab-attribution-registry', () => ({
         isIncognitoSync: debugLogMocks.isIncognitoSync,
     },
 }));
-
-import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    TOPSKIP_MESSAGE,
-} from '@/shared/messages';
 
 const CURRENT_ACK = {
     ok: true,
@@ -156,11 +164,9 @@ describe('ContentScriptWakeup.notifyExistingTabs', () => {
             { id: 42, incognito: true },
             { id: 43, incognito: false },
         ]);
-        browserMocks.sendMessage.mockImplementation((tabId: number) =>
-            tabId === 43
-                ? Promise.reject(new Error('gone'))
-                : Promise.resolve(CURRENT_ACK),
-        );
+        browserMocks.sendMessage.mockImplementation((tabId: number) => (tabId === 43
+            ? Promise.reject(new Error('gone'))
+            : Promise.resolve(CURRENT_ACK)));
 
         const pending = ContentScriptWakeup.notifyExistingTabs();
         await vi.advanceTimersByTimeAsync(50);

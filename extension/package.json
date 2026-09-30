@@ -4,6 +4,10 @@
     "private": true,
     "type": "module",
     "description": "Chrome extension that skips detected YouTube promo blocks",
+    "exports": {
+        "./build-modes": "./build-modes.ts",
+        "./manifest-profile": "./scripts/manifest-profile.ts"
+    },
     "dependencies": {
         "@adguard/translate": "^2.0.1",
         "@mantine/core": "^9.0.1",
@@ -17,5 +21,13 @@
         "valibot": "^1.3.1",
         "webextension-polyfill": "^0.12.0",
         "xstate": "^5.30.0"
+    },
+    "devDependencies": {
+        "@axe-core/playwright": "^4.11.1",
+        "@playwright/test": "^1.59.1",
+        "@rspack/cli": "^1.7.11",
+        "@rspack/core": "^1.7.11",
+        "dotenv": "^17.4.2",
+        "vitest": "^4.1.4"
     }
 }

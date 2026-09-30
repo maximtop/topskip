@@ -1,3 +1,7 @@
+/**
+ * @file OpenRouter custom model add/remove panel.
+ */
+
 import {
     Badge,
     Button,
@@ -8,28 +12,45 @@ import {
     TextInput,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
 import { translator } from '@/shared/i18n/translator';
 import { PROVIDER_LABEL } from '@/shared/providers';
 
+import type { ReactElement } from 'react';
+
 /**
  * State and callbacks for the custom model add/remove form.
  */
-type AddModelPanelProps = {
+interface AddModelPanelProps {
+    /**
+     * Saved custom OpenRouter model slugs.
+     */
     customModels: string[];
+
+    /**
+     * Current text of the new-model input.
+     */
     newModelDraft: string;
+
+    /**
+     * Whether an add-model request is in flight.
+     */
     addBusy: boolean;
+
+    /**
+     * Slug currently being removed, or `null` when none is in flight.
+     */
     removeBusySlug: string | null;
     onNewModelDraftChange(value: string): void;
     onAddCustomModel(): void;
     onRemoveCustomModel(slug: string): void;
-};
+}
 
 /**
  * OpenRouter custom models remain an add-model flow, not provider selection.
  *
  * @param props - Custom model list and actions.
+ *
  * @returns Add model panel.
  */
 export function AddModelPanel(props: AddModelPanelProps): ReactElement {

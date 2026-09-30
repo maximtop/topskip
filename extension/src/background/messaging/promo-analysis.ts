@@ -1,37 +1,19 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+/**
+ * @file Orchestrates BYOK LLM promo analysis after captions arrive: chunk
+ * planning, per-chunk adapter calls with tooLarge split-retry, block merging
+ * and delivery, and terminal debug-log/status reporting.
+ */
 
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
+import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
+import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
 import {
-    buildPromoAnalysisLogBundle,
-    listTimedLinesFromMergedTranscript,
-    LogPromoAnalysis,
-    logChunkPromoEntry,
-    type ChunkLogOutcome,
-    type PromoUncoveredRange,
-} from '@/background/openrouter/log-promo-analysis';
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+} from '@topskip/common/promo-types';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
 import { DevConsole } from '@/background/dev-console';
-import { PromoDetectionStore } from '@/background/promo-detection-store';
-import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
-import {
-    ANALYSIS_MODE,
-    MAX_CAPTION_TRANSCRIPT_CHARS,
-} from '@/shared/constants';
-import browser from '@/shared/browser';
-import {
-    PROMO_DETECTION_SOURCE,
-    TOPSKIP_MESSAGE,
-    type CaptionsFromContentPayload,
-    type LocalDetectionState,
-    type TopSkipRuntimeMessage,
-} from '@/shared/messages';
-import { PROVIDER_ID } from '@/shared/providers';
-import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
-import { defaultRegistry } from '@/background/providers/default-registry';
-import type { ProviderRegistry } from '@/background/providers/provider-registry';
-import {
-    PROVIDER_ANALYSIS_FAILURE_CODE,
-    type AnalyzeTranscriptResult,
-} from '@/background/providers/llm-provider-adapter';
 import {
     BLOCK_MERGE_GAP_SEC,
     CHUNK_BLOCK_TOLERANCE_SEC,
@@ -43,23 +25,48 @@ import {
     OVERLAP_FLOOR_SEC,
     OVERLAP_FRACTION,
 } from '@/background/messaging/chunk-plan-config';
-import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
-import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
-import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
+import {
+    buildPromoAnalysisLogBundle,
+    listTimedLinesFromMergedTranscript,
+    LogPromoAnalysis,
+    logChunkPromoEntry,
+    type ChunkLogOutcome,
+    type PromoUncoveredRange,
+} from '@/background/openrouter/log-promo-analysis';
 import {
     PROMO_DETECTION_PROMPT_VERSION,
     PROMO_DETECTION_SYSTEM_PROMPT,
 } from '@/background/openrouter/promo-detection-system-prompt';
+import { PromoDetectionStore } from '@/background/promo-detection-store';
+import { defaultRegistry } from '@/background/providers/default-registry';
 import {
-    PROMO_DETECTION_STATUS,
-    type PromoBlock,
-} from '@topskip/common/promo-types';
-import { DebugLog } from '@/background/debug-log/debug-log';
+    PROVIDER_ANALYSIS_FAILURE_CODE,
+    type AnalyzeTranscriptResult,
+} from '@/background/providers/llm-provider-adapter';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import browser from '@/shared/browser';
+import { mergeCaptionSegmentsToTranscript } from '@/shared/captions/merge-transcript';
+import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
+import {
+    ANALYSIS_MODE,
+    MAX_CAPTION_TRANSCRIPT_CHARS,
+} from '@/shared/constants';
 import {
     DEBUG_LOG_EVENT,
     formatPromoBlockTimings,
 } from '@/shared/debug-log-events';
 import { toDebugLogModelName } from '@/shared/detection-models';
+import {
+    PROMO_DETECTION_SOURCE,
+    TOPSKIP_MESSAGE,
+    type CaptionsFromContentPayload,
+    type LocalDetectionState,
+    type TopSkipRuntimeMessage,
+} from '@/shared/messages';
+import { PROVIDER_ID } from '@/shared/providers';
+
+import type { ProviderRegistry } from '@/background/providers/provider-registry';
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 /**
  * Stable code logged for an unexpected BYOK analysis exception (never the
@@ -113,6 +120,7 @@ export class PromoAnalysis {
      * bounded `tooLarge` retry (non-recursive).
      *
      * @param text - Chunk user message
+     *
      * @returns Two halves or `null` if not splittable
      */
     private static splitTranscriptLinesInHalf(
@@ -130,6 +138,7 @@ export class PromoAnalysis {
      * Caption time span covering the timed lines present in one chunk slice.
      *
      * @param chunkText - `[sec] text` lines
+     *
      * @returns First and last caption seconds in the slice
      */
     private static timeRangeFromChunkText(chunkText: string): {
@@ -141,8 +150,8 @@ export class PromoAnalysis {
             return { startSec: 0, endSec: 0 };
         }
         return {
-            startSec: t[0].sec,
-            endSec: t[t.length - 1].sec,
+            startSec: t[0]!.sec, // t.length === 0 returned above
+            endSec: t[t.length - 1]!.sec,
         };
     }
 
@@ -153,6 +162,7 @@ export class PromoAnalysis {
      * @param mergedText - Full merged transcript
      * @param lastChunkLineEndIndex - Inclusive index of the last caption line
      *   included in the final planned chunk
+     *
      * @returns First and last seconds of the dropped tail, or `null`
      */
     private static droppedTailRangeSec(
@@ -177,6 +187,7 @@ export class PromoAnalysis {
      *
      * @param result - Adapter result
      * @param aborted - Whether the run was aborted
+     *
      * @returns Log label
      */
     private static chunkOutcomeForLog(
@@ -194,8 +205,8 @@ export class PromoAnalysis {
             return 'too_large';
         }
         if (
-            result.rawAssistant !== undefined &&
-            result.rawAssistant.length > 0
+            result.rawAssistant !== undefined
+            && result.rawAssistant.length > 0
         ) {
             return 'parse_error';
         }
@@ -207,15 +218,16 @@ export class PromoAnalysis {
      * the run returns to setup-required without consuming remaining chunks.
      *
      * @param result - Provider result inspected before generic error handling.
+     *
      * @returns Whether the provider host grant must be restored explicitly.
      */
     private static requiresProviderHostAccess(
         result: AnalyzeTranscriptResult,
     ): boolean {
         return (
-            !result.ok &&
-            result.failureCode ===
-                PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired
+            !result.ok
+            && result.failureCode
+                === PROVIDER_ANALYSIS_FAILURE_CODE.HostAccessRequired
         );
     }
 
@@ -226,6 +238,7 @@ export class PromoAnalysis {
      *
      * @param result - Adapter result of the chunk call.
      * @param aborted - Whether the run was superseded while the call was in flight.
+     *
      * @returns Stable outcome token.
      */
     private static byokChunkOutcomeForLog(
@@ -259,6 +272,17 @@ export class PromoAnalysis {
      * Records the terminal BYOK metadata summary (no prompt/assistant text).
      *
      * @param input - Terminal run counters and stable outcome.
+     * @param input.tabId - Source tab the run analyzed.
+     * @param input.videoId - Video id analyzed.
+     * @param input.provider - Provider id that ran the analysis.
+     * @param input.model - Model name used for the run's chunk calls.
+     * @param input.chunks - Total chunks planned for this run.
+     * @param input.parsedBlocks - Total promo blocks parsed across chunks.
+     * @param input.coverage - Fraction of the transcript covered.
+     * @param input.uncovered - Number of uncovered ranges recorded.
+     * @param input.blocks - Final merged promo blocks.
+     * @param input.totalLatencyMs - Summed adapter call latency for the run.
+     * @param input.outcome - Stable terminal outcome token.
      */
     private static recordByokRunEnded(input: {
         tabId: number;
@@ -329,6 +353,7 @@ export class PromoAnalysis {
      *
      * @param tabId - Tab whose provider run is being checked.
      * @param abort - Controller captured by the async continuation.
+     *
      * @returns Whether the continuation still owns the live provider route.
      */
     private static isCurrentRun(
@@ -336,8 +361,8 @@ export class PromoAnalysis {
         abort: AbortController,
     ): boolean {
         return (
-            !abort.signal.aborted &&
-            PromoAnalysis.inflight.get(tabId)?.abort === abort
+            !abort.signal.aborted
+            && PromoAnalysis.inflight.get(tabId)?.abort === abort
         );
     }
 
@@ -349,8 +374,8 @@ export class PromoAnalysis {
     static abortForProviderChange(providerId: string): void {
         for (const [tabId, inflight] of PromoAnalysis.inflight.entries()) {
             if (
-                inflight.providerId === null ||
-                inflight.providerId !== providerId
+                inflight.providerId === null
+                || inflight.providerId !== providerId
             ) {
                 PromoAnalysis.abortForTab(tabId);
             }
@@ -380,6 +405,7 @@ export class PromoAnalysis {
      *
      * @param tabId - Target tab
      * @param payload - Caption payload
+     *
      * @returns Promise that settles when analysis finishes or aborts
      */
     private static async run(
@@ -427,7 +453,7 @@ export class PromoAnalysis {
                 return;
             }
 
-            const providerId = prefs.providerId;
+            const { providerId } = prefs;
             runProvider = providerId;
             DebugLog.record(
                 DEBUG_LOG_EVENT.ByokRunStarted,
@@ -628,8 +654,7 @@ export class PromoAnalysis {
                 if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
-                const { startSec: cStart, endSec: cEnd } =
-                    PromoAnalysis.timeRangeFromChunkText(chunkText);
+                const { startSec: cStart, endSec: cEnd } = PromoAnalysis.timeRangeFromChunkText(chunkText);
                 const t0 = performance.now();
                 const result = await adapter.analyzeTranscript({
                     ...baseParams,
@@ -639,8 +664,8 @@ export class PromoAnalysis {
                     return;
                 }
                 const latencyMs = performance.now() - t0;
-                totalAdapterCalls = totalAdapterCalls + 1;
-                totalAdapterLatencyMs = totalAdapterLatencyMs + latencyMs;
+                totalAdapterCalls += 1;
+                totalAdapterLatencyMs += latencyMs;
 
                 recordChunk({
                     result,
@@ -653,7 +678,7 @@ export class PromoAnalysis {
                 });
 
                 const aborted = !PromoAnalysis.isCurrentRun(tabId, abort);
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                     if (result.ok) {
                         lastRawAssistant = result.rawAssistant;
                     } else if (result.rawAssistant !== undefined) {
@@ -702,7 +727,7 @@ export class PromoAnalysis {
                 }
 
                 if (!result.ok) {
-                    chunkFailures = chunkFailures + 1;
+                    chunkFailures += 1;
                     if (result.tooLarge === true) {
                         anyPartial = true;
                     }
@@ -752,162 +777,153 @@ export class PromoAnalysis {
                 });
             };
 
-            for (let i = 0; i < plan.chunks.length; i++) {
+            for (let i = 0; i < plan.chunks.length; i += 1) {
                 const chunk = plan.chunks[i];
-                if (chunk === undefined) {
-                    continue;
-                }
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
-
-                const t0 = performance.now();
-                const first = await adapter.analyzeTranscript({
-                    ...baseParams,
-                    transcript: chunk.text,
-                });
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
-                const firstLatency = performance.now() - t0;
-                totalAdapterCalls = totalAdapterCalls + 1;
-                totalAdapterLatencyMs = totalAdapterLatencyMs + firstLatency;
-
-                recordChunk({
-                    result: first,
-                    aborted: !PromoAnalysis.isCurrentRun(tabId, abort),
-                    chunkIndex: i,
-                    startSec: chunk.startSec,
-                    endSec: chunk.endSec,
-                    chars: chunk.text.length,
-                    latencyMs: firstLatency,
-                });
-
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
-                    if (first.ok) {
-                        lastRawAssistant = first.rawAssistant;
-                    } else if (first.rawAssistant !== undefined) {
-                        lastRawAssistant = first.rawAssistant;
+                if (chunk !== undefined) {
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
                     }
 
-                    let parsedCount: number | undefined;
-                    if (first.ok && first.hasPromo) {
-                        parsedCount = first.blocks.length;
-                    } else if (first.ok && !first.hasPromo) {
-                        parsedCount = 0;
-                    }
-                    logChunkPromoEntry({
-                        chunkIndex: i,
-                        chunkCount,
-                        chunkStartSec: chunk.startSec,
-                        chunkEndSec: chunk.endSec,
-                        chunkChars: chunk.text.length,
-                        promptVersion: PROMO_DETECTION_PROMPT_VERSION,
-                        chunkText: chunk.text,
-                        chunkTextMaxChars: LOG_CHUNK_TEXT_MAX_CHARS,
-                        rawAssistant: first.ok
-                            ? first.rawAssistant
-                            : (first.rawAssistant ?? null),
-                        rawAssistantMaxChars: LOG_RAW_ASSISTANT_MAX_CHARS,
-                        adapterLatencyMs: firstLatency,
-                        outcome: PromoAnalysis.chunkOutcomeForLog(
-                            first,
-                            abort.signal.aborted,
-                        ),
-                        parsedBlockCount: parsedCount,
-                        retryLabel: undefined,
+                    const t0 = performance.now();
+                    const first = await adapter.analyzeTranscript({
+                        ...baseParams,
+                        transcript: chunk.text,
                     });
-                }
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
+                    }
+                    const firstLatency = performance.now() - t0;
+                    totalAdapterCalls += 1;
+                    totalAdapterLatencyMs += firstLatency;
 
-                if (await stopForMissingProviderHostAccess(first)) {
-                    return;
-                }
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
+                    recordChunk({
+                        result: first,
+                        aborted: !PromoAnalysis.isCurrentRun(tabId, abort),
+                        chunkIndex: i,
+                        startSec: chunk.startSec,
+                        endSec: chunk.endSec,
+                        chars: chunk.text.length,
+                        latencyMs: firstLatency,
+                    });
 
-                if (!first.ok && first.tooLarge === true) {
-                    const halves = PromoAnalysis.splitTranscriptLinesInHalf(
-                        chunk.text,
-                    );
-                    if (halves === null) {
-                        chunkFailures = chunkFailures + 1;
-                        anyPartial = true;
+                    if (TOPSKIP_INCLUDE_DEV_LOCAL) {
+                        if (first.ok) {
+                            lastRawAssistant = first.rawAssistant;
+                        } else if (first.rawAssistant !== undefined) {
+                            lastRawAssistant = first.rawAssistant;
+                        }
+
+                        let parsedCount: number | undefined;
+                        if (first.ok && first.hasPromo) {
+                            parsedCount = first.blocks.length;
+                        } else if (first.ok && !first.hasPromo) {
+                            parsedCount = 0;
+                        }
+                        logChunkPromoEntry({
+                            chunkIndex: i,
+                            chunkCount,
+                            chunkStartSec: chunk.startSec,
+                            chunkEndSec: chunk.endSec,
+                            chunkChars: chunk.text.length,
+                            promptVersion: PROMO_DETECTION_PROMPT_VERSION,
+                            chunkText: chunk.text,
+                            chunkTextMaxChars: LOG_CHUNK_TEXT_MAX_CHARS,
+                            rawAssistant: first.ok
+                                ? first.rawAssistant
+                                : (first.rawAssistant ?? null),
+                            rawAssistantMaxChars: LOG_RAW_ASSISTANT_MAX_CHARS,
+                            adapterLatencyMs: firstLatency,
+                            outcome: PromoAnalysis.chunkOutcomeForLog(
+                                first,
+                                abort.signal.aborted,
+                            ),
+                            parsedBlockCount: parsedCount,
+                            retryLabel: undefined,
+                        });
+                    }
+
+                    if (await stopForMissingProviderHostAccess(first)) {
+                        return;
+                    }
+                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                        return;
+                    }
+
+                    if (!first.ok && first.tooLarge === true) {
+                        const halves = PromoAnalysis.splitTranscriptLinesInHalf(
+                            chunk.text,
+                        );
+                        if (halves === null) {
+                            chunkFailures += 1;
+                            anyPartial = true;
+                            uncoveredRanges.push({
+                                startSec: chunk.startSec,
+                                endSec: chunk.endSec,
+                                kind: 'irreducible_line',
+                            });
+                            DevConsole.warn(
+                                '[TopSkip] irreducible_chunk: single line exceeds budget',
+                                { chunkIndex: i },
+                            );
+                        } else {
+                            const [aText, bText] = halves;
+                            await processSlice(aText, i, chunkCount, 'retry-split-a');
+                            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                                return;
+                            }
+                            if (providerHostAccessRequired) {
+                                return;
+                            }
+                            await processSlice(bText, i, chunkCount, 'retry-split-b');
+                            if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                                return;
+                            }
+                            if (providerHostAccessRequired) {
+                                return;
+                            }
+                        }
+                    } else if (!first.ok) {
+                        chunkFailures += 1;
                         uncoveredRanges.push({
                             startSec: chunk.startSec,
                             endSec: chunk.endSec,
-                            kind: 'irreducible_line',
+                            kind: 'failed_chunk',
                         });
-                        DevConsole.warn(
-                            '[TopSkip] irreducible_chunk: single line exceeds budget',
-                            { chunkIndex: i },
+                    } else if (first.hasPromo) {
+                        const filtered = ChunkMerge.filterPromoBlocksForChunkTimeRange(
+                            first.blocks,
+                            chunk.startSec,
+                            chunk.endSec,
+                            CHUNK_BLOCK_TOLERANCE_SEC,
                         );
-                        continue;
-                    }
-                    const [aText, bText] = halves;
-                    await processSlice(aText, i, chunkCount, 'retry-split-a');
-                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                        return;
-                    }
-                    if (providerHostAccessRequired) {
-                        return;
-                    }
-                    await processSlice(bText, i, chunkCount, 'retry-split-b');
-                    if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                        return;
-                    }
-                    if (providerHostAccessRequired) {
-                        return;
-                    }
-                    continue;
-                }
+                        mergedBlocks = mergePromoBlocksWithGap(
+                            [...mergedBlocks, ...filtered],
+                            BLOCK_MERGE_GAP_SEC,
+                        );
 
-                if (!first.ok) {
-                    chunkFailures = chunkFailures + 1;
-                    uncoveredRanges.push({
-                        startSec: chunk.startSec,
-                        endSec: chunk.endSec,
-                        kind: 'failed_chunk',
-                    });
-                    continue;
-                }
+                        try {
+                            await browser.tabs.sendMessage(tabId, {
+                                type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
+                                source: PROMO_DETECTION_SOURCE.LocalProvider,
+                                videoId,
+                                promoBlocks: mergedBlocks,
+                                partialCoverage: anyPartial,
+                            } satisfies TopSkipRuntimeMessage);
+                        } catch {
+                            // tab closed
+                        }
+                        if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
+                            return;
+                        }
 
-                if (!first.hasPromo) {
-                    continue;
+                        await setStatus({
+                            videoId,
+                            status: PROMO_DETECTION_STATUS.Detected,
+                            promoBlocks: mergedBlocks,
+                            partialCoverage: anyPartial,
+                        });
+                    }
                 }
-
-                const filtered = ChunkMerge.filterPromoBlocksForChunkTimeRange(
-                    first.blocks,
-                    chunk.startSec,
-                    chunk.endSec,
-                    CHUNK_BLOCK_TOLERANCE_SEC,
-                );
-                mergedBlocks = mergePromoBlocksWithGap(
-                    [...mergedBlocks, ...filtered],
-                    BLOCK_MERGE_GAP_SEC,
-                );
-
-                try {
-                    await browser.tabs.sendMessage(tabId, {
-                        type: TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED,
-                        source: PROMO_DETECTION_SOURCE.LocalProvider,
-                        videoId,
-                        promoBlocks: mergedBlocks,
-                        partialCoverage: anyPartial,
-                    } satisfies TopSkipRuntimeMessage);
-                } catch {
-                    // tab closed
-                }
-                if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
-                    return;
-                }
-
-                await setStatus({
-                    videoId,
-                    status: PROMO_DETECTION_STATUS.Detected,
-                    promoBlocks: mergedBlocks,
-                    partialCoverage: anyPartial,
-                });
             }
 
             if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
@@ -916,16 +932,20 @@ export class PromoAnalysis {
 
             const totalWallClockMs = performance.now() - runStartedAt;
 
-            const outcomeBlocks =
-                mergedBlocks.length > 0
-                    ? { type: 'promo_blocks' as const, blocks: mergedBlocks }
-                    : chunkFailures >= plan.chunks.length &&
-                        plan.chunks.length > 0
-                        ? {
-                                type: 'adapter_error' as const,
-                                error: 'All transcript chunks failed',
-                            }
-                        : { type: 'no_promo' as const };
+            let outcomeBlocks:
+                | { type: 'promo_blocks'; blocks: PromoBlock[] }
+                | { type: 'adapter_error'; error: string }
+                | { type: 'no_promo' };
+            if (mergedBlocks.length > 0) {
+                outcomeBlocks = { type: 'promo_blocks', blocks: mergedBlocks };
+            } else if (chunkFailures >= plan.chunks.length && plan.chunks.length > 0) {
+                outcomeBlocks = {
+                    type: 'adapter_error',
+                    error: 'All transcript chunks failed',
+                };
+            } else {
+                outcomeBlocks = { type: 'no_promo' };
+            }
 
             if (chunkFailures >= plan.chunks.length && plan.chunks.length > 0) {
                 await setStatus({
@@ -937,7 +957,7 @@ export class PromoAnalysis {
                 if (!PromoAnalysis.isCurrentRun(tabId, abort)) {
                     return;
                 }
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                     LogPromoAnalysis.logAnalysisBundle(
                         buildPromoAnalysisLogBundle({
                             videoId,
@@ -1002,7 +1022,7 @@ export class PromoAnalysis {
                     totalLatencyMs: totalAdapterLatencyMs,
                     outcome: BYOK_OUTCOME.Success,
                 });
-                if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+                if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                     LogPromoAnalysis.logAnalysisBundle(
                         buildPromoAnalysisLogBundle({
                             videoId,
@@ -1051,7 +1071,7 @@ export class PromoAnalysis {
                 return;
             }
 
-            if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+            if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                 LogPromoAnalysis.logAnalysisBundle(
                     buildPromoAnalysisLogBundle({
                         videoId,
@@ -1109,13 +1129,13 @@ export class PromoAnalysis {
             });
         } catch (e) {
             if (
-                !PromoAnalysis.isCurrentRun(tabId, abort) ||
-                (e instanceof DOMException && e.name === 'AbortError')
+                !PromoAnalysis.isCurrentRun(tabId, abort)
+                || (e instanceof DOMException && e.name === 'AbortError')
             ) {
                 return;
             }
             const msg = e instanceof Error ? e.message : String(e);
-            if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+            if (TOPSKIP_INCLUDE_DEV_LOCAL) {
                 console.error('[TopSkip] Promo analysis failed', msg);
             } else {
                 console.error(

@@ -1,5 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { PromoDetectionBroadcast } from '@/background/messaging/broadcast-promo-detection-updated';
 import {
     TOPSKIP_MESSAGE,
     type PromoDetectionStatePayload,
@@ -16,8 +24,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-import { PromoDetectionBroadcast } from '@/background/messaging/broadcast-promo-detection-updated';
 
 describe('PromoDetectionBroadcast', () => {
     beforeEach(() => {

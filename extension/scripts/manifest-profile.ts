@@ -1,3 +1,9 @@
+/**
+ * @file Composes the emitted `manifest.json` from the repository's source
+ * manifest for a given build profile, applying least-privilege permissions
+ * and the backend host permission validated at build time.
+ */
+
 import * as v from 'valibot';
 
 import {
@@ -7,16 +13,16 @@ import {
     getExtensionManifestName,
     validateServerOrigin,
     type TopSkipBuildMode,
-} from './build-modes.ts';
-import {
-    YOUTUBE_CONTENT_SCRIPT_MATCH,
-    YOUTUBE_ORIGIN,
-} from './src/shared/watch-route.ts';
+} from '../build-modes.ts';
+import { CONTENT_SCRIPT_BUNDLE } from '../src/shared/content-script-bundles.ts';
 import {
     OPTIONAL_PROVIDER_HOST_PERMISSIONS,
     PROVIDER_HOST_PERMISSION,
-} from './src/shared/provider-host-permissions.ts';
-import { CONTENT_SCRIPT_BUNDLE } from './src/shared/content-script-bundles.ts';
+} from '../src/shared/provider-host-permissions.ts';
+import {
+    YOUTUBE_CONTENT_SCRIPT_MATCH,
+    YOUTUBE_ORIGIN,
+} from '../src/shared/watch-route.ts';
 
 /**
  * Required API permissions. `storage` holds background-owned state;
@@ -98,6 +104,9 @@ export type ExtensionManifest = v.InferOutput<typeof extensionManifestSchema>;
  * even when its origin is otherwise valid for the selected build profile.
  *
  * @param raw - Explicit backend origin passed to the manifest composer.
+ *
+ * @throws {Error} When `raw` parses to an origin reserved for YouTube, a
+ * provider, or the dev E2E fixture.
  */
 function rejectReservedServerOrigin(raw: string): void {
     let origin: string;
@@ -125,6 +134,7 @@ const ISO_TIMESTAMP_SECONDS_LENGTH = 'YYYY-MM-DDTHH:MM:SS'.length;
  * @param build - Validated build profile.
  * @param version - Base manifest version.
  * @param builtAt - Build time, or `undefined` when only validating.
+ *
  * @returns Display version for dev/beta builds, otherwise `undefined`.
  */
 export function composeVersionName(
@@ -148,6 +158,7 @@ export function composeVersionName(
  * @param serverOrigin - Explicit backend origin for this artifact.
  * @param builtAt - Build time stamped into the dev/beta display version; omit
  * when only validating an existing artifact.
+ *
  * @returns Validated emitted manifest with exact permission and script arrays.
  */
 export function composeExtensionManifest(

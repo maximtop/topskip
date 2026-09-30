@@ -1,3 +1,8 @@
+/**
+ * @file Persists and validates OpenAI connection settings in
+ * `browser.storage.local`.
+ */
+
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
@@ -7,10 +12,17 @@ import { STORAGE_KEY_OPENAI } from '@/shared/constants';
  * Persisted OpenAI connection settings; background-owned because it contains
  * provider credentials.
  */
-export type OpenAiConfig = {
+export interface OpenAiConfig {
+    /**
+     * Raw OpenAI API key, or empty string when not configured.
+     */
     apiKey: string;
+
+    /**
+     * Selected OpenAI model id, or empty string when not configured.
+     */
     model: string;
-};
+}
 
 const openAiConfigSchema = v.object({
     apiKey: v.string(),
@@ -33,6 +45,7 @@ export class OpenAiStorage {
      * Parses untrusted storage values into the OpenAI config shape.
      *
      * @param raw - Untrusted value from `browser.storage.local`.
+     *
      * @returns Validated OpenAI config.
      */
     private static parseStored(raw: unknown): OpenAiConfig {
@@ -64,6 +77,7 @@ export class OpenAiStorage {
      * Persists OpenAI config after validating the storage boundary.
      *
      * @param config - Config to store.
+     *
      * @returns Promise that resolves after write.
      */
     static async save(config: OpenAiConfig): Promise<void> {
@@ -75,6 +89,7 @@ export class OpenAiStorage {
      * Masks API keys for display while preserving enough suffix for recognition.
      *
      * @param apiKey - Raw API key.
+     *
      * @returns Masked key or `null` when empty.
      */
     static maskApiKey(apiKey: string): string | null {

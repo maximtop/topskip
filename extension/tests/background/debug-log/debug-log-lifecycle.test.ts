@@ -1,8 +1,29 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
+import {
+    SESSION_STORAGE_KEY_DEBUG_LOG_WORKER,
+    STORAGE_KEY_DEBUG_LOG_SWITCH,
+} from '@/shared/constants';
+import { DEBUG_LOG_STORE_VERSION } from '@/shared/debug-log-constants';
+import { DEBUG_LOG_EVENT, DEBUG_LOG_RESTART_CAUSE } from '@/shared/debug-log-events';
+
+import { eventNamesOf } from '../../helpers/debug-log-lines';
 
 const storage = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
+        '../../helpers/memory-storage-area'
     );
     return {
         local: createMemoryStorageArea(),
@@ -45,25 +66,20 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-vi.mock('@/background/debug-log/debug-log-export', () => ({
+vi.mock('@/background/debug-log/environment-probe', () => ({
     EnvironmentProbe: { collect: probeMocks.collect },
 }));
 
-import { DebugLog } from '@/background/debug-log/debug-log';
-import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
-import { DebugLogStore } from '@/background/debug-log/debug-log-store';
-import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
-import {
-    SESSION_STORAGE_KEY_DEBUG_LOG_WORKER,
-    STORAGE_KEY_DEBUG_LOG_SWITCH,
-} from '@/shared/constants';
-import { DEBUG_LOG_STORE_VERSION } from '@/shared/debug-log-constants';
-import { DEBUG_LOG_EVENT, DEBUG_LOG_RESTART_CAUSE } from '@/shared/debug-log-events';
-import { eventNamesOf } from '../../helpers/debug-log-lines';
-
 const NOW_MS = 1_900_000_000_000;
-const TAB = { id: 41, incognito: false, index: 0, highlighted: false,
-    active: true, pinned: false, windowId: 1 };
+const TAB = {
+    id: 41,
+    incognito: false,
+    index: 0,
+    highlighted: false,
+    active: true,
+    pinned: false,
+    windowId: 1,
+};
 const ENV = {
     extensionBuild: 'dev-2',
     browserMajor: 140,
@@ -86,6 +102,8 @@ type InstalledListener = (details: {
 
 /**
  * The `onStartup` callback registered by the last `register()` call.
+ *
+ * @throws {Error} When `register()` has not been called yet.
  */
 function startupListener(): StartupListener {
     const listener = runtimeMocks.onStartup.mock.calls.at(-1)?.[0] as
@@ -99,6 +117,8 @@ function startupListener(): StartupListener {
 
 /**
  * The `onInstalled` callback registered by the last `register()` call.
+ *
+ * @throws {Error} When `register()` has not been called yet.
  */
 function installedListener(): InstalledListener {
     const listener = runtimeMocks.onInstalled.mock.calls.at(-1)?.[0] as
@@ -127,6 +147,9 @@ function resetLifetime(): void {
 /**
  * Completes a worker start: hydrate with the given profile default, then
  * run the lifecycle marker.
+ *
+ * @param buildLabel Build label passed through to `markWorkerStarted`.
+ * @param defaultEnabled Debug-log-enabled default used to hydrate the store.
  */
 async function completeStart(buildLabel: string, defaultEnabled = false): Promise<void> {
     await DebugLogStore.ready(defaultEnabled);
@@ -316,7 +339,8 @@ describe('DebugLogLifecycle', () => {
         expect(DebugLogStore.isEnabled()).toBe(false);
     });
 
-    it('applies the dev default exactly like a user "on": snapshot marker first, earlier events discarded', async () => {
+    it('applies the dev default exactly like a user "on": snapshot marker first, earlier events '
+        + 'discarded', async () => {
         DebugLog.record(DEBUG_LOG_EVENT.WakeupProbe, { readyTabs: 1, unavailableTabs: 0 });
         TabAttributionRegistry.noteTab(TAB);
 

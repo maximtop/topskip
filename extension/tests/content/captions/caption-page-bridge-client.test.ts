@@ -1,5 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { CaptionPageBridgeClient } from '@/content/captions/caption-page-bridge-client';
 import {
     CAPTION_PAGE_BRIDGE_COMMAND,
     CAPTION_PAGE_BRIDGE_COMMAND_TIMEOUT_MS,
@@ -9,7 +18,6 @@ import {
     type CaptionPageBridgeCommandRequest,
     parseCaptionPageBridgeCommandRequest,
 } from '@/content/captions/caption-page-bridge-contract';
-import { CaptionPageBridgeClient } from '@/content/captions/caption-page-bridge-client';
 import { CAPTION_CAPTURE_FAILURE_REASON } from '@/shared/messages';
 
 const BRIDGE_UNAVAILABLE_RESULT = {
@@ -114,13 +122,12 @@ describe('CaptionPageBridgeClient', () => {
         const second = CaptionPageBridgeClient.activate();
         expect(requests).toHaveLength(2);
         const resultListenerCalls = addListener.mock.calls.filter(
-            ([eventName]) =>
-                eventName === CAPTION_PAGE_BRIDGE_EVENT.CommandResult,
+            ([eventName]) => eventName === CAPTION_PAGE_BRIDGE_EVENT.CommandResult,
         );
         expect(resultListenerCalls).toHaveLength(1);
 
-        dispatchResult(requests[0].requestId, { sequence: 1 });
-        dispatchResult(requests[1].requestId, { sequence: 2 });
+        dispatchResult(requests[0]!.requestId, { sequence: 1 });
+        dispatchResult(requests[1]!.requestId, { sequence: 2 });
         await expect(first).resolves.toEqual({ sequence: 1 });
         await expect(second).resolves.toEqual({ sequence: 2 });
     });
@@ -288,8 +295,8 @@ describe('CaptionPageBridgeClient', () => {
                 if (requests.length !== 2) {
                     return;
                 }
-                dispatchResult(requests[0].requestId, { stale: true });
-                dispatchResult(requests[1].requestId, { ok: true });
+                dispatchResult(requests[0]!.requestId, { stale: true });
+                dispatchResult(requests[1]!.requestId, { ok: true });
             },
         );
 

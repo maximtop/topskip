@@ -1,8 +1,32 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
+import {
+    DEBUG_LOG_CONTENT_EVENTS_PER_TAB_PER_MINUTE,
+    DEBUG_LOG_PREHYDRATION_QUEUE_LIMIT,
+} from '@/shared/debug-log-constants';
+import {
+    DEBUG_LOG_EVENT,
+    DEBUG_LOG_RESTART_CAUSE,
+    DEBUG_LOG_SOURCE,
+} from '@/shared/debug-log-events';
+
+import { spyOnAllConsole } from '../../helpers/console-spy';
+import { eventNamesOf } from '../../helpers/debug-log-lines';
 
 const storage = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
+        '../../helpers/memory-storage-area'
     );
     return {
         local: createMemoryStorageArea(),
@@ -24,28 +48,21 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-import { DebugLog } from '@/background/debug-log/debug-log';
-import { DebugLogStore } from '@/background/debug-log/debug-log-store';
-import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
-import {
-    DEBUG_LOG_CONTENT_EVENTS_PER_TAB_PER_MINUTE,
-    DEBUG_LOG_PREHYDRATION_QUEUE_LIMIT,
-} from '@/shared/debug-log-constants';
-import {
-    DEBUG_LOG_EVENT,
-    DEBUG_LOG_RESTART_CAUSE,
-    DEBUG_LOG_SOURCE,
-} from '@/shared/debug-log-events';
-import { spyOnAllConsole } from '../../helpers/console-spy';
-import { eventNamesOf } from '../../helpers/debug-log-lines';
-
 const NOW_MS = 1_900_000_000_000;
-const TAB = { id: 41, incognito: false, index: 0, highlighted: false,
-    active: true, pinned: false, windowId: 1 };
+const TAB = {
+    id: 41,
+    incognito: false,
+    index: 0,
+    highlighted: false,
+    active: true,
+    pinned: false,
+    windowId: 1,
+};
 const INCOGNITO_TAB = { ...TAB, id: 42, incognito: true };
 const VIDEO_ID = 'dQw4w9WgXcQ';
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
 const NO_DROPS = { coalesced: 0, ceiling: 0, unreachable: 0 };
+
 /**
  * SC-007: the facade never touches the network.
  */
@@ -145,7 +162,13 @@ describe('DebugLog', () => {
         DebugLog.record(
             DEBUG_LOG_EVENT.RouteDecision,
             { route: 'server', reason: 'x y', nested: { a: 1 } as never },
-            { tab: 41, video: VIDEO_ID, session: SESSION_ID, src: DEBUG_LOG_SOURCE.Content },
+            {
+
+                tab: 41,
+                video: VIDEO_ID,
+                session: SESSION_ID,
+                src: DEBUG_LOG_SOURCE.Content,
+            },
         );
         DebugLog.record(DEBUG_LOG_EVENT.RouteDecision, { route: 'byok' }, { tab: 41 });
 
@@ -174,12 +197,26 @@ describe('DebugLog', () => {
         );
         DebugLog.record(
             DEBUG_LOG_EVENT.PollSummary,
-            { polls: 3, retries: 0, totalMs: 900, lastStatus: 'ready', terminal: true },
+            {
+
+                polls: 3,
+                retries: 0,
+                totalMs: 900,
+                lastStatus: 'ready',
+                terminal: true,
+            },
             { tab: 41, job: 'local-e2eFixture1-server-v8' },
         );
         DebugLog.record(
             DEBUG_LOG_EVENT.PollSummary,
-            { polls: 1, retries: 0, totalMs: 1, lastStatus: 'ready', terminal: true },
+            {
+
+                polls: 1,
+                retries: 0,
+                totalMs: 1,
+                lastStatus: 'ready',
+                terminal: true,
+            },
             { tab: 41, job: 'not a token?x=1' },
         );
 
@@ -416,7 +453,7 @@ describe('DebugLog', () => {
         }
 
         DebugLog.record(DEBUG_LOG_EVENT.WorkerStarted, { build: 'b', first: false }, {}, true);
-        expect(spies.info).toHaveBeenCalledWith(
+        expect(spies.debug).toHaveBeenCalledWith(
             '[TopSkip debug]',
             'worker-started',
             'build=b first=false',
@@ -428,19 +465,15 @@ describe('DebugLog', () => {
         const append = vi.spyOn(DebugLogStore, 'append').mockImplementation(() => {
             throw new Error('boom');
         });
-        expect(() =>
-            DebugLog.record(DEBUG_LOG_EVENT.WorkerStarted, { build: 'b', first: false }),
-        ).not.toThrow();
-        expect(() =>
-            DebugLog.appendFromContent(
-                41,
-                {
-                    events: [{ event: DEBUG_LOG_EVENT.FiredReset, ageMs: 0, fields: {} }],
-                    dropped: NO_DROPS,
-                },
-                NOW_MS,
-            ),
-        ).not.toThrow();
+        expect(() => DebugLog.record(DEBUG_LOG_EVENT.WorkerStarted, { build: 'b', first: false })).not.toThrow();
+        expect(() => DebugLog.appendFromContent(
+            41,
+            {
+                events: [{ event: DEBUG_LOG_EVENT.FiredReset, ageMs: 0, fields: {} }],
+                dropped: NO_DROPS,
+            },
+            NOW_MS,
+        )).not.toThrow();
         append.mockRestore();
     });
 });

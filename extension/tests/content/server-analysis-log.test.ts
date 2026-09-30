@@ -1,4 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { ContentServerAnalysisLog } from '@/content/server-analysis-log';
 
 const contentLogMocks = vi.hoisted(() => ({
     info: vi.fn(),
@@ -8,8 +17,6 @@ const contentLogMocks = vi.hoisted(() => ({
 vi.mock('@/content/content-log', () => ({
     contentLog: contentLogMocks,
 }));
-
-import { ContentServerAnalysisLog } from '@/content/server-analysis-log';
 
 describe('ContentServerAnalysisLog', () => {
     afterEach(() => {

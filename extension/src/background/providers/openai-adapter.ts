@@ -1,7 +1,11 @@
+/**
+ * @file OpenAI Responses API adapter behind the `LlmProviderAdapter`
+ * interface for model-first cloud promo detection.
+ */
+
 import { callOpenAiResponse } from '@/background/openai/openai-client';
 import { parseLlmPromoResponse } from '@/background/openrouter/parse-llm-promo-response';
 import { PROMO_DETECTION_SYSTEM_PROMPT } from '@/background/openrouter/promo-detection-system-prompt';
-import { OpenAiStorage } from '@/background/storage/openai-storage';
 import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import {
     PROVIDER_ANALYSIS_FAILURE_CODE,
@@ -13,6 +17,7 @@ import {
     type LlmProviderAdapter,
     type ProviderAvailability,
 } from '@/background/providers/llm-provider-adapter';
+import { OpenAiStorage } from '@/background/storage/openai-storage';
 
 /**
  * OpenAI Responses API adapter for model-first cloud detection.
@@ -58,6 +63,7 @@ export class OpenAiAdapter implements LlmProviderAdapter {
      * parses the standard promo JSON response.
      *
      * @param params - Transcript and context.
+     *
      * @returns Detection result or error.
      */
     async analyzeTranscript(

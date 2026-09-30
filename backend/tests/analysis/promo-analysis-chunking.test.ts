@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
 import { buildServerTranscriptChunks } from '@topskip/backend/analysis/promo-analysis-chunking';
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * Builds a uniform transcript: one segment every 4 s, ~28 chars per line.
  *
  * @param totalSec - Transcript timeline length in seconds
+ *
  * @returns Ordered caption segments
  */
 function makeSegments(totalSec: number): CaptionSegment[] {
@@ -30,7 +32,7 @@ describe('buildServerTranscriptChunks', () => {
             return;
         }
         expect(result.chunks).toHaveLength(1);
-        expect(result.chunks[0].segments).toHaveLength(segments.length);
+        expect(result.chunks[0]!.segments).toHaveLength(segments.length);
     });
 
     it('splits a long transcript into overlapping chunks covering every segment', () => {
@@ -42,9 +44,9 @@ describe('buildServerTranscriptChunks', () => {
         }
         expect(result.chunks.length).toBeGreaterThan(1);
         // Adjacent chunks overlap by at least ~240s of video time.
-        for (let i = 1; i < result.chunks.length; i++) {
-            const prev = result.chunks[i - 1];
-            const next = result.chunks[i];
+        for (let i = 1; i < result.chunks.length; i += 1) {
+            const prev = result.chunks[i - 1]!;
+            const next = result.chunks[i]!;
             expect(next.startSec).toBeLessThanOrEqual(prev.endSec - 239);
         }
         // Every source segment appears in at least one chunk.

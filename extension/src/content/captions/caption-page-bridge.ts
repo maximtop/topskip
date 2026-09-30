@@ -1,3 +1,9 @@
+/**
+ * @file MAIN-world declarative caption page bridge: wraps `fetch`/XHR to
+ * observe timedtext responses, drives player caption activation, and answers
+ * ISOLATED lifecycle commands over the page bridge contract.
+ */
+
 import {
     CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS,
     CAPTION_PAGE_BRIDGE_COMMAND,
@@ -24,8 +30,8 @@ const ACTIVATION_UNAVAILABLE_REASON = 'activation-unavailable';
 const CAPTIONS_UNAVAILABLE_REASON = 'captions-unavailable';
 const CAPTIONS_BUTTON_SELECTOR = '.ytp-subtitles-button[aria-pressed]';
 const HIDE_STYLE_ID = 'topskip-caption-hide-style';
-const CAPTION_HIDE_CSS =
-    '#movie_player .ytp-caption-window-container,#movie_player .caption-window{visibility:hidden!important;}';
+const CAPTION_HIDE_CSS = '#movie_player .ytp-caption-window-container,'
+    + '#movie_player .caption-window{visibility:hidden!important;}';
 const CAPTION_MODULE = 'captions';
 const CAPTION_RELOAD_OPTION = 'reload';
 const CAPTION_TRACK_OPTION = 'track';
@@ -33,9 +39,8 @@ const REFETCH_TRANSPORT = 'refetch';
 const REFETCH_CREDENTIALS: RequestCredentials = 'same-origin';
 const HTTP_SUCCESS_MIN = 200;
 const HTTP_SUCCESS_MAX_EXCLUSIVE = 300;
-const VERBOSE_CAPTURE_LOGS =
-    typeof __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__ !== 'undefined' &&
-    __TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS__;
+const VERBOSE_CAPTURE_LOGS = typeof TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS !== 'undefined'
+    && TOPSKIP_CAPTION_CAPTURE_VERBOSE_LOGS;
 const AD_STATE_SELECTORS = [
     '.ytp-ad-player-overlay',
     '.ytp-ad-preview-container',
@@ -51,51 +56,172 @@ type TimedtextTransport = 'fetch' | 'xhr' | typeof REFETCH_TRANSPORT;
 /**
  * Sanitized timedtext URL metadata emitted from page-world capture.
  */
-type PageBridgeUrlShape = {
+interface PageBridgeUrlShape {
+    /**
+     * Timedtext request path, without query string.
+     */
     pathname: string;
+
+    /**
+     * Query parameter names present on the request; values are never included.
+     */
     paramNames: string[];
+
+    /**
+     * Timedtext response format (`fmt` query param), or `null` when absent.
+     */
     fmt: string | null;
+
+    /**
+     * Whether the request carried a `pot` (proof-of-origin token) parameter.
+     */
     hasPot: boolean;
-};
+}
 
 /**
  * Page-world message carrying a captured json3 timedtext response.
  */
-type PageBridgeCaptureMessage = {
+interface PageBridgeCaptureMessage {
+    /**
+     * Fixed world tag identifying this message as MAIN-originated.
+     */
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Main;
+
+    /**
+     * Fixed message kind distinguishing this from a diagnostic message.
+     */
     kind: 'timedtext-capture';
+
+    /**
+     * Video id parsed from the timedtext request's `v` parameter.
+     */
     videoId: string | null;
+
+    /**
+     * Caption track language parsed from the `lang` parameter.
+     */
     languageCode: string | null;
+
+    /**
+     * Raw timedtext response body.
+     */
     body: string;
+
+    /**
+     * Response `Content-Type` header value, or `null` when absent.
+     */
     contentType: string | null;
+
+    /**
+     * Length of `body` in characters.
+     */
     bodyLength: number;
+
+    /**
+     * Sanitized request URL metadata for diagnostics.
+     */
     urlShape: PageBridgeUrlShape;
-};
+}
 
 /**
  * Page-world diagnostic message for bridge activation/capture stages.
  */
-type PageBridgeDiagnosticMessage = {
+interface PageBridgeDiagnosticMessage {
+    /**
+     * Fixed world tag identifying this message as MAIN-originated.
+     */
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Main;
+
+    /**
+     * Fixed message kind distinguishing this from a capture message.
+     */
     kind: 'diagnostic';
+
+    /**
+     * Diagnostic stage name.
+     */
     stage: string;
+
+    /**
+     * Video id involved in this stage, when known.
+     */
     videoId?: string | null;
+
+    /**
+     * Caption track language involved in this stage, when known.
+     */
     languageCode?: string | null;
+
+    /**
+     * How the timedtext body reached the bridge, when applicable.
+     */
     transport?: TimedtextTransport;
-    status?: number;
-    bodyLength?: number;
+
+    /**
+     * HTTP status of the timedtext response, when applicable.
+     */
+    status?: number | undefined;
+
+    /**
+     * Response body length, when applicable.
+     */
+    bodyLength?: number | undefined;
+
+    /**
+     * Response `Content-Type` header, when applicable.
+     */
     contentType?: string | null;
+
+    /**
+     * Sanitized request URL metadata, when applicable.
+     */
     urlShape?: PageBridgeUrlShape;
+
+    /**
+     * Whether the stage's operation succeeded, when applicable.
+     */
     ok?: boolean;
+
+    /**
+     * Stable diagnostic reason, when applicable.
+     */
     reason?: string;
+
+    /**
+     * Human-readable failure text, when the stage reports a failure.
+     */
     error?: string;
+
+    /**
+     * Whether captions were on before the bridge touched the player, when known.
+     */
     wasOn?: boolean | null;
+
+    /**
+     * Whether the user changed the caption toggle, when known.
+     */
     userIntervened?: boolean;
+
+    /**
+     * Caption-menu button pressed, when applicable.
+     */
     buttonPressed?: string | null;
+
+    /**
+     * Whether the caption-hide style is currently present, when applicable.
+     */
     hideStylePresent?: boolean;
+
+    /**
+     * Number of caption tracks observed, when known.
+     */
     hasTracks?: number | null;
+
+    /**
+     * Action names performed by the bridge, when applicable.
+     */
     actions?: string[];
-};
+}
 
 /**
  * Union of page-world messages accepted by the content script listener.
@@ -119,10 +245,18 @@ type CaptionRestoreSnapshot = Readonly<{
 /**
  * URL metadata stays outside page-owned XHR objects and disappears with them.
  */
-type XhrRequestMetadata = {
+interface XhrRequestMetadata {
+    /**
+     * Request URL captured from `XMLHttpRequest.open`, read back on `send`.
+     */
     url: string;
-};
+}
 
+/**
+ * Installs the MAIN-world declarative bridge exactly once per document:
+ * retires any previous bridge left by an old bundle, wraps `fetch`/XHR to
+ * observe timedtext responses, and answers ISOLATED lifecycle commands.
+ */
 const installCaptionPageBridge = (): void => {
     const previousTeardown: unknown = Reflect.get(globalThis, TEARDOWN_FLAG);
     if (typeof previousTeardown === 'function') {
@@ -134,10 +268,9 @@ const installCaptionPageBridge = (): void => {
     }
     Reflect.set(globalThis, INSTALL_FLAG, true);
 
-    const bridgeInstanceId =
-        typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-            ? crypto.randomUUID()
-            : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+    const bridgeInstanceId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
     let nextBridgeMessageSequence = 0;
     let nextCaptureGeneration = 0;
     let activeCaptureGeneration: number | null = null;
@@ -156,12 +289,13 @@ const installCaptionPageBridge = (): void => {
     // eslint-disable-next-line @typescript-eslint/unbound-method
     const originalFetch = window.fetch;
 
-    const isCurrentGeneration = (generation: number): boolean =>
-        generation === activeCaptureGeneration;
+    const isCurrentGeneration = (generation: number): boolean => {
+        return generation === activeCaptureGeneration;
+    };
 
     const isJson3Timedtext = (rawUrl: string): URL | null => {
         try {
-            const parsed = new URL(rawUrl, location.href);
+            const parsed = new URL(rawUrl, window.location.href);
             if (parsed.pathname !== TIMEDTEXT_PATH) {
                 return null;
             }
@@ -174,20 +308,22 @@ const installCaptionPageBridge = (): void => {
         }
     };
 
-    const getSanitizedUrlShape = (parsed: URL): PageBridgeUrlShape => ({
-        pathname: parsed.pathname,
-        paramNames: Array.from(parsed.searchParams.keys()).sort(),
-        fmt: parsed.searchParams.get('fmt'),
-        hasPot: parsed.searchParams.has('pot'),
-    });
+    const getSanitizedUrlShape = (parsed: URL): PageBridgeUrlShape => {
+        return {
+            pathname: parsed.pathname,
+            paramNames: Array.from(parsed.searchParams.keys()).sort(),
+            fmt: parsed.searchParams.get('fmt'),
+            hasPot: parsed.searchParams.has('pot'),
+        };
+    };
 
     const postPageBridgeMessage = (
         message: PageBridgeMessage,
         generation?: number,
     ): void => {
         if (
-            generation !== undefined &&
-            !isCurrentGeneration(generation)
+            generation !== undefined
+            && !isCurrentGeneration(generation)
         ) {
             return;
         }
@@ -202,8 +338,8 @@ const installCaptionPageBridge = (): void => {
             // The DOM event below remains available when cross-world messaging fails.
         }
         if (
-            generation !== undefined &&
-            !isCurrentGeneration(generation)
+            generation !== undefined
+            && !isCurrentGeneration(generation)
         ) {
             return;
         }
@@ -338,6 +474,7 @@ const installCaptionPageBridge = (): void => {
      * encoded parameter name cannot slip past the filter.
      *
      * @param translated - Parsed player request that carried `tlang`.
+     *
      * @returns The same request asking for the source-language track.
      */
     const withoutTranslation = (translated: URL): URL => {
@@ -346,8 +483,7 @@ const installCaptionPageBridge = (): void => {
             .slice(1)
             .split('&')
             .filter(
-                (pair) =>
-                    !new URLSearchParams(pair).has(TIMEDTEXT_TRANSLATION_PARAM),
+                (pair) => !new URLSearchParams(pair).has(TIMEDTEXT_TRANSLATION_PARAM),
             )
             .join('&');
         return original;
@@ -376,6 +512,7 @@ const installCaptionPageBridge = (): void => {
      *
      * @param generation - Capture generation that observed the translation.
      * @param translated - Parsed translated player request.
+     *
      * @returns Resolves after the refetch settled; never rejects.
      */
     const refetchUntranslated = async (
@@ -504,15 +641,18 @@ const installCaptionPageBridge = (): void => {
         void refetchUntranslated(generation, parsed);
     };
 
-    const getMoviePlayer = (): Element | null =>
-        document.getElementById('movie_player');
+    const getMoviePlayer = (): Element | null => {
+        return document.getElementById('movie_player');
+    };
 
-    const getMainVideo = (): HTMLVideoElement | null =>
-        document.querySelector('#movie_player video.html5-main-video') ??
-        document.querySelector('video.html5-main-video');
+    const getMainVideo = (): HTMLVideoElement | null => {
+        return document.querySelector('#movie_player video.html5-main-video')
+        ?? document.querySelector('video.html5-main-video');
+    };
 
-    const isVisibleElement = (element: Element): boolean =>
-        element instanceof HTMLElement && element.offsetParent !== null;
+    const isVisibleElement = (element: Element): boolean => {
+        return element instanceof HTMLElement && element.offsetParent !== null;
+    };
 
     const isAdLikelyActive = (): boolean => {
         const player = getMoviePlayer();
@@ -606,8 +746,8 @@ const installCaptionPageBridge = (): void => {
     const hasPlayerMethod = (methodName: string): boolean => {
         const player = getMoviePlayer();
         return (
-            player !== null &&
-            typeof Reflect.get(player, methodName) === 'function'
+            player !== null
+            && typeof Reflect.get(player, methodName) === 'function'
         );
     };
 
@@ -724,7 +864,13 @@ const installCaptionPageBridge = (): void => {
             error,
             actions,
         });
-        return { ok: false, reason, error, actions };
+        return {
+
+            ok: false,
+            reason,
+            error,
+            actions,
+        };
     };
 
     const finishActivation = (
@@ -756,7 +902,14 @@ const installCaptionPageBridge = (): void => {
             },
             generation,
         );
-        return { ok: true, wasOn, userIntervened, hasTracks, actions };
+        return {
+
+            ok: true,
+            wasOn,
+            userIntervened,
+            hasTracks,
+            actions,
+        };
     };
 
     /**
@@ -765,6 +918,7 @@ const installCaptionPageBridge = (): void => {
      *
      * @param tracks - Untrusted player tracklist.
      * @param actions - Activation action log to extend.
+     *
      * @returns Whether the tracklist offered any track at all.
      */
     const selectTrack = (tracks: unknown, actions: string[]): boolean => {
@@ -833,8 +987,7 @@ const installCaptionPageBridge = (): void => {
         }
         const tracks = getPlayerOption('tracklist');
         const hasTracks = Array.isArray(tracks) ? tracks.length : null;
-        const captionsCurrentlyOn =
-            button?.getAttribute('aria-pressed') === 'true';
+        const captionsCurrentlyOn = button?.getAttribute('aria-pressed') === 'true';
 
         if (isReactivation) {
             if (setPlayerOption(CAPTION_RELOAD_OPTION, true)) {
@@ -862,8 +1015,8 @@ const installCaptionPageBridge = (): void => {
 
         if (!isReactivation) {
             if (
-                !selectTrack(tracks, actions) &&
-                setPlayerOption(CAPTION_RELOAD_OPTION, true)
+                !selectTrack(tracks, actions)
+                && setPlayerOption(CAPTION_RELOAD_OPTION, true)
             ) {
                 actions.push('setOption:reload');
             }
@@ -887,6 +1040,12 @@ const installCaptionPageBridge = (): void => {
         }
         return finishActivation(generation, button, hasTracks, actions);
     };
+
+    // Forward-declared: `commandHandlers` below must call the eventual
+    // teardown closure, which itself is only defined once the fetch/XHR
+    // wrappers it restores exist — so the two cannot be declared in
+    // reference order.
+    let teardown: () => void;
 
     const commandHandlers = {
         [CAPTION_PAGE_BRIDGE_COMMAND.Probe]: () => ({ ok: true }),
@@ -945,10 +1104,11 @@ const installCaptionPageBridge = (): void => {
         input: RequestInfo | URL,
         init?: RequestInit,
     ): Promise<Response> => {
-        const callOriginalFetch = (): Promise<Response> =>
-            init === undefined
+        const callOriginalFetch = (): Promise<Response> => {
+            return (init === undefined
                 ? originalFetch.call(window, input)
-                : originalFetch.call(window, input, init);
+                : originalFetch.call(window, input, init));
+        };
         const generation = activeCaptureGeneration;
         if (generation === null) {
             return callOriginalFetch();
@@ -1003,10 +1163,10 @@ const installCaptionPageBridge = (): void => {
     let wrappedSend: unknown = null;
 
     if (
-        typeof originalOpen === 'function' &&
-        typeof originalSend === 'function'
+        typeof originalOpen === 'function'
+        && typeof originalSend === 'function'
     ) {
-        wrappedOpen = function (
+        wrappedOpen = function wrappedOpenImpl(
             this: XMLHttpRequest,
             method: string,
             url: string | URL,
@@ -1036,23 +1196,22 @@ const installCaptionPageBridge = (): void => {
         };
         Reflect.set(XMLHttpRequest.prototype, 'open', wrappedOpen);
 
-        wrappedSend = function (
+        wrappedSend = function wrappedSendImpl(
             this: XMLHttpRequest,
             body?: Document | XMLHttpRequestBodyInit | null,
         ): void {
             const generation = activeCaptureGeneration;
             const requestUrl = xhrRequestMetadata.get(this)?.url ?? '';
-            const shouldObserve =
-                generation !== null &&
-                isJson3Timedtext(requestUrl) !== null;
+            const shouldObserve = generation !== null
+                && isJson3Timedtext(requestUrl) !== null;
             if (shouldObserve) {
                 this.addEventListener(
                     'loadend',
                     () => {
                         if (
-                            !isCurrentGeneration(generation) ||
-                            this.status < HTTP_SUCCESS_MIN ||
-                            this.status >= HTTP_SUCCESS_MAX_EXCLUSIVE
+                            !isCurrentGeneration(generation)
+                            || this.status < HTTP_SUCCESS_MIN
+                            || this.status >= HTTP_SUCCESS_MAX_EXCLUSIVE
                         ) {
                             return;
                         }
@@ -1062,8 +1221,8 @@ const installCaptionPageBridge = (): void => {
                             if (typeof responseBody === 'string') {
                                 text = responseBody;
                             } else if (
-                                responseBody !== null &&
-                                typeof responseBody === 'object'
+                                responseBody !== null
+                                && typeof responseBody === 'object'
                             ) {
                                 text = JSON.stringify(responseBody);
                             } else {
@@ -1095,7 +1254,7 @@ const installCaptionPageBridge = (): void => {
 
     document.addEventListener(CAPTION_PAGE_BRIDGE_EVENT.Command, onCommand);
 
-    const teardown = (): void => {
+    teardown = (): void => {
         if (tornDown) {
             return;
         }
@@ -1112,14 +1271,14 @@ const installCaptionPageBridge = (): void => {
             window.fetch = originalFetch;
         }
         if (
-            typeof wrappedOpen === 'function' &&
-            Reflect.get(XMLHttpRequest.prototype, 'open') === wrappedOpen
+            typeof wrappedOpen === 'function'
+            && Reflect.get(XMLHttpRequest.prototype, 'open') === wrappedOpen
         ) {
             Reflect.set(XMLHttpRequest.prototype, 'open', originalOpen);
         }
         if (
-            typeof wrappedSend === 'function' &&
-            Reflect.get(XMLHttpRequest.prototype, 'send') === wrappedSend
+            typeof wrappedSend === 'function'
+            && Reflect.get(XMLHttpRequest.prototype, 'send') === wrappedSend
         ) {
             Reflect.set(XMLHttpRequest.prototype, 'send', originalSend);
         }

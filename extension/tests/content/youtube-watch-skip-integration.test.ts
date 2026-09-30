@@ -1,5 +1,52 @@
-import { describe, expect, it, vi } from 'vitest';
 import * as v from 'valibot';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import {
+    evaluatePromoBlocksSkip,
+    promoBlockStartKey,
+    resetFiredIndicesOnBackwardSeek,
+    computePromoBlockTargetTime,
+} from '@/content/promo-skip-logic';
+import {
+    SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS,
+    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS,
+    SERVER_ANALYSIS_SESSION_DEADLINE_MS,
+} from '@/content/server-analysis-session';
+import {
+    VIDEO_BINDING_POLL_INTERVAL_MS,
+    YOUTUBE_PLAYER_SELECTOR,
+    YOUTUBE_VIDEO_ELEMENT_SELECTOR,
+} from '@/content/youtube-dom';
+import {
+    CONTENT_PREFS_REQUEST_TIMEOUT_MS,
+    CONTENT_PREFS_RETRY_DELAY_MS,
+    explainPromoBlocksRejection,
+    PROMO_BLOCKS_REJECTION_CAUSE,
+    shouldAcceptPromoBlocksForActiveRoute,
+} from '@/content/youtube-watch';
+import {
+    ANALYSIS_MODE,
+    MS_PER_SECOND,
+    type UserPreferences,
+} from '@/shared/constants';
+import {
+    DEBUG_LOG_CLIENT_FLUSH_DELAY_MS,
+    DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS,
+} from '@/shared/debug-log-constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+    requestServerAnalysisRuntimeMessageSchema,
+} from '@/shared/messages';
+
+import type { PromoBlock } from '@topskip/common/promo-types';
 
 const {
     addRuntimeMessageListener,
@@ -50,52 +97,19 @@ vi.mock('@/content/watch-captions', () => ({
     },
 }));
 
-import {
-    evaluatePromoBlocksSkip,
-    promoBlockStartKey,
-    resetFiredIndicesOnBackwardSeek,
-    computePromoBlockTargetTime,
-} from '@/content/promo-skip-logic';
-import type { PromoBlock } from '@topskip/common/promo-types';
-import {
-    ANALYSIS_MODE,
-    MS_PER_SECOND,
-    type UserPreferences,
-} from '@/shared/constants';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    TOPSKIP_MESSAGE,
-    requestServerAnalysisRuntimeMessageSchema,
-} from '@/shared/messages';
-import {
-    CONTENT_PREFS_REQUEST_TIMEOUT_MS,
-    CONTENT_PREFS_RETRY_DELAY_MS,
-    explainPromoBlocksRejection,
-    PROMO_BLOCKS_REJECTION_CAUSE,
-    shouldAcceptPromoBlocksForActiveRoute,
-} from '@/content/youtube-watch';
-import {
-    VIDEO_BINDING_POLL_INTERVAL_MS,
-    YOUTUBE_PLAYER_SELECTOR,
-    YOUTUBE_VIDEO_ELEMENT_SELECTOR,
-} from '@/content/youtube-dom';
-import {
-    SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS,
-    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS,
-    SERVER_ANALYSIS_SESSION_DEADLINE_MS,
-} from '@/content/server-analysis-session';
-import {
-    DEBUG_LOG_CLIENT_FLUSH_DELAY_MS,
-    DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS,
-} from '@/shared/debug-log-constants';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-
 /**
  * Simulates the YoutubeWatch.onTimeUpdate loop by calling
  * resetFiredIndicesOnBackwardSeek then evaluatePromoBlocksSkip, mirroring
  * the real code path in youtube-watch.ts.
  *
  * @param params - Playback state and block data
+ * @param params.prevTime Video time in seconds before this tick.
+ * @param params.currentTime Video time in seconds at this tick.
+ * @param params.duration Video duration in seconds.
+ * @param params.isSeeking Whether the player currently reports a seek in progress.
+ * @param params.firedStartKeys Block start keys already fired, mutated in place on backward seeks.
+ * @param params.blocks Promo blocks to evaluate for this tick.
+ *
  * @returns Skip decision
  */
 function simulateTimeUpdate(params: {
@@ -107,13 +121,13 @@ function simulateTimeUpdate(params: {
     blocks: PromoBlock[];
 }):
     | {
-          action: 'none';
-      }
+        action: 'none';
+    }
     | {
-          action: 'skip';
-          blockIndex: number;
-          targetTime: number;
-      } {
+        action: 'skip';
+        blockIndex: number;
+        targetTime: number;
+    } {
     const {
         prevTime,
         currentTime,
@@ -145,6 +159,7 @@ function simulateTimeUpdate(params: {
  *
  * @param value - Opaque runtime value.
  * @param key - Dynamic property requested by the test.
+ *
  * @returns Opaque property value, or `undefined` for non-objects.
  */
 function readTestProperty(value: unknown, key: string): unknown {
@@ -160,6 +175,7 @@ function readTestProperty(value: unknown, key: string): unknown {
  *
  * @param message - Opaque runtime message recorded by the harness.
  * @param videoId - Optional route identity used to exclude replacement work.
+ *
  * @returns Whether this is the matching analysis interruption event.
  */
 function isAnalysisInterruptionMessage(
@@ -168,9 +184,9 @@ function isAnalysisInterruptionMessage(
 ): boolean {
     const payload = readTestProperty(message, 'payload');
     return (
-        readTestProperty(payload, 'event') === 'analysis_interrupted' &&
-        (videoId === undefined ||
-            readTestProperty(payload, 'videoId') === videoId)
+        readTestProperty(payload, 'event') === 'analysis_interrupted'
+        && (videoId === undefined
+            || readTestProperty(payload, 'videoId') === videoId)
     );
 }
 
@@ -306,7 +322,7 @@ describe('onTimeUpdate skip pipeline integration (pure-function replay, not real
     );
 
     it(
-        'FR-004: backward seek resets fired indices' + ' (pure function)',
+        'FR-004: backward seek resets fired indices (pure function)',
         () => {
             const blocks: PromoBlock[] = [{ startSec: 45, endSec: 75 }];
             const fired = new Set([45]);
@@ -338,8 +354,8 @@ describe('onTimeUpdate skip pipeline integration (pure-function replay, not real
     );
 
     it(
-        'FR-004: backward seek resets via onSeeked' +
-            ' (real browser event order)',
+        'FR-004: backward seek resets via onSeeked'
+            + ' (real browser event order)',
         () => {
             // Real browser sequence:
             //   1. skip fires at startSec=45 → firedIndices={0}
@@ -505,8 +521,8 @@ describe('onTimeUpdate skip pipeline integration (pure-function replay, not real
     });
 
     it(
-        'FR-011: after skip, lastTime should be' +
-            ' targetTime (verified by next call)',
+        'FR-011: after skip, lastTime should be'
+            + ' targetTime (verified by next call)',
         () => {
             const fired = new Set<number>();
             const blocks: PromoBlock[] = [
@@ -613,6 +629,7 @@ describe('per-video analysis route lifecycle', () => {
 
     class FakeVideoElement extends EventTarget {
         currentTime = 0;
+
         duration = 120;
 
         private readonly activeListeners = new Map<
@@ -742,8 +759,8 @@ describe('per-video analysis route lifecycle', () => {
             },
         );
         capture.mockImplementation(
-            captureResponder ??
-                ((input: { videoId: string; signal: AbortSignal }) => {
+            captureResponder
+                ?? ((input: { videoId: string; signal: AbortSignal }) => {
                     if (input.signal.aborted) {
                         return Promise.resolve({ status: 'cancelled' });
                     }
@@ -766,9 +783,9 @@ describe('per-video analysis route lifecycle', () => {
         );
         sendMessage.mockImplementation((message: unknown) => {
             if (
-                typeof message === 'object' &&
-                message !== null &&
-                'type' in message
+                typeof message === 'object'
+                && message !== null
+                && 'type' in message
             ) {
                 if (message.type === TOPSKIP_MESSAGE.GET_PREFS) {
                     if (prefsResponder !== undefined) {
@@ -777,29 +794,27 @@ describe('per-video analysis route lifecycle', () => {
                     return Promise.resolve({ ok: true, prefs: initialPrefs });
                 }
                 if (
-                    message.type ===
-                        TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT &&
-                    sessionEventResponder !== undefined
+                    message.type
+                        === TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT
+                    && sessionEventResponder !== undefined
                 ) {
                     return sessionEventResponder(message);
                 }
                 if (
-                    message.type === TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS ||
-                    message.type ===
-                        TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
+                    message.type === TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS
+                    || message.type
+                        === TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
                 ) {
                     if (serverResponder !== undefined) {
                         return serverResponder(message);
                     }
                     const payload: unknown = Reflect.get(message, 'payload');
-                    const payloadVideoId: unknown =
-                        payload !== null && typeof payload === 'object'
-                            ? Reflect.get(payload, 'videoId')
-                            : undefined;
-                    const videoId =
-                        typeof payloadVideoId === 'string'
-                            ? payloadVideoId
-                            : 'dQw4w9WgXcQ';
+                    const payloadVideoId: unknown = payload !== null && typeof payload === 'object'
+                        ? Reflect.get(payload, 'videoId')
+                        : undefined;
+                    const videoId = typeof payloadVideoId === 'string'
+                        ? payloadVideoId
+                        : 'dQw4w9WgXcQ';
                     return Promise.resolve({
                         ok: true,
                         status: 'processing',
@@ -834,8 +849,7 @@ describe('per-video analysis route lifecycle', () => {
                 if (selector === YOUTUBE_PLAYER_SELECTOR) {
                     return {
                         classList: {
-                            contains: (cls: string): boolean =>
-                                cls === 'ad-showing' && adShowing,
+                            contains: (cls: string): boolean => cls === 'ad-showing' && adShowing,
                         },
                     };
                 }
@@ -922,11 +936,10 @@ describe('per-video analysis route lifecycle', () => {
                 return sendMessage.mock.calls
                     .map(([message]) => message)
                     .filter(
-                        (message) =>
-                            typeof message === 'object' &&
-                            message !== null &&
-                            'type' in message &&
-                            message.type === type,
+                        (message) => typeof message === 'object'
+                            && message !== null
+                            && 'type' in message
+                            && message.type === type,
                     );
             },
             activeVideoListenerCount(): number {
@@ -994,18 +1007,19 @@ describe('per-video analysis route lifecycle', () => {
     /**
      * One content event as appended through `DEBUG_LOG_APPEND`.
      */
-    type AppendedDebugLogEvent = {
+    interface AppendedDebugLogEvent {
         event: unknown;
         fields: Record<string, unknown>;
         video: unknown;
         session: unknown;
         job: unknown;
-    };
+    }
 
     /**
      * Boots the watch harness with the background reporting logging as on.
      *
      * @param serverResponder - Optional Server runtime responder.
+     *
      * @returns Route harness whose GET_PREFS reply carries `debugLogEnabled`.
      */
     async function createLoggingHarness(
@@ -1017,12 +1031,11 @@ describe('per-video analysis route lifecycle', () => {
             120,
             serverResponder,
             undefined,
-            () =>
-                Promise.resolve({
-                    ok: true,
-                    prefs: serverPrefs,
-                    debugLogEnabled: true,
-                }),
+            () => Promise.resolve({
+                ok: true,
+                prefs: serverPrefs,
+                debugLogEnabled: true,
+            }),
         );
     }
 
@@ -1030,6 +1043,7 @@ describe('per-video analysis route lifecycle', () => {
      * Flattens every appended batch into its events.
      *
      * @param harness - Active route harness.
+     *
      * @returns Appended content events in send order.
      */
     function appendedDebugLogEvents(
@@ -1064,6 +1078,7 @@ describe('per-video analysis route lifecycle', () => {
      *
      * @param harness - Active route harness.
      * @param name - Debug log event name.
+     *
      * @returns Matching events in send order.
      */
     function appendedEventsNamed(
@@ -1075,8 +1090,9 @@ describe('per-video analysis route lifecycle', () => {
         );
     }
 
-    const NEVER_RESPOND: ServerRuntimeResponder = () =>
-        new Promise<unknown>(() => undefined);
+    const NEVER_RESPOND: ServerRuntimeResponder = () => {
+        return new Promise<unknown>(() => {});
+    };
 
     /**
      * Delivers Server blocks for the harness's live session, which stays
@@ -1084,6 +1100,7 @@ describe('per-video analysis route lifecycle', () => {
      *
      * @param harness - Logging harness created with `NEVER_RESPOND`.
      * @param promoBlocks - Blocks to deliver for `dQw4w9WgXcQ`.
+     *
      * @returns Resolves after the delivery and one client flush.
      */
     async function deliverServerBlocks(
@@ -1111,6 +1128,7 @@ describe('per-video analysis route lifecycle', () => {
      * Finds console-relay lines that must never be printed by the skip path.
      *
      * @param harness - Active route harness.
+     *
      * @returns Relayed `CONTENT_LOG` first arguments.
      */
     function relayedConsoleHeads(harness: RouteHarness): unknown[] {
@@ -1245,7 +1263,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('times out a lost preferences reply and eventually routes once', async () => {
         let attempt = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -1301,9 +1319,9 @@ describe('per-video analysis route lifecycle', () => {
                 attempt += 1;
                 return attempt === 1
                     ? Promise.resolve({
-                            ok: true,
-                            prefs: { ...serverPrefs, enabled: 'yes' },
-                        })
+                        ok: true,
+                        prefs: { ...serverPrefs, enabled: 'yes' },
+                    })
                     : Promise.resolve({ ok: true, prefs: serverPrefs });
             },
         );
@@ -1328,7 +1346,9 @@ describe('per-video analysis route lifecycle', () => {
 
     it('ignores a timed-out reply after a newer preferences response', async () => {
         let attempt = 0;
-        let resolveOld: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldReply = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -1343,16 +1363,16 @@ describe('per-video analysis route lifecycle', () => {
                 return attempt === 1
                     ? oldReply
                     : Promise.resolve({
-                            ok: true,
-                            prefs: { ...serverPrefs, enabled: false },
-                        });
+                        ok: true,
+                        prefs: { ...serverPrefs, enabled: false },
+                    });
             },
         );
 
         try {
             await harness.advanceBindingTime(
-                CONTENT_PREFS_REQUEST_TIMEOUT_MS +
-                    CONTENT_PREFS_RETRY_DELAY_MS,
+                CONTENT_PREFS_REQUEST_TIMEOUT_MS
+                    + CONTENT_PREFS_RETRY_DELAY_MS,
             );
             resolveOld({ ok: true, prefs: serverPrefs });
             await harness.advanceBindingTime(0);
@@ -1371,7 +1391,9 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('does not let a late preferences reply overwrite a broadcast', async () => {
-        let resolveOld: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldReply = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -1388,8 +1410,8 @@ describe('per-video analysis route lifecycle', () => {
             await harness.emitPrefs({ ...serverPrefs, enabled: false });
             resolveOld({ ok: true, prefs: serverPrefs });
             await harness.advanceBindingTime(
-                CONTENT_PREFS_REQUEST_TIMEOUT_MS +
-                    CONTENT_PREFS_RETRY_DELAY_MS,
+                CONTENT_PREFS_REQUEST_TIMEOUT_MS
+                    + CONTENT_PREFS_RETRY_DELAY_MS,
             );
 
             expect(
@@ -1405,7 +1427,7 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('cancels preferences timeout and retry ownership on dispose', async () => {
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -1418,8 +1440,8 @@ describe('per-video analysis route lifecycle', () => {
         try {
             harness.disposeContent();
             await harness.advanceBindingTime(
-                CONTENT_PREFS_REQUEST_TIMEOUT_MS +
-                    CONTENT_PREFS_RETRY_DELAY_MS,
+                CONTENT_PREFS_REQUEST_TIMEOUT_MS
+                    + CONTENT_PREFS_RETRY_DELAY_MS,
             );
 
             expect(
@@ -1510,7 +1532,9 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('cancels active capture and ignores its completion after disable', async () => {
-        let resolveCapture: (result: unknown) => void = () => undefined;
+        let resolveCapture: (result: unknown) => void = () => {
+            return undefined;
+        };
         const captureOwner: { signal: AbortSignal | null } = {
             signal: null,
         };
@@ -1650,7 +1674,7 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('does not let an unresolved acquisition event block the request', async () => {
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -1824,8 +1848,8 @@ describe('per-video analysis route lifecycle', () => {
                 const payload = readTestProperty(message, 'payload');
                 const videoId = readTestProperty(payload, 'videoId');
                 if (
-                    readTestProperty(message, 'type') ===
-                    TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
+                    readTestProperty(message, 'type')
+                    === TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
                 ) {
                     pollCount += 1;
                     if (pollCount === 1) {
@@ -1874,7 +1898,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('retries a timed-out poll with the same job and identity', async () => {
         let pollCount = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -1883,8 +1907,8 @@ describe('per-video analysis route lifecycle', () => {
                 const payload = readTestProperty(message, 'payload');
                 const videoId = readTestProperty(payload, 'videoId');
                 if (
-                    readTestProperty(message, 'type') ===
-                    TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
+                    readTestProperty(message, 'type')
+                    === TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS
                 ) {
                     pollCount += 1;
                     if (pollCount === 1) {
@@ -1912,8 +1936,8 @@ describe('per-video analysis route lifecycle', () => {
                 TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS,
             )[0];
             await harness.advanceBindingTime(
-                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
-                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS
+                    + SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
             );
 
             const polls = harness.messagesOfType(
@@ -1995,7 +2019,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('recovers an unresolved submit after the runtime watchdog', async () => {
         let submitCount = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -2024,8 +2048,8 @@ describe('per-video analysis route lifecycle', () => {
 
         try {
             await harness.advanceBindingTime(
-                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
-                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS
+                    + SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
             );
 
             const requests = harness.messagesOfType(
@@ -2064,10 +2088,10 @@ describe('per-video analysis route lifecycle', () => {
                 .find((message) => {
                     const payload = readTestProperty(message, 'payload');
                     return (
-                        readTestProperty(payload, 'event') ===
-                            'analysis_interrupted' &&
-                        readTestProperty(payload, 'reason') ===
-                            'runtime_unavailable'
+                        readTestProperty(payload, 'event')
+                            === 'analysis_interrupted'
+                        && readTestProperty(payload, 'reason')
+                            === 'runtime_unavailable'
                     );
                 });
             expect(interruption).toBeDefined();
@@ -2086,8 +2110,8 @@ describe('per-video analysis route lifecycle', () => {
             (message) => {
                 const payload = readTestProperty(message, 'payload');
                 if (
-                    readTestProperty(payload, 'event') !==
-                    'analysis_interrupted'
+                    readTestProperty(payload, 'event')
+                    !== 'analysis_interrupted'
                 ) {
                     return Promise.resolve({ ok: true });
                 }
@@ -2104,9 +2128,7 @@ describe('per-video analysis route lifecycle', () => {
                     .messagesOfType(
                         TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                     )
-                    .filter((message) =>
-                        isAnalysisInterruptionMessage(message),
-                    ),
+                    .filter((message) => isAnalysisInterruptionMessage(message)),
             ).toHaveLength(1);
             await harness.advanceBindingTime(
                 SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
@@ -2117,9 +2139,7 @@ describe('per-video analysis route lifecycle', () => {
                     .messagesOfType(
                         TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                     )
-                    .filter((message) =>
-                        isAnalysisInterruptionMessage(message),
-                    ),
+                    .filter((message) => isAnalysisInterruptionMessage(message)),
             ).toHaveLength(2);
             expect(capture).toHaveBeenCalledOnce();
             expect(
@@ -2150,8 +2170,8 @@ describe('per-video analysis route lifecycle', () => {
                 (message) => {
                     const payload = readTestProperty(message, 'payload');
                     if (
-                        readTestProperty(payload, 'event') !==
-                        testCase.terminalEvent
+                        readTestProperty(payload, 'event')
+                        !== testCase.terminalEvent
                     ) {
                         return Promise.resolve({ ok: true });
                     }
@@ -2161,14 +2181,13 @@ describe('per-video analysis route lifecycle', () => {
                         : Promise.resolve({ ok: true });
                 },
                 undefined,
-                () =>
-                    Promise.resolve({
-                        status: 'failed',
-                        failure: {
-                            reason: testCase.failureReason,
-                            message: 'Safe test failure',
-                        },
-                    }),
+                () => Promise.resolve({
+                    status: 'failed',
+                    failure: {
+                        reason: testCase.failureReason,
+                        message: 'Safe test failure',
+                    },
+                }),
             );
 
             try {
@@ -2182,8 +2201,8 @@ describe('per-video analysis route lifecycle', () => {
                     .filter((message) => {
                         const payload = readTestProperty(message, 'payload');
                         return (
-                            readTestProperty(payload, 'event') ===
-                            testCase.terminalEvent
+                            readTestProperty(payload, 'event')
+                            === testCase.terminalEvent
                         );
                     });
 
@@ -2202,7 +2221,7 @@ describe('per-video analysis route lifecycle', () => {
 
     it('retries interruption delivery after its acknowledgement times out', async () => {
         let deliveryAttempt = 0;
-        const never = new Promise<unknown>(() => undefined);
+        const never = new Promise<unknown>(() => {});
         const harness = await createRouteHarness(
             serverPrefs,
             true,
@@ -2211,8 +2230,8 @@ describe('per-video analysis route lifecycle', () => {
             (message) => {
                 const payload = readTestProperty(message, 'payload');
                 if (
-                    readTestProperty(payload, 'event') !==
-                    'analysis_interrupted'
+                    readTestProperty(payload, 'event')
+                    !== 'analysis_interrupted'
                 ) {
                     return Promise.resolve({ ok: true });
                 }
@@ -2225,8 +2244,8 @@ describe('per-video analysis route lifecycle', () => {
 
         try {
             await harness.advanceBindingTime(
-                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
-                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS
+                    + SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
             );
 
             expect(
@@ -2234,9 +2253,7 @@ describe('per-video analysis route lifecycle', () => {
                     .messagesOfType(
                         TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                     )
-                    .filter((message) =>
-                        isAnalysisInterruptionMessage(message),
-                    ),
+                    .filter((message) => isAnalysisInterruptionMessage(message)),
             ).toHaveLength(2);
             expect(capture).toHaveBeenCalledOnce();
         } finally {
@@ -2246,7 +2263,9 @@ describe('per-video analysis route lifecycle', () => {
 
     it('ignores a duplicate late interruption acknowledgement', async () => {
         let deliveryAttempt = 0;
-        let resolveOld: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldAcknowledgement = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -2258,8 +2277,8 @@ describe('per-video analysis route lifecycle', () => {
             (message) => {
                 const payload = readTestProperty(message, 'payload');
                 if (
-                    readTestProperty(payload, 'event') !==
-                    'analysis_interrupted'
+                    readTestProperty(payload, 'event')
+                    !== 'analysis_interrupted'
                 ) {
                     return Promise.resolve({ ok: true });
                 }
@@ -2272,8 +2291,8 @@ describe('per-video analysis route lifecycle', () => {
 
         try {
             await harness.advanceBindingTime(
-                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
-                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS
+                    + SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
             );
             resolveOld({ ok: true });
             await harness.advanceBindingTime(0);
@@ -2285,9 +2304,7 @@ describe('per-video analysis route lifecycle', () => {
                     .messagesOfType(
                         TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                     )
-                    .filter((message) =>
-                        isAnalysisInterruptionMessage(message),
-                    ),
+                    .filter((message) => isAnalysisInterruptionMessage(message)),
             ).toHaveLength(2);
         } finally {
             harness.dispose();
@@ -2304,8 +2321,8 @@ describe('per-video analysis route lifecycle', () => {
             (message) => {
                 const payload = readTestProperty(message, 'payload');
                 if (
-                    readTestProperty(payload, 'event') !==
-                    'analysis_interrupted'
+                    readTestProperty(payload, 'event')
+                    !== 'analysis_interrupted'
                 ) {
                     return Promise.resolve({ ok: true });
                 }
@@ -2320,14 +2337,13 @@ describe('per-video analysis route lifecycle', () => {
             for (const retryAfterMs of SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS) {
                 await harness.advanceBindingTime(retryAfterMs);
             }
-            const interruptionMessages = (): unknown[] =>
-                harness
+            const interruptionMessages = (): unknown[] => {
+                return harness
                     .messagesOfType(
                         TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                     )
-                    .filter((message) =>
-                        isAnalysisInterruptionMessage(message),
-                    );
+                    .filter((message) => isAnalysisInterruptionMessage(message));
+            };
             expect(interruptionMessages()).toHaveLength(5);
 
             await harness.advanceBindingTime(10 * MS_PER_SECOND);
@@ -2356,15 +2372,15 @@ describe('per-video analysis route lifecycle', () => {
             120,
             (message) => {
                 const payload = readTestProperty(message, 'payload');
-                return readTestProperty(payload, 'videoId') ===
-                    'dQw4w9WgXcQ'
+                return readTestProperty(payload, 'videoId')
+                    === 'dQw4w9WgXcQ'
                     ? Promise.resolve({ invalid: true })
                     : Promise.resolve({ ok: true, status: 'inactive' });
             },
             (message) => {
                 const payload = readTestProperty(message, 'payload');
-                return readTestProperty(payload, 'event') ===
-                    'analysis_interrupted'
+                return readTestProperty(payload, 'event')
+                    === 'analysis_interrupted'
                     ? Promise.reject(new Error('worker stopped'))
                     : Promise.resolve({ ok: true });
             },
@@ -2383,12 +2399,10 @@ describe('per-video analysis route lifecycle', () => {
                     .messagesOfType(
                         TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                     )
-                    .filter((message) =>
-                        isAnalysisInterruptionMessage(
-                            message,
-                            'dQw4w9WgXcQ',
-                        ),
-                    ),
+                    .filter((message) => isAnalysisInterruptionMessage(
+                        message,
+                        'dQw4w9WgXcQ',
+                    )),
             ).toHaveLength(1);
             expect(capture).toHaveBeenCalledTimes(2);
         } finally {
@@ -2414,8 +2428,8 @@ describe('per-video analysis route lifecycle', () => {
                 () => Promise.resolve({ invalid: true }),
                 (message) => {
                     const payload = readTestProperty(message, 'payload');
-                    return readTestProperty(payload, 'event') ===
-                        'analysis_interrupted'
+                    return readTestProperty(payload, 'event')
+                        === 'analysis_interrupted'
                         ? Promise.reject(new Error('worker stopped'))
                         : Promise.resolve({ ok: true });
                 },
@@ -2434,9 +2448,7 @@ describe('per-video analysis route lifecycle', () => {
                         .messagesOfType(
                             TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                         )
-                        .filter((message) =>
-                            isAnalysisInterruptionMessage(message),
-                        ),
+                        .filter((message) => isAnalysisInterruptionMessage(message)),
                 ).toHaveLength(1);
             } finally {
                 harness.dispose();
@@ -2452,8 +2464,8 @@ describe('per-video analysis route lifecycle', () => {
             () => Promise.resolve({ invalid: true }),
             (message) => {
                 const payload = readTestProperty(message, 'payload');
-                return readTestProperty(payload, 'event') ===
-                    'analysis_interrupted'
+                return readTestProperty(payload, 'event')
+                    === 'analysis_interrupted'
                     ? Promise.reject(new Error('worker stopped'))
                     : Promise.resolve({ ok: true });
             },
@@ -2470,9 +2482,7 @@ describe('per-video analysis route lifecycle', () => {
                     .messagesOfType(
                         TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT,
                     )
-                    .filter((message) =>
-                        isAnalysisInterruptionMessage(message),
-                    ),
+                    .filter((message) => isAnalysisInterruptionMessage(message)),
             ).toHaveLength(1);
         } finally {
             harness.dispose();
@@ -2553,8 +2563,12 @@ describe('per-video analysis route lifecycle', () => {
     }
 
     it('keeps replacement operation ownership after the old promise settles', async () => {
-        let resolveOld: (response: unknown) => void = () => undefined;
-        let resolveReplacement: (response: unknown) => void = () => undefined;
+        let resolveOld: (response: unknown) => void = () => {
+            return undefined;
+        };
+        let resolveReplacement: (response: unknown) => void = () => {
+            return undefined;
+        };
         const oldRequest = new Promise<unknown>((resolve) => {
             resolveOld = resolve;
         });
@@ -2656,10 +2670,10 @@ describe('per-video analysis route lifecycle', () => {
                 .find((message) => {
                     const payload = readTestProperty(message, 'payload');
                     return (
-                        readTestProperty(payload, 'event') ===
-                            'analysis_interrupted' &&
-                        readTestProperty(payload, 'reason') ===
-                            'analysis_deadline_exceeded'
+                        readTestProperty(payload, 'event')
+                            === 'analysis_interrupted'
+                        && readTestProperty(payload, 'reason')
+                            === 'analysis_deadline_exceeded'
                     );
                 });
             expect(interruption).toBeDefined();
@@ -2671,7 +2685,9 @@ describe('per-video analysis route lifecycle', () => {
     });
 
     it('dedupes terminal blocks without invalidating their pending ack', async () => {
-        let resolveRequest: (response: unknown) => void = () => undefined;
+        let resolveRequest: (response: unknown) => void = () => {
+            return undefined;
+        };
         const pendingRequest = new Promise<unknown>((resolve) => {
             resolveRequest = resolve;
         });
@@ -2700,8 +2716,8 @@ describe('per-video analysis route lifecycle', () => {
             resolveRequest({ ok: true, status: 'ready' });
             await harness.advanceBindingTime(0);
             await harness.advanceBindingTime(
-                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS +
-                    SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
+                SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS
+                    + SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[0],
             );
 
             expect(
@@ -2837,7 +2853,13 @@ describe('per-video analysis route lifecycle', () => {
                 expect(applied).toHaveLength(1);
                 expect(applied[0]).toMatchObject({
                     video: 'dQw4w9WgXcQ',
-                    fields: { block: 0, fromSec: 10.2, toSec: 20, deltaSec: 1.2 },
+                    fields: {
+
+                        block: 0,
+                        fromSec: 10.2,
+                        toSec: 20,
+                        deltaSec: 1.2,
+                    },
                 });
                 expect(typeof applied[0]?.session).toBe('string');
             } finally {
@@ -3216,6 +3238,7 @@ describe('per-video analysis route lifecycle', () => {
          * @param jobId - Backend job id.
          * @param videoId - Video id echoed from the request payload.
          * @param pollAfterSec - Poll cadence.
+         *
          * @returns Processing acknowledgement.
          */
         function processingAck(
@@ -3285,8 +3308,8 @@ describe('per-video analysis route lifecycle', () => {
         });
 
         it('emits the final summary with reason navigation when the route is cancelled', async () => {
-            const harness = await createLoggingHarness((message) =>
-                Promise.resolve(processingAck('job-nav', payloadVideoId(message))),
+            const harness = await createLoggingHarness(
+                (message) => Promise.resolve(processingAck('job-nav', payloadVideoId(message))),
             );
             try {
                 await harness.advanceBindingTime(MS_PER_SECOND);
@@ -3357,8 +3380,8 @@ describe('per-video analysis route lifecycle', () => {
         });
 
         it('summarizes the deadline final poll once', async () => {
-            const harness = await createLoggingHarness((message) =>
-                Promise.resolve(processingAck('job-deadline', payloadVideoId(message), 60 * 60)),
+            const harness = await createLoggingHarness(
+                (message) => Promise.resolve(processingAck('job-deadline', payloadVideoId(message), 60 * 60)),
             );
             try {
                 await harness.advanceBindingTime(SERVER_ANALYSIS_SESSION_DEADLINE_MS);
@@ -3405,7 +3428,13 @@ describe('per-video analysis route lifecycle', () => {
                 expect(finals).toHaveLength(1);
                 expect(finals[0]).toMatchObject({
                     job: 'job-restart',
-                    fields: { polls: 2, retries: 1, lastStatus: 'ready', terminal: true },
+                    fields: {
+
+                        polls: 2,
+                        retries: 1,
+                        lastStatus: 'ready',
+                        terminal: true,
+                    },
                 });
             } finally {
                 harness.dispose();
@@ -3413,8 +3442,8 @@ describe('per-video analysis route lifecycle', () => {
         });
 
         it('emits an interim summary every DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS polls', async () => {
-            const harness = await createLoggingHarness((message) =>
-                Promise.resolve(processingAck('job-interim', payloadVideoId(message))),
+            const harness = await createLoggingHarness(
+                (message) => Promise.resolve(processingAck('job-interim', payloadVideoId(message))),
             );
             try {
                 for (let poll = 0; poll < DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS + 2; poll += 1) {
@@ -3427,9 +3456,8 @@ describe('per-video analysis route lifecycle', () => {
                     harness,
                     DEBUG_LOG_EVENT.PollSummary,
                 ).filter(
-                    (event) =>
-                        event.job === 'job-interim' &&
-                        event.video === 'dQw4w9WgXcQ',
+                    (event) => event.job === 'job-interim'
+                        && event.video === 'dQw4w9WgXcQ',
                 );
                 expect(summaries.map((event) => event.fields)).toEqual([
                     expect.objectContaining({
@@ -3532,9 +3560,7 @@ describe('per-video analysis route lifecycle', () => {
         });
 
         it('logs analysis-interrupted with the stable reason', async () => {
-            const harness = await createLoggingHarness(() =>
-                Promise.reject(new Error('message port closed')),
-            );
+            const harness = await createLoggingHarness(() => Promise.reject(new Error('message port closed')));
             try {
                 for (const retryAfterMs of SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS) {
                     await harness.advanceBindingTime(retryAfterMs);

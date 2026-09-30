@@ -1,3 +1,8 @@
+/**
+ * @file Merges parsed caption segments into a single bounded transcript
+ * string for the LLM prompt.
+ */
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
@@ -6,6 +11,7 @@ import type { CaptionSegment } from '@topskip/common/caption-types';
  *
  * @param segments - Caption rows from YouTube transcript
  * @param maxChars - Maximum characters for the merged text
+ *
  * @returns Merged transcript and whether the tail was truncated
  */
 export function mergeCaptionSegmentsToTranscript(

@@ -1,10 +1,16 @@
-import * as v from 'valibot';
+/**
+ * @file Valibot schemas and derived types for subtitle extraction: the
+ * transcript artifact contract shared by every strategy, the bounded
+ * diagnostics an attempt may retain, and the strategy interface the
+ * extraction pipeline drives.
+ */
 
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
 import {
     type ServerAnalysisFailureCode,
     youtubeVideoIdSchema,
 } from '@topskip/common/server-analysis-contract';
-import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
+import * as v from 'valibot';
 
 const finiteNonNegativeNumberSchema = v.pipe(
     v.number(),
@@ -133,17 +139,17 @@ const extensionCaptionUploadArtifactSchema = v.pipe(
             return false;
         }
         return (
-            canonical.transcript.languageCode === artifact.languageCode &&
-            canonical.transcript.canonicalJson ===
-                JSON.stringify(
+            canonical.transcript.languageCode === artifact.languageCode
+            && canonical.transcript.canonicalJson
+                === JSON.stringify(
                     artifact.segments.map((segment) => [
                         segment.startSec,
                         segment.durationSec,
                         segment.text,
                     ]),
-                ) &&
-            artifact.transcriptText ===
-                artifact.segments.map((segment) => segment.text).join(' ')
+                )
+            && artifact.transcriptText
+                === artifact.segments.map((segment) => segment.text).join(' ')
         );
     }, 'Uploaded transcript artifacts must already be canonical.'),
 );
@@ -159,14 +165,13 @@ export const transcriptArtifactSchema = v.pipe(
         extensionCaptionUploadArtifactSchema,
     ]),
     v.check(
-        (artifact) =>
-            artifact.segments.every((segment, index, segments) => {
-                const previous = segments[index - 1];
-                return (
-                    previous === undefined ||
-                    segment.startSec >= previous.startSec
-                );
-            }),
+        (artifact) => artifact.segments.every((segment, index, segments) => {
+            const previous = segments[index - 1];
+            return (
+                previous === undefined
+                    || segment.startSec >= previous.startSec
+            );
+        }),
         'Transcript segments must be ordered.',
     ),
 );
@@ -212,51 +217,67 @@ export type SubtitleExtractionAttempt = v.InferOutput<
 /**
  * Shared input every deterministic extraction strategy receives.
  */
-export type SubtitleExtractionStrategyInput = {
+export interface SubtitleExtractionStrategyInput {
+    /**
+     * YouTube video id the transcript is extracted for.
+     */
     videoId: string;
+
+    /**
+     * Server analysis algorithm version stamped onto any produced artifact.
+     */
     algorithmVersion: string;
+
+    /**
+     * Deterministic clock value the caller supplies so attempt timestamps stay reproducible in tests.
+     */
     nowMs: number;
-};
+}
 
 /**
  * Strategy output is validated by the pipeline before a transcript is selected.
  */
-export type SubtitleExtractionStrategyResult =
-    | { status: 'succeeded'; artifact: TranscriptArtifact }
+export type SubtitleExtractionStrategyResult = | { status: 'succeeded'; artifact: TranscriptArtifact }
     | {
-          status: 'failed';
-          failureReason: SubtitleExtractionFailureReason;
-          diagnostics: SubtitleExtractionDiagnostic;
-      }
+        status: 'failed';
+        failureReason: SubtitleExtractionFailureReason;
+        diagnostics: SubtitleExtractionDiagnostic;
+    }
     | {
-          status: 'timed_out';
-          failureReason: typeof SUBTITLE_EXTRACTION_FAILURE_REASON.StrategyTimeout;
-          diagnostics: SubtitleExtractionDiagnostic;
-      };
+        status: 'timed_out';
+        failureReason: typeof SUBTITLE_EXTRACTION_FAILURE_REASON.StrategyTimeout;
+        diagnostics: SubtitleExtractionDiagnostic;
+    };
 
 /**
  * Strategy contract used by the backend-owned extraction pipeline.
  */
-export type SubtitleExtractionStrategy = {
+export interface SubtitleExtractionStrategy {
+    /**
+     * Stable strategy id recorded on every attempt it produces.
+     */
     name: string;
+
+    /**
+     * Attempts to produce a transcript artifact for the given video, synchronously or asynchronously.
+     */
     extract: (
         input: SubtitleExtractionStrategyInput,
     ) =>
         | SubtitleExtractionStrategyResult
         | Promise<SubtitleExtractionStrategyResult>;
-};
+}
 
 /**
  * Pipeline output either selects one transcript or records a terminal unavailable state.
  */
-export type SubtitleExtractionPipelineResult =
+export type SubtitleExtractionPipelineResult = | {
+    status: 'selected';
+    artifact: TranscriptArtifact;
+    attempts: SubtitleExtractionAttempt[];
+}
     | {
-          status: 'selected';
-          artifact: TranscriptArtifact;
-          attempts: SubtitleExtractionAttempt[];
-      }
-    | {
-          status: 'unavailable';
-          code: ServerAnalysisFailureCode;
-          attempts: SubtitleExtractionAttempt[];
-      };
+        status: 'unavailable';
+        code: ServerAnalysisFailureCode;
+        attempts: SubtitleExtractionAttempt[];
+    };

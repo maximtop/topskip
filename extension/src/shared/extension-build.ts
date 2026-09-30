@@ -1,3 +1,7 @@
+/**
+ * @file Resolves a human-readable build identity for startup diagnostics.
+ */
+
 import browser from '@/shared/browser';
 
 /**

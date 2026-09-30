@@ -1,10 +1,15 @@
-import { PROVIDER_ID } from './providers.ts';
+/**
+ * @file Optional cross-origin host permissions for BYOK providers, shared by
+ * manifest composition and the options connection UI.
+ */
+
+// Type-only, so Node never resolves it when manifest composition loads this module during the build.
+import type { PROVIDER_ID } from './providers';
 
 /**
  * Providers whose cross-origin network access is granted independently.
  */
-export type HostPermissionProviderId =
-    | typeof PROVIDER_ID.OpenRouter
+export type HostPermissionProviderId = | typeof PROVIDER_ID.OpenRouter
     | typeof PROVIDER_ID.OpenAI;
 
 /**
@@ -15,26 +20,28 @@ export type ConnectionProviderId = HostPermissionProviderId;
 /**
  * Exact optional host metadata shared by manifest composition and UI status.
  */
-export type ProviderHostPermissionDefinition = {
+export interface ProviderHostPermissionDefinition {
     /**
      * Chrome match pattern requested for this provider.
      */
     origin: string;
+
     /**
      * Human-readable host shown without protocol or wildcard syntax.
      */
     hostLabel: string;
-};
+}
 
 /**
- * Provider hosts remain optional until an explicit Private BYOK action.
+ * Provider hosts remain optional until an explicit Private BYOK action. The keys are the `PROVIDER_ID` values;
+ * `satisfies` below keeps them in sync.
  */
 export const PROVIDER_HOST_PERMISSION = {
-    [PROVIDER_ID.OpenRouter]: {
+    openrouter: {
         origin: 'https://openrouter.ai/*',
         hostLabel: 'openrouter.ai',
     },
-    [PROVIDER_ID.OpenAI]: {
+    openai: {
         origin: 'https://api.openai.com/*',
         hostLabel: 'api.openai.com',
     },
@@ -61,8 +68,7 @@ export const PROVIDER_HOST_ACCESS_STATUS = {
 /**
  * Current optional-host access serialized to extension UI contexts.
  */
-export type ProviderHostAccessStatus =
-    (typeof PROVIDER_HOST_ACCESS_STATUS)[keyof typeof PROVIDER_HOST_ACCESS_STATUS];
+export type ProviderHostAccessStatus = (typeof PROVIDER_HOST_ACCESS_STATUS)[keyof typeof PROVIDER_HOST_ACCESS_STATUS];
 
 /**
  * Explicit grant outcomes avoid exposing raw permission API failures.
@@ -76,7 +82,6 @@ export const PROVIDER_HOST_ACCESS_REQUEST_OUTCOME = {
 /**
  * Safe result of one user-initiated optional-host permission request.
  */
-export type ProviderHostAccessRequestOutcome =
-    (typeof PROVIDER_HOST_ACCESS_REQUEST_OUTCOME)[
-        keyof typeof PROVIDER_HOST_ACCESS_REQUEST_OUTCOME
-    ];
+export type ProviderHostAccessRequestOutcome = (typeof PROVIDER_HOST_ACCESS_REQUEST_OUTCOME)[
+    keyof typeof PROVIDER_HOST_ACCESS_REQUEST_OUTCOME
+];

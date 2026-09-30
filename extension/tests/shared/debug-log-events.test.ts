@@ -1,3 +1,4 @@
+import * as v from 'valibot';
 import { describe, expect, it } from 'vitest';
 
 import {
@@ -41,7 +42,6 @@ import {
     roundLogSeconds,
     sanitizeDebugLogFields,
 } from '@/shared/debug-log-events';
-import * as v from 'valibot';
 
 const EVENT_NAMES = Object.values(DEBUG_LOG_EVENT);
 const SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -157,8 +157,8 @@ describe('id patterns', () => {
         expect(VIDEO_ID_PATTERN.test(VIDEO_ID)).toBe(true);
         expect(VIDEO_ID_PATTERN.test('short')).toBe(false);
         expect(UUID_PATTERN.test(SESSION_ID)).toBe(true);
-        expect(UUID_PATTERN.test('job-' + SESSION_ID)).toBe(false);
-        expect(JOB_ID_PATTERN.test('job-' + SESSION_ID)).toBe(true);
+        expect(UUID_PATTERN.test(`job-${SESSION_ID}`)).toBe(false);
+        expect(JOB_ID_PATTERN.test(`job-${SESSION_ID}`)).toBe(true);
         expect(JOB_ID_PATTERN.test('local-e2eFixture1-server-v8')).toBe(true);
         expect(JOB_ID_PATTERN.test('has space')).toBe(false);
         expect(JOB_ID_PATTERN.test('a'.repeat(161))).toBe(false);
@@ -219,14 +219,14 @@ describe('sanitizeDebugLogFields', () => {
             tab: 12,
             video: VIDEO_ID,
             session: 'not-a-uuid',
-            job: 'job-' + SESSION_ID,
+            job: `job-${SESSION_ID}`,
             support: 'support-x',
             decision: 'local_cache',
         });
         expect(sanitized).toEqual({
             tab: 12,
             video: VIDEO_ID,
-            job: 'job-' + SESSION_ID,
+            job: `job-${SESSION_ID}`,
             decision: 'local_cache',
         });
         expect(sanitizeDebugLogFields(DEBUG_LOG_EVENT.CacheDecision, { tab: -1 })).toEqual({});

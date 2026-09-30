@@ -11,6 +11,8 @@ import {
  * the host must be present here even though release bundles carry `null`.
  *
  * @returns Local fixture hostname compiled into this test build.
+ *
+ * @throws {Error} When the build was not compiled with the dev fixture host.
  */
 function fixtureHost(): string {
     if (E2E_HOST === null) {

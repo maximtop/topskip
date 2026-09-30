@@ -1,145 +1,522 @@
+/**
+ * @file Builds the OpenRouter model-comparison report: parses a compare-presets
+ * log into a typed {@link CompareReport} and renders it as a self-contained,
+ * interactive HTML page comparing model runs against a human reference.
+ */
+
 import {
     parseReferenceBundleJson,
     type AlignedBlockMetric,
     type ReferenceBundle,
 } from './promo-reference-compare';
 
-export type CompareBlock = {
+/**
+ * A single detected promo block emitted by a model run.
+ */
+export interface CompareBlock {
+    /**
+     * Block start time in seconds from the start of the video.
+     */
     startSec: number;
-    endSec?: number;
-    confidence?: string;
-};
 
-export type CompareUsagePromptTokensDetails = {
-    cachedTokens?: number;
-    cacheWriteTokens?: number;
-    audioTokens?: number;
-    videoTokens?: number;
-};
+    /**
+     * Block end time in seconds; absent when the model did not report an end.
+     */
+    endSec?: number | undefined;
 
-export type CompareUsageCompletionTokensDetails = {
-    reasoningTokens?: number;
-    audioTokens?: number;
-    imageTokens?: number;
-};
+    /**
+     * Model-reported confidence label for this block, when provided.
+     */
+    confidence?: string | undefined;
+}
 
-export type CompareUsageCostDetails = {
-    upstreamInferenceCost?: number;
-    upstreamInferencePromptCost?: number;
-    upstreamInferenceCompletionsCost?: number;
-};
+/**
+ * Cache- and modality-specific breakdown of prompt token usage.
+ */
+export interface CompareUsagePromptTokensDetails {
+    /**
+     * Number of prompt tokens served from cache.
+     */
+    cachedTokens?: number | undefined;
 
-export type CompareUsage = {
+    /**
+     * Number of prompt tokens written to cache for later reuse.
+     */
+    cacheWriteTokens?: number | undefined;
+
+    /**
+     * Number of prompt tokens attributed to audio input.
+     */
+    audioTokens?: number | undefined;
+
+    /**
+     * Number of prompt tokens attributed to video input.
+     */
+    videoTokens?: number | undefined;
+}
+
+/**
+ * Modality-specific breakdown of completion token usage.
+ */
+export interface CompareUsageCompletionTokensDetails {
+    /**
+     * Number of completion tokens spent on internal reasoning.
+     */
+    reasoningTokens?: number | undefined;
+
+    /**
+     * Number of completion tokens attributed to audio output.
+     */
+    audioTokens?: number | undefined;
+
+    /**
+     * Number of completion tokens attributed to image output.
+     */
+    imageTokens?: number | undefined;
+}
+
+/**
+ * Upstream-provider cost breakdown reported alongside token usage.
+ */
+export interface CompareUsageCostDetails {
+    /**
+     * Total upstream inference cost in USD, as reported by the provider.
+     */
+    upstreamInferenceCost?: number | undefined;
+
+    /**
+     * Portion of upstream inference cost attributed to the prompt, in USD.
+     */
+    upstreamInferencePromptCost?: number | undefined;
+
+    /**
+     * Portion of upstream inference cost attributed to the completion, in USD.
+     */
+    upstreamInferenceCompletionsCost?: number | undefined;
+}
+
+/**
+ * Token and cost usage reported for a single model call.
+ */
+export interface CompareUsage {
+    /**
+     * Number of tokens in the prompt.
+     */
     promptTokens: number;
+
+    /**
+     * Number of tokens in the completion.
+     */
     completionTokens: number;
+
+    /**
+     * Total tokens billed for the call (prompt plus completion).
+     */
     totalTokens: number;
-    promptTokensDetails?: CompareUsagePromptTokensDetails;
-    completionTokensDetails?: CompareUsageCompletionTokensDetails;
-    cost?: number;
-    isByok?: boolean;
-    costDetails?: CompareUsageCostDetails;
-};
 
-export type ComparePricing = {
-    prompt?: number;
-    completion?: number;
-    request?: number;
-    webSearch?: number;
-    internalReasoning?: number;
-    inputCacheRead?: number;
-    inputCacheWrite?: number;
-};
+    /**
+     * Cache- and modality-specific prompt token breakdown, when available.
+     */
+    promptTokensDetails?: CompareUsagePromptTokensDetails | undefined;
 
-export type CompareCostAnalysis = {
-    reportedCost?: number;
-    estimatedCostUsd?: number;
-    promptCostUsd?: number;
-    completionCostUsd?: number;
-    cacheReadCostUsd?: number;
-    cacheWriteCostUsd?: number;
-    internalReasoningCostUsd?: number;
-    requestCostUsd?: number;
-};
+    /**
+     * Modality-specific completion token breakdown, when available.
+     */
+    completionTokensDetails?: CompareUsageCompletionTokensDetails | undefined;
 
-export type CompareSource = {
-    fixture?: string;
-    reference?: string | null;
-    out?: string | null;
-};
+    /**
+     * Reported cost in USD for the call, when the provider returns one.
+     */
+    cost?: number | undefined;
 
-export type CompareRow = {
+    /**
+     * Whether the call was billed under the caller's own API key (BYOK).
+     */
+    isByok?: boolean | undefined;
+
+    /**
+     * Detailed upstream cost breakdown, when available.
+     */
+    costDetails?: CompareUsageCostDetails | undefined;
+}
+
+/**
+ * Per-token-type pricing for a model, in USD per token unless noted otherwise.
+ */
+export interface ComparePricing {
+    /**
+     * Price per prompt token.
+     */
+    prompt?: number | undefined;
+
+    /**
+     * Price per completion token.
+     */
+    completion?: number | undefined;
+
+    /**
+     * Flat price per request.
+     */
+    request?: number | undefined;
+
+    /**
+     * Price per web-search invocation, for models with built-in search.
+     */
+    webSearch?: number | undefined;
+
+    /**
+     * Price per internal-reasoning token.
+     */
+    internalReasoning?: number | undefined;
+
+    /**
+     * Price per prompt token served from cache.
+     */
+    inputCacheRead?: number | undefined;
+
+    /**
+     * Price per prompt token written to cache.
+     */
+    inputCacheWrite?: number | undefined;
+}
+
+/**
+ * Cost figures computed or reported for a single row, in USD.
+ */
+export interface CompareCostAnalysis {
+    /**
+     * Cost as reported directly by the provider, when available.
+     */
+    reportedCost?: number | undefined;
+
+    /**
+     * Cost estimated locally from pricing and token usage.
+     */
+    estimatedCostUsd?: number | undefined;
+
+    /**
+     * Estimated cost attributed to the prompt.
+     */
+    promptCostUsd?: number | undefined;
+
+    /**
+     * Estimated cost attributed to the completion.
+     */
+    completionCostUsd?: number | undefined;
+
+    /**
+     * Estimated cost attributed to cache reads.
+     */
+    cacheReadCostUsd?: number | undefined;
+
+    /**
+     * Estimated cost attributed to cache writes.
+     */
+    cacheWriteCostUsd?: number | undefined;
+
+    /**
+     * Estimated cost attributed to internal reasoning tokens.
+     */
+    internalReasoningCostUsd?: number | undefined;
+
+    /**
+     * Estimated flat per-request cost.
+     */
+    requestCostUsd?: number | undefined;
+}
+
+/**
+ * Identifies where the compared inputs came from, for display in the report header.
+ */
+export interface CompareSource {
+    /**
+     * Path or name of the input fixture used for the run.
+     */
+    fixture?: string | undefined;
+
+    /**
+     * Path to the human reference file; null when none was supplied.
+     */
+    reference?: string | null | undefined;
+
+    /**
+     * Path to the output file the report was written to; null when not written.
+     */
+    out?: string | null | undefined;
+}
+
+/**
+ * Result of comparing one model against the reference for a single preset run.
+ */
+export interface CompareRow {
+    /**
+     * Model identifier as requested from OpenRouter.
+     */
     model: string;
-    responseModel?: string;
+
+    /**
+     * Model identifier actually reported back by OpenRouter, when it differs.
+     */
+    responseModel?: string | undefined;
+
+    /**
+     * Wall-clock duration of the call in milliseconds.
+     */
     ms: number;
+
+    /**
+     * Whether the call completed successfully.
+     */
     ok: boolean;
-    error?: string;
-    usage?: CompareUsage;
-    pricing?: ComparePricing;
-    costAnalysis?: CompareCostAnalysis;
-    blocks?: CompareBlock[];
-    vsHuman?: AlignedBlockMetric[];
-    vsHumanNote?: string;
-};
 
-export type CompareReport = {
-    generatedAt?: string;
-    source?: CompareSource;
+    /**
+     * Error message when the call failed.
+     */
+    error?: string | undefined;
+
+    /**
+     * Token and cost usage reported for the call.
+     */
+    usage?: CompareUsage | undefined;
+
+    /**
+     * Pricing in effect for the model at call time.
+     */
+    pricing?: ComparePricing | undefined;
+
+    /**
+     * Cost figures derived from usage and pricing.
+     */
+    costAnalysis?: CompareCostAnalysis | undefined;
+
+    /**
+     * Promo blocks the model detected.
+     */
+    blocks?: CompareBlock[] | undefined;
+
+    /**
+     * Per-block alignment metrics against the human reference.
+     */
+    vsHuman?: AlignedBlockMetric[] | undefined;
+
+    /**
+     * Free-text note explaining why alignment metrics could not be computed.
+     */
+    vsHumanNote?: string | undefined;
+}
+
+/**
+ * Top-level parsed shape of an OpenRouter compare-presets log.
+ */
+export interface CompareReport {
+    /**
+     * ISO timestamp of when the compare run was generated.
+     */
+    generatedAt?: string | undefined;
+
+    /**
+     * Where the inputs for this run came from.
+     */
+    source?: CompareSource | undefined;
+
+    /**
+     * Number of presets included in the run.
+     */
     presetCount: number;
+
+    /**
+     * One result per model compared.
+     */
     rows: CompareRow[];
-    reference?: ReferenceBundle;
-    firstRunVsHuman?: AlignedBlockMetric[];
-    firstRunVsHumanNote?: string;
-};
 
-type MetricSummary = {
+    /**
+     * Human reference bundle the rows were compared against, when supplied.
+     */
+    reference?: ReferenceBundle | undefined;
+
+    /**
+     * Alignment metrics for the original first run against the human reference.
+     */
+    firstRunVsHuman?: AlignedBlockMetric[] | undefined;
+
+    /**
+     * Free-text note for the first-run alignment metrics.
+     */
+    firstRunVsHumanNote?: string | undefined;
+}
+
+/**
+ * Aggregated alignment metrics for one model's blocks against the human reference.
+ */
+interface MetricSummary {
+    /**
+     * Number of blocks that had a matching human-reference block.
+     */
     matchedBlocks: number;
-    avgIou?: number;
-    avgAbsStartDelta?: number;
-    avgAbsEndDelta?: number;
-};
 
+    /**
+     * Average intersection-over-union across matched blocks.
+     */
+    avgIou?: number | undefined;
+
+    /**
+     * Average absolute start-time delta across matched blocks, in seconds.
+     */
+    avgAbsStartDelta?: number | undefined;
+
+    /**
+     * Average absolute end-time delta across matched blocks, in seconds.
+     */
+    avgAbsEndDelta?: number | undefined;
+}
+
+/**
+ * Which cost figure, if any, backs a row's effective cost.
+ */
 type CostKind = 'reported' | 'estimated' | 'none';
 
-type CostInfo = {
-    effectiveCost?: number;
-    reportedCost?: number;
-    estimatedCostUsd?: number;
+/**
+ * Resolved cost for a row, picking a reported cost over an estimated one.
+ */
+interface CostInfo {
+    /**
+     * The cost actually used for sorting and display, in USD.
+     */
+    effectiveCost?: number | undefined;
+
+    /**
+     * Cost as reported by the provider, when available.
+     */
+    reportedCost?: number | undefined;
+
+    /**
+     * Cost estimated locally, when no reported cost was available.
+     */
+    estimatedCostUsd?: number | undefined;
+
+    /**
+     * Which of the two cost sources `effectiveCost` was taken from.
+     */
     kind: CostKind;
-};
+}
 
-type RankedRow = {
+/**
+ * A compare row enriched with the derived data needed to rank and render it.
+ */
+interface RankedRow {
+    /**
+     * The underlying parsed compare row.
+     */
     row: CompareRow;
-    summary: MetricSummary;
-    cost: CostInfo;
-};
 
+    /**
+     * Aggregated alignment metrics for the row's blocks.
+     */
+    summary: MetricSummary;
+
+    /**
+     * Resolved cost information for the row.
+     */
+    cost: CostInfo;
+}
+
+/**
+ * Which timeline lane a rendered segment belongs to.
+ */
 type LaneRole = 'human' | 'baseline' | 'model';
 
-type LaneSegment = {
+/**
+ * A single rendered time span within a timeline lane.
+ */
+interface LaneSegment {
+    /**
+     * Segment start time in seconds.
+     */
     startSec: number;
+
+    /**
+     * Segment end time in seconds.
+     */
     endSec: number;
+
+    /**
+     * CSS class controlling the segment's color.
+     */
     className: string;
-};
+}
 
-type RenderLane = {
+/**
+ * Everything needed to render one row of a timeline (human, baseline, or model).
+ */
+interface RenderLane {
+    /**
+     * Which kind of lane this is.
+     */
     role: LaneRole;
+
+    /**
+     * Model identifier, when this lane represents a model run.
+     */
     model?: string;
+
+    /**
+     * Label shown next to the lane.
+     */
     label: string;
+
+    /**
+     * Secondary text shown under the label.
+     */
     note: string;
+
+    /**
+     * Time spans to draw on the lane's track.
+     */
     segments: LaneSegment[];
-    confidence?: string;
+
+    /**
+     * Confidence label to show as a pill, when available.
+     */
+    confidence?: string | undefined;
+
+    /**
+     * Whether to draw the human block as a faint shadow behind this lane.
+     */
     showHumanShadow?: boolean;
-};
+}
 
-type HtmlOptions = {
+/**
+ * Options controlling the rendered HTML report's chrome.
+ */
+interface HtmlOptions {
+    /**
+     * Page title; defaults to a generic report title when omitted.
+     */
     title?: string;
-    sourceLabel?: string;
-};
 
+    /**
+     * Label describing the input source, shown in the report header.
+     */
+    sourceLabel?: string;
+}
+
+/**
+ * Narrows an unknown value to a plain object, excluding arrays and null.
+ *
+ * @param value - Value to check.
+ */
 function isRecord(value: unknown): value is Record<string, unknown> {
     return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+/**
+ * Asserts that a value is a finite number, for validating parsed JSON.
+ *
+ * @param value - Value to check.
+ * @param path - Dotted path to `value`, used in the thrown error message.
+ *
+ * @throws {Error} When `value` is not a finite number.
+ */
 function expectFiniteNumber(value: unknown, path: string): number {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
         throw new Error(`${path} must be a finite number`);
@@ -147,6 +524,12 @@ function expectFiniteNumber(value: unknown, path: string): number {
     return value;
 }
 
+/**
+ * Parses an optional finite number field, passing `undefined`/`null` through.
+ *
+ * @param value - Value to check.
+ * @param path - Dotted path to `value`, used in the thrown error message.
+ */
 function parseOptionalFiniteNumber(
     value: unknown,
     path: string,
@@ -157,6 +540,14 @@ function parseOptionalFiniteNumber(
     return expectFiniteNumber(value, path);
 }
 
+/**
+ * Parses an optional string field, passing `undefined`/`null` through.
+ *
+ * @param value - Value to check.
+ * @param path - Dotted path to `value`, used in the thrown error message.
+ *
+ * @throws {Error} When `value` is defined but not a string.
+ */
 function parseOptionalString(value: unknown, path: string): string | undefined {
     if (value === undefined || value === null) {
         return undefined;
@@ -167,6 +558,15 @@ function parseOptionalString(value: unknown, path: string): string | undefined {
     return value;
 }
 
+/**
+ * Parses an optional, nullable string field, passing `undefined` through and
+ * preserving `null` (unlike {@link parseOptionalString}).
+ *
+ * @param value - Value to check.
+ * @param path - Dotted path to `value`, used in the thrown error message.
+ *
+ * @throws {Error} When `value` is defined, not null, and not a string.
+ */
 function parseOptionalNullableString(
     value: unknown,
     path: string,
@@ -180,6 +580,13 @@ function parseOptionalNullableString(
     throw new Error(`${path} must be a string or null`);
 }
 
+/**
+ * Parses the prompt-token cache/modality breakdown, dropping the whole object
+ * when every field is absent.
+ *
+ * @param value - Raw `promptTokensDetails` value from parsed JSON.
+ * @param path - Dotted path to `value`, used in nested error messages.
+ */
 function parseUsagePromptTokensDetails(
     value: unknown,
     path: string,
@@ -210,6 +617,13 @@ function parseUsagePromptTokensDetails(
         : undefined;
 }
 
+/**
+ * Parses the completion-token modality breakdown, dropping the whole object
+ * when every field is absent.
+ *
+ * @param value - Raw `completionTokensDetails` value from parsed JSON.
+ * @param path - Dotted path to `value`, used in nested error messages.
+ */
 function parseUsageCompletionTokensDetails(
     value: unknown,
     path: string,
@@ -236,6 +650,13 @@ function parseUsageCompletionTokensDetails(
         : undefined;
 }
 
+/**
+ * Parses the upstream cost breakdown, dropping the whole object when every
+ * field is absent.
+ *
+ * @param value - Raw `costDetails` value from parsed JSON.
+ * @param path - Dotted path to `value`, used in nested error messages.
+ */
 function parseUsageCostDetails(
     value: unknown,
     path: string,
@@ -262,6 +683,16 @@ function parseUsageCostDetails(
         : undefined;
 }
 
+/**
+ * Parses a row's `usage` object, validating required fields and delegating
+ * the nested breakdowns.
+ *
+ * @param value - Raw `usage` value from parsed JSON.
+ * @param path - Dotted path to `value`, used in nested error messages.
+ *
+ * @throws {Error} When `promptTokens`, `completionTokens`, `totalTokens` are
+ * missing or not finite numbers, or `isByok` is present but not a boolean.
+ */
 function parseCompareUsage(
     value: unknown,
     path: string,
@@ -281,7 +712,7 @@ function parseCompareUsage(
         value.totalTokens,
         `${path}.totalTokens`,
     );
-    const isByok = value.isByok;
+    const { isByok } = value;
     if (isByok !== undefined && typeof isByok !== 'boolean') {
         throw new Error(`${path}.isByok must be a boolean`);
     }
@@ -306,6 +737,13 @@ function parseCompareUsage(
     };
 }
 
+/**
+ * Parses a row's `pricing` object, dropping the whole object when every
+ * field is absent.
+ *
+ * @param value - Raw `pricing` value from parsed JSON.
+ * @param path - Dotted path to `value`, used in nested error messages.
+ */
 function parseComparePricing(
     value: unknown,
     path: string,
@@ -342,6 +780,13 @@ function parseComparePricing(
         : undefined;
 }
 
+/**
+ * Parses a row's `costAnalysis` object, dropping the whole object when every
+ * field is absent.
+ *
+ * @param value - Raw `costAnalysis` value from parsed JSON.
+ * @param path - Dotted path to `value`, used in nested error messages.
+ */
 function parseCompareCostAnalysis(
     value: unknown,
     path: string,
@@ -388,6 +833,13 @@ function parseCompareCostAnalysis(
         : undefined;
 }
 
+/**
+ * Parses the report's `source` object, dropping the whole object when every
+ * field is absent.
+ *
+ * @param value - Raw `source` value from parsed JSON.
+ * @param path - Dotted path to `value`, used in nested error messages.
+ */
 function parseCompareSource(
     value: unknown,
     path: string,
@@ -408,21 +860,30 @@ function parseCompareSource(
         : undefined;
 }
 
+/**
+ * Parses one entry of a row's `blocks` array.
+ *
+ * @param value - Raw block value from parsed JSON.
+ * @param path - Dotted path to `value`, used in the thrown error message.
+ *
+ * @throws {Error} When `value` is not an object, `startSec` is not a finite
+ * number, `endSec` is present but invalid (not finite or not after
+ * `startSec`), or `confidence` is present but not a string.
+ */
 function parseCompareBlock(value: unknown, path: string): CompareBlock {
     if (!isRecord(value)) {
         throw new Error(`${path} must be an object`);
     }
-    const startSec = value.startSec;
-    const endSec = value.endSec;
-    const confidence = value.confidence;
+    const { startSec } = value;
+    const { endSec } = value;
+    const { confidence } = value;
     if (typeof startSec !== 'number' || !Number.isFinite(startSec)) {
         throw new Error(`${path}.startSec must be a finite number`);
     }
     if (endSec !== undefined) {
-        const invalidEnd =
-            typeof endSec !== 'number' ||
-            !Number.isFinite(endSec) ||
-            endSec <= startSec;
+        const invalidEnd = typeof endSec !== 'number'
+            || !Number.isFinite(endSec)
+            || endSec <= startSec;
         if (invalidEnd) {
             throw new Error(`${path}.endSec is invalid`);
         }
@@ -433,19 +894,29 @@ function parseCompareBlock(value: unknown, path: string): CompareBlock {
     return { startSec, endSec, confidence };
 }
 
+/**
+ * Parses one entry of a `vsHuman` alignment-metrics array.
+ *
+ * @param value - Raw metric value from parsed JSON.
+ * @param path - Dotted path to `value`, used in the thrown error message.
+ *
+ * @throws {Error} When `value` is not an object, `id` is not a non-empty
+ * string, `predEndAssumed` is not a boolean, or any numeric field is missing
+ * or not a finite number.
+ */
 function parseAlignedMetric(value: unknown, path: string): AlignedBlockMetric {
     if (!isRecord(value)) {
         throw new Error(`${path} must be an object`);
     }
-    const id = value.id;
-    const humanStartSec = value.humanStartSec;
-    const humanEndSec = value.humanEndSec;
-    const predStartSec = value.predStartSec;
-    const predEndSec = value.predEndSec;
-    const predEndAssumed = value.predEndAssumed;
-    const startDeltaSec = value.startDeltaSec;
-    const endDeltaSec = value.endDeltaSec;
-    const iouWithHuman = value.iouWithHuman;
+    const { id } = value;
+    const { humanStartSec } = value;
+    const { humanEndSec } = value;
+    const { predStartSec } = value;
+    const { predEndSec } = value;
+    const { predEndAssumed } = value;
+    const { startDeltaSec } = value;
+    const { endDeltaSec } = value;
+    const { iouWithHuman } = value;
     if (typeof id !== 'string' || id.length === 0) {
         throw new Error(`${path}.id must be a non-empty string`);
     }
@@ -471,16 +942,25 @@ function parseAlignedMetric(value: unknown, path: string): AlignedBlockMetric {
     };
 }
 
+/**
+ * Parses one entry of the report's `rows` array.
+ *
+ * @param value - Raw row value from parsed JSON.
+ * @param index - Row index, used in the thrown error message.
+ *
+ * @throws {Error} When `value` is not an object, or `model`, `ms`, `ok`,
+ * `responseModel`, `error`, or `vsHumanNote` fail their required shape.
+ */
 function parseCompareRow(value: unknown, index: number): CompareRow {
     if (!isRecord(value)) {
         throw new Error(`rows[${String(index)}] must be an object`);
     }
-    const model = value.model;
-    const responseModel = value.responseModel;
-    const ms = value.ms;
-    const ok = value.ok;
-    const error = value.error;
-    const vsHumanNote = value.vsHumanNote;
+    const { model } = value;
+    const { responseModel } = value;
+    const { ms } = value;
+    const { ok } = value;
+    const { error } = value;
+    const { vsHumanNote } = value;
     if (typeof model !== 'string' || model.length === 0) {
         throw new Error(`rows[${String(index)}].model must be a string`);
     }
@@ -517,25 +997,29 @@ function parseCompareRow(value: unknown, index: number): CompareRow {
             `rows[${String(index)}].costAnalysis`,
         ),
         blocks: Array.isArray(value.blocks)
-            ? value.blocks.map((item, blockIndex) =>
-                    parseCompareBlock(
-                        item,
-                        `rows[${String(index)}].blocks[${String(blockIndex)}]`,
-                    ),
-                )
+            ? value.blocks.map((item, blockIndex) => parseCompareBlock(
+                item,
+                `rows[${String(index)}].blocks[${String(blockIndex)}]`,
+            ))
             : undefined,
         vsHuman: Array.isArray(value.vsHuman)
-            ? value.vsHuman.map((item, metricIndex) =>
-                    parseAlignedMetric(
-                        item,
-                        `rows[${String(index)}].vsHuman[${String(metricIndex)}]`,
-                    ),
-                )
+            ? value.vsHuman.map((item, metricIndex) => parseAlignedMetric(
+                item,
+                `rows[${String(index)}].vsHuman[${String(metricIndex)}]`,
+            ))
             : undefined,
         vsHumanNote,
     };
 }
 
+/**
+ * Scans forward from a `{` at `startIndex` and returns the substring up to
+ * its matching `}`, respecting string literals so braces inside them don't
+ * affect the depth count.
+ *
+ * @param rawText - Full text to scan.
+ * @param startIndex - Index of the opening `{` to balance.
+ */
 function readBalancedJsonObject(
     rawText: string,
     startIndex: number,
@@ -553,17 +1037,11 @@ function readBalancedJsonObject(
             } else if (ch === '"') {
                 inString = false;
             }
-            continue;
-        }
-        if (ch === '"') {
+        } else if (ch === '"') {
             inString = true;
-            continue;
-        }
-        if (ch === '{') {
+        } else if (ch === '{') {
             depth += 1;
-            continue;
-        }
-        if (ch === '}') {
+        } else if (ch === '}') {
             depth -= 1;
             if (depth === 0) {
                 return rawText.slice(startIndex, i + 1);
@@ -573,6 +1051,15 @@ function readBalancedJsonObject(
     return undefined;
 }
 
+/**
+ * Finds the compare-presets JSON object embedded in a raw log that may also
+ * contain other console output, by trying each balanced `{...}` span in turn.
+ *
+ * @param rawText - Raw log text, possibly containing non-JSON lines.
+ *
+ * @throws {Error} When no balanced object in `rawText` looks like a
+ * compare-presets payload (a `presetCount` number and a `rows` array).
+ */
 export function extractJsonObjectFromMixedLog(rawText: string): string {
     let index = rawText.indexOf('{');
     while (index !== -1) {
@@ -581,9 +1068,9 @@ export function extractJsonObjectFromMixedLog(rawText: string): string {
             try {
                 const parsed = JSON.parse(candidate) as unknown;
                 if (
-                    isRecord(parsed) &&
-                    typeof parsed.presetCount === 'number' &&
-                    Array.isArray(parsed.rows)
+                    isRecord(parsed)
+                    && typeof parsed.presetCount === 'number'
+                    && Array.isArray(parsed.rows)
                 ) {
                     return candidate;
                 }
@@ -596,6 +1083,14 @@ export function extractJsonObjectFromMixedLog(rawText: string): string {
     throw new Error('Could not find a valid compare-presets JSON object');
 }
 
+/**
+ * Extracts and parses a compare-presets log into a typed {@link CompareReport}.
+ *
+ * @param rawText - Raw log text, possibly containing non-JSON lines.
+ *
+ * @throws {Error} When the extracted JSON's root is not an object, or
+ * `presetCount`, `rows`, or `firstRunVsHumanNote` fail their required shape.
+ */
 export function parseOpenRouterComparePresetsLog(
     rawText: string,
 ): CompareReport {
@@ -604,21 +1099,21 @@ export function parseOpenRouterComparePresetsLog(
     if (!isRecord(parsed)) {
         throw new Error('Compare report root must be an object');
     }
-    const generatedAt = parsed.generatedAt;
+    const { generatedAt } = parsed;
     if (generatedAt !== undefined && typeof generatedAt !== 'string') {
         throw new Error('generatedAt must be a string');
     }
-    const presetCount = parsed.presetCount;
+    const { presetCount } = parsed;
     if (typeof presetCount !== 'number' || !Number.isFinite(presetCount)) {
         throw new Error('presetCount must be a finite number');
     }
     if (!Array.isArray(parsed.rows)) {
         throw new Error('rows must be an array');
     }
-    const firstRunVsHumanNote = parsed.firstRunVsHumanNote;
+    const { firstRunVsHumanNote } = parsed;
     if (
-        firstRunVsHumanNote !== undefined &&
-        typeof firstRunVsHumanNote !== 'string'
+        firstRunVsHumanNote !== undefined
+        && typeof firstRunVsHumanNote !== 'string'
     ) {
         throw new Error('firstRunVsHumanNote must be a string');
     }
@@ -632,14 +1127,17 @@ export function parseOpenRouterComparePresetsLog(
                 ? undefined
                 : parseReferenceBundleJson(JSON.stringify(parsed.reference)),
         firstRunVsHuman: Array.isArray(parsed.firstRunVsHuman)
-            ? parsed.firstRunVsHuman.map((item, index) =>
-                    parseAlignedMetric(item, `firstRunVsHuman[${String(index)}]`),
-                )
+            ? parsed.firstRunVsHuman.map((item, index) => parseAlignedMetric(item, `firstRunVsHuman[${String(index)}]`))
             : undefined,
         firstRunVsHumanNote,
     };
 }
 
+/**
+ * Computes the arithmetic mean of `values`, or `undefined` when there are none.
+ *
+ * @param values - Numbers to average.
+ */
 function average(values: readonly number[]): number | undefined {
     if (values.length === 0) {
         return undefined;
@@ -648,6 +1146,11 @@ function average(values: readonly number[]): number | undefined {
     return total / values.length;
 }
 
+/**
+ * Aggregates a row's per-block alignment metrics into averages.
+ *
+ * @param metrics - A row's `vsHuman` metrics, or `undefined` when absent.
+ */
 function summarizeMetrics(
     metrics: readonly AlignedBlockMetric[] | undefined,
 ): MetricSummary {
@@ -666,6 +1169,13 @@ function summarizeMetrics(
     };
 }
 
+/**
+ * Compares two optional numbers in descending order, treating `undefined` as
+ * lower priority than any defined value (sorts last).
+ *
+ * @param a - Left-hand value.
+ * @param b - Right-hand value.
+ */
 function compareOptionalDesc(a?: number, b?: number): number {
     if (a === undefined && b === undefined) {
         return 0;
@@ -679,6 +1189,13 @@ function compareOptionalDesc(a?: number, b?: number): number {
     return b - a;
 }
 
+/**
+ * Compares two optional numbers in ascending order, treating `undefined` as
+ * lower priority than any defined value (sorts last).
+ *
+ * @param a - Left-hand value.
+ * @param b - Right-hand value.
+ */
 function compareOptionalAsc(a?: number, b?: number): number {
     if (a === undefined && b === undefined) {
         return 0;
@@ -692,6 +1209,12 @@ function compareOptionalAsc(a?: number, b?: number): number {
     return a - b;
 }
 
+/**
+ * Resolves a row's effective cost, preferring a reported cost over an
+ * estimated one.
+ *
+ * @param row - Compare row to derive cost information from.
+ */
 function buildCostInfo(row: CompareRow): CostInfo {
     const reportedCost = row.usage?.cost ?? row.costAnalysis?.reportedCost;
     const estimatedCostUsd = row.costAnalysis?.estimatedCostUsd;
@@ -713,6 +1236,12 @@ function buildCostInfo(row: CompareRow): CostInfo {
     return { kind: 'none' };
 }
 
+/**
+ * Enriches rows with derived metrics and cost, then sorts them by success,
+ * then IoU, start-delta, cost, latency, and finally model name.
+ *
+ * @param rows - Parsed compare rows to rank.
+ */
 function buildRankedRows(rows: readonly CompareRow[]): RankedRow[] {
     return rows
         .map((row) => ({
@@ -754,6 +1283,11 @@ function buildRankedRows(rows: readonly CompareRow[]): RankedRow[] {
         });
 }
 
+/**
+ * Escapes text for safe interpolation into HTML markup.
+ *
+ * @param text - Raw text to escape.
+ */
 function escapeHtml(text: string): string {
     return text
         .replaceAll('&', '&amp;')
@@ -763,16 +1297,41 @@ function escapeHtml(text: string): string {
         .replaceAll("'", '&#39;');
 }
 
+/**
+ * Formats a number to a fixed number of decimal digits, then trims trailing
+ * zeros (and a trailing decimal point) for a compact display value.
+ *
+ * @param value - Number to format.
+ * @param digits - Maximum number of decimal digits to keep.
+ */
 function formatNumber(value: number, digits: number): string {
     const fixed = value.toFixed(digits);
     return fixed.replace(/(?:\.0+|(?:(\.\d*?)0+))$/, '$1');
 }
 
+/**
+ * Formats a USD amount, using more decimal digits for smaller values so
+ * sub-cent costs stay visible.
+ *
+ * @param value - Amount in USD.
+ */
 function formatUsd(value: number): string {
-    const digits = value >= 1 ? 2 : value >= 0.1 ? 3 : value >= 0.01 ? 4 : 5;
+    let digits = 5;
+    if (value >= 1) {
+        digits = 2;
+    } else if (value >= 0.1) {
+        digits = 3;
+    } else if (value >= 0.01) {
+        digits = 4;
+    }
     return `$${formatNumber(value, digits)}`;
 }
 
+/**
+ * Formats a count compactly, abbreviating thousands with a `k` suffix.
+ *
+ * @param value - Number to format.
+ */
 function formatCompactInteger(value: number): string {
     if (value >= 1000) {
         return `${formatNumber(value / 1000, 1)}k`;
@@ -780,14 +1339,29 @@ function formatCompactInteger(value: number): string {
     return String(Math.round(value));
 }
 
+/**
+ * Formats a 0-1 ratio as a percentage string with one decimal digit.
+ *
+ * @param value - Ratio in the 0-1 range.
+ */
 function formatPercent(value: number): string {
     return `${formatNumber(value * 100, 1)}%`;
 }
 
+/**
+ * Formats a duration in seconds with an `s` suffix.
+ *
+ * @param value - Duration in seconds.
+ */
 function formatSeconds(value: number): string {
     return `${formatNumber(value, 2)}s`;
 }
 
+/**
+ * Formats a signed time delta in seconds, always showing the sign.
+ *
+ * @param value - Delta in seconds; positive, negative, or zero.
+ */
 function formatDelta(value: number): string {
     if (value === 0) {
         return '0s';
@@ -796,6 +1370,12 @@ function formatDelta(value: number): string {
     return `${sign}${formatNumber(Math.abs(value), 2)}s`;
 }
 
+/**
+ * Formats a duration as a clock string (`h:mm:ss.s` or `mm:ss.s`), omitting
+ * the hours segment when it is zero.
+ *
+ * @param seconds - Duration in seconds; may be negative.
+ */
 function formatClock(seconds: number): string {
     const sign = seconds < 0 ? '-' : '';
     const abs = Math.abs(seconds);
@@ -815,6 +1395,11 @@ function formatClock(seconds: number): string {
     return `${sign}${String(minutes).padStart(2, '0')}:${secs}`;
 }
 
+/**
+ * Formats a duration in milliseconds, switching to seconds above 1000 ms.
+ *
+ * @param ms - Duration in milliseconds.
+ */
 function formatMs(ms: number): string {
     if (ms < 1000) {
         return `${String(Math.round(ms))} ms`;
@@ -822,6 +1407,12 @@ function formatMs(ms: number): string {
     return `${formatNumber(ms / 1000, 2)} s`;
 }
 
+/**
+ * Reformats an ISO-8601 UTC timestamp into a compact `YYYY-MM-DD HH:mm UTC`
+ * display string, returning the input unchanged when it doesn't match.
+ *
+ * @param value - Timestamp to reformat.
+ */
 function formatGeneratedAt(value: string): string {
     const match = value.match(
         /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2}(?:\.\d+)?)?Z$/,
@@ -832,22 +1423,39 @@ function formatGeneratedAt(value: string): string {
     return `${match[1]} ${match[2]} UTC`;
 }
 
-function joinDefined(parts: Array<string | undefined>): string {
+/**
+ * Joins the defined, non-empty strings in `parts` with ` | `, dropping
+ * `undefined` and empty entries.
+ *
+ * @param parts - Candidate strings, some possibly `undefined`.
+ */
+function joinDefined(parts: (string | undefined)[]): string {
     return parts
         .filter((part): part is string => part !== undefined && part.length > 0)
         .join(' | ');
 }
 
+/**
+ * Builds the compact "prompt/completion" token label shown in the leaderboard.
+ *
+ * @param usage - Row's token usage, or `undefined` when no usage was reported.
+ */
 function buildUsageMainLabel(usage: CompareUsage | undefined): string {
     if (usage === undefined) {
         return 'n/a';
     }
     return (
-        `${formatCompactInteger(usage.promptTokens)}/` +
-        `${formatCompactInteger(usage.completionTokens)}`
+        `${formatCompactInteger(usage.promptTokens)}/${
+            formatCompactInteger(usage.completionTokens)}`
     );
 }
 
+/**
+ * Builds the secondary usage note (total tokens, reasoning tokens, BYOK flag)
+ * shown under the usage label.
+ *
+ * @param usage - Row's token usage, or `undefined` when no usage was reported.
+ */
 function buildUsageNote(usage: CompareUsage | undefined): string {
     if (usage === undefined) {
         return 'No token usage in this log';
@@ -862,17 +1470,21 @@ function buildUsageNote(usage: CompareUsage | undefined): string {
     ]);
 }
 
+/**
+ * Builds the secondary note shown under a model's name: response model
+ * mismatch, error, alignment note, or block confidence, in that priority.
+ *
+ * @param item - Ranked row to describe.
+ */
 function buildModelNote(item: RankedRow): string {
-    const responseLabel =
-        item.row.responseModel !== undefined &&
-        item.row.responseModel !== item.row.model
-            ? `response ${item.row.responseModel}`
-            : undefined;
-    const confidenceLabel =
-        item.row.blocks
-            ?.map((block) => block.confidence)
-            .filter((value): value is string => value !== undefined)
-            .join(', ') || undefined;
+    const responseLabel = item.row.responseModel !== undefined
+        && item.row.responseModel !== item.row.model
+        ? `response ${item.row.responseModel}`
+        : undefined;
+    const confidenceLabel = item.row.blocks
+        ?.map((block) => block.confidence)
+        .filter((value): value is string => value !== undefined)
+        .join(', ') || undefined;
     return joinDefined([
         responseLabel,
         item.row.error,
@@ -883,26 +1495,42 @@ function buildModelNote(item: RankedRow): string {
     ]);
 }
 
+/**
+ * Formats a row's effective cost for display, or `'n/a'` when unknown.
+ *
+ * @param item - Ranked row to describe.
+ */
 function buildCostDisplay(item: RankedRow): string {
     return item.cost.effectiveCost === undefined
         ? 'n/a'
         : formatUsd(item.cost.effectiveCost);
 }
 
+/**
+ * Builds the secondary cost note: the cost kind, plus the estimated cost
+ * when it differs from a reported cost.
+ *
+ * @param item - Ranked row to describe.
+ */
 function buildCostNote(item: RankedRow): string {
     if (item.cost.kind === 'none') {
         return 'Unavailable in this log';
     }
     return joinDefined([
         item.cost.kind,
-        item.cost.kind === 'reported' &&
-        item.cost.estimatedCostUsd !== undefined &&
-        item.cost.estimatedCostUsd !== item.cost.reportedCost
+        item.cost.kind === 'reported'
+        && item.cost.estimatedCostUsd !== undefined
+        && item.cost.estimatedCostUsd !== item.cost.reportedCost
             ? `est ${formatUsd(item.cost.estimatedCostUsd)}`
             : undefined,
     ]);
 }
 
+/**
+ * Builds the "N/M with cost" summary label shown in the controls panel.
+ *
+ * @param rankedRows - Ranked rows to summarize.
+ */
 function buildCostCoverageLabel(rankedRows: readonly RankedRow[]): string {
     const withCost = rankedRows.filter(
         (item) => item.cost.effectiveCost !== undefined,
@@ -910,6 +1538,12 @@ function buildCostCoverageLabel(rankedRows: readonly RankedRow[]): string {
     return `${String(withCost)}/${String(rankedRows.length)} with cost`;
 }
 
+/**
+ * Builds the lower-cased text a leaderboard row is matched against for the
+ * client-side search box.
+ *
+ * @param item - Ranked row to describe.
+ */
 function buildRowSearchText(item: RankedRow): string {
     return [
         item.row.model,
@@ -922,6 +1556,12 @@ function buildRowSearchText(item: RankedRow): string {
         .toLowerCase();
 }
 
+/**
+ * Builds the note shown under a model's lane in the full timeline: average
+ * IoU, cost, and latency.
+ *
+ * @param item - Ranked row to describe.
+ */
 function buildTimelineNote(item: RankedRow): string {
     return joinDefined([
         item.summary.avgIou !== undefined
@@ -934,6 +1574,13 @@ function buildTimelineNote(item: RankedRow): string {
     ]);
 }
 
+/**
+ * Builds the note shown under a model's lane in a per-block focus card: IoU,
+ * start/end deltas and cost, or the row's alignment note when no metric matched.
+ *
+ * @param metric - Aligned metric for this block, or `undefined` when none matched.
+ * @param item - Ranked row to describe.
+ */
 function buildFocusMetricNote(
     metric: AlignedBlockMetric | undefined,
     item: RankedRow,
@@ -951,6 +1598,11 @@ function buildFocusMetricNote(
     ]);
 }
 
+/**
+ * Maps an IoU score to the CSS class used to color its segment/badge.
+ *
+ * @param iou - Intersection-over-union score, or `undefined` when unknown.
+ */
 function metricClass(iou?: number): string {
     if (iou === undefined) {
         return 'metric-neutral';
@@ -967,6 +1619,13 @@ function metricClass(iou?: number): string {
     return 'metric-weak';
 }
 
+/**
+ * Resolves a block's end time for rendering, assuming a minimum visible
+ * width when no valid end was reported.
+ *
+ * @param startSec - Block start time in seconds.
+ * @param endSec - Reported end time in seconds, when available.
+ */
 function rangeEnd(startSec: number, endSec?: number): number {
     if (endSec !== undefined && endSec > startSec) {
         return endSec;
@@ -974,6 +1633,14 @@ function rangeEnd(startSec: number, endSec?: number): number {
     return startSec + 0.2;
 }
 
+/**
+ * Converts a value to a percentage position within `[domainStart, domainEnd]`,
+ * clamped to `[0, 100]`.
+ *
+ * @param value - Value to position.
+ * @param domainStart - Start of the domain, in the same units as `value`.
+ * @param domainEnd - End of the domain, in the same units as `value`.
+ */
 function ratioWithin(
     value: number,
     domainStart: number,
@@ -987,6 +1654,15 @@ function ratioWithin(
     return Math.max(0, Math.min(100, ratio));
 }
 
+/**
+ * Builds the inline `left`/`width` CSS for a timeline segment positioned
+ * within `[domainStart, domainEnd]`, enforcing a minimum visible width.
+ *
+ * @param startSec - Segment start time in seconds.
+ * @param endSec - Segment end time in seconds.
+ * @param domainStart - Start of the visible domain, in seconds.
+ * @param domainEnd - End of the visible domain, in seconds.
+ */
 function styleForRange(
     startSec: number,
     endSec: number,
@@ -999,6 +1675,13 @@ function styleForRange(
     return `left:${formatNumber(left, 3)}%;width:${formatNumber(width, 3)}%;`;
 }
 
+/**
+ * Renders one summary stat card markup fragment.
+ *
+ * @param eyebrow - Small label above the value.
+ * @param value - Headline value.
+ * @param note - Secondary note below the value.
+ */
 function renderStatCard(eyebrow: string, value: string, note: string): string {
     return [
         '<article class="stat-card">',
@@ -1009,6 +1692,13 @@ function renderStatCard(eyebrow: string, value: string, note: string): string {
     ].join('\n');
 }
 
+/**
+ * Renders the hero stat cards: best overlap, fastest response, cheapest
+ * response, smallest start drift, and the original first run's baseline.
+ *
+ * @param report - Parsed compare report, used for the first-run baseline.
+ * @param rankedRows - Ranked rows to summarize.
+ */
 function renderHighlights(
     report: CompareReport,
     rankedRows: readonly RankedRow[],
@@ -1054,85 +1744,91 @@ function renderHighlights(
     return [
         bestOverlap === undefined
             ? renderStatCard(
-                    'Best overlap',
-                    'n/a',
-                    'No human reference metrics',
-                )
+                'Best overlap',
+                'n/a',
+                'No human reference metrics',
+            )
             : renderStatCard(
-                    'Best overlap',
-                    bestOverlap.row.model,
-                    joinDefined([
-                        `avg IoU ${formatPercent(bestOverlap.summary.avgIou ?? 0)}`,
-                        bestOverlap.cost.effectiveCost !== undefined
-                            ? buildCostDisplay(bestOverlap)
-                            : undefined,
-                        `latency ${formatMs(bestOverlap.row.ms)}`,
-                    ]),
-                ),
+                'Best overlap',
+                bestOverlap.row.model,
+                joinDefined([
+                    `avg IoU ${formatPercent(bestOverlap.summary.avgIou ?? 0)}`,
+                    bestOverlap.cost.effectiveCost !== undefined
+                        ? buildCostDisplay(bestOverlap)
+                        : undefined,
+                    `latency ${formatMs(bestOverlap.row.ms)}`,
+                ]),
+            ),
         fastest === undefined
             ? renderStatCard(
-                    'Fastest response',
-                    'n/a',
-                    'No successful model call',
-                )
+                'Fastest response',
+                'n/a',
+                'No successful model call',
+            )
             : renderStatCard(
-                    'Fastest response',
-                    fastest.row.model,
-                    joinDefined([
-                        `completed in ${formatMs(fastest.row.ms)}`,
-                        fastest.cost.effectiveCost !== undefined
-                            ? buildCostDisplay(fastest)
-                            : 'cost n/a',
-                    ]),
-                ),
+                'Fastest response',
+                fastest.row.model,
+                joinDefined([
+                    `completed in ${formatMs(fastest.row.ms)}`,
+                    fastest.cost.effectiveCost !== undefined
+                        ? buildCostDisplay(fastest)
+                        : 'cost n/a',
+                ]),
+            ),
         cheapest === undefined
             ? renderStatCard(
-                    'Cheapest response',
-                    'n/a',
-                    'No cost data in this log',
-                )
+                'Cheapest response',
+                'n/a',
+                'No cost data in this log',
+            )
             : renderStatCard(
-                    'Cheapest response',
-                    cheapest.row.model,
-                    joinDefined([
-                        buildCostDisplay(cheapest),
-                        cheapest.cost.kind,
-                        `latency ${formatMs(cheapest.row.ms)}`,
-                    ]),
-                ),
+                'Cheapest response',
+                cheapest.row.model,
+                joinDefined([
+                    buildCostDisplay(cheapest),
+                    cheapest.cost.kind,
+                    `latency ${formatMs(cheapest.row.ms)}`,
+                ]),
+            ),
         tightestStart === undefined
             ? renderStatCard(
-                    'Smallest start drift',
-                    'n/a',
-                    'No human reference',
-                )
+                'Smallest start drift',
+                'n/a',
+                'No human reference',
+            )
             : renderStatCard(
-                    'Smallest start drift',
-                    tightestStart.row.model,
-                    `avg |start delta| ${formatSeconds(
-                        tightestStart.summary.avgAbsStartDelta ?? 0,
-                    )}`,
-                ),
-        baselineSummary.avgIou === undefined ||
-        report.reference?.firstRunModel === undefined
+                'Smallest start drift',
+                tightestStart.row.model,
+                `avg |start delta| ${formatSeconds(
+                    tightestStart.summary.avgAbsStartDelta ?? 0,
+                )}`,
+            ),
+        baselineSummary.avgIou === undefined
+        || report.reference?.firstRunModel === undefined
             ? renderStatCard(
-                    'Original first run',
-                    'not included',
-                    'Reference bundle has no baseline comparison',
-                )
+                'Original first run',
+                'not included',
+                'Reference bundle has no baseline comparison',
+            )
             : renderStatCard(
-                    'Original first run',
-                    report.reference.firstRunModel.model,
-                    joinDefined([
-                        `avg IoU ${formatPercent(baselineSummary.avgIou)}`,
-                        `avg |start delta| ${formatSeconds(
-                            baselineSummary.avgAbsStartDelta ?? 0,
-                        )}`,
-                    ]),
-                ),
+                'Original first run',
+                report.reference.firstRunModel.model,
+                joinDefined([
+                    `avg IoU ${formatPercent(baselineSummary.avgIou)}`,
+                    `avg |start delta| ${formatSeconds(
+                        baselineSummary.avgAbsStartDelta ?? 0,
+                    )}`,
+                ]),
+            ),
     ].join('\n');
 }
 
+/**
+ * Renders the search/sort/filter controls panel markup, including its
+ * static result-count summary (updated client-side afterward).
+ *
+ * @param rankedRows - Ranked rows to summarize.
+ */
 function renderControls(rankedRows: readonly RankedRow[]): string {
     const successfulCount = rankedRows.filter((item) => item.row.ok).length;
     return [
@@ -1171,32 +1867,35 @@ function renderControls(rankedRows: readonly RankedRow[]): string {
         'Reset',
         '</button>',
         '<div id="report-results" class="controls-meta">',
-        `${String(rankedRows.length)} models | ` +
-            `${String(successfulCount)} successful | ` +
-            `${escapeHtml(buildCostCoverageLabel(rankedRows))}`,
+        `${String(rankedRows.length)} models | `
+            + `${String(successfulCount)} successful | ${
+                escapeHtml(buildCostCoverageLabel(rankedRows))}`,
         '</div>',
         '</div>',
         '</section>',
     ].join('\n');
 }
 
+/**
+ * Renders the leaderboard table markup, including the `data-*` attributes
+ * the client-side sort/filter script reads from each row.
+ *
+ * @param rankedRows - Ranked rows to render, in their initial (default) order.
+ */
 function renderLeaderboard(rankedRows: readonly RankedRow[]): string {
     const rows = rankedRows
         .map((item, index) => {
             const blockCount = item.row.blocks?.length ?? 0;
             const metricTone = metricClass(item.summary.avgIou);
-            const iouLabel =
-                item.summary.avgIou === undefined
-                    ? 'n/a'
-                    : formatPercent(item.summary.avgIou);
-            const startLabel =
-                item.summary.avgAbsStartDelta === undefined
-                    ? 'n/a'
-                    : formatSeconds(item.summary.avgAbsStartDelta);
-            const endLabel =
-                item.summary.avgAbsEndDelta === undefined
-                    ? 'n/a'
-                    : formatSeconds(item.summary.avgAbsEndDelta);
+            const iouLabel = item.summary.avgIou === undefined
+                ? 'n/a'
+                : formatPercent(item.summary.avgIou);
+            const startLabel = item.summary.avgAbsStartDelta === undefined
+                ? 'n/a'
+                : formatSeconds(item.summary.avgAbsStartDelta);
+            const endLabel = item.summary.avgAbsEndDelta === undefined
+                ? 'n/a'
+                : formatSeconds(item.summary.avgAbsEndDelta);
             return [
                 '<tr class="leaderboard-row"',
                 ` data-model="${escapeHtml(item.row.model)}"`,
@@ -1225,8 +1924,8 @@ function renderLeaderboard(rankedRows: readonly RankedRow[]): string {
                     `<div class="subtle">${escapeHtml(buildCostNote(item))}</div>`,
                     '</td>',
                 ].join(''),
-                `<td><span class="score ${metricTone}">${escapeHtml(iouLabel)}` +
-                    '</span></td>',
+                `<td><span class="score ${metricTone}">${escapeHtml(iouLabel)}`
+                    + '</span></td>',
                 `<td>${escapeHtml(startLabel)}</td>`,
                 `<td>${escapeHtml(endLabel)}</td>`,
                 [
@@ -1276,6 +1975,16 @@ function renderLeaderboard(rankedRows: readonly RankedRow[]): string {
     ].join('\n');
 }
 
+/**
+ * Renders one timeline lane's markup: label, note, and positioned segments.
+ *
+ * @param lane - Lane data to render.
+ * @param domainStart - Start of the lane's visible time domain, in seconds.
+ * @param domainEnd - End of the lane's visible time domain, in seconds.
+ * @param variant - Whether this lane is on the full timeline or a focus card.
+ * @param humanStyle - Inline CSS for the human-block shadow, used only when
+ * `variant` is `'focus'` and `lane.showHumanShadow` is true.
+ */
 function renderLane(
     lane: RenderLane,
     domainStart: number,
@@ -1284,14 +1993,12 @@ function renderLane(
     humanStyle?: string,
 ): string {
     const laneClass = variant === 'timeline' ? 'timeline-lane' : 'focus-lane';
-    const trackClass =
-        variant === 'timeline'
-            ? 'timeline-track'
-            : 'timeline-track timeline-track-focus';
-    const modelAttr =
-        lane.model === undefined
-            ? ''
-            : ` data-model="${escapeHtml(lane.model)}"`;
+    const trackClass = variant === 'timeline'
+        ? 'timeline-track'
+        : 'timeline-track timeline-track-focus';
+    const modelAttr = lane.model === undefined
+        ? ''
+        : ` data-model="${escapeHtml(lane.model)}"`;
     return [
         `<div class="${laneClass}" data-role="${lane.role}"${modelAttr}>`,
         '<div class="timeline-meta">',
@@ -1299,20 +2006,19 @@ function renderLane(
         `<div class="subtle">${escapeHtml(lane.note)}</div>`,
         '</div>',
         `<div class="${trackClass}">`,
-        variant === 'focus' &&
-        lane.showHumanShadow === true &&
-        humanStyle !== undefined
+        variant === 'focus'
+        && lane.showHumanShadow === true
+        && humanStyle !== undefined
             ? `<div class="human-shadow" style="${humanStyle}"></div>`
             : '',
         lane.segments
             .map(
-                (segment) =>
-                    `<div class="${segment.className}" style="${styleForRange(
-                        segment.startSec,
-                        segment.endSec,
-                        domainStart,
-                        domainEnd,
-                    )}"></div>`,
+                (segment) => `<div class="${segment.className}" style="${styleForRange(
+                    segment.startSec,
+                    segment.endSec,
+                    domainStart,
+                    domainEnd,
+                )}"></div>`,
             )
             .join(''),
         '</div>',
@@ -1323,6 +2029,13 @@ function renderLane(
     ].join('\n');
 }
 
+/**
+ * Renders the "Full timeline" panel: the human and baseline lanes (when
+ * present) plus one lane per ranked model, all on a shared time scale.
+ *
+ * @param report - Parsed compare report, used for the human/baseline blocks.
+ * @param rankedRows - Ranked rows to render, in their initial (default) order.
+ */
 function renderTimeline(
     report: CompareReport,
     rankedRows: readonly RankedRow[],
@@ -1331,14 +2044,8 @@ function renderTimeline(
     const baselineBlocks = report.reference?.firstRunModel?.blocks ?? [];
     const allEnds = [
         ...humanBlocks.map((block) => block.endSec),
-        ...baselineBlocks.map((block) =>
-            rangeEnd(block.startSec, block.endSec),
-        ),
-        ...rankedRows.flatMap((item) =>
-            (item.row.blocks ?? []).map((block) =>
-                rangeEnd(block.startSec, block.endSec),
-            ),
-        ),
+        ...baselineBlocks.map((block) => rangeEnd(block.startSec, block.endSec)),
+        ...rankedRows.flatMap((item) => (item.row.blocks ?? []).map((block) => rangeEnd(block.startSec, block.endSec))),
     ];
     const domainEnd = Math.max(1, ...allEnds);
 
@@ -1363,8 +2070,8 @@ function renderTimeline(
         );
     }
     if (
-        baselineBlocks.length > 0 &&
-        report.reference?.firstRunModel !== undefined
+        baselineBlocks.length > 0
+        && report.reference?.firstRunModel !== undefined
     ) {
         staticLanes.push(
             renderLane(
@@ -1392,24 +2099,22 @@ function renderTimeline(
     }
 
     const modelLanes = rankedRows
-        .map((item) =>
-            renderLane(
-                {
-                    role: 'model',
-                    model: item.row.model,
-                    label: item.row.model,
-                    note: buildTimelineNote(item),
-                    segments: (item.row.blocks ?? []).map((block) => ({
-                        startSec: block.startSec,
-                        endSec: rangeEnd(block.startSec, block.endSec),
-                        className: `segment ${metricClass(item.summary.avgIou)}`,
-                    })),
-                },
-                0,
-                domainEnd,
-                'timeline',
-            ),
-        )
+        .map((item) => renderLane(
+            {
+                role: 'model',
+                model: item.row.model,
+                label: item.row.model,
+                note: buildTimelineNote(item),
+                segments: (item.row.blocks ?? []).map((block) => ({
+                    startSec: block.startSec,
+                    endSec: rangeEnd(block.startSec, block.endSec),
+                    className: `segment ${metricClass(item.summary.avgIou)}`,
+                })),
+            },
+            0,
+            domainEnd,
+            'timeline',
+        ))
         .join('\n');
 
     return [
@@ -1429,6 +2134,14 @@ function renderTimeline(
     ].join('\n');
 }
 
+/**
+ * Renders one zoomed-in focus card comparing every model's prediction for a
+ * single human-labeled block, scaled to that block's own time domain.
+ *
+ * @param report - Parsed compare report, used for the human/baseline blocks.
+ * @param rankedRows - Ranked rows to render, in their initial (default) order.
+ * @param blockIndex - Index of the human-reference block to focus on.
+ */
 function renderFocusCard(
     report: CompareReport,
     rankedRows: readonly RankedRow[],
@@ -1467,17 +2180,17 @@ function renderFocusCard(
                 baselineMetric === undefined
                     ? 'No aligned metric'
                     : joinDefined([
-                            `IoU ${formatPercent(baselineMetric.iouWithHuman)}`,
-                            `start ${formatDelta(baselineMetric.startDeltaSec)}`,
-                            `end ${formatDelta(baselineMetric.endDeltaSec)}`,
-                        ]),
+                        `IoU ${formatPercent(baselineMetric.iouWithHuman)}`,
+                        `start ${formatDelta(baselineMetric.startDeltaSec)}`,
+                        `end ${formatDelta(baselineMetric.endDeltaSec)}`,
+                    ]),
             segments: [
                 {
                     startSec:
                         baselineMetric?.predStartSec ?? baselineBlock.startSec,
                     endSec:
-                        baselineMetric?.predEndSec ??
-                        rangeEnd(baselineBlock.startSec, baselineBlock.endSec),
+                        baselineMetric?.predEndSec
+                        ?? rangeEnd(baselineBlock.startSec, baselineBlock.endSec),
                     className: `segment ${metricClass(baselineMetric?.iouWithHuman)}`,
                 },
             ],
@@ -1489,34 +2202,29 @@ function renderFocusCard(
     for (const item of rankedRows) {
         const metric = item.row.vsHuman?.[blockIndex];
         const block = item.row.blocks?.[blockIndex];
-        if (block === undefined) {
-            continue;
+        if (block !== undefined) {
+            modelLanes.push({
+                role: 'model',
+                model: item.row.model,
+                label: item.row.model,
+                note: buildFocusMetricNote(metric, item),
+                segments: [
+                    {
+                        startSec: metric?.predStartSec ?? block.startSec,
+                        endSec:
+                            metric?.predEndSec
+                            ?? rangeEnd(block.startSec, block.endSec),
+                        className: `segment ${metricClass(metric?.iouWithHuman)}`,
+                    },
+                ],
+                confidence: block.confidence,
+                showHumanShadow: true,
+            });
         }
-        modelLanes.push({
-            role: 'model',
-            model: item.row.model,
-            label: item.row.model,
-            note: buildFocusMetricNote(metric, item),
-            segments: [
-                {
-                    startSec: metric?.predStartSec ?? block.startSec,
-                    endSec:
-                        metric?.predEndSec ??
-                        rangeEnd(block.startSec, block.endSec),
-                    className: `segment ${metricClass(metric?.iouWithHuman)}`,
-                },
-            ],
-            confidence: block.confidence,
-            showHumanShadow: true,
-        });
     }
 
-    const starts = [...staticLanes, ...modelLanes].flatMap((lane) =>
-        lane.segments.map((segment) => segment.startSec),
-    );
-    const ends = [...staticLanes, ...modelLanes].flatMap((lane) =>
-        lane.segments.map((segment) => segment.endSec),
-    );
+    const starts = [...staticLanes, ...modelLanes].flatMap((lane) => lane.segments.map((segment) => segment.startSec));
+    const ends = [...staticLanes, ...modelLanes].flatMap((lane) => lane.segments.map((segment) => segment.endSec));
     const minSec = Math.min(...starts);
     const maxSec = Math.max(...ends);
     const pad = Math.max(4, (maxSec - minSec) * 0.12);
@@ -1542,28 +2250,32 @@ function renderFocusCard(
         `<span>${escapeHtml(formatClock(domainEnd))}</span>`,
         '</div>',
         staticLanes
-            .map((lane) =>
-                renderLane(lane, domainStart, domainEnd, 'focus', humanStyle),
-            )
+            .map((lane) => renderLane(lane, domainStart, domainEnd, 'focus', humanStyle))
             .join('\n'),
         '<div class="focus-model-lanes">',
         modelLanes
-            .map((lane) =>
-                renderLane(lane, domainStart, domainEnd, 'focus', humanStyle),
-            )
+            .map((lane) => renderLane(lane, domainStart, domainEnd, 'focus', humanStyle))
             .join('\n'),
         '</div>',
         '</article>',
     ].join('\n');
 }
 
+/**
+ * Renders the "Zoomed block views" panel, with one focus card per
+ * human-labeled block.
+ *
+ * @param report - Parsed compare report, used for the human/baseline blocks.
+ * @param rankedRows - Ranked rows to render, in their initial (default) order.
+ */
 function renderFocusBlocks(
     report: CompareReport,
     rankedRows: readonly RankedRow[],
 ): string {
     const count = report.reference?.humanBlocks.length ?? 0;
-    const cards = Array.from({ length: count }, (_value, index) =>
-        renderFocusCard(report, rankedRows, index),
+    const cards = Array.from(
+        { length: count },
+        (_value, index) => renderFocusCard(report, rankedRows, index),
     ).join('\n');
     return [
         '<section class="panel">',
@@ -1578,6 +2290,13 @@ function renderFocusBlocks(
     ].join('\n');
 }
 
+/**
+ * Renders the "Notes" panel listing shape mismatches and comparison caveats,
+ * or an empty string when there is nothing to report.
+ *
+ * @param report - Parsed compare report, used for the first-run baseline note.
+ * @param rankedRows - Ranked rows to collect per-model notes from.
+ */
 function renderNotes(report: CompareReport, rankedRows: readonly RankedRow[]) {
     const notes = [
         report.firstRunVsHumanNote,
@@ -1585,8 +2304,8 @@ function renderNotes(report: CompareReport, rankedRows: readonly RankedRow[]) {
             .map((item) => `${item.row.model}: ${item.row.vsHumanNote ?? ''}`)
             .filter((note) => !note.endsWith(': ')),
         rankedRows.every((item) => item.cost.effectiveCost === undefined)
-            ? 'This log has no cost data. Render a newer compare JSON to use the ' +
-              'cost column and cost sorting.'
+            ? 'This log has no cost data. Render a newer compare JSON to use the '
+              + 'cost column and cost sorting.'
             : undefined,
     ].filter((note): note is string => note !== undefined);
     if (notes.length === 0) {
@@ -1605,6 +2324,9 @@ function renderNotes(report: CompareReport, rankedRows: readonly RankedRow[]) {
     ].join('\n');
 }
 
+/**
+ * Builds the report page's inline `<style>` rules.
+ */
 function buildStyles(): string {
     return [
         ':root {',
@@ -1857,6 +2579,10 @@ function buildStyles(): string {
     ].join('\n');
 }
 
+/**
+ * Builds the report page's inline `<script>` that drives client-side
+ * search, sort, and filtering of the leaderboard and timeline lanes.
+ */
 function buildClientScript(): string {
     return [
         '<script>',
@@ -2033,8 +2759,8 @@ function buildClientScript(): string {
         '    const costCount = visible.filter(',
         '      (row) => row.dataset.hasCost === "true",',
         '    ).length;',
-        '    results.textContent = `${visible.length} visible | ` +',
-        '      `${costCount} with cost | sort ${sort.value}`;',
+        '    results.textContent = visible.length + " visible | " +',
+        '      costCount + " with cost | sort " + sort.value;',
         '  }',
         '  search.addEventListener("input", apply);',
         '  sort.addEventListener("change", apply);',
@@ -2053,15 +2779,20 @@ function buildClientScript(): string {
     ].join('\n');
 }
 
+/**
+ * Renders a parsed {@link CompareReport} as a self-contained HTML report page.
+ *
+ * @param report - Parsed compare report to render.
+ * @param options - Page title and source-label overrides.
+ */
 export function renderOpenRouterCompareHtml(
     report: CompareReport,
     options: HtmlOptions = {},
 ): string {
     const rankedRows = buildRankedRows(report.rows);
     const successfulCount = rankedRows.filter((item) => item.row.ok).length;
-    const title =
-        options.title ??
-        (report.reference?.videoId === undefined
+    const title = options.title
+        ?? (report.reference?.videoId === undefined
             ? 'OpenRouter preset comparison'
             : `OpenRouter preset comparison: ${report.reference.videoId}`);
     const sourceLabel = options.sourceLabel ?? 'inline data';

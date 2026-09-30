@@ -1,5 +1,11 @@
-import process from 'node:process';
+/**
+ * @file Build-time TopSkip build profile resolution: reads and validates the
+ * `TOPSKIP_BUILD` and `TOPSKIP_SERVER_ORIGIN` environment variables that the
+ * manifest and Rspack config compile into the extension bundle.
+ */
+
 import { isIP } from 'node:net';
+import process from 'node:process';
 
 /**
  * Environment variable holding the public backend origin.
@@ -25,9 +31,14 @@ export const TopSkipBuild = {
     Release: 'release',
 } as const;
 
+/**
+ * One of the `TopSkipBuild` profile names.
+ */
 export type TopSkipBuildMode = (typeof TopSkipBuild)[keyof typeof TopSkipBuild];
 
-/** Ordered list for CLI validation (`scripts/build-extension.ts`). */
+/**
+ * Ordered list for CLI validation (`scripts/build-extension.ts`).
+ */
 export const TOPSKIP_BUILD_MODES: readonly TopSkipBuildMode[] = [
     TopSkipBuild.Dev,
     TopSkipBuild.Beta,
@@ -39,7 +50,7 @@ const DEV_LOOPBACK_SERVER_ORIGIN = 'http://127.0.0.1:8787';
 /**
  * Exact local origin reserved for deterministic browser fixtures. Only the dev
  * manifest and dev bundles may reference it: runtime code receives it through
- * the `__TOPSKIP_DEV_E2E_ORIGIN__` define, which is `null` for beta/release so
+ * the `TOPSKIP_DEV_E2E_ORIGIN` define, which is `null` for beta/release so
  * no loopback endpoint literal ships in a user-facing artifact.
  */
 export const DEV_E2E_FIXTURE_ORIGIN = 'http://127.0.0.1:4173';
@@ -53,6 +64,7 @@ export const DEV_E2E_CONTENT_SCRIPT_MATCH = `${DEV_E2E_FIXTURE_ORIGIN}/*`;
  * Resolves the fixture origin compiled into a build profile.
  *
  * @param build - Extension build profile.
+ *
  * @returns Fixture origin for dev bundles, otherwise `null`.
  */
 export function getDevE2eOrigin(build: TopSkipBuildMode): string | null {
@@ -87,7 +99,10 @@ const SPECIAL_USE_DNS_SUFFIXES = new Set([
  * produce a development bundle.
  *
  * @param raw - Untrusted `TOPSKIP_BUILD` environment value.
+ *
  * @returns Validated extension build profile.
+ *
+ * @throws {Error} When `raw` is set but is not one of the known build profiles.
  */
 export function resolveTopSkipBuild(
     raw: string | undefined,
@@ -96,15 +111,15 @@ export function resolveTopSkipBuild(
         return TopSkipBuild.Dev;
     }
     if (
-        raw === TopSkipBuild.Dev ||
-        raw === TopSkipBuild.Beta ||
-        raw === TopSkipBuild.Release
+        raw === TopSkipBuild.Dev
+        || raw === TopSkipBuild.Beta
+        || raw === TopSkipBuild.Release
     ) {
         return raw;
     }
     throw new Error(
-        `${BUILD_MODE_ENV_VAR} must be one of ${TOPSKIP_BUILD_MODES.join(', ')}, ` +
-            `got '${raw}'.`,
+        `${BUILD_MODE_ENV_VAR} must be one of ${TOPSKIP_BUILD_MODES.join(', ')}, `
+            + `got '${raw}'.`,
     );
 }
 
@@ -113,6 +128,7 @@ export function resolveTopSkipBuild(
  * classifier.
  *
  * @param hostname - Canonical hostname returned by `URL`.
+ *
  * @returns Hostname without IPv6 brackets.
  */
 function removeIpv6Brackets(hostname: string): string {
@@ -129,6 +145,7 @@ function removeIpv6Brackets(hostname: string): string {
  * hostname or classify the address it may resolve to at runtime.
  *
  * @param hostname - Canonical, unrooted hostname returned by `URL`.
+ *
  * @returns Whether the hostname looks suitable for a public HTTPS endpoint.
  */
 function isPublicLookingDnsHostname(hostname: string): boolean {
@@ -144,9 +161,8 @@ function isPublicLookingDnsHostname(hostname: string): boolean {
         return false;
     }
     return labels.every(
-        (label) =>
-            label.length <= MAX_DNS_LABEL_LENGTH &&
-            DNS_LABEL_PATTERN.test(label),
+        (label) => label.length <= MAX_DNS_LABEL_LENGTH
+            && DNS_LABEL_PATTERN.test(label),
     );
 }
 
@@ -155,12 +171,13 @@ function isPublicLookingDnsHostname(hostname: string): boolean {
  * malformed DNS endpoints without exposing a misleading partial allowlist.
  *
  * @param raw - Rejected backend origin.
- * @returns Never returns because an invalid origin stops the build.
+ *
+ * @throws {Error} Always, because an invalid origin stops the build.
  */
 function rejectNonPublicOrigin(raw: string): never {
     throw new Error(
-        `${SERVER_ORIGIN_ENV_VAR} must be a public HTTPS DNS origin, got ` +
-            `'${raw}'.`,
+        `${SERVER_ORIGIN_ENV_VAR} must be a public HTTPS DNS origin, got `
+            + `'${raw}'.`,
     );
 }
 
@@ -170,7 +187,11 @@ function rejectNonPublicOrigin(raw: string): never {
  *
  * @param build - Extension build profile receiving the backend origin.
  * @param raw - Untrusted build-time backend origin.
+ *
  * @returns Canonical bare origin accepted for the selected profile.
+ *
+ * @throws {Error} When `raw` is unset, malformed, not a bare origin, or does
+ * not satisfy the public HTTPS DNS policy for the selected profile.
  */
 export function validateServerOrigin(
     build: TopSkipBuildMode,
@@ -178,15 +199,15 @@ export function validateServerOrigin(
 ): string {
     if (raw === undefined || raw.trim() === '') {
         throw new Error(
-            `${SERVER_ORIGIN_ENV_VAR} is not set. Copy .env.example to .env and ` +
-                'set it to your backend origin, or export it in the build ' +
-                'environment.',
+            `${SERVER_ORIGIN_ENV_VAR} is not set. Copy .env.example to .env and `
+                + 'set it to your backend origin, or export it in the build '
+                + 'environment.',
         );
     }
     if (raw !== raw.trim()) {
         throw new Error(
-            `${SERVER_ORIGIN_ENV_VAR} must not contain surrounding whitespace, ` +
-                `got '${raw}'.`,
+            `${SERVER_ORIGIN_ENV_VAR} must not contain surrounding whitespace, `
+                + `got '${raw}'.`,
         );
     }
 
@@ -209,14 +230,13 @@ export function validateServerOrigin(
         return rejectNonPublicOrigin(raw);
     }
     const ipVersion = isIP(removeIpv6Brackets(canonicalHostname));
-    const isExactDevException =
-        build === TopSkipBuild.Dev &&
-        parsed.origin === DEV_LOOPBACK_SERVER_ORIGIN;
+    const isExactDevException = build === TopSkipBuild.Dev
+        && parsed.origin === DEV_LOOPBACK_SERVER_ORIGIN;
     if (isExactDevException) {
         if (raw !== parsed.origin) {
             throw new Error(
-                `${SERVER_ORIGIN_ENV_VAR} must be a bare origin with no path or ` +
-                    `trailing slash, got '${raw}' (expected '${parsed.origin}').`,
+                `${SERVER_ORIGIN_ENV_VAR} must be a bare origin with no path or `
+                    + `trailing slash, got '${raw}' (expected '${parsed.origin}').`,
             );
         }
         return parsed.origin;
@@ -230,8 +250,8 @@ export function validateServerOrigin(
     }
     if (raw !== parsed.origin) {
         throw new Error(
-            `${SERVER_ORIGIN_ENV_VAR} must be a bare origin with no path or ` +
-                `trailing slash, got '${raw}' (expected '${parsed.origin}').`,
+            `${SERVER_ORIGIN_ENV_VAR} must be a bare origin with no path or `
+                + `trailing slash, got '${raw}' (expected '${parsed.origin}').`,
         );
     }
     return parsed.origin;
@@ -245,6 +265,7 @@ export function validateServerOrigin(
  * build. The value must be a bare origin because callers append paths to it.
  *
  * @param build - Extension build profile receiving the configured origin.
+ *
  * @returns Scheme and host with no trailing slash, e.g. `https://api.example`.
  */
 function readServerOrigin(build: TopSkipBuildMode): string {
@@ -261,6 +282,7 @@ const EXTENSION_NAME_BY_BUILD = {
  * Makes unpacked and beta installations distinguishable from release.
  *
  * @param build - Extension build profile.
+ *
  * @returns Manifest name for the selected profile.
  */
 export function getExtensionManifestName(build: TopSkipBuildMode): string {
@@ -271,6 +293,7 @@ export function getExtensionManifestName(build: TopSkipBuildMode): string {
  * Resolves the backend origin compiled into a build profile.
  *
  * @param build - Extension build profile.
+ *
  * @returns Backend origin without a trailing slash.
  */
 export function getServerAnalysisBaseUrl(build: TopSkipBuildMode): string {
@@ -281,6 +304,7 @@ export function getServerAnalysisBaseUrl(build: TopSkipBuildMode): string {
  * Resolves the exact manifest host permission needed by a build profile.
  *
  * @param build - Extension build profile.
+ *
  * @returns Chrome match pattern for the selected backend.
  */
 export function getServerAnalysisManifestMatch(
@@ -294,6 +318,7 @@ export function getServerAnalysisManifestMatch(
  * the caption acquisition path enabled.
  *
  * @param build - Extension build profile.
+ *
  * @returns Whether stage-by-stage capture logging is compiled in.
  */
 export function shouldEnableCaptionCaptureVerboseLogs(

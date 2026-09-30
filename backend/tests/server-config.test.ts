@@ -1,7 +1,14 @@
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+} from 'vitest';
 
 import {
     BACKEND_CAPTION_SOURCE,
@@ -11,8 +18,7 @@ import {
 const ORIGINAL_API_KEY = process.env.OPENROUTER_API_KEY;
 const ORIGINAL_HMAC_SECRET = process.env.TOPSKIP_IP_HMAC_SECRET;
 const ORIGINAL_ALLOWED_ORIGINS = process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS;
-const ORIGINAL_SUPPORT_ISSUE_BASE_URL =
-    process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL;
+const ORIGINAL_SUPPORT_ISSUE_BASE_URL = process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL;
 const ORIGINAL_NODE_ENV = process.env.NODE_ENV;
 const ORIGINAL_CAPTION_SOURCE = process.env.TOPSKIP_CAPTION_SOURCE;
 
@@ -31,14 +37,12 @@ describe('BackendServerConfig', () => {
         if (ORIGINAL_ALLOWED_ORIGINS === undefined) {
             delete process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS;
         } else {
-            process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS =
-                ORIGINAL_ALLOWED_ORIGINS;
+            process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS = ORIGINAL_ALLOWED_ORIGINS;
         }
         if (ORIGINAL_SUPPORT_ISSUE_BASE_URL === undefined) {
             delete process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL;
         } else {
-            process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL =
-                ORIGINAL_SUPPORT_ISSUE_BASE_URL;
+            process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL = ORIGINAL_SUPPORT_ISSUE_BASE_URL;
         }
         process.env.NODE_ENV = ORIGINAL_NODE_ENV;
         if (ORIGINAL_CAPTION_SOURCE === undefined) {
@@ -94,8 +98,7 @@ describe('BackendServerConfig', () => {
             BackendServerConfig.prepare('/missing/topskip/.env');
         }).toThrow(/TOPSKIP_ALLOWED_EXTENSION_ORIGINS/u);
 
-        process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS =
-            'chrome-extension://*, chrome-extension://bad';
+        process.env.TOPSKIP_ALLOWED_EXTENSION_ORIGINS = 'chrome-extension://*, chrome-extension://bad';
         expect(() => {
             BackendServerConfig.prepare('/missing/topskip/.env');
         }).toThrow(/unique exact/u);
@@ -103,8 +106,7 @@ describe('BackendServerConfig', () => {
 
     it('rejects an unsafe support issue URL before startup', () => {
         process.env.OPENROUTER_API_KEY = 'test-key';
-        process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL =
-            'https://example.com/private/issues/new';
+        process.env.TOPSKIP_SUPPORT_ISSUE_BASE_URL = 'https://example.com/private/issues/new';
 
         expect(() => {
             BackendServerConfig.prepare('/missing/topskip/.env');
@@ -119,8 +121,7 @@ describe('BackendServerConfig', () => {
             captionSource: BACKEND_CAPTION_SOURCE.ExtensionUpload,
         });
 
-        process.env.TOPSKIP_CAPTION_SOURCE =
-            BACKEND_CAPTION_SOURCE.ExtensionUpload;
+        process.env.TOPSKIP_CAPTION_SOURCE = BACKEND_CAPTION_SOURCE.ExtensionUpload;
         expect(BackendServerConfig.prepare('/missing/topskip/.env')).toEqual({
             captionSource: BACKEND_CAPTION_SOURCE.ExtensionUpload,
         });

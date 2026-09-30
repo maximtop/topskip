@@ -1,12 +1,13 @@
+import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 import { describe, expect, it } from 'vitest';
 
 import { BackendPromoAnalysisWorker } from '@topskip/backend/analysis/promo-analysis-worker';
+
 import type {
     BackendLlmAnalysisAdapter,
     BackendLlmAnalysisAdapterInput,
 } from '@topskip/backend/analysis/promo-analysis-types';
 import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
-import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
 
 const TOTAL_SEC = 13_600;
 
@@ -43,6 +44,7 @@ function makeArtifact(): TranscriptArtifact {
  * Fake adapter recording per-call chunk ranges and returning canned JSON.
  *
  * @param respond - Maps a chunk input to a raw response or a thrown error
+ *
  * @returns Adapter plus a per-call range log
  */
 function makeAdapter(
@@ -51,9 +53,9 @@ function makeAdapter(
         call: number,
     ) => string | Error,
 ): BackendLlmAnalysisAdapter & {
-    calls: Array<{ firstSec: number; lastSec: number }>;
+    calls: { firstSec: number; lastSec: number }[];
 } {
-    const calls: Array<{ firstSec: number; lastSec: number }> = [];
+    const calls: { firstSec: number; lastSec: number }[] = [];
     let n = 0;
     return {
         providerId: 'openrouter',
@@ -63,8 +65,8 @@ function makeAdapter(
         analyze(input: BackendLlmAnalysisAdapterInput) {
             const segs = input.transcriptArtifact.segments;
             calls.push({
-                firstSec: segs[0].startSec,
-                lastSec: segs[segs.length - 1].startSec,
+                firstSec: segs[0]!.startSec,
+                lastSec: segs[segs.length - 1]!.startSec,
             });
             n += 1;
             const out = respond(input, n);
@@ -83,8 +85,7 @@ function makeAdapter(
 describe('BackendPromoAnalysisWorker chunked analysis', () => {
     it('calls the adapter once per chunk and merges blocks across chunks', async () => {
         const adapter = makeAdapter((input) => {
-            const firstSec =
-                input.transcriptArtifact.segments[0]?.startSec ?? 0;
+            const firstSec = input.transcriptArtifact.segments[0]?.startSec ?? 0;
             // Only the first chunk reports a block, in its own window.
             if (firstSec === 0) {
                 return JSON.stringify({
@@ -105,9 +106,9 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
         });
         expect(adapter.calls.length).toBeGreaterThan(1);
         // Adjacent chunk calls overlap by ~240s.
-        for (let i = 1; i < adapter.calls.length; i++) {
-            expect(adapter.calls[i].firstSec).toBeLessThanOrEqual(
-                adapter.calls[i - 1].lastSec - 239,
+        for (let i = 1; i < adapter.calls.length; i += 1) {
+            expect(adapter.calls[i]!.firstSec).toBeLessThanOrEqual(
+                adapter.calls[i - 1]!.lastSec - 239,
             );
         }
         expect(result.terminalResponse.status).toBe('ready');
@@ -139,15 +140,15 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
             clock: () => 2_000,
         });
         expect(probe.calls.length).toBeGreaterThan(1);
-        const boundary = probe.calls[0].lastSec;
+        const boundary = probe.calls[0]!.lastSec;
 
         // Chunk 1 sees only the first half of the promo and reports
         // [boundary-120 .. boundary]; chunk 2 (whose 240s overlap covers the
         // promo start) reports the full [boundary-120 .. boundary+120].
         const adapter = makeAdapter((input) => {
             const segs = input.transcriptArtifact.segments;
-            const firstSec = segs[0].startSec;
-            const lastSec = segs[segs.length - 1].startSec;
+            const firstSec = segs[0]!.startSec;
+            const lastSec = segs[segs.length - 1]!.startSec;
             if (firstSec === 0) {
                 return JSON.stringify({
                     hasPromo: true,
@@ -160,8 +161,7 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
                     ],
                 });
             }
-            const seesPromoStart =
-                firstSec <= boundary - 120 && lastSec >= boundary + 120;
+            const seesPromoStart = firstSec <= boundary - 120 && lastSec >= boundary + 120;
             if (seesPromoStart) {
                 return JSON.stringify({
                     hasPromo: true,
@@ -189,7 +189,7 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
             return;
         }
         expect(result.terminalResponse.promoBlocks).toHaveLength(1);
-        const block = result.terminalResponse.promoBlocks[0];
+        const block = result.terminalResponse.promoBlocks[0]!;
         expect(block.startSec).toBe(boundary - 120);
         expect(block.endSec).toBe(boundary + 120);
     });
@@ -197,8 +197,7 @@ describe('BackendPromoAnalysisWorker chunked analysis', () => {
     it('retries a failed chunk once, then fails the whole job', async () => {
         let failures = 0;
         const adapter = makeAdapter((input) => {
-            const firstSec =
-                input.transcriptArtifact.segments[0]?.startSec ?? 0;
+            const firstSec = input.transcriptArtifact.segments[0]?.startSec ?? 0;
             if (firstSec > 0) {
                 failures += 1;
                 return new Error('provider down');

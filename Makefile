@@ -19,7 +19,7 @@ extension:
 	pnpm run build:watch
 
 lint:
-	pnpm run lint
+	pnpm run check
 
 
 test: test-coverage test-deployment test-e2e

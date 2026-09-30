@@ -1,3 +1,9 @@
+/**
+ * @file Parses and validates a raw model response into a typed promo-detection result, stripping
+ * markdown code fences and rejecting any shape the model contract does not allow.
+ */
+
+import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
 import * as v from 'valibot';
 
 import {
@@ -5,7 +11,6 @@ import {
     type BackendAnalysisFailureReason,
     type ParsedModelPromoResult,
 } from '@topskip/backend/analysis/promo-analysis-types';
-import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
 
 const FENCED_JSON_PREFIX_PATTERN = /^```(?:json)?\s*/iu;
 const FENCED_JSON_SUFFIX_PATTERN = /\s*```$/u;
@@ -13,14 +18,14 @@ const FENCED_JSON_SUFFIX_PATTERN = /\s*```$/u;
 /**
  * Result of validating an untrusted backend model response.
  */
-export type BackendPromoResponseParseResult =
-    | { ok: true; parsedResult: ParsedModelPromoResult }
+export type BackendPromoResponseParseResult = | { ok: true; parsedResult: ParsedModelPromoResult }
     | { ok: false; failureReason: BackendAnalysisFailureReason };
 
 /**
  * Parses raw model JSON without trusting provider output shape.
  *
  * @param raw - Raw adapter output to parse and validate.
+ *
  * @returns Parsed promo result or a stable model-response failure.
  */
 export function parseBackendPromoResponse(

@@ -1,61 +1,130 @@
 /**
+ * @file Deterministic, line-aligned overlapping chunk planner for splitting a
+ * merged transcript into per-adapter-call slices that fit a character
+ * budget, shared by the server and BYOK promo-detection routes.
+ */
+
+/**
  * One line-aligned slice of the merged transcript for one adapter call.
  */
-export type ChunkPlanItem = {
+export interface ChunkPlanItem {
     /**
      * Zero-based index in the plan
      */
     index: number;
+
+    /**
+     * Caption start time (seconds) of this chunk's first line.
+     */
     startSec: number;
+
+    /**
+     * Caption start time (seconds) of this chunk's last line.
+     */
     endSec: number;
+
+    /**
+     * Newline-joined transcript text for this chunk, as sent to the adapter.
+     */
     text: string;
+
+    /**
+     * UTF-16 length of `text`.
+     */
     chars: number;
+
+    /**
+     * Index of this chunk's first line in the original `lines` array.
+     */
     lineStartIndex: number;
+
+    /**
+     * Index of this chunk's last line in the original `lines` array.
+     */
     lineEndIndex: number;
-};
+}
 
 /**
  * Deterministic chunk layout for a merged transcript string.
  */
-export type ChunkPlan = {
+export interface ChunkPlan {
+    /**
+     * Planned chunk slices, in transcript order.
+     */
     chunks: ChunkPlanItem[];
+
+    /**
+     * Overlap window (seconds) actually used between adjacent chunks, after
+     * any shrink applied to satisfy `maxChunks`.
+     */
     overlapSec: number;
+
+    /**
+     * True when `chunks` was truncated to `maxChunks` and does not cover the
+     * full transcript.
+     */
     partialCoverage: boolean;
+
+    /**
+     * Number of chunks in `chunks` (mirrors `chunks.length`).
+     */
     plannedChunkCount: number;
+
     /**
      * Fraction of merged transcript characters covered by at least one planned
      * chunk (0–1).
      */
     coverageFraction: number;
-};
+}
 
 /**
  * Timestamped transcript row: `line` is the exact prompt line, `sec` its
  * caption start time.
  */
-export type TimedLine = { sec: number; line: string };
+export interface TimedLine {
+    /**
+     * Caption start time in seconds, parsed from the `[sec]` prefix.
+     */
+    sec: number;
+
+    /**
+     * Exact `[sec] text` prompt line, unmodified.
+     */
+    line: string;
+}
 
 /**
  * Overlap policy: fixed seconds (server route) or dynamic from the chunk
  * budget (BYOK route, historical behavior).
  */
-export type ChunkOverlapPolicy =
-    | { kind: 'fixed'; sec: number }
+export type ChunkOverlapPolicy = | { kind: 'fixed'; sec: number }
     | {
-          kind: 'dynamic';
-          floorSec: number;
-          ceilingSec: number;
-          fraction: number;
-      };
+        kind: 'dynamic';
+        floorSec: number;
+        ceilingSec: number;
+        fraction: number;
+    };
 
 /**
  * Planner inputs; `maxChunks` bounds adapter calls per video.
  */
-export type ChunkPlanOptions = {
+export interface ChunkPlanOptions {
+    /**
+     * Max UTF-16 length of a single chunk's joined transcript text.
+     */
     budgetChars: number;
+
+    /**
+     * Max number of chunks to emit; overlap shrinks (down to
+     * `OVERLAP_SHRINK_FLOOR_SEC`) before coverage is truncated to this cap.
+     */
     maxChunks: number;
+
+    /**
+     * How much adjacent chunks overlap, in seconds.
+     */
     overlap: ChunkOverlapPolicy;
-};
+}
 
 /**
  * Overlap can shrink to this floor before the planner truncates coverage.
@@ -73,6 +142,7 @@ export class ChunkPlanner {
      * @param lines - Rows of `[sec] text` transcript lines
      * @param startIdx - First inclusive line index
      * @param endIdx - Last inclusive line index
+     *
      * @returns Newline-joined transcript slice
      */
     private static sliceLines(
@@ -81,7 +151,7 @@ export class ChunkPlanner {
         endIdx: number,
     ): string {
         const parts: string[] = [];
-        for (let i = startIdx; i <= endIdx; i++) {
+        for (let i = startIdx; i <= endIdx; i += 1) {
             const row = lines[i];
             if (row !== undefined) {
                 parts.push(row.line);
@@ -96,6 +166,7 @@ export class ChunkPlanner {
      * @param lines - All timed lines
      * @param startIdx - First inclusive index
      * @param endIdx - Last inclusive index
+     *
      * @returns UTF-16 length of joined text
      */
     private static sliceCharLen(
@@ -107,7 +178,7 @@ export class ChunkPlanner {
             return 0;
         }
         let n = 0;
-        for (let i = startIdx; i <= endIdx; i++) {
+        for (let i = startIdx; i <= endIdx; i += 1) {
             const row = lines[i];
             if (row !== undefined) {
                 n += row.line.length;
@@ -126,6 +197,7 @@ export class ChunkPlanner {
      * @param lines - Timed lines
      * @param startIdx - Chunk start line
      * @param budgetChars - Max UTF-16 length for joined slice
+     *
      * @returns Last inclusive line index
      */
     private static findEndIdxForBudget(
@@ -150,7 +222,7 @@ export class ChunkPlanner {
             if (nextLen > budgetChars) {
                 break;
             }
-            endIdx = endIdx + 1;
+            endIdx += 1;
         }
         return endIdx;
     }
@@ -163,6 +235,7 @@ export class ChunkPlanner {
      * @param startIdx - Current chunk first line
      * @param endIdx - Current chunk last line
      * @param overlapSec - Overlap window in seconds
+     *
      * @returns First line index of the next chunk
      */
     private static nextChunkStartIdx(
@@ -177,8 +250,9 @@ export class ChunkPlanner {
         }
         const anchorSec = endLine.sec;
         let k = startIdx;
-        while (k < endIdx && anchorSec - lines[k].sec > overlapSec) {
-            k = k + 1;
+        // k stays < endIdx, and endLine = lines[endIdx] above proved endIdx in range.
+        while (k < endIdx && anchorSec - lines[k]!.sec > overlapSec) {
+            k += 1;
         }
         return k;
     }
@@ -189,6 +263,7 @@ export class ChunkPlanner {
      * @param lines - Parsed timed transcript lines
      * @param budgetChars - Adapter UTF-16 budget per chunk
      * @param overlapSec - Tail/head overlap between adjacent chunks
+     *
      * @returns Planned chunk rows before global index renumbering
      */
     private static tryPlan(
@@ -214,7 +289,7 @@ export class ChunkPlanner {
                 startIdx,
             );
             if (oneLineLen > budgetChars) {
-                const s0 = lines[startIdx].sec;
+                const s0 = lines[startIdx]!.sec;
                 const text = ChunkPlanner.sliceLines(lines, startIdx, startIdx);
                 out.push({
                     index,
@@ -225,39 +300,38 @@ export class ChunkPlanner {
                     lineStartIndex: startIdx,
                     lineEndIndex: startIdx,
                 });
-                index = index + 1;
-                startIdx = startIdx + 1;
-                continue;
-            }
+                index += 1;
+                startIdx += 1;
+            } else {
+                const sFirst = lines[startIdx]!.sec;
+                const sLast = lines[endIdx]!.sec;
+                const text = ChunkPlanner.sliceLines(lines, startIdx, endIdx);
+                out.push({
+                    index,
+                    startSec: sFirst,
+                    endSec: sLast,
+                    text,
+                    chars: text.length,
+                    lineStartIndex: startIdx,
+                    lineEndIndex: endIdx,
+                });
+                index += 1;
 
-            const sFirst = lines[startIdx].sec;
-            const sLast = lines[endIdx].sec;
-            const text = ChunkPlanner.sliceLines(lines, startIdx, endIdx);
-            out.push({
-                index,
-                startSec: sFirst,
-                endSec: sLast,
-                text,
-                chars: text.length,
-                lineStartIndex: startIdx,
-                lineEndIndex: endIdx,
-            });
-            index = index + 1;
+                if (endIdx >= lines.length - 1) {
+                    break;
+                }
 
-            if (endIdx >= lines.length - 1) {
-                break;
+                let nextStart = ChunkPlanner.nextChunkStartIdx(
+                    lines,
+                    startIdx,
+                    endIdx,
+                    overlapSec,
+                );
+                if (nextStart <= startIdx) {
+                    nextStart = endIdx + 1;
+                }
+                startIdx = nextStart;
             }
-
-            let nextStart = ChunkPlanner.nextChunkStartIdx(
-                lines,
-                startIdx,
-                endIdx,
-                overlapSec,
-            );
-            if (nextStart <= startIdx) {
-                nextStart = endIdx + 1;
-            }
-            startIdx = nextStart;
         }
         return out;
     }
@@ -268,6 +342,7 @@ export class ChunkPlanner {
      *
      * @param lines - Timed transcript lines (`[sec] text` per row)
      * @param options - Budget, chunk cap, and overlap policy
+     *
      * @returns Chunk plan and coverage metadata
      */
     static buildChunkPlan(
@@ -290,8 +365,9 @@ export class ChunkPlanner {
             0,
             lines.length - 1,
         );
-        const firstSec = lines[0].sec;
-        const lastSec = lines[lines.length - 1].sec;
+        // lines.length === 0 returned above, so index 0 and the last index exist.
+        const firstSec = lines[0]!.sec;
+        const lastSec = lines[lines.length - 1]!.sec;
         const durationSec = Math.max(lastSec - firstSec, 1e-6);
         const charsPerSec = totalChars / durationSec;
 
@@ -313,8 +389,8 @@ export class ChunkPlanner {
                 overlap.ceilingSec,
                 Math.max(
                     overlap.floorSec,
-                    (budgetChars * overlap.fraction) /
-                        Math.max(charsPerSec, 1e-6),
+                    (budgetChars * overlap.fraction)
+                        / Math.max(charsPerSec, 1e-6),
                 ),
             );
             const overlapChars = Math.min(
@@ -334,8 +410,8 @@ export class ChunkPlanner {
         let partialCoverage = false;
 
         while (
-            chunks.length > maxChunks &&
-            overlapSec > OVERLAP_SHRINK_FLOOR_SEC
+            chunks.length > maxChunks
+            && overlapSec > OVERLAP_SHRINK_FLOOR_SEC
         ) {
             overlapSec = Math.max(OVERLAP_SHRINK_FLOOR_SEC, overlapSec * 0.75);
             chunks = ChunkPlanner.tryPlan(lines, budgetChars, overlapSec);
@@ -346,9 +422,7 @@ export class ChunkPlanner {
             partialCoverage = true;
         }
 
-        chunks.forEach((c, i) => {
-            c.index = i;
-        });
+        chunks = chunks.map((c, i) => ({ ...c, index: i }));
 
         let coverageFraction = 1;
         if (partialCoverage && chunks.length > 0) {

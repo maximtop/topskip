@@ -1,4 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { getExtensionBuildLabel } from '@/shared/extension-build';
 
 const browserMocks = vi.hoisted(() => ({
     getManifest: vi.fn<() => { version: string; version_name?: string }>(),
@@ -7,8 +15,6 @@ const browserMocks = vi.hoisted(() => ({
 vi.mock('@/shared/browser', () => ({
     default: { runtime: { getManifest: browserMocks.getManifest } },
 }));
-
-import { getExtensionBuildLabel } from '@/shared/extension-build';
 
 describe('getExtensionBuildLabel', () => {
     it('prefers the stamped display version of dev and beta builds', () => {

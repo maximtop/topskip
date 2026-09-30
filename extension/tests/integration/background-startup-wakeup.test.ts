@@ -1,4 +1,18 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { Background } from '@/background/background';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+} from '@/shared/messages';
 
 const startupState = vi.hoisted(
     (): {
@@ -124,15 +138,10 @@ vi.mock('@/background/debug-log/tab-attribution-registry', () => ({
     },
 }));
 
-import { Background } from '@/background/background';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    TOPSKIP_MESSAGE,
-} from '@/shared/messages';
-
 /**
  * The `tabs.onRemoved` callback registered by the last `Background.init()`.
+ *
+ * @throws {Error} When `Background.init()` has not been called yet.
  */
 function tabRemovedListener(): (tabId: number) => void {
     const listener = browserMocks.addRemovedListener.mock.calls.at(-1)?.[0] as
@@ -191,11 +200,10 @@ describe('background startup wakeup', () => {
         ]);
         expect(
             startupState.emittedMessages.filter(
-                (message) =>
-                    message !== null &&
-                    typeof message === 'object' &&
-                    Reflect.get(message, 'type') ===
-                        TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
+                (message) => message !== null
+                    && typeof message === 'object'
+                    && Reflect.get(message, 'type')
+                        === TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS,
             ),
         ).toHaveLength(0);
     });

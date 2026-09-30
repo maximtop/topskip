@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const clientMocks = vi.hoisted(() => ({
     requestConfig: vi.fn(),
@@ -23,8 +30,7 @@ vi.mock('@/background/storage/server-result-cache', () => ({
     ServerResultCacheStorage: resultCacheMocks,
 }));
 
-const { ServerAnalysisConfiguration } =
-    await import('@/background/server-analysis-configuration');
+const { ServerAnalysisConfiguration } = await import('@/background/server-analysis-configuration');
 
 const NOW_MS = 1_900_000_000_000;
 const CONFIG_V4 = {

@@ -1,4 +1,30 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
+import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
+import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
+import { ServerAnalysisClient } from '@/background/server-analysis-client';
+import { ANALYSIS_MODE, LOG_PREFIX_CAPTIONS } from '@/shared/constants';
+import { CONTENT_SCRIPT_PROTOCOL_VERSION } from '@/shared/messages';
+import { PROVIDER_ID } from '@/shared/providers';
+
+import { expectOnlyStartupLine, spyOnAllConsole } from '../../helpers/console-spy';
+import { makeContentSender } from '../../helpers/runtime-senders';
+
+import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
+import type { Runtime } from 'webextension-polyfill';
 
 const installationMocks = vi.hoisted(() => ({
     loadFresh: vi.fn(),
@@ -85,25 +111,7 @@ vi.mock('@/background/captions/log-transcript-dev', () => ({
     logTranscriptForDeveloper: vi.fn(),
 }));
 
-import type { Runtime } from 'webextension-polyfill';
-
-import { DebugLog } from '@/background/debug-log/debug-log';
-import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
-import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
-import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
-import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
-import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
-import { ServerAnalysisClient } from '@/background/server-analysis-client';
-import { ANALYSIS_MODE, LOG_PREFIX_CAPTIONS } from '@/shared/constants';
-import { CONTENT_SCRIPT_PROTOCOL_VERSION } from '@/shared/messages';
-import { PROVIDER_ID } from '@/shared/providers';
-import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
-import { expectOnlyStartupLine, spyOnAllConsole } from '../../helpers/console-spy';
-import { makeContentSender } from '../../helpers/runtime-senders';
-
-const fetchMock =
-    vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
+const fetchMock = vi.fn<(...args: Parameters<typeof fetch>) => ReturnType<typeof fetch>>();
 const TOKEN = 'a'.repeat(43);
 const TOKEN_EXPIRY_MS = 4_102_444_800_000;
 const VIDEO_ID = 'dQw4w9WgXcQ';

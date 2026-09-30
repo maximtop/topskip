@@ -1,3 +1,8 @@
+/**
+ * @file CLI entry point that wires the `download`, `upload`, `validate` and
+ * `info` translation-management commands to the commander program.
+ */
+
 import process from 'node:process';
 
 import { program } from 'commander';
@@ -16,7 +21,6 @@ const LOCALES = Object.keys(LANGUAGES);
  *
  * @param error - Thrown value.
  * @param prefix - Optional context for the message.
- * @returns Never; the process exits.
  */
 function fail(error: unknown, prefix = ''): never {
     const message = error instanceof Error ? error.message : String(error);
@@ -28,6 +32,7 @@ function fail(error: unknown, prefix = ''): never {
  * Downloads the given locales.
  *
  * @param locales - Locale codes to fetch.
+ *
  * @returns Nothing.
  */
 async function download(locales: string[]): Promise<void> {
@@ -61,6 +66,7 @@ async function upload(): Promise<void> {
  *
  * @param locales - Locale codes to validate.
  * @param isMinimum - Restricts checks to critical errors when true.
+ *
  * @returns Nothing.
  */
 async function validate(locales: string[], isMinimum?: boolean): Promise<void> {
@@ -101,6 +107,7 @@ async function unused(): Promise<void> {
  * Copies persistent messages from the base locale where they are missing.
  *
  * @param locales - Locale codes to top up.
+ *
  * @returns Nothing.
  */
 async function addRequired(locales: string[]): Promise<void> {

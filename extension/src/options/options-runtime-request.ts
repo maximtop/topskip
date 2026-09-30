@@ -1,9 +1,14 @@
+/**
+ * @file Sends a runtime message to the background with a bounded timeout so
+ * a lost MV3 reply cannot keep the options page pending.
+ */
+
 import browser from '@/shared/browser';
 import { getErrorMessage } from '@/shared/error';
+
 import type { TopSkipRuntimeMessage } from '@/shared/messages';
 
-const OPTIONS_RUNTIME_REQUEST_TIMEOUT_ERROR =
-    'Options runtime request timed out.';
+const OPTIONS_RUNTIME_REQUEST_TIMEOUT_ERROR = 'Options runtime request timed out.';
 
 /**
  * Bounds options-page requests to the worker so a lost MV3 reply cannot keep
@@ -13,6 +18,7 @@ const OPTIONS_RUNTIME_REQUEST_TIMEOUT_ERROR =
  *
  * @param message - Typed runtime message sent to the background worker.
  * @param timeoutMs - Maximum time to wait for the worker reply.
+ *
  * @returns Opaque worker response before the bounded timeout.
  */
 export function requestOptionsRuntimeMessage(

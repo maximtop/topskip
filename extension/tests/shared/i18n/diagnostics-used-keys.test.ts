@@ -1,11 +1,13 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 const SRC = path.resolve(__dirname, '../../../src');
 const EN = JSON.parse(
     readFileSync(path.join(SRC, '_locales/en/messages.json'), 'utf8'),
 ) as Record<string, unknown>;
+
 /**
  * Files that resolve Diagnostics / popup-indicator copy through
  * `translator.getMessage('<key>', …)`.
@@ -20,7 +22,7 @@ const KEY_LITERAL = /getMessage\(\s*'([a-z0-9_]+)'/gu;
 describe('English catalog covers every Diagnostics / popup indicator key (FR-043)', () => {
     it.each(SOURCES)('%s uses only keys present in en', (file) => {
         const text = readFileSync(path.join(SRC, file), 'utf8');
-        const used = [...text.matchAll(KEY_LITERAL)].map((m) => m[1]);
+        const used = [...text.matchAll(KEY_LITERAL)].map((m) => m[1]!); // KEY_LITERAL has one mandatory capture group
         expect(used.length).toBeGreaterThan(0);
         for (const key of used) {
             expect(EN, key).toHaveProperty(key);

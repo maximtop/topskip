@@ -1,10 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     chooseMonotonicDetectionSnapshot,
 } from '@/popup/detection-transport-state';
 import { buildPopupViewModel, isGetDetectionOk } from '@/popup/PopupApp';
 import { ANALYSIS_MODE } from '@/shared/constants';
+
 import type { PromoDetectionStatePayload } from '@/shared/messages';
 
 const SERVER_SESSION_ID = '00000000-0000-4000-8000-000000000001';
@@ -32,7 +39,8 @@ vi.mock('@/shared/browser', () => ({
                         popup_detection_server_pending_headline:
                             'Server analysis is in progress.',
                         popup_detection_server_pending_body:
-                            'Skipping will start when the TopSkip backend has promo blocks for a future playback position.',
+                            'Skipping will start when the TopSkip backend has promo blocks for a future '
+                                + 'playback position.',
                         popup_detection_server_error_badge: 'Server',
                         popup_detection_server_error_title:
                             'Server analysis unavailable',
@@ -41,7 +49,8 @@ vi.mock('@/shared/browser', () => ({
                         popup_detection_server_error_headline:
                             'Server analysis failed.',
                         popup_detection_server_error_body:
-                            'The local TopSkip backend did not return a usable response. Playback continues without server-detected skips.',
+                            'The local TopSkip backend did not return a usable response. Playback continues '
+                                + 'without server-detected skips.',
                         popup_detection_server_cache_badge: 'Server cache',
                         popup_detection_server_cache_title:
                             'Server-detected blocks ready',

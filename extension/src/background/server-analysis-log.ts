@@ -1,4 +1,10 @@
+/**
+ * @file Dev-build-only structured console logging for background server
+ * analysis diagnostics.
+ */
+
 import { formatLogStage } from '@/shared/log-fields';
+
 import type { ServerAnalysisLogFields } from '@/shared/server-analysis-log-types';
 
 const SERVER_ANALYSIS_LOG_PREFIX = '[TopSkip server-analysis]';
@@ -18,12 +24,12 @@ export class BackgroundServerAnalysisLog {
     static info(
         event: string,
         fields: ServerAnalysisLogFields = {},
-        enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         if (!enabled) {
             return;
         }
-        console.info(
+        console.debug(
             SERVER_ANALYSIS_LOG_PREFIX,
             ...formatLogStage(event, fields),
         );
@@ -39,7 +45,7 @@ export class BackgroundServerAnalysisLog {
     static warn(
         event: string,
         fields: ServerAnalysisLogFields = {},
-        enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         if (!enabled) {
             return;

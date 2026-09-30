@@ -1,3 +1,8 @@
+/**
+ * @file Single diagnostics entry point for the background: stamps, gates,
+ * sanitizes and formats debug-log events before handing lines to the store.
+ */
+
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { DEBUG_LOG_PREHYDRATION_QUEUE_LIMIT } from '@/shared/debug-log-constants';
@@ -21,6 +26,7 @@ import {
     type DebugLogLineRecord,
 } from '@/shared/debug-log-format';
 import { formatLogStage } from '@/shared/log-fields';
+
 import type { DebugLogAppendPayload } from '@/shared/messages';
 
 /**
@@ -67,25 +73,67 @@ const RESTART_CAUSE_EVENTS: ReadonlySet<DebugLogEventName> = new Set([
  * Attribution resolved by the background, never by the sender; `tsMs`
  * back-dates batched content events.
  */
-export type DebugLogContext = {
-    src?: DebugLogSource;
-    tab?: number;
-    video?: string;
-    session?: string;
-    job?: string;
-    support?: string;
-    tsMs?: number;
-};
+export interface DebugLogContext {
+    /**
+     * Origin of the event; defaults to `background` when omitted.
+     */
+    src?: DebugLogSource | undefined;
+
+    /**
+     * Browser tab this event is attributed to, when known.
+     */
+    tab?: number | undefined;
+
+    /**
+     * YouTube video id; stripped unless `tab` is also set.
+     */
+    video?: string | undefined;
+
+    /**
+     * Server-analysis session id, kept only when it matches its fixed pattern.
+     */
+    session?: string | undefined;
+
+    /**
+     * Server-analysis job id, kept only when it matches its fixed pattern.
+     */
+    job?: string | undefined;
+
+    /**
+     * Support/report id, kept only when it matches its fixed pattern.
+     */
+    support?: string | undefined;
+
+    /**
+     * Back-dated event time in epoch ms; defaults to the current receipt time.
+     */
+    tsMs?: number | undefined;
+}
 
 /**
  * One record held until the facade opens or committed right away.
  */
-type PendingRecord = {
+interface PendingRecord {
+    /**
+     * Event name from the normative vocabulary.
+     */
     event: DebugLogEventName;
+
+    /**
+     * Bounded scalar fields, sanitized only when the record is written.
+     */
     fields: DebugLogFields;
+
+    /**
+     * Background-resolved attribution for this record.
+     */
     ctx: DebugLogContext;
+
+    /**
+     * Event time in epoch ms (may be back-dated for batched content events).
+     */
     tsMs: number;
-};
+}
 
 /**
  * Single diagnostics entry point for the background: stamps, gates,
@@ -146,11 +194,11 @@ export class DebugLog {
         event: DebugLogEventName,
         fields: DebugLogFields = {},
         ctx: DebugLogContext = {},
-        mirrorToConsole = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        mirrorToConsole = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         try {
             if (mirrorToConsole) {
-                console.info(DEBUG_LOG_CONSOLE_PREFIX, ...formatLogStage(event, fields));
+                console.debug(DEBUG_LOG_CONSOLE_PREFIX, ...formatLogStage(event, fields));
             }
             const entry: PendingRecord = {
                 event,
@@ -184,7 +232,7 @@ export class DebugLog {
         nowMs = Date.now(),
     ): void {
         try {
-            const dropped = payload.dropped;
+            const { dropped } = payload;
             if (dropped !== undefined) {
                 DebugLogStore.noteDropped(DEBUG_LOG_DROP_REASON.Coalesced, dropped.coalesced);
                 DebugLogStore.noteDropped(DEBUG_LOG_DROP_REASON.Ceiling, dropped.ceiling);
@@ -207,23 +255,23 @@ export class DebugLog {
                 return;
             }
             for (const event of payload.events) {
-                if (!TabAttributionRegistry.allowContentEvent(tabId, nowMs)) {
+                if (TabAttributionRegistry.allowContentEvent(tabId, nowMs)) {
+                    DebugLog.record(
+                        event.event,
+                        event.fields,
+                        {
+                            src: DebugLog.contentSource(event.fields),
+                            tab: tabId,
+                            video: event.video,
+                            session: event.session,
+                            job: event.job,
+                            tsMs: Math.max(0, nowMs - event.ageMs),
+                        },
+                        false,
+                    );
+                } else {
                     DebugLogStore.noteDropped(DEBUG_LOG_DROP_REASON.Ceiling);
-                    continue;
                 }
-                DebugLog.record(
-                    event.event,
-                    event.fields,
-                    {
-                        src: DebugLog.contentSource(event.fields),
-                        tab: tabId,
-                        video: event.video,
-                        session: event.session,
-                        job: event.job,
-                        tsMs: Math.max(0, nowMs - event.ageMs),
-                    },
-                    false,
-                );
             }
         } catch {
             // Diagnostics must never break the message handler.
@@ -236,12 +284,13 @@ export class DebugLog {
      * decides the `bridge` source stamp.
      *
      * @param fields - Validated wire fields of one content event.
+     *
      * @returns `bridge` for forwarded page stages, `content` otherwise.
      */
     private static contentSource(fields: DebugLogFields): DebugLogSource {
-        const stage = fields.stage;
-        return typeof stage === 'string' &&
-            stage.startsWith(DEBUG_LOG_PAGE_STAGE_PREFIX)
+        const { stage } = fields;
+        return typeof stage === 'string'
+            && stage.startsWith(DEBUG_LOG_PAGE_STAGE_PREFIX)
             ? DEBUG_LOG_SOURCE.Bridge
             : DEBUG_LOG_SOURCE.Content;
     }
@@ -371,6 +420,7 @@ export class DebugLog {
      * tab is stripped because an unattributed stage must not name a video.
      *
      * @param ctx - Caller context.
+     *
      * @returns Id fields for the line record.
      */
     private static attributedIds(
@@ -391,6 +441,7 @@ export class DebugLog {
      *
      * @param pattern - Fixed id pattern.
      * @param value - Candidate id.
+     *
      * @returns The id or `undefined`.
      */
     private static matching(pattern: RegExp, value: string | undefined): string | undefined {

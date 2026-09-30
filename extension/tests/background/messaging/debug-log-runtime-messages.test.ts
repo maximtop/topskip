@@ -1,12 +1,41 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
+import { DebugLogRuntimeMessages } from '@/background/messaging/debug-log-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    DEV_DEBUG_LOG_SEED_STATE,
+    DEV_SEED_DISABLED_ERROR,
+    UNTRUSTED_SENDER_ERROR,
+} from '@/shared/messages';
+
+import { eventNamesOf } from '../../helpers/debug-log-lines';
+import {
+    EXTENSION_ID,
+    makeContentSender,
+    makeForeignExtensionSender,
+    makeOptionsSender,
+    makePopupSender,
+} from '../../helpers/runtime-senders';
 
 const hoisted = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
+        '../../helpers/memory-storage-area'
     );
-    const { EXTENSION_ID } = await import('../../helpers/runtime-senders');
+    const { EXTENSION_ID: hoistedExtensionId } = await import('../../helpers/runtime-senders');
     return {
-        extensionId: EXTENSION_ID,
+        extensionId: hoistedExtensionId,
         local: createMemoryStorageArea(),
         session: createMemoryStorageArea(),
         tabsQuery: vi.fn(),
@@ -38,36 +67,13 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-vi.mock('@/background/debug-log/debug-log-export', async (importOriginal) => {
-    const original = await importOriginal<
-        typeof import('@/background/debug-log/debug-log-export')
-    >();
-    return { ...original, EnvironmentProbe: { collect: hoisted.collect } };
-});
+vi.mock('@/background/debug-log/environment-probe', () => ({
+    EnvironmentProbe: { collect: hoisted.collect },
+}));
 
 vi.mock('@/background/debug-log/debug-log-broadcast', () => ({
     DebugLogBroadcast: { notifyStateChanged: hoisted.notifyStateChanged },
 }));
-
-import { DebugLog } from '@/background/debug-log/debug-log';
-import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
-import { DebugLogStore } from '@/background/debug-log/debug-log-store';
-import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
-import { DebugLogRuntimeMessages } from '@/background/messaging/debug-log-runtime-messages';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    DEV_DEBUG_LOG_SEED_STATE,
-    DEV_SEED_DISABLED_ERROR,
-    UNTRUSTED_SENDER_ERROR,
-} from '@/shared/messages';
-import { eventNamesOf } from '../../helpers/debug-log-lines';
-import {
-    EXTENSION_ID,
-    makeContentSender,
-    makeForeignExtensionSender,
-    makeOptionsSender,
-    makePopupSender,
-} from '../../helpers/runtime-senders';
 
 const NOW_MS = 1_900_000_000_000;
 const VIDEO_ID = 'dQw4w9WgXcQ';
@@ -87,7 +93,13 @@ const POPUP = makePopupSender();
 const UNTRUSTED = { ok: false, error: UNTRUSTED_SENDER_ERROR };
 const APPEND = {
     events: [
-        { event: DEBUG_LOG_EVENT.FiredReset, ageMs: 0, video: VIDEO_ID, fields: {} },
+        {
+
+            event: DEBUG_LOG_EVENT.FiredReset,
+            ageMs: 0,
+            video: VIDEO_ID,
+            fields: {},
+        },
     ],
     dropped: { coalesced: 0, ceiling: 0, unreachable: 0 },
 };
@@ -209,7 +221,7 @@ describe('DebugLogRuntimeMessages', () => {
             expect(hoisted.notifyStateChanged).toHaveBeenCalledTimes(1);
             expect(hoisted.notifyStateChanged).toHaveBeenCalledWith(true);
             await DebugLog.drain();
-            const lines = (await DebugLogStore.readSnapshot()).lines;
+            const { lines } = await DebugLogStore.readSnapshot();
             expect(eventNamesOf(lines)).toEqual(['logging-enabled']);
             expect(lines[0]).toContain('liveTabs=1');
             expect(lines[0]).toContain('mode=server');
@@ -232,7 +244,13 @@ describe('DebugLogRuntimeMessages', () => {
             const off = await DebugLogRuntimeMessages.handleSetEnabled(false, OPTIONS);
             expect(off).toMatchObject({
                 ok: true,
-                status: { enabled: false, hasLog: true, eventCount: 2, disabledAtMs: NOW_MS },
+                status: {
+
+                    enabled: false,
+                    hasLog: true,
+                    eventCount: 2,
+                    disabledAtMs: NOW_MS,
+                },
             });
             expect(hoisted.notifyStateChanged).toHaveBeenCalledWith(false);
             DebugLog.record(DEBUG_LOG_EVENT.WakeupProbe, { readyTabs: 0, unavailableTabs: 0 });
@@ -296,16 +314,16 @@ describe('DebugLogRuntimeMessages', () => {
                 if (match === null) {
                     throw new Error(`unparsable line: ${line}`);
                 }
-                expect(Date.parse(match[1])).toBeLessThanOrEqual(bundle.exportedAtMs);
-                seqByWorker.set(match[2], [
-                    ...(seqByWorker.get(match[2]) ?? []),
-                    Number(match[3]),
+                expect(Date.parse(match[1]!)).toBeLessThanOrEqual(bundle.exportedAtMs);
+                seqByWorker.set(match[2]!, [
+                    ...(seqByWorker.get(match[2]!) ?? []),
+                    Number(match[3]!),
                 ]);
             }
             for (const seqs of seqByWorker.values()) {
                 seqs.forEach((seq, index) => {
                     if (index > 0) {
-                        expect(seq).toBe(seqs[index - 1] + 1);
+                        expect(seq).toBe(seqs[index - 1]! + 1);
                     }
                 });
             }
@@ -336,7 +354,7 @@ describe('DebugLogRuntimeMessages', () => {
                 ok: true,
                 enabled: true,
             });
-            const lines = (await DebugLogStore.readSnapshot()).lines;
+            const { lines } = await DebugLogStore.readSnapshot();
             expect(eventNamesOf(lines)).toEqual(['logging-enabled', 'fired-reset']);
             expect(lines[1]).toContain('t41');
             expect(lines[1]).toContain(VIDEO_ID);
@@ -374,7 +392,7 @@ describe('DebugLogRuntimeMessages', () => {
         });
 
         it('seeds in dev builds for extension pages only and validates the payload', async () => {
-            vi.stubGlobal('__TOPSKIP_INCLUDE_DEV_LOCAL__', true);
+            vi.stubGlobal('TOPSKIP_INCLUDE_DEV_LOCAL', true);
             await startWorker();
 
             await expect(

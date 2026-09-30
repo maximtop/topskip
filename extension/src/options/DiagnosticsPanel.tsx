@@ -1,3 +1,9 @@
+/**
+ * @file Presentational Diagnostics panel: renders the debug-log switch,
+ * status, counters, preview and export actions from container-resolved
+ * state.
+ */
+
 import {
     Alert,
     Button,
@@ -9,7 +15,6 @@ import {
     Textarea,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
 import {
     DIAGNOSTICS_PHASE,
@@ -20,17 +25,18 @@ import {
 import { DEBUG_LOG_CAP_BYTES } from '@/shared/debug-log-constants';
 import { formatBinarySize } from '@/shared/debug-log-format';
 import { translator } from '@/shared/i18n/translator';
+
 import type {
     DebugLogDroppedCounters,
     DebugLogStatusPayload,
 } from '@/shared/messages';
+import type { ReactElement } from 'react';
 
 /**
  * Outcome of the last toggle, copy or download action. The panel maps each
  * outcome to localized copy so raw runtime errors never reach the DOM.
  */
-export type DiagnosticsFeedback =
-    | 'copied'
+export type DiagnosticsFeedback = | 'copied'
     | 'copy_failed'
     | 'download_started'
     | 'toggle_failed'
@@ -40,35 +46,69 @@ export type DiagnosticsFeedback =
  * Most recent part of the bundle, shown read-only; `shownBytes < totalBytes`
  * marks a truncated tail.
  */
-export type DiagnosticsPreview = {
+export interface DiagnosticsPreview {
+    /**
+     * Bundle tail text to show read-only.
+     */
     text: string;
+
+    /**
+     * Bytes of the tail actually shown.
+     */
     shownBytes: number;
+
+    /**
+     * Total bytes of the full bundle the tail was taken from.
+     */
     totalBytes: number;
-};
+}
 
 /**
  * Everything the container resolved for the section; the panel only renders.
  * `status` is the last validated background read (kept while unavailable so
  * a transient failure does not visually flip the switch).
  */
-export type DiagnosticsPanelState = {
+export interface DiagnosticsPanelState {
+    /**
+     * Current UI phase driving which controls are enabled and what status
+     * line renders.
+     */
     phase: DiagnosticsPhase;
+
+    /**
+     * Last validated background status read, kept while unavailable.
+     */
     status: DebugLogStatusPayload | null;
+
+    /**
+     * Bundle tail to show, when one has been read.
+     */
     preview: DiagnosticsPreview | null;
+
+    /**
+     * Outcome of the last toggle/copy/download action, when one occurred.
+     */
     feedback: DiagnosticsFeedback | null;
+
+    /**
+     * Whether a toggle, copy or download request is in flight.
+     */
     busy: boolean;
-};
+}
 
 /**
  * Diagnostics section inputs supplied by the options container.
  */
-export type DiagnosticsPanelProps = {
+export interface DiagnosticsPanelProps {
+    /**
+     * Resolved Diagnostics section state to render.
+     */
     state: DiagnosticsPanelState;
     onToggle(enabled: boolean): void;
     onCopy(): void;
     onDownload(): void;
     onRetry(): void;
-};
+}
 
 const FEEDBACK_COLOR_OK = 'green';
 const FEEDBACK_COLOR_ERROR = 'red';
@@ -78,6 +118,7 @@ const PREVIEW_ROWS = 14;
  * Safe outcome-to-copy mapping; `null` while idle.
  *
  * @param feedback - Last action outcome.
+ *
  * @returns Localized feedback text and color.
  */
 function getDiagnosticsFeedback(
@@ -119,6 +160,8 @@ function getDiagnosticsFeedback(
             };
         case null:
             return null;
+        default:
+            return null;
     }
 }
 
@@ -127,6 +170,7 @@ function getDiagnosticsFeedback(
  * reader's locale (the exported bundle keeps UTC).
  *
  * @param ms - Epoch milliseconds, or `null` when unknown.
+ *
  * @returns Local date-time text, or `''` when unknown.
  */
 function formatLocalTime(ms: number | null): string {
@@ -137,15 +181,16 @@ function formatLocalTime(ms: number | null): string {
  * Total of all dropped-event reasons for the one-line counter.
  *
  * @param dropped - Per-reason counters.
+ *
  * @returns Sum of the counters.
  */
 function countDropped(dropped: DebugLogDroppedCounters): number {
     return (
-        dropped.incognito +
-        dropped.coalesced +
-        dropped.ceiling +
-        dropped.unreachable +
-        dropped.lost
+        dropped.incognito
+        + dropped.coalesced
+        + dropped.ceiling
+        + dropped.unreachable
+        + dropped.lost
     );
 }
 
@@ -154,7 +199,11 @@ function countDropped(dropped: DebugLogDroppedCounters): number {
  *
  * @param phase - Current phase.
  * @param status - Last status, when known.
+ *
  * @returns Localized status line.
+ *
+ * @throws {Error} When `phase` is not one of the known `DiagnosticsPhase`
+ * values (never happens for a validated phase).
  */
 function getStatusLine(
     phase: DiagnosticsPhase,
@@ -184,6 +233,8 @@ function getStatusLine(
                     time: formatLocalTime(status?.disabledAtMs ?? null),
                 },
             );
+        default:
+            throw new Error('Unhandled diagnostics phase.');
     }
 }
 
@@ -192,6 +243,8 @@ function getStatusLine(
  * exclusion is visible to the user).
  *
  * @param props - Status to render.
+ * @param props.status - Current debug-log status payload.
+ *
  * @returns Counter lines.
  */
 function DiagnosticsCounters(props: {
@@ -235,6 +288,8 @@ function DiagnosticsCounters(props: {
  * the page never scrolls horizontally; a note says when it is a tail.
  *
  * @param props - Preview to render.
+ * @param props.preview - Bundle tail to show read-only.
+ *
  * @returns Preview block.
  */
 function DiagnosticsPreviewBlock(props: {
@@ -292,10 +347,18 @@ function DiagnosticsPreviewBlock(props: {
  * the container owns reads, writes and feedback.
  *
  * @param props - Resolved state plus action callbacks.
+ *
  * @returns Localized Diagnostics section.
  */
 export function DiagnosticsPanel(props: DiagnosticsPanelProps): ReactElement {
-    const { phase, status, preview, feedback, busy } = props.state;
+    const {
+
+        phase,
+        status,
+        preview,
+        feedback,
+        busy,
+    } = props.state;
     const capLabel = formatBinarySize(status?.capBytes ?? DEBUG_LOG_CAP_BYTES);
     const switchDisabled = busy || !canToggleDebugLogging(phase);
     const exportDisabled = busy || !canExportDebugLog(phase);

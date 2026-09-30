@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const loadMock = vi.fn();
 const callOpenAiResponseMock = vi.fn();
@@ -30,8 +37,7 @@ vi.mock('@/background/permissions/provider-host-access', () => ({
 }));
 
 const { OpenAiAdapter } = await import('@/background/providers/openai-adapter');
-const { PROVIDER_ID, PROVIDER_AVAILABILITY } =
-    await import('@/background/providers/llm-provider-adapter');
+const { PROVIDER_ID, PROVIDER_AVAILABILITY } = await import('@/background/providers/llm-provider-adapter');
 
 describe('OpenAiAdapter', () => {
     beforeEach(() => {

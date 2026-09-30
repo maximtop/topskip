@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+
+    describe,
+    it,
+    expect,
+    vi,
+    beforeEach,
+} from 'vitest';
+
+import { I18n } from '@/shared/i18n/i18n';
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -18,13 +27,9 @@ const FAKE_EN = {
     popup_heading: { message: 'TopSkip' },
 };
 
-global.fetch = vi.fn(() =>
-    Promise.resolve({
-        json: () => Promise.resolve(FAKE_EN),
-    } as Response),
-);
-
-import { I18n } from '@/shared/i18n/i18n';
+global.fetch = vi.fn(() => Promise.resolve({
+    json: () => Promise.resolve(FAKE_EN),
+} as Response));
 
 describe('I18n', () => {
     let i18n: I18n;

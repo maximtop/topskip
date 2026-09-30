@@ -1,3 +1,8 @@
+/**
+ * @file Content-side collector and batching client for allow-listed debug-log
+ * events: sanitises, coalesces and rate-limits before sending to background.
+ */
+
 import { contentLog } from '@/content/content-log';
 import browser from '@/shared/browser';
 import { MS_PER_SECOND } from '@/shared/constants';
@@ -45,23 +50,43 @@ export const DEBUG_LOG_SEEK_KIND = {
 /**
  * Seek kind literal union.
  */
-export type DebugLogSeekKind =
-    (typeof DEBUG_LOG_SEEK_KIND)[keyof typeof DEBUG_LOG_SEEK_KIND];
+export type DebugLogSeekKind = (typeof DEBUG_LOG_SEEK_KIND)[keyof typeof DEBUG_LOG_SEEK_KIND];
 
 /**
  * Seek position pair (seconds) for one seek or jump.
  */
-export type DebugLogSeekFields = { fromSec: number; toSec: number };
+export interface DebugLogSeekFields {
+    /**
+     * Media time in seconds before the seek or jump.
+     */
+    fromSec: number;
+
+    /**
+     * Media time in seconds after the seek or jump.
+     */
+    toSec: number;
+}
 
 /**
  * Optional identity attached to an event; undefined values are omitted and
  * malformed ids are dropped so the append envelope always validates.
  */
-export type DebugLogEventIds = {
-    video?: string;
-    session?: string;
-    job?: string;
-};
+export interface DebugLogEventIds {
+    /**
+     * Current watch video id, when known and valid (`VIDEO_ID_PATTERN`).
+     */
+    video?: string | undefined;
+
+    /**
+     * Current watch session id, when known and valid (`UUID_PATTERN`).
+     */
+    session?: string | undefined;
+
+    /**
+     * Current backend analysis job id, when known and valid (`JOB_ID_PATTERN`).
+     */
+    job?: string | undefined;
+}
 
 /**
  * One wire event as accepted by the background append schema.
@@ -77,19 +102,39 @@ type DebugLogWireFields = Record<string, string | number | boolean>;
  * Queued event plus the wall-clock time it was recorded, so a batched flush
  * can back-date it with `ageMs`.
  */
-type QueuedDebugLogEvent = {
+interface QueuedDebugLogEvent {
+    /**
+     * Wire-shaped event, minus `ageMs`, which is computed at flush time.
+     */
     event: Omit<DebugLogWireEvent, 'ageMs'>;
+
+    /**
+     * Wall-clock time (`Date.now()`) the event was recorded, used to
+     * back-date `ageMs` on flush.
+     */
     recordedAtMs: number;
-};
+}
 
 /**
  * Drop counters reported with the next accepted batch.
  */
-type DebugLogClientDropCounters = {
+interface DebugLogClientDropCounters {
+    /**
+     * Seek/jump events dropped by the per-second seek coalescer.
+     */
     coalesced: number;
+
+    /**
+     * Events dropped by the per-tab per-minute fixed-window ceiling.
+     */
     ceiling: number;
+
+    /**
+     * Events dropped because the queue was full while the background was
+     * not accepting batches.
+     */
     unreachable: number;
-};
+}
 
 /**
  * Content-side collector for allow-listed diagnostic events. Every public
@@ -117,8 +162,7 @@ export class DebugLogClient {
     /**
      * Pending batched flush timer.
      */
-    private static flushTimerId: ReturnType<typeof globalThis.setTimeout> | null =
-        null;
+    private static flushTimerId: ReturnType<typeof globalThis.setTimeout> | null = null;
 
     /**
      * Whether the pending timer already fires on the next macrotask.
@@ -232,8 +276,8 @@ export class DebugLogClient {
             };
             if (DebugLogClient.enabled === null) {
                 if (
-                    DebugLogClient.preStateQueue.length <
-                    DEBUG_LOG_CLIENT_PRESTATE_QUEUE_LIMIT
+                    DebugLogClient.preStateQueue.length
+                    < DEBUG_LOG_CLIENT_PRESTATE_QUEUE_LIMIT
                 ) {
                     DebugLogClient.preStateQueue.push(queued);
                 }
@@ -282,8 +326,8 @@ export class DebugLogClient {
                 DebugLogClient.seekWindowCount = 0;
             }
             if (
-                DebugLogClient.seekWindowCount >=
-                DEBUG_LOG_SEEK_EVENTS_PER_SECOND
+                DebugLogClient.seekWindowCount
+                >= DEBUG_LOG_SEEK_EVENTS_PER_SECOND
             ) {
                 DebugLogClient.seekDroppedSinceLast += 1;
                 DebugLogClient.dropped.coalesced += 1;
@@ -360,7 +404,7 @@ export class DebugLogClient {
         fields: DebugLogFields,
         ids: DebugLogEventIds,
     ): void {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return;
         }
         contentLog.info(
@@ -375,6 +419,7 @@ export class DebugLogClient {
      * sending the excess).
      *
      * @param nowMs - Wall-clock time of the event.
+     *
      * @returns Whether the event may be queued.
      */
     private static admitUnderCeiling(nowMs: number): boolean {
@@ -384,8 +429,8 @@ export class DebugLogClient {
             DebugLogClient.ceilingWindowCount = 0;
         }
         if (
-            DebugLogClient.ceilingWindowCount >=
-            DEBUG_LOG_CONTENT_EVENTS_PER_TAB_PER_MINUTE
+            DebugLogClient.ceilingWindowCount
+            >= DEBUG_LOG_CONTENT_EVENTS_PER_TAB_PER_MINUTE
         ) {
             return false;
         }
@@ -401,6 +446,7 @@ export class DebugLogClient {
      * the background and lose every other event.
      *
      * @param ids - Caller-provided ids.
+     *
      * @returns Ids with malformed or empty values removed.
      */
     private static boundIds(ids: DebugLogEventIds): DebugLogEventIds {
@@ -423,24 +469,20 @@ export class DebugLogClient {
      * content event wire schema.
      *
      * @param fields - Caller-provided scalar fields.
+     *
      * @returns Bounded copy.
      */
     private static boundFields(fields: DebugLogFields): DebugLogWireFields {
         const bounded: DebugLogWireFields = {};
         for (const [key, value] of Object.entries(fields)) {
-            if (key.length > DEBUG_LOG_MAX_FIELD_KEY_LENGTH) {
-                continue;
-            }
-            if (value === undefined || value === null) {
-                continue;
-            }
-            if (typeof value === 'number' && !Number.isFinite(value)) {
-                continue;
-            }
-            bounded[key] =
-                typeof value === 'string'
+            const keyWithinLimit = key.length <= DEBUG_LOG_MAX_FIELD_KEY_LENGTH;
+            const valuePresent = value !== undefined && value !== null;
+            const valueFinite = typeof value !== 'number' || Number.isFinite(value);
+            if (keyWithinLimit && valuePresent && valueFinite) {
+                bounded[key] = typeof value === 'string'
                     ? value.slice(0, DEBUG_LOG_MAX_FIELD_STRING_LENGTH)
                     : value;
+            }
         }
         return bounded;
     }
@@ -498,15 +540,15 @@ export class DebugLogClient {
      */
     private static async flush(): Promise<void> {
         if (
-            DebugLogClient.disposed ||
-            DebugLogClient.enabled !== true ||
-            DebugLogClient.queue.length === 0
+            DebugLogClient.disposed
+            || DebugLogClient.enabled !== true
+            || DebugLogClient.queue.length === 0
         ) {
             return;
         }
         const nowMs = Date.now();
         const batch = DebugLogClient.queue.splice(0, DEBUG_LOG_APPEND_MAX_EVENTS);
-        const dropped = DebugLogClient.dropped;
+        const { dropped } = DebugLogClient;
         DebugLogClient.dropped = { coalesced: 0, ceiling: 0, unreachable: 0 };
         const payload: DebugLogAppendPayload = {
             events: batch.map((queued) => ({
@@ -524,10 +566,9 @@ export class DebugLogClient {
         } catch {
             DebugLogClient.dropped.coalesced += dropped.coalesced;
             DebugLogClient.dropped.ceiling += dropped.ceiling;
-            DebugLogClient.dropped.unreachable +=
-                dropped.unreachable + batch.length;
-            DebugLogClient.unreachableUntilMs =
-                Date.now() + DEBUG_LOG_CLIENT_UNREACHABLE_BACKOFF_MS;
+            DebugLogClient.dropped.unreachable
+                += dropped.unreachable + batch.length;
+            DebugLogClient.unreachableUntilMs = Date.now() + DEBUG_LOG_CLIENT_UNREACHABLE_BACKOFF_MS;
         }
         DebugLogClient.applyAck(response);
         if (DebugLogClient.queue.length > 0) {
@@ -543,9 +584,9 @@ export class DebugLogClient {
      */
     private static applyAck(response: unknown): void {
         if (
-            response === null ||
-            typeof response !== 'object' ||
-            Reflect.get(response, 'ok') !== true
+            response === null
+            || typeof response !== 'object'
+            || Reflect.get(response, 'ok') !== true
         ) {
             return;
         }

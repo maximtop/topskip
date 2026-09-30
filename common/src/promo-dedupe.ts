@@ -1,5 +1,12 @@
-import type { PromoBlock, PromoConfidence } from '@topskip/common/promo-types';
+/**
+ * @file Sorts and merges overlapping or nearby promo blocks into a single
+ * canonical, non-overlapping timeline, shared by the server and BYOK
+ * detection paths.
+ */
+
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
+
+import type { PromoBlock, PromoConfidence } from '@topskip/common/promo-types';
 
 const CONF_RANK: Record<NonNullable<PromoConfidence>, number> = {
     low: 0,
@@ -12,6 +19,7 @@ const CONF_RANK: Record<NonNullable<PromoConfidence>, number> = {
  *
  * @param a - Optional confidence
  * @param b - Optional confidence
+ *
  * @returns Stronger of the two, or whichever is defined
  */
 function maxConfidence(
@@ -32,6 +40,7 @@ function maxConfidence(
  * (deterministic: merged end is the maximum of implied ends).
  *
  * @param blocks - Raw blocks from the LLM (may overlap)
+ *
  * @returns Non-overlapping blocks sorted by start
  */
 export function sortAndDedupePromoBlocks(blocks: PromoBlock[]): PromoBlock[] {
@@ -49,19 +58,19 @@ export function sortAndDedupePromoBlocks(blocks: PromoBlock[]): PromoBlock[] {
     for (const b of sorted) {
         if (out.length === 0) {
             out.push({ ...b });
-            continue;
-        }
-        const last = out.at(-1);
-        if (last === undefined) {
-            out.push({ ...b });
-            continue;
-        }
-        const lastEnd = impliedEnd(last);
-        if (b.startSec < lastEnd) {
-            const mergedEnd = Math.max(lastEnd, impliedEnd(b));
-            last.endSec = mergedEnd;
         } else {
-            out.push({ ...b });
+            const last = out.at(-1);
+            if (last === undefined) {
+                out.push({ ...b });
+            } else {
+                const lastEnd = impliedEnd(last);
+                if (b.startSec < lastEnd) {
+                    const mergedEnd = Math.max(lastEnd, impliedEnd(b));
+                    last.endSec = mergedEnd;
+                } else {
+                    out.push({ ...b });
+                }
+            }
         }
     }
     return out;
@@ -73,6 +82,7 @@ export function sortAndDedupePromoBlocks(blocks: PromoBlock[]): PromoBlock[] {
  *
  * @param blocks - Blocks from one or more chunk runs
  * @param gapSec - Maximum gap between implied ends to merge (seconds)
+ *
  * @returns Canonical merged list
  */
 export function mergePromoBlocksWithGap(
@@ -93,21 +103,21 @@ export function mergePromoBlocksWithGap(
     for (const b of sorted) {
         if (out.length === 0) {
             out.push({ ...b });
-            continue;
-        }
-        const last = out[out.length - 1];
-        if (last === undefined) {
-            out.push({ ...b });
-            continue;
-        }
-        const lastEnd = impliedEnd(last);
-        const gap = b.startSec - lastEnd;
-        if (gap <= gapSec) {
-            const mergedEnd = Math.max(lastEnd, impliedEnd(b));
-            last.endSec = mergedEnd;
-            last.confidence = maxConfidence(last.confidence, b.confidence);
         } else {
-            out.push({ ...b });
+            const last = out[out.length - 1];
+            if (last === undefined) {
+                out.push({ ...b });
+            } else {
+                const lastEnd = impliedEnd(last);
+                const gap = b.startSec - lastEnd;
+                if (gap <= gapSec) {
+                    const mergedEnd = Math.max(lastEnd, impliedEnd(b));
+                    last.endSec = mergedEnd;
+                    last.confidence = maxConfidence(last.confidence, b.confidence);
+                } else {
+                    out.push({ ...b });
+                }
+            }
         }
     }
     return out;

@@ -1,3 +1,8 @@
+/**
+ * @file Content-script entry point: starts YouTube watch orchestration and
+ * tears down page-side effects when this bundle's runtime context is orphaned.
+ */
+
 import { DebugLogClient } from '@/content/debug-log-client';
 import { ExtensionContextWatch } from '@/content/extension-context-watch';
 import { WatchCaptions } from '@/content/watch-captions';

@@ -1,3 +1,8 @@
+/**
+ * @file Coordinates user-initiated optional-host permission grants and
+ * connection key tests from inside the originating click gesture.
+ */
+
 import {
     type ConnectionProviderId,
     type ProviderHostAccessRequiredFailure,
@@ -15,16 +20,27 @@ import {
 /**
  * Current row facts needed to choose an explicit access/test route.
  */
-export type ProviderHostAccessActionInput = {
+export interface ProviderHostAccessActionInput {
+    /**
+     * Provider the action applies to.
+     */
     providerId: ConnectionProviderId;
+
+    /**
+     * Whether a connection key is currently saved for this provider.
+     */
     hasCredential: boolean;
+
+    /**
+     * Current optional host permission grant state for this provider.
+     */
     hostAccessStatus: ProviderHostAccessStatus;
-};
+}
 
 /**
  * UI and transport effects keep gesture ordering testable without rendering.
  */
-export type ProviderHostAccessActionEffects = {
+export interface ProviderHostAccessActionEffects {
     request(
         providerId: HostPermissionProviderId,
     ): Promise<ProviderHostAccessRequestOutcome>;
@@ -43,7 +59,7 @@ export type ProviderHostAccessActionEffects = {
     showReloadUnavailable(providerId: ConnectionProviderId): void;
     clearFeedback(providerId: ConnectionProviderId): void;
     markAccessMissing(providerId: ConnectionProviderId): void;
-};
+}
 
 /**
  * Coordinates user-initiated grants without introducing a pre-request await.
@@ -55,15 +71,15 @@ export class ProviderHostAccessActions {
      * One active action per provider prevents repeated clicks from opening
      * duplicate prompts or provider requests while the first one settles.
      */
-    private static readonly activeProviderIds =
-        new Set<ConnectionProviderId>();
+    private static readonly activeProviderIds = new Set<ConnectionProviderId>();
 
     /**
      * Starts a grant synchronously and refreshes settings only after success.
      *
      * @param input - Provider row facts captured by the click handler.
      * @param effects - Injected permission and UI effects.
-     * @returns Nothing; completion is reflected through effects.
+     *
+     * Completion is reflected through effects, not through a return value.
      */
     static grant(
         input: ProviderHostAccessActionInput,
@@ -87,7 +103,8 @@ export class ProviderHostAccessActions {
      *
      * @param input - Provider row facts captured by the click handler.
      * @param effects - Injected permission, transport, and UI effects.
-     * @returns Nothing; completion is reflected through effects.
+     *
+     * Completion is reflected through effects, not through a return value.
      */
     static test(
         input: ProviderHostAccessActionInput,
@@ -101,8 +118,8 @@ export class ProviderHostAccessActions {
             return;
         }
         if (
-            input.hostAccessStatus ===
-            PROVIDER_HOST_ACCESS_STATUS.Granted
+            input.hostAccessStatus
+            === PROVIDER_HOST_ACCESS_STATUS.Granted
         ) {
             ProviderHostAccessActions.activeProviderIds.add(
                 input.providerId,
@@ -127,6 +144,7 @@ export class ProviderHostAccessActions {
      * Reads the provider lock without performing UI, runtime, or permission I/O.
      *
      * @param providerId - Provider selected by the current click.
+     *
      * @returns Whether another action already owns that provider row.
      */
     private static isActive(providerId: ConnectionProviderId): boolean {
@@ -138,7 +156,6 @@ export class ProviderHostAccessActions {
      * to remain independent.
      *
      * @param providerId - Provider whose action reached a terminal path.
-     * @returns Nothing.
      */
     private static release(providerId: ConnectionProviderId): void {
         ProviderHostAccessActions.activeProviderIds.delete(providerId);
@@ -148,6 +165,7 @@ export class ProviderHostAccessActions {
      * Names the extension-only stale-grant branch before applying UI effects.
      *
      * @param response - Strictly parsed connection-test response.
+     *
      * @returns Whether background reports that this provider lost host access.
      */
     private static isHostAccessRequired(
@@ -162,6 +180,7 @@ export class ProviderHostAccessActions {
      *
      * @param providerId - Provider whose action requires fresh settings.
      * @param effects - Injected settings and safe-state effects.
+     *
      * @returns Whether the settings snapshot refreshed successfully.
      */
     private static async reloadSettings(
@@ -186,6 +205,7 @@ export class ProviderHostAccessActions {
      * @param providerId - Provider whose request is settling.
      * @param request - Promise started synchronously by the public entrypoint.
      * @param effects - Injected settings effects.
+     *
      * @returns Promise settled after the chosen UI effect completes.
      */
     private static async finishGrant(
@@ -215,6 +235,7 @@ export class ProviderHostAccessActions {
      * @param providerId - Provider selected by the click.
      * @param request - Promise started synchronously by the public entrypoint.
      * @param effects - Injected settings and test effects.
+     *
      * @returns Promise settled after grant handling and any test request.
      */
     private static async finishAccessThenTest(
@@ -229,11 +250,10 @@ export class ProviderHostAccessActions {
                 return;
             }
             effects.clearFeedback(providerId);
-            const settingsAvailable =
-                await ProviderHostAccessActions.reloadSettings(
-                    providerId,
-                    effects,
-                );
+            const settingsAvailable = await ProviderHostAccessActions.reloadSettings(
+                providerId,
+                effects,
+            );
             if (!settingsAvailable) {
                 return;
             }
@@ -251,6 +271,7 @@ export class ProviderHostAccessActions {
      *
      * @param providerId - Provider whose credential is tested.
      * @param effects - Injected transport and safe-state effects.
+     *
      * @returns Promise settled after the response is classified.
      */
     private static async finishTest(
@@ -273,6 +294,7 @@ export class ProviderHostAccessActions {
      *
      * @param providerId - Provider whose credential is tested.
      * @param effects - Injected transport and safe-state effects.
+     *
      * @returns Promise settled after the response is classified.
      */
     private static async applyTestResult(

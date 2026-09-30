@@ -1,3 +1,8 @@
+/**
+ * @file Persists and validates OpenRouter connection settings in
+ * `browser.storage.local`, including the legacy-to-`customModels` migration.
+ */
+
 import * as v from 'valibot';
 
 import browser from '@/shared/browser';
@@ -8,14 +13,22 @@ import { isOpenRouterBuiltinModelSlug } from '@/shared/openrouter-model-presets'
  * Persisted OpenRouter / LLM settings (`browser.storage.local`, background
  * only).
  */
-export type OpenRouterConfig = {
+export interface OpenRouterConfig {
+    /**
+     * Raw OpenRouter API key, or empty string when not configured.
+     */
     apiKey: string;
+
+    /**
+     * Selected OpenRouter model slug, or empty string when not configured.
+     */
     model: string;
+
     /**
      * User-added model slugs (not built-in presets); deduped, order preserved.
      */
     customModels: string[];
-};
+}
 
 const openRouterConfigSchema = v.object({
     apiKey: v.string(),
@@ -40,6 +53,7 @@ export class OpenRouterStorage {
      * Parses stored JSON with Valibot; throws on invalid shape.
      *
      * @param raw - Untrusted value from `browser.storage.local`
+     *
      * @returns Validated config
      */
     private static parseStored(raw: unknown): OpenRouterConfig {
@@ -51,6 +65,7 @@ export class OpenRouterStorage {
      * older stored rows; persists when the list changes.
      *
      * @param c - Parsed config
+     *
      * @returns Normalized config (possibly persisted)
      */
     private static async migrateCustomModelsFromModel(
@@ -58,9 +73,9 @@ export class OpenRouterStorage {
     ): Promise<OpenRouterConfig> {
         const modelTrimmed = c.model.trim();
         if (
-            modelTrimmed.length === 0 ||
-            isOpenRouterBuiltinModelSlug(modelTrimmed) ||
-            c.customModels.includes(modelTrimmed)
+            modelTrimmed.length === 0
+            || isOpenRouterBuiltinModelSlug(modelTrimmed)
+            || c.customModels.includes(modelTrimmed)
         ) {
             return c;
         }
@@ -100,6 +115,7 @@ export class OpenRouterStorage {
      * Persists config after validation.
      *
      * @param config - Config to save
+     *
      * @returns Promise that resolves when storage write completes
      */
     static async save(config: OpenRouterConfig): Promise<void> {
@@ -111,6 +127,7 @@ export class OpenRouterStorage {
      * Masks API keys for display in the options UI.
      *
      * @param apiKey - Raw API key from storage
+     *
      * @returns Masked key for UI (`****last4`) or `null` if empty
      */
     static maskApiKey(apiKey: string): string | null {

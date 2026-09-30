@@ -1,5 +1,11 @@
-import http from 'node:http';
+/**
+ * @file Local HTTP sink for browser/extension debug logs during manual
+ * testing: accepts POSTed log lines over CORS and appends them to a file and
+ * stdout so a developer can tail one place instead of a devtools console.
+ */
+
 import fs from 'node:fs';
+import http from 'node:http';
 
 const PORT = 9222;
 const LOG_FILE = 'debug.log';
@@ -26,11 +32,10 @@ const server = http.createServer(
             });
             req.on('end', () => {
                 try {
-                    const data: { source: string; message: string } =
-                        JSON.parse(body) as {
-                            source: string;
-                            message: string;
-                        };
+                    const data: { source: string; message: string } = JSON.parse(body) as {
+                        source: string;
+                        message: string;
+                    };
                     const ts = new Date().toISOString();
                     const line = `[${ts}] [${data.source}] ${data.message}\n`;
                     fs.appendFileSync(LOG_FILE, line);

@@ -15,6 +15,7 @@ const EVENT_TOKEN = new RegExp(
  * asserted without depending on the exact prefix layout.
  *
  * @param lines - Formatted debug-log lines.
+ *
  * @returns Event name per line (`unknown` when none matched).
  */
 export function eventNamesOf(lines: readonly string[]): string[] {

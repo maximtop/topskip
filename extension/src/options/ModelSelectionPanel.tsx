@@ -1,3 +1,7 @@
+/**
+ * @file Primary model-first detection selector panel for the options page.
+ */
+
 import {
     Alert,
     Badge,
@@ -9,28 +13,41 @@ import {
     Text,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
 import type {
     ConnectionProviderId,
     DetectionModelMessage,
 } from '@/shared/messages';
+import type { ReactElement } from 'react';
 
 /**
  * Model selector state and callbacks supplied by the options container.
  */
-type ModelSelectionPanelProps = {
+interface ModelSelectionPanelProps {
+    /**
+     * Currently active detection model id.
+     */
     activeModelId: string;
+
+    /**
+     * Available detection models across providers.
+     */
     models: DetectionModelMessage[];
+
+    /**
+     * Provider whose connection is missing for the active model, or `null`
+     * when none is missing.
+     */
     missingConnectionProviderId: ConnectionProviderId | null;
     onModelChange(modelId: string): void;
     onOpenConnection(providerId: ConnectionProviderId): void;
-};
+}
 
 /**
  * Primary model-first detection selector for the options page.
  *
  * @param props - Available models and active model callbacks.
+ *
  * @returns Model selection panel.
  */
 export function ModelSelectionPanel(

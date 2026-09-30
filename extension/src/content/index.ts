@@ -1,3 +1,8 @@
+/**
+ * @file Content-script bootstrap: disposes any previous bundle's content
+ * script left on `globalThis` (SPA reload/update) before starting this one.
+ */
+
 import { Content } from '@/content/content';
 
 const CONTENT_DISPOSE_KEY = '__topskipWatchContentDispose';

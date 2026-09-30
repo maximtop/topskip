@@ -1,4 +1,12 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import browser from '@/shared/browser';
 
 const storage = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import('./memory-storage-area');
@@ -8,8 +16,6 @@ const storage = await vi.hoisted(async () => {
 vi.mock('@/shared/browser', () => ({
     default: { storage: { local: storage.local } },
 }));
-
-import browser from '@/shared/browser';
 
 describe('createMemoryStorageArea', () => {
     it('round-trips through the mocked browser facade with Chrome-like get shapes', async () => {

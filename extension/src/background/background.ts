@@ -1,3 +1,8 @@
+/**
+ * @file MV3 service worker entry point: wires up messaging, storage and
+ * lifecycle listeners synchronously at worker start.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
@@ -33,16 +38,14 @@ export class Background {
         registerRuntimeMessages(defaultRegistry);
         PrefsPortHub.register();
         DebugLogLifecycle.register();
-        console.info(
+        console.debug(
             '[TopSkip] Service worker started',
             getExtensionBuildLabel(),
         );
         void i18n.init();
         void PromoDetectionStore.ready();
         void TabAttributionRegistry.ready();
-        void DebugLogStore.ready().then(() =>
-            DebugLogLifecycle.markWorkerStarted(getExtensionBuildLabel()),
-        );
+        void DebugLogStore.ready().then(() => DebugLogLifecycle.markWorkerStarted(getExtensionBuildLabel()));
         browser.tabs.onRemoved.addListener((tabId) => {
             void Background.handleTabRemoved(tabId);
         });
@@ -62,6 +65,7 @@ export class Background {
      * attribution only after the marker is persisted.
      *
      * @param tabId - Removed browser tab id.
+     *
      * @returns Promise settled after its restart-safe snapshot is cleared.
      */
     private static async handleTabRemoved(tabId: number): Promise<void> {

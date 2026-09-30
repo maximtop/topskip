@@ -1,13 +1,20 @@
+/**
+ * @file Popup-owned transport health for the detection status read/push
+ * pipeline: distinguishes background reachability from the analysis result
+ * itself, and keeps a trustworthy snapshot visible across a lost reply.
+ */
+
+import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
+
+import {
+    POPUP_DETECTION_HEALTHY_RECONCILE_MS,
+    POPUP_STATE_FAILURE_RETRY_MS,
+} from '@/popup/constants';
 import {
     SERVER_ANALYSIS_PHASE,
     SERVER_ANALYSIS_TERMINAL_PHASE,
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
-import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
-import {
-    POPUP_DETECTION_HEALTHY_RECONCILE_MS,
-    POPUP_STATE_FAILURE_RETRY_MS,
-} from '@/popup/constants';
 
 const SERVER_POPUP_PHASE = {
     ...SERVER_ANALYSIS_PHASE,
@@ -41,29 +48,28 @@ export const DETECTION_REFRESH_OUTCOME = {
  * Popup-owned transport health keeps a trustworthy detection snapshot visible
  * when the background is temporarily unreachable.
  */
-export type DetectionTransportState =
+export type DetectionTransportState = | {
+    status: typeof DETECTION_TRANSPORT_STATUS.Loading;
+    activeTabId: undefined;
+    snapshot: null;
+}
     | {
-          status: typeof DETECTION_TRANSPORT_STATUS.Loading;
-          activeTabId: undefined;
-          snapshot: null;
-      }
+        status: typeof DETECTION_TRANSPORT_STATUS.Available;
+        activeTabId: number | null;
+        snapshot: PromoDetectionStatePayload | null;
+    }
     | {
-          status: typeof DETECTION_TRANSPORT_STATUS.Available;
-          activeTabId: number | null;
-          snapshot: PromoDetectionStatePayload | null;
-      }
+        status: typeof DETECTION_TRANSPORT_STATUS.Stale;
+        activeTabId: number | null;
+        snapshot: PromoDetectionStatePayload | null;
+        error: string;
+    }
     | {
-          status: typeof DETECTION_TRANSPORT_STATUS.Stale;
-          activeTabId: number | null;
-          snapshot: PromoDetectionStatePayload | null;
-          error: string;
-      }
-    | {
-          status: typeof DETECTION_TRANSPORT_STATUS.Unavailable;
-          activeTabId: undefined;
-          snapshot: null;
-          error: string;
-      };
+        status: typeof DETECTION_TRANSPORT_STATUS.Unavailable;
+        activeTabId: undefined;
+        snapshot: null;
+        error: string;
+    };
 
 /**
  * Push routing keeps the extension-global runtime channel from replacing the
@@ -78,15 +84,13 @@ export const DETECTION_PUSH_ACTION = {
 /**
  * Actions available when routing one tab-scoped detection push.
  */
-export type DetectionPushAction =
-    (typeof DETECTION_PUSH_ACTION)[keyof typeof DETECTION_PUSH_ACTION];
+export type DetectionPushAction = (typeof DETECTION_PUSH_ACTION)[keyof typeof DETECTION_PUSH_ACTION];
 
 /**
  * Read outcomes select the next reconciliation cadence without coupling the
  * popup effect to timing literals.
  */
-export type DetectionRefreshOutcome =
-    (typeof DETECTION_REFRESH_OUTCOME)[keyof typeof DETECTION_REFRESH_OUTCOME];
+export type DetectionRefreshOutcome = (typeof DETECTION_REFRESH_OUTCOME)[keyof typeof DETECTION_REFRESH_OUTCOME];
 
 /**
  * Initial state distinguishes a pending first read from a successful empty tab.
@@ -103,6 +107,7 @@ export const INITIAL_DETECTION_TRANSPORT_STATE: DetectionTransportState = {
  *
  * @param activeTabId - Resolved active tab, explicit no-tab, or unresolved.
  * @param pushedTabId - Originating tab carried by the runtime push.
+ *
  * @returns Apply for the active tab, reconcile while unresolved, else ignore.
  */
 export function getDetectionPushAction(
@@ -123,6 +128,7 @@ export function getDetectionPushAction(
  * transport failure.
  *
  * @param outcome - Health of the latest detection status operation.
+ *
  * @returns Delay before the next background reconciliation.
  */
 export function getDetectionRefreshDelay(
@@ -139,6 +145,7 @@ export function getDetectionRefreshDelay(
  *
  * @param startedPushRevision - Push revision captured before the read.
  * @param currentPushRevision - Push revision when the read completes.
+ *
  * @returns Whether the read still belongs to the current transport revision.
  */
 export function isDetectionReadCurrent(
@@ -153,6 +160,7 @@ export function isDetectionReadCurrent(
  *
  * @param current - Snapshot already trusted by the popup.
  * @param incoming - Newly observed background or push snapshot.
+ *
  * @returns Incoming state unless it moves the same Server session backwards.
  */
 export function chooseMonotonicDetectionSnapshot(
@@ -163,24 +171,22 @@ export function chooseMonotonicDetectionSnapshot(
         return incoming;
     }
     if (
-        current.sessionId === undefined ||
-        incoming.sessionId === undefined ||
-        current.sessionId !== incoming.sessionId
+        current.sessionId === undefined
+        || incoming.sessionId === undefined
+        || current.sessionId !== incoming.sessionId
     ) {
         return incoming;
     }
-    const currentPhase =
-        current.status === PROMO_DETECTION_STATUS.Analyzing
-            ? (current.serverAnalysisPhase ??
-                SERVER_POPUP_PHASE.ServerAnalysis)
-            : SERVER_POPUP_PHASE.Terminal;
-    const incomingPhase =
-        incoming.status === PROMO_DETECTION_STATUS.Analyzing
-            ? (incoming.serverAnalysisPhase ??
-                SERVER_POPUP_PHASE.ServerAnalysis)
-            : SERVER_POPUP_PHASE.Terminal;
-    return SERVER_POPUP_PHASE_RANK[incomingPhase] <
-        SERVER_POPUP_PHASE_RANK[currentPhase]
+    const currentPhase = current.status === PROMO_DETECTION_STATUS.Analyzing
+        ? (current.serverAnalysisPhase
+                ?? SERVER_POPUP_PHASE.ServerAnalysis)
+        : SERVER_POPUP_PHASE.Terminal;
+    const incomingPhase = incoming.status === PROMO_DETECTION_STATUS.Analyzing
+        ? (incoming.serverAnalysisPhase
+                ?? SERVER_POPUP_PHASE.ServerAnalysis)
+        : SERVER_POPUP_PHASE.Terminal;
+    return SERVER_POPUP_PHASE_RANK[incomingPhase]
+        < SERVER_POPUP_PHASE_RANK[currentPhase]
         ? current
         : incoming;
 }
@@ -191,6 +197,7 @@ export function chooseMonotonicDetectionSnapshot(
  * @param current - Current transport health and last trustworthy snapshot.
  * @param activeTabId - Tab identity resolved by the successful status read.
  * @param incoming - Successful background snapshot for the active tab.
+ *
  * @returns Healthy transport state containing the accepted snapshot.
  */
 export function applyDetectionTransportSuccess(
@@ -198,8 +205,7 @@ export function applyDetectionTransportSuccess(
     activeTabId: number | null,
     incoming: PromoDetectionStatePayload | null,
 ): DetectionTransportState {
-    const currentSnapshot =
-        current.activeTabId === activeTabId ? current.snapshot : null;
+    const currentSnapshot = current.activeTabId === activeTabId ? current.snapshot : null;
     return {
         status: DETECTION_TRANSPORT_STATUS.Available,
         activeTabId,
@@ -213,6 +219,7 @@ export function applyDetectionTransportSuccess(
  *
  * @param current - Current transport health and last trustworthy snapshot.
  * @param error - Safe diagnostic retained for logs rather than user-facing copy.
+ *
  * @returns Stale or unavailable transport state.
  */
 export function applyDetectionTransportFailure(
@@ -220,8 +227,8 @@ export function applyDetectionTransportFailure(
     error: string,
 ): DetectionTransportState {
     if (
-        current.status === DETECTION_TRANSPORT_STATUS.Available ||
-        current.status === DETECTION_TRANSPORT_STATUS.Stale
+        current.status === DETECTION_TRANSPORT_STATUS.Available
+        || current.status === DETECTION_TRANSPORT_STATUS.Stale
     ) {
         return {
             status: DETECTION_TRANSPORT_STATUS.Stale,
@@ -244,13 +251,14 @@ export function applyDetectionTransportFailure(
  * Unavailable never did, so nothing derived from a default may be rendered.
  *
  * @param state - Current transport health.
+ *
  * @returns Whether status-derived indicators may render.
  */
 export function isDetectionTransportKnown(
     state: DetectionTransportState,
 ): boolean {
     return (
-        state.status === DETECTION_TRANSPORT_STATUS.Available ||
-        state.status === DETECTION_TRANSPORT_STATUS.Stale
+        state.status === DETECTION_TRANSPORT_STATUS.Available
+        || state.status === DETECTION_TRANSPORT_STATUS.Stale
     );
 }

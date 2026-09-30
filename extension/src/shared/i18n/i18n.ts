@@ -1,10 +1,14 @@
-import browser from '@/shared/browser';
+/**
+ * @file Per-context i18n facade that falls back to `browser.i18n` before the
+ * translation service has initialized.
+ */
 
-import { TranslationService } from '@/shared/i18n/translation-service';
+import browser from '@/shared/browser';
 import {
     type AvailableLocale,
     BASE_LOCALE,
 } from '@/shared/i18n/locale-constants';
+import { TranslationService } from '@/shared/i18n/translation-service';
 
 /**
  * I18n facade with browser.i18n fallback before initialization.
@@ -49,6 +53,7 @@ export class I18n {
      * Before `init()` completes, falls back to `browser.i18n.getMessage()`.
      *
      * @param key - Message key from messages.json
+     *
      * @returns Localized message string
      */
     getMessage(key: string): string {
@@ -78,6 +83,7 @@ export class I18n {
      * Before `init()` completes, falls back to `browser.i18n.getMessage()`.
      *
      * @param key - Message key from messages.json
+     *
      * @returns English base message
      */
     getBaseMessage(key: string): string {

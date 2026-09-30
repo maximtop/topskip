@@ -1,5 +1,13 @@
 import { createHash } from 'node:crypto';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     CONTENT_SCRIPT_PROTOCOL_VERSION,
@@ -106,13 +114,11 @@ describe('Server request session adoption after worker restart', () => {
         for (const key of Object.keys(browserMocks.sessionData)) {
             delete browserMocks.sessionData[key];
         }
-        browserMocks.sessionGet.mockImplementation((key: string) =>
-            Promise.resolve(
-                key in browserMocks.sessionData
-                    ? { [key]: browserMocks.sessionData[key] }
-                    : {},
-            ),
-        );
+        browserMocks.sessionGet.mockImplementation((key: string) => Promise.resolve(
+            key in browserMocks.sessionData
+                ? { [key]: browserMocks.sessionData[key] }
+                : {},
+        ));
         browserMocks.sessionSet.mockImplementation(
             (items: Record<string, unknown>) => {
                 Object.assign(browserMocks.sessionData, items);
@@ -121,21 +127,20 @@ describe('Server request session adoption after worker restart', () => {
         );
         browserMocks.runtimeSendMessage.mockResolvedValue(undefined);
         browserMocks.tabsSendMessage.mockImplementation(
-            (_tabId: number, message: { type?: string }) =>
-                Promise.resolve(
-                    message.type === TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS
-                        ? {
-                                ok: true,
-                                protocolVersion:
+            (_tabId: number, message: { type?: string }) => Promise.resolve(
+                message.type === TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS
+                    ? {
+                        ok: true,
+                        protocolVersion:
                                     CONTENT_SCRIPT_PROTOCOL_VERSION,
-                                extensionVersion: '0.1.0',
-                                videoId: VIDEO_ID,
-                                enabled: true,
-                                analysisMode: 'server',
-                                serverSessionId: SESSION_B,
-                            }
-                        : undefined,
-                ),
+                        extensionVersion: '0.1.0',
+                        videoId: VIDEO_ID,
+                        enabled: true,
+                        analysisMode: 'server',
+                        serverSessionId: SESSION_B,
+                    }
+                    : undefined,
+            ),
         );
         prefsMocks.load.mockResolvedValue({
             enabled: true,
@@ -166,8 +171,7 @@ describe('Server request session adoption after worker restart', () => {
 
     it('adopts request B when persisted A survives and acquisition B was lost', async () => {
         vi.resetModules();
-        const initialStoreModule =
-            await import('@/background/promo-detection-store');
+        const initialStoreModule = await import('@/background/promo-detection-store');
         await initialStoreModule.PromoDetectionStore.set(TAB_ID, {
             videoId: VIDEO_ID,
             status: 'analyzing',
@@ -177,11 +181,10 @@ describe('Server request session adoption after worker restart', () => {
         });
 
         vi.resetModules();
-        const [{ ServerAnalysisRuntimeMessages }, { PromoDetectionStore }] =
-            await Promise.all([
-                import('@/background/messaging/server-analysis-runtime-messages'),
-                import('@/background/promo-detection-store'),
-            ]);
+        const [{ ServerAnalysisRuntimeMessages }, { PromoDetectionStore }] = await Promise.all([
+            import('@/background/messaging/server-analysis-runtime-messages'),
+            import('@/background/promo-detection-store'),
+        ]);
 
         await expect(
             ServerAnalysisRuntimeMessages.handleRequest(REQUEST, SENDER),

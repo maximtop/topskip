@@ -1,19 +1,26 @@
+/**
+ * @file CLI and library entry point that validates a built extension
+ * manifest against the permission/host/content-script policy for a given
+ * build profile, so a manifest that drifted from its profile fails CI
+ * instead of shipping.
+ */
+
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
-import { isDeepStrictEqual } from 'node:util';
 import { fileURLToPath } from 'node:url';
+import { isDeepStrictEqual } from 'node:util';
 
 import * as v from 'valibot';
 
 import {
     resolveTopSkipBuild,
     type TopSkipBuildMode,
-} from '../extension/build-modes.ts';
+} from '@topskip/extension/build-modes';
 import {
     composeExtensionManifest,
     extensionManifestSchema,
-} from '../extension/manifest-profile.ts';
+} from '@topskip/extension/manifest-profile';
 
 const CLI_ARGUMENT_COUNT = 6;
 const CLI_ERROR_MAX_LENGTH = 260;
@@ -30,14 +37,38 @@ const manifestBackgroundSchema = v.looseObject({
     background: backgroundSchema,
 });
 
+/**
+ * Build profile and backend origin the emitted manifest must match.
+ */
 interface ValidatorExpectation {
+    /**
+     * Build profile (dev/beta/release) the artifact was produced for.
+     */
     build: TopSkipBuildMode;
+
+    /**
+     * Backend origin the composed manifest's host permissions must target.
+     */
     serverOrigin: string;
 }
 
+/**
+ * Parsed and validated `--build`/`--server-origin`/`--manifest` CLI values.
+ */
 interface CliArguments {
+    /**
+     * Build profile resolved from `--build`.
+     */
     build: TopSkipBuildMode;
+
+    /**
+     * Backend origin from `--server-origin`.
+     */
     serverOrigin: string;
+
+    /**
+     * Filesystem path to the manifest JSON to validate, from `--manifest`.
+     */
     manifestPath: string;
 }
 
@@ -47,6 +78,8 @@ interface CliArguments {
  * @param field - Manifest field used in the policy error.
  * @param actual - Values read from the emitted artifact.
  * @param expected - Exact values allowed for the selected build profile.
+ *
+ * @throws {Error} When `actual` has duplicates or does not equal `expected` as a set.
  */
 function assertExactSet(
     field: string,
@@ -59,9 +92,7 @@ function assertExactSet(
         throw new Error(`${field} contains duplicate entries.`);
     }
     const hasExactSize = actualSet.size === expectedSet.size;
-    const containsOnlyExpected = [...actualSet].every((value) =>
-        expectedSet.has(value),
-    );
+    const containsOnlyExpected = [...actualSet].every((value) => expectedSet.has(value));
     if (!hasExactSize || !containsOnlyExpected) {
         throw new Error(`${field} does not match the selected build profile.`);
     }
@@ -72,6 +103,8 @@ function assertExactSet(
  *
  * @param required - Required host permissions in the artifact.
  * @param optional - Optional host permissions in the artifact.
+ *
+ * @throws {Error} When a host appears in both `required` and `optional`.
  */
 function assertNoHostOverlap(
     required: readonly string[],
@@ -91,6 +124,8 @@ function assertNoHostOverlap(
  *
  * @param actual - Content scripts emitted by the artifact.
  * @param expected - Exact profile scripts composed from trusted inputs.
+ *
+ * @throws {Error} When the count, matches, or other fields of any content script diverge from `expected`.
  */
 function assertContentScripts(
     actual: v.InferOutput<typeof extensionManifestSchema>['content_scripts'],
@@ -131,6 +166,8 @@ function assertContentScripts(
  *
  * @param input - Parsed manifest JSON from the real build artifact.
  * @param expected - Profile and backend origin selected for that build.
+ *
+ * @throws {Error} When any policy check (schema, name, permissions, hosts, content scripts) fails.
  */
 export function validateExtensionManifest(
     input: unknown,
@@ -180,7 +217,10 @@ export function validateExtensionManifest(
  * options cannot silently change the artifact policy.
  *
  * @param args - User arguments after the executable path.
+ *
  * @returns Validated CLI values.
+ *
+ * @throws {Error} When a flag is unknown, repeated, missing its value, or a required flag is absent.
  */
 function parseCliArguments(args: string[]): CliArguments {
     const normalizedArgs = args[0] === '--' ? args.slice(1) : args;
@@ -193,15 +233,14 @@ function parseCliArguments(args: string[]): CliArguments {
     for (let index = 0; index < normalizedArgs.length; index += 2) {
         const flag = normalizedArgs[index];
         const value = normalizedArgs[index + 1];
-        const isKnownFlag =
-            flag === BUILD_FLAG ||
-            flag === SERVER_ORIGIN_FLAG ||
-            flag === MANIFEST_PATH_FLAG;
+        const isKnownFlag = flag === BUILD_FLAG
+            || flag === SERVER_ORIGIN_FLAG
+            || flag === MANIFEST_PATH_FLAG;
         if (
-            !isKnownFlag ||
-            value === undefined ||
-            value === '' ||
-            values.has(flag)
+            !isKnownFlag
+            || value === undefined
+            || value === ''
+            || values.has(flag)
         ) {
             throw new Error(
                 'Expected --build, --server-origin, and --manifest exactly once.',
@@ -229,6 +268,7 @@ function parseCliArguments(args: string[]): CliArguments {
  * logs while retaining enough policy context to diagnose a failed artifact.
  *
  * @param error - Unknown failure from argument, file, JSON, or policy parsing.
+ *
  * @returns One single-line bounded diagnostic.
  */
 function formatCliError(error: unknown): string {
@@ -245,6 +285,7 @@ function formatCliError(error: unknown): string {
  * without terminating callers that import this module.
  *
  * @param args - CLI arguments after the executable path.
+ *
  * @returns Zero for a valid artifact, otherwise one.
  */
 export async function main(args: string[]): Promise<number> {

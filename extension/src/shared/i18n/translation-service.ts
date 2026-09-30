@@ -1,11 +1,15 @@
-import browser from '@/shared/browser';
+/**
+ * @file Loads and caches per-locale message files for synchronous, English-
+ * fallback translation lookup.
+ */
 
+import browser from '@/shared/browser';
+import { checkLocale } from '@/shared/i18n/check-locale';
 import {
     type AvailableLocale,
     BASE_LOCALE,
     AVAILABLE_LOCALES,
 } from '@/shared/i18n/locale-constants';
-import { checkLocale } from '@/shared/i18n/check-locale';
 
 /**
  * Individual message entry in a messages.json file.
@@ -15,6 +19,7 @@ interface MessageEntry {
      * Translated text.
      */
     message: string;
+
     /**
      * Optional translator context note.
      */
@@ -33,6 +38,7 @@ type MessagesJson = Record<string, MessageEntry>;
  * shape — this guard proves the type to TypeScript without an unsafe cast.
  *
  * @param value - Value to check.
+ *
  * @returns Whether `value` is a record of `MessageEntry` objects.
  */
 function isMessagesJson(value: unknown): value is MessagesJson {
@@ -40,10 +46,9 @@ function isMessagesJson(value: unknown): value is MessagesJson {
         return false;
     }
     return Object.values(value).every(
-        (entry) =>
-            typeof entry === 'object' &&
-            entry !== null &&
-            typeof Reflect.get(entry, 'message') === 'string',
+        (entry) => typeof entry === 'object'
+            && entry !== null
+            && typeof Reflect.get(entry, 'message') === 'string',
     );
 }
 
@@ -69,15 +74,16 @@ export class TranslationService {
      * Flattens raw MessagesJson into key → message map.
      *
      * @param rawMessages - Raw messages.json content
+     *
      * @returns Flattened key-value map
      */
     private flattenMessages(rawMessages: MessagesJson): FlattenedMessages {
         const result: FlattenedMessages = {};
         for (const [key, entry] of Object.entries(rawMessages)) {
             if (
-                entry &&
-                typeof entry.message === 'string' &&
-                entry.message.length > 0
+                entry
+                && typeof entry.message === 'string'
+                && entry.message.length > 0
             ) {
                 result[key] = entry.message;
             }
@@ -89,13 +95,13 @@ export class TranslationService {
      * Resolves a user preference into a supported locale code.
      *
      * @param localePreference - 'auto' or a locale code
+     *
      * @returns Resolved locale from AVAILABLE_LOCALES, or BASE_LOCALE
      */
     resolveLocale(localePreference: string): AvailableLocale {
-        const code =
-            localePreference === 'auto'
-                ? browser.i18n.getUILanguage()
-                : localePreference;
+        const code = localePreference === 'auto'
+            ? browser.i18n.getUILanguage()
+            : localePreference;
 
         const result = checkLocale(AVAILABLE_LOCALES, code);
         return result.suitable ? result.locale : BASE_LOCALE;
@@ -105,6 +111,7 @@ export class TranslationService {
      * Loads a locale file from extension assets, flattens, and caches it.
      *
      * @param locale - Locale code matching a folder in `_locales/`
+     *
      * @returns Promise that resolves when the locale is cached
      */
     async loadLocale(locale: AvailableLocale): Promise<void> {
@@ -125,6 +132,7 @@ export class TranslationService {
      * Loads base English locale and the locale resolved from `preference`.
      *
      * @param preference - 'auto' or a locale code; defaults to 'auto'
+     *
      * @returns The resolved AvailableLocale that was loaded
      */
     async loadLocaleData(preference?: string): Promise<AvailableLocale> {
@@ -142,7 +150,10 @@ export class TranslationService {
      *
      * @param locale - The locale to look up the message in
      * @param key - Translation message key
+     *
      * @returns Translated message, or empty string if untranslated
+     *
+     * @throws {Error} When `key` is not present in the base (English) locale.
      */
     getMessage(locale: AvailableLocale, key: string): string {
         const baseMessages = this.localeCache.get(BASE_LOCALE);
@@ -164,6 +175,7 @@ export class TranslationService {
      * Returns the UI language code for `@adguard/translate`.
      *
      * @param locale - The locale code
+     *
      * @returns Lowercase locale code
      */
     getUILanguage(locale: AvailableLocale): string {
@@ -174,6 +186,7 @@ export class TranslationService {
      * Returns the English base message for the given key.
      *
      * @param key - Translation message key
+     *
      * @returns English base message, or empty string if not found
      */
     getBaseMessage(key: string): string {

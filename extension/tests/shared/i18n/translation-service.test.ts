@@ -1,4 +1,13 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import {
+
+    describe,
+    it,
+    expect,
+    vi,
+    beforeEach,
+} from 'vitest';
+
+import { TranslationService } from '@/shared/i18n/translation-service';
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -25,12 +34,18 @@ const FAKE_FR_MESSAGES = {
 
 /**
  * Extracts URL string from fetch input.
+ *
  * @param url - fetch input
+ *
  * @returns URL as string
  */
 function toUrlString(url: string | URL | Request): string {
-    if (typeof url === 'string') return url;
-    if (url instanceof URL) return url.href;
+    if (typeof url === 'string') {
+        return url;
+    }
+    if (url instanceof URL) {
+        return url.href;
+    }
     return url.url;
 }
 
@@ -48,8 +63,6 @@ global.fetch = vi.fn((url: string | URL | Request) => {
     }
     return Promise.reject(new Error(`unexpected fetch: ${urlStr}`));
 });
-
-import { TranslationService } from '@/shared/i18n/translation-service';
 
 describe('TranslationService', () => {
     let service: TranslationService;

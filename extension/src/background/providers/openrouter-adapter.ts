@@ -1,7 +1,12 @@
+/**
+ * @file OpenRouter adapter behind the `LlmProviderAdapter` interface,
+ * wrapping extension-owned configuration, permission and response-parsing
+ * boundaries.
+ */
+
 import { callOpenRouterChat } from '@/background/openrouter/openrouter-client';
 import { parseLlmPromoResponse } from '@/background/openrouter/parse-llm-promo-response';
 import { PROMO_DETECTION_SYSTEM_PROMPT } from '@/background/openrouter/promo-detection-system-prompt';
-import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import {
     LLM_ROLE,
@@ -14,6 +19,7 @@ import {
     type LlmProviderAdapter,
     type ProviderAvailability,
 } from '@/background/providers/llm-provider-adapter';
+import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 
 /**
  * Wraps OpenRouter behind extension-owned configuration, permission, and
@@ -62,6 +68,7 @@ export class OpenRouterAdapter implements LlmProviderAdapter {
      * then parses the promo-detection response.
      *
      * @param params - Transcript and context.
+     *
      * @returns Detection result or error.
      */
     async analyzeTranscript(
@@ -96,9 +103,8 @@ export class OpenRouterAdapter implements LlmProviderAdapter {
         });
 
         if (!llm.ok) {
-            const tooLarge =
-                /HTTP 400/i.test(llm.error) &&
-                /context|length|token|maximum|too large/i.test(llm.error);
+            const tooLarge = /HTTP 400/i.test(llm.error)
+                && /context|length|token|maximum|too large/i.test(llm.error);
             if (tooLarge) {
                 return {
                     ok: false,

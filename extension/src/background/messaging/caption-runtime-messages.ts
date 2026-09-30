@@ -1,9 +1,13 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+/**
+ * @file Handles caption payloads sent from the watch content script and
+ * forwards valid transcripts into the promo analysis pipeline.
+ */
 
 import { logTranscriptForDeveloper } from '@/background/captions/log-transcript-dev';
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import { ANALYSIS_MODE, LOG_PREFIX_CAPTIONS } from '@/shared/constants';
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import {
     CAPTION_CAPTURE_FAILURE_REASON,
@@ -11,14 +15,14 @@ import {
     type CaptionsFromContentAck,
     type CaptionsFromContentPayload,
 } from '@/shared/messages';
-import { ANALYSIS_MODE, LOG_PREFIX_CAPTIONS } from '@/shared/constants';
 
-const EXPECTED_CAPTION_FAILURE_REASONS: ReadonlySet<CaptionCaptureFailureReason> =
-    new Set([
-        CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady,
-        CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
-        CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable,
-    ]);
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+
+const EXPECTED_CAPTION_FAILURE_REASONS: ReadonlySet<CaptionCaptureFailureReason> = new Set([
+    CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady,
+    CAPTION_CAPTURE_FAILURE_REASON.CaptureTimeout,
+    CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable,
+]);
 
 /**
  * Caption payloads from the watch content script → promo pipeline; static API
@@ -31,6 +35,7 @@ export class CaptionRuntimeMessages {
      *
      * @param payload - Typed captions payload narrowed by the router.
      * @param sender - Message sender (tab id required for promo analysis).
+     *
      * @returns Ack promise.
      */
     static async handle(
@@ -38,9 +43,8 @@ export class CaptionRuntimeMessages {
         sender: Runtime.MessageSender,
     ): Promise<CaptionsFromContentAck> {
         if (!payload.ok) {
-            const expectedFailure =
-                payload.reason !== undefined &&
-                EXPECTED_CAPTION_FAILURE_REASONS.has(payload.reason);
+            const expectedFailure = payload.reason !== undefined
+                && EXPECTED_CAPTION_FAILURE_REASONS.has(payload.reason);
             const log = expectedFailure ? console.warn : console.error;
             // Stable picklist reason only — payload.error can embed a signed
             // caption URL or raw stack.
@@ -59,7 +63,7 @@ export class CaptionRuntimeMessages {
             return { ok: true };
         }
 
-        if (__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (TOPSKIP_INCLUDE_DEV_LOCAL) {
             logTranscriptForDeveloper(
                 payload.videoId,
                 payload.languageCode,

@@ -1,3 +1,8 @@
+/**
+ * @file Compact inline Chrome built-in model download status shown alongside
+ * model selection.
+ */
+
 import {
     Alert,
     Badge,
@@ -8,9 +13,10 @@ import {
     Text,
 } from '@mantine/core';
 import { useMachine } from '@xstate/react';
-import type { ReactElement } from 'react';
 
 import { chromeDownloadMachine } from '@/options/chrome-download-machine';
+
+import type { ReactElement } from 'react';
 
 /**
  * Compact inline status for Chrome Built-in, rendered inside the
@@ -61,8 +67,7 @@ export function ChromeBuiltinInlineStatus(): ReactElement {
             );
         }
         const pct = progress;
-        const displayPct =
-            pct < 1 && pct > 0 ? pct.toFixed(1) : Math.round(pct).toString();
+        const displayPct = pct < 1 && pct > 0 ? pct.toFixed(1) : Math.round(pct).toString();
         return (
             <Alert color="blue" variant="light">
                 <Stack gap="xs">

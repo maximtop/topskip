@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import { YtDlpProcess } from '@topskip/backend/extraction/yt-dlp-process';
 import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
+import { YtDlpProcess } from '@topskip/backend/extraction/yt-dlp-process';
 
 describe('yt-dlp process boundary', () => {
     it('validates an operator-provided executable during startup', () => {

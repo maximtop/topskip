@@ -1,7 +1,25 @@
+import { MantineProvider } from '@mantine/core';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it, vi } from 'vitest';
-import { MantineProvider } from '@mantine/core';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { ChromeBuiltinOnboarding } from '@/options/ChromeBuiltinOnboarding';
+import { OpenRouterConfigPanel } from '@/options/OpenRouterConfigPanel';
+import {
+    AboutSettingsSection,
+    OptionsSidebar,
+    PlaceholderSettingsSection,
+    ProviderChoiceCards,
+    getOptionsSectionLabel,
+    parseOptionsSectionHash,
+} from '@/options/options';
+import { topskipTheme } from '@/shared/theme';
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -34,18 +52,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-import { ChromeBuiltinOnboarding } from '@/options/ChromeBuiltinOnboarding';
-import { OpenRouterConfigPanel } from '@/options/OpenRouterConfigPanel';
-import {
-    AboutSettingsSection,
-    OptionsSidebar,
-    PlaceholderSettingsSection,
-    ProviderChoiceCards,
-    getOptionsSectionLabel,
-    parseOptionsSectionHash,
-} from '@/options/options';
-import { topskipTheme } from '@/shared/theme';
 
 function renderWithMantine(element: ReturnType<typeof createElement>): string {
     return renderToStaticMarkup(

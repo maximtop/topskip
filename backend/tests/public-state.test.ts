@@ -2,14 +2,23 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { BackendPublicState } from '@topskip/backend/public-state';
-import { FrozenPublicStateV2Reader } from './fixtures/public-state-v2-reader';
 import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     SERVER_ANALYSIS_API_VERSION,
 } from '@topskip/common/server-analysis-contract';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+} from 'vitest';
+
+import { BackendPublicState } from '@topskip/backend/public-state';
+
+import { FrozenPublicStateV2Reader } from './fixtures/public-state-v2-reader';
 
 const MINUTE_MS = 60 * 1_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -313,12 +322,10 @@ describe('BackendPublicState', () => {
 
     it('allows 120 authenticated requests per minute before throttling', () => {
         const nowMs = 1_900_000_000_000;
-        const decisions = Array.from({ length: 120 }, () =>
-            BackendPublicState.consumeAuthenticatedRequest({
-                installationHash: 'authenticated-installation',
-                nowMs,
-            }),
-        );
+        const decisions = Array.from({ length: 120 }, () => BackendPublicState.consumeAuthenticatedRequest({
+            installationHash: 'authenticated-installation',
+            nowMs,
+        }));
 
         expect(decisions.every((decision) => decision.allowed)).toBe(true);
         expect(
@@ -453,15 +460,13 @@ describe('BackendPublicState', () => {
 
     it('reserves daily model budget atomically', () => {
         const nowMs = Date.UTC(2030, 0, 2);
-        const reservations = Array.from({ length: 10 }, () =>
-            BackendPublicState.reserveModelBudget({ nowMs }),
-        );
+        const reservations = Array.from({ length: 10 }, () => BackendPublicState.reserveModelBudget({ nowMs }));
         expect(reservations.every((reservation) => reservation !== null)).toBe(
             true,
         );
         expect(BackendPublicState.reserveModelBudget({ nowMs })).toBeNull();
 
-        const first = reservations[0];
+        const first = reservations[0]!;
         if (first === null) {
             throw new Error('Expected a model budget reservation.');
         }

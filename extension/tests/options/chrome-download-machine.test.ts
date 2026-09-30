@@ -1,4 +1,12 @@
-import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+    beforeEach,
+    afterEach,
+} from 'vitest';
 import { createActor } from 'xstate';
 
 import { chromeDownloadMachine } from '@/options/chrome-download-machine';
@@ -80,7 +88,7 @@ describe('chromeDownloadMachine', () => {
     });
 
     it(
-        'transitions to downloadable when availability is' + ' downloadable',
+        'transitions to downloadable when availability is downloadable',
         async () => {
             availabilityResult = 'downloadable';
 
@@ -96,7 +104,7 @@ describe('chromeDownloadMachine', () => {
     );
 
     it(
-        'transitions to unavailable when availability is' + ' unavailable',
+        'transitions to unavailable when availability is unavailable',
         async () => {
             availabilityResult = 'unavailable';
 
@@ -125,7 +133,7 @@ describe('chromeDownloadMachine', () => {
     });
 
     it(
-        'transitions to downloading when availability is' + ' downloading',
+        'transitions to downloading when availability is downloading',
         async () => {
             availabilityResult = 'downloading';
 
@@ -189,7 +197,7 @@ describe('chromeDownloadMachine', () => {
 
         // Simulate progress events from the monitor
         expect(monitorCallbacks.length).toBeGreaterThan(0);
-        monitorCallbacks[0]({ loaded: 0.5 });
+        monitorCallbacks[0]!({ loaded: 0.5 });
 
         await vi.waitFor(() => {
             expect(actor.getSnapshot().context.progress).toBe(50);
@@ -199,7 +207,7 @@ describe('chromeDownloadMachine', () => {
     });
 
     it(
-        'tracks progress from monitor events and marks' + ' extracting at 100%',
+        'tracks progress from monitor events and marks extracting at 100%',
         async () => {
             availabilityResult = 'downloadable';
             createBehavior = 'hang';
@@ -214,13 +222,13 @@ describe('chromeDownloadMachine', () => {
             actor.send({ type: 'DOWNLOAD' });
 
             // Simulate progress events
-            monitorCallbacks[0]({ loaded: 0.25 });
+            monitorCallbacks[0]!({ loaded: 0.25 });
             await vi.waitFor(() => {
                 expect(actor.getSnapshot().context.progress).toBe(25);
                 expect(actor.getSnapshot().context.extracting).toBe(false);
             });
 
-            monitorCallbacks[0]({ loaded: 1 });
+            monitorCallbacks[0]!({ loaded: 1 });
             await vi.waitFor(() => {
                 expect(actor.getSnapshot().context.progress).toBe(100);
                 expect(actor.getSnapshot().context.extracting).toBe(true);

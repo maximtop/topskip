@@ -1,28 +1,54 @@
-import { MAX_PLAYBACK_DELTA_SEC } from '@/content/skip-logic';
-import type { PromoBlock } from '@topskip/common/promo-types';
+/**
+ * @file Promo block skip decision logic: evaluates when to skip a detected
+ * promo block, tracks already-fired blocks, and explains suppressed skips.
+ */
+
 import { DEFAULT_PROMO_BLOCK_DURATION_SEC } from '@topskip/common/promo-block';
+
+import { MAX_PLAYBACK_DELTA_SEC } from '@/content/skip-logic';
+
+import type { PromoBlock } from '@topskip/common/promo-types';
 
 /**
  * Playback state needed to evaluate promo block skip decisions.
  */
-export type PromoBlocksSkipInput = {
+export interface PromoBlocksSkipInput {
+    /**
+     * Media time in seconds at the previous `timeupdate`.
+     */
     prevTime: number;
+
+    /**
+     * Media time in seconds at the current `timeupdate`.
+     */
     currentTime: number;
+
+    /**
+     * Media duration in seconds.
+     */
     duration: number;
+
+    /**
+     * True while the browser is seeking (user scrub or programmatic seek).
+     */
     isSeeking: boolean;
+
     /**
      * Rounded `startSec` keys for blocks that already fired
      * (stable across list reorders).
      */
     firedStartKeys: ReadonlySet<number>;
-    blocks: ReadonlyArray<PromoBlock>;
-};
+
+    /**
+     * Detected promo blocks for the current video.
+     */
+    blocks: readonly PromoBlock[];
+}
 
 /**
  * Action produced by promo block skip evaluation.
  */
-export type PromoBlocksSkipDecision =
-    | { action: 'none' }
+export type PromoBlocksSkipDecision = | { action: 'none' }
     | { action: 'skip'; blockIndex: number; targetTime: number };
 
 /**
@@ -30,6 +56,7 @@ export type PromoBlocksSkipDecision =
  *
  * @param block - Promo block
  * @param duration - Media duration in seconds
+ *
  * @returns Target `currentTime` after skip
  */
 export function computePromoBlockTargetTime(
@@ -49,6 +76,7 @@ export function computePromoBlockTargetTime(
  * Stable integer key for “already skipped” tracking across block list edits.
  *
  * @param startSec - Block start time
+ *
  * @returns Rounded second used as fired-tracking key
  */
 export function promoBlockStartKey(startSec: number): number {
@@ -60,6 +88,7 @@ export function promoBlockStartKey(startSec: number): number {
  * start during natural playback (FR-015).
  *
  * @param input - Playback state and blocks
+ *
  * @returns Skip decision or none
  */
 export function evaluatePromoBlocksSkip(
@@ -75,37 +104,32 @@ export function evaluatePromoBlocksSkip(
     } = input;
 
     if (
-        !Number.isFinite(duration) ||
-        duration <= 0 ||
-        isSeeking ||
-        blocks.length === 0
+        !Number.isFinite(duration)
+        || duration <= 0
+        || isSeeking
+        || blocks.length === 0
     ) {
         return { action: 'none' };
     }
 
-    for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
-        if (block === undefined) {
-            continue;
+    for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
+        if (block !== undefined) {
+            const startKey = promoBlockStartKey(block.startSec);
+            if (!firedStartKeys.has(startKey)) {
+                const start = block.startSec;
+                const crossed = prevTime < start
+                    && currentTime >= start
+                    && currentTime < duration + 0.001;
+                if (crossed) {
+                    const delta = currentTime - prevTime;
+                    if (delta <= MAX_PLAYBACK_DELTA_SEC) {
+                        const targetTime = computePromoBlockTargetTime(block, duration);
+                        return { action: 'skip', blockIndex: index, targetTime };
+                    }
+                }
+            }
         }
-        const startKey = promoBlockStartKey(block.startSec);
-        if (firedStartKeys.has(startKey)) {
-            continue;
-        }
-        const start = block.startSec;
-        const crossed =
-            prevTime < start &&
-            currentTime >= start &&
-            currentTime < duration + 0.001;
-        if (!crossed) {
-            continue;
-        }
-        const delta = currentTime - prevTime;
-        if (delta > MAX_PLAYBACK_DELTA_SEC) {
-            continue;
-        }
-        const targetTime = computePromoBlockTargetTime(block, duration);
-        return { action: 'skip', blockIndex: i, targetTime };
     }
 
     return { action: 'none' };
@@ -114,12 +138,27 @@ export function evaluatePromoBlocksSkip(
 /**
  * Mutable fired-block state used when playback seeks backward.
  */
-export type ResetFiredInput = {
+export interface ResetFiredInput {
+    /**
+     * Media time in seconds at the current `timeupdate`.
+     */
     currentTime: number;
+
+    /**
+     * Media time in seconds at the previous `timeupdate`.
+     */
     prevTime: number;
-    blocks: ReadonlyArray<PromoBlock>;
+
+    /**
+     * Detected promo blocks for the current video.
+     */
+    blocks: readonly PromoBlock[];
+
+    /**
+     * Rounded `startSec` keys for blocks that already fired; mutated in place.
+     */
     firedStartKeys: Set<number>;
-};
+}
 
 /**
  * Clears fired indices for blocks whose `startSec` is now ahead of
@@ -129,7 +168,13 @@ export type ResetFiredInput = {
  * @param input - Current playback state and fired set to mutate
  */
 export function resetFiredIndicesOnBackwardSeek(input: ResetFiredInput): void {
-    const { currentTime, prevTime, blocks, firedStartKeys } = input;
+    const {
+
+        currentTime,
+        prevTime,
+        blocks,
+        firedStartKeys,
+    } = input;
     if (currentTime >= prevTime || firedStartKeys.size === 0) {
         return;
     }
@@ -158,16 +203,24 @@ export const PROMO_SKIP_SUPPRESSION_REASON = {
 /**
  * Suppression reason literal union.
  */
-export type PromoSkipSuppressionReason =
-    (typeof PROMO_SKIP_SUPPRESSION_REASON)[keyof typeof PROMO_SKIP_SUPPRESSION_REASON];
+export type PromoSkipSuppressionReason = (typeof PROMO_SKIP_SUPPRESSION_REASON)[
+    keyof typeof PROMO_SKIP_SUPPRESSION_REASON
+];
 
 /**
  * Block index plus the reason it did not fire on this time update.
  */
-export type PromoSkipSuppression = {
+export interface PromoSkipSuppression {
+    /**
+     * Index of the block into `PromoBlocksSkipInput.blocks`.
+     */
     blockIndex: number;
+
+    /**
+     * Why the block did not fire on this time update.
+     */
     reason: PromoSkipSuppressionReason;
-};
+}
 
 /**
  * Explains a missed skip for the first block whose start was crossed or whose
@@ -176,6 +229,7 @@ export type PromoSkipSuppression = {
  * {@link evaluatePromoBlocksSkip} would have skipped.
  *
  * @param input - Same playback state handed to `evaluatePromoBlocksSkip`.
+ *
  * @returns Suppression for the first relevant block, or `null`.
  */
 export function explainSuppressedPromoSkip(
@@ -190,52 +244,50 @@ export function explainSuppressedPromoSkip(
         blocks,
     } = input;
     const hasDuration = Number.isFinite(duration) && duration > 0;
-    for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
-        if (block === undefined) {
-            continue;
+    for (let index = 0; index < blocks.length; index += 1) {
+        const block = blocks[index];
+        if (block !== undefined) {
+            const start = block.startSec;
+            const end = computePromoBlockTargetTime(
+                block,
+                hasDuration ? duration : Number.POSITIVE_INFINITY,
+            );
+            const crossed = prevTime < start && currentTime >= start;
+            const inside = currentTime >= start && currentTime < end;
+            if (crossed || inside) {
+                if (!hasDuration) {
+                    return {
+                        blockIndex: index,
+                        reason: PROMO_SKIP_SUPPRESSION_REASON.NoDuration,
+                    };
+                }
+                if (isSeeking) {
+                    return {
+                        blockIndex: index,
+                        reason: PROMO_SKIP_SUPPRESSION_REASON.Seeking,
+                    };
+                }
+                if (firedStartKeys.has(promoBlockStartKey(start))) {
+                    return {
+                        blockIndex: index,
+                        reason: PROMO_SKIP_SUPPRESSION_REASON.AlreadyFired,
+                    };
+                }
+                if (!crossed) {
+                    return {
+                        blockIndex: index,
+                        reason: PROMO_SKIP_SUPPRESSION_REASON.NotCrossed,
+                    };
+                }
+                if (currentTime - prevTime > MAX_PLAYBACK_DELTA_SEC) {
+                    return {
+                        blockIndex: index,
+                        reason: PROMO_SKIP_SUPPRESSION_REASON.SeekGuard,
+                    };
+                }
+                return null;
+            }
         }
-        const start = block.startSec;
-        const end = computePromoBlockTargetTime(
-            block,
-            hasDuration ? duration : Number.POSITIVE_INFINITY,
-        );
-        const crossed = prevTime < start && currentTime >= start;
-        const inside = currentTime >= start && currentTime < end;
-        if (!crossed && !inside) {
-            continue;
-        }
-        if (!hasDuration) {
-            return {
-                blockIndex: i,
-                reason: PROMO_SKIP_SUPPRESSION_REASON.NoDuration,
-            };
-        }
-        if (isSeeking) {
-            return {
-                blockIndex: i,
-                reason: PROMO_SKIP_SUPPRESSION_REASON.Seeking,
-            };
-        }
-        if (firedStartKeys.has(promoBlockStartKey(start))) {
-            return {
-                blockIndex: i,
-                reason: PROMO_SKIP_SUPPRESSION_REASON.AlreadyFired,
-            };
-        }
-        if (!crossed) {
-            return {
-                blockIndex: i,
-                reason: PROMO_SKIP_SUPPRESSION_REASON.NotCrossed,
-            };
-        }
-        if (currentTime - prevTime > MAX_PLAYBACK_DELTA_SEC) {
-            return {
-                blockIndex: i,
-                reason: PROMO_SKIP_SUPPRESSION_REASON.SeekGuard,
-            };
-        }
-        return null;
     }
     return null;
 }

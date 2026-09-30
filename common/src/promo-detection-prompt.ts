@@ -1,4 +1,10 @@
 /**
+ * @file The shared LLM system prompt and version tag for promo detection,
+ * used identically by the server route and the BYOK (private-provider)
+ * extension path so both stay aligned on the same definition of a promo.
+ */
+
+/**
  * Bumped whenever the shared promo-detection instructions change.
  */
 export const PROMO_DETECTION_PROMPT_VERSION = '4';

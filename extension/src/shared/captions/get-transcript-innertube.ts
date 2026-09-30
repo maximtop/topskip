@@ -1,7 +1,13 @@
-import { MS_PER_SECOND } from '@/shared/constants';
-import type { CaptionSegment } from '@topskip/common/caption-types';
+/**
+ * @file Pure parsing helpers for YouTube's InnerTube `get_transcript` flow:
+ * locate the request `params` inside player JSON and turn the RPC's JSON
+ * response into caption segments. No network I/O.
+ */
 
 import { isPlayerRecord } from '@/shared/captions/player-json';
+import { MS_PER_SECOND } from '@/shared/constants';
+
+import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * Collects every non-empty `params` string under a caption track object.
@@ -9,6 +15,7 @@ import { isPlayerRecord } from '@/shared/captions/player-json';
  *
  * @param track Single caption track value.
  * @param depth Recursion guard.
+ *
  * @returns All candidate `params` strings.
  */
 function collectParamsStringsDeep(track: unknown, depth = 0): string[] {
@@ -25,9 +32,8 @@ function collectParamsStringsDeep(track: unknown, depth = 0): string[] {
     if (!isPlayerRecord(track)) {
         return [];
     }
-    const own = track['params'];
-    const head: string[] =
-        typeof own === 'string' && own.length > 0 ? [own] : [];
+    const own = track.params;
+    const head: string[] = typeof own === 'string' && own.length > 0 ? [own] : [];
     const rest: string[] = [];
     for (const v of Object.values(track)) {
         rest.push(...collectParamsStringsDeep(v, depth + 1));
@@ -41,6 +47,7 @@ function collectParamsStringsDeep(track: unknown, depth = 0): string[] {
  * `params` may appear on unrelated nested endpoints.
  *
  * @param tracks Raw caption tracks array.
+ *
  * @returns Params string or `null`.
  */
 export function findParamsOnCaptionTracks(tracks: unknown[]): string | null {
@@ -60,6 +67,7 @@ export function findParamsOnCaptionTracks(tracks: unknown[]): string | null {
  * `youtubei/v1/get_transcript`).
  *
  * @param data Parsed player or subtree.
+ *
  * @returns Base64 `params`, or `null`.
  */
 export function findGetTranscriptParams(data: unknown): string | null {
@@ -78,9 +86,9 @@ export function findGetTranscriptParams(data: unknown): string | null {
     if (!isPlayerRecord(data)) {
         return null;
     }
-    const ep = data['getTranscriptEndpoint'];
+    const ep = data.getTranscriptEndpoint;
     if (isPlayerRecord(ep)) {
-        const p = ep['params'];
+        const p = ep.params;
         if (typeof p === 'string' && p.length > 0) {
             return p;
         }
@@ -98,6 +106,7 @@ export function findGetTranscriptParams(data: unknown): string | null {
  * Parses millisecond fields that may be string or number.
  *
  * @param v Raw attribute value.
+ *
  * @returns Milliseconds or `null`.
  */
 function numMs(v: unknown): number | null {
@@ -115,6 +124,7 @@ function numMs(v: unknown): number | null {
  * Builds caption text from `snippet.runs` or `simpleText`.
  *
  * @param snippet Snippet object from Innertube.
+ *
  * @returns Plain text.
  */
 function snippetText(snippet: unknown): string {
@@ -145,6 +155,7 @@ function snippetText(snippet: unknown): string {
  * Collects cue segments from a `get_transcript` JSON response.
  *
  * @param data Parsed JSON body.
+ *
  * @returns Segments or `null` if none found.
  */
 export function segmentsFromGetTranscriptJson(
@@ -176,10 +187,9 @@ export function segmentsFromGetTranscriptJson(
             const text = snippetText(Reflect.get(seg, 'snippet'));
             if (text.length > 0 && startMs !== null) {
                 const startSec = startMs / MS_PER_SECOND;
-                const durationSec =
-                    endMs !== null && endMs >= startMs
-                        ? (endMs - startMs) / MS_PER_SECOND
-                        : 0;
+                const durationSec = endMs !== null && endMs >= startMs
+                    ? (endMs - startMs) / MS_PER_SECOND
+                    : 0;
                 out.push({ startSec, durationSec, text });
             }
         }

@@ -1,3 +1,8 @@
+/**
+ * @file CLI helper that uploads the base-locale message file to the
+ * localization service, so translators pick up new/changed source strings.
+ */
+
 import fs from 'node:fs';
 
 import { localeMessagesPath } from './helpers.ts';

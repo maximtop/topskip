@@ -1,13 +1,18 @@
+/**
+ * @file Re-injects the watch content-script bundles into the active tab on
+ * the user's explicit request (popup "reattach" action).
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { ContentScriptWakeup } from '@/background/lifecycle/content-script-wakeup';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 import browser from '@/shared/browser';
 import { CAPTION_PAGE_BRIDGE_INSTALL_FLAG } from '@/shared/caption-page-bridge-flags';
+import { MS_PER_SECOND } from '@/shared/constants';
 import { CONTENT_SCRIPT_BUNDLE } from '@/shared/content-script-bundles';
 import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 import { getErrorMessage } from '@/shared/error';
-import { MS_PER_SECOND } from '@/shared/constants';
 import {
     CONTENT_SCRIPT_REATTACH_OUTCOME,
     type ReattachContentScriptResponse,
@@ -28,8 +33,7 @@ const REATTACH_LOG_OUTCOME = {
 /**
  * One logged re-attach outcome.
  */
-type ReattachLogOutcome =
-    (typeof REATTACH_LOG_OUTCOME)[keyof typeof REATTACH_LOG_OUTCOME];
+type ReattachLogOutcome = (typeof REATTACH_LOG_OUTCOME)[keyof typeof REATTACH_LOG_OUTCOME];
 
 /**
  * A live watch script answers within milliseconds; the bound only matters
@@ -56,10 +60,17 @@ export const CONTENT_SCRIPT_REATTACH_SETTLE_POLL_MS = 100;
 /**
  * Active tab identity plus whatever URL Chrome chose to expose for it.
  */
-type ActiveTabTarget = {
+interface ActiveTabTarget {
+    /**
+     * Active tab's browser id.
+     */
     tabId: number;
+
+    /**
+     * Tab URL, or `undefined` when Chrome did not grant `activeTab` visibility.
+     */
     url: string | undefined;
-};
+}
 
 /**
  * Re-injects the two watch bundles into the active tab on the user's request.
@@ -172,6 +183,7 @@ export class ContentScriptReattach {
      * the watch script finds its bridge when capture begins.
      *
      * @param tabId - Active tab whose URL is a supported content document.
+     *
      * @returns Re-attach outcome or the injection failure.
      */
     private static async reattachTab(
@@ -254,6 +266,7 @@ export class ContentScriptReattach {
      * returns a boolean, nothing else crosses the boundary.
      *
      * @param tabId - Tab about to receive fresh bundles.
+     *
      * @returns Promise settled once injection may proceed.
      */
     private static async waitForOrphanTeardown(tabId: number): Promise<void> {
@@ -276,15 +289,15 @@ export class ContentScriptReattach {
      * Reads whether any MAIN bridge generation still claims the document.
      *
      * @param tabId - Tab whose main frame is inspected.
+     *
      * @returns Whether the bridge install flag is currently `true`.
      */
     private static async isBridgeInstalled(tabId: number): Promise<boolean> {
         const results = await browser.scripting.executeScript({
             target: { tabId },
             world: 'MAIN',
-            func: (flag: unknown): boolean =>
-                typeof flag === 'string' &&
-                Reflect.get(globalThis, flag) === true,
+            func: (flag: unknown): boolean => typeof flag === 'string'
+                && Reflect.get(globalThis, flag) === true,
             args: [CAPTION_PAGE_BRIDGE_INSTALL_FLAG],
         });
         const [mainFrame] = results;
@@ -295,6 +308,7 @@ export class ContentScriptReattach {
      * Yields without holding the worker beyond the requested gap.
      *
      * @param ms - Delay before the next settle poll.
+     *
      * @returns Promise resolved after the delay.
      */
     private static delay(ms: number): Promise<void> {

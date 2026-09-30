@@ -1,3 +1,9 @@
+/**
+ * @file Spawns yt-dlp as a bounded child process: no shell, a hard timeout,
+ * and a hard cap on buffered stdout, mapping every failure mode into a
+ * stable result instead of leaking raw process errors.
+ */
+
 import { spawn } from 'node:child_process';
 
 import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
@@ -5,22 +11,36 @@ import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
 /**
  * Bounded subprocess request used for every yt-dlp invocation.
  */
-export type YtDlpRunRequest = {
+export interface YtDlpRunRequest {
+    /**
+     * Executable path override; defaults to `YtDlpBinary.resolvePath()` when omitted.
+     */
     binaryPath?: string;
+
+    /**
+     * Command-line arguments passed to yt-dlp, run without a shell.
+     */
     args: readonly string[];
+
+    /**
+     * Milliseconds to wait before the process is killed and the call reports `timed_out`.
+     */
     timeoutMs: number;
+
+    /**
+     * Maximum stdout bytes buffered before the process is killed and the call reports `oversized_response`.
+     */
     maxOutputBytes: number;
-};
+}
 
 /**
  * Safe subprocess result that never exposes stderr or raw spawn errors.
  */
-export type YtDlpRunResult =
-    | { status: 'succeeded'; stdout: string }
+export type YtDlpRunResult = | { status: 'succeeded'; stdout: string }
     | {
-          status: 'failed';
-          code: 'binary_missing' | 'oversized_response' | 'process_failed';
-      }
+        status: 'failed';
+        code: 'binary_missing' | 'oversized_response' | 'process_failed';
+    }
     | { status: 'timed_out'; code: 'timeout' };
 
 /**
@@ -37,6 +57,7 @@ export class YtDlpProcess {
      * Runs one command and maps all process failures into stable diagnostics.
      *
      * @param request - Executable arguments and resource limits.
+     *
      * @returns Safe bounded process result.
      */
     static async run(request: YtDlpRunRequest): Promise<YtDlpRunResult> {
@@ -52,6 +73,7 @@ export class YtDlpProcess {
             const chunks: Buffer[] = [];
             let outputBytes = 0;
             let settled = false;
+            let timeout: NodeJS.Timeout;
 
             const finish = (result: YtDlpRunResult): void => {
                 if (settled) {
@@ -61,7 +83,7 @@ export class YtDlpProcess {
                 clearTimeout(timeout);
                 resolve(result);
             };
-            const timeout = setTimeout(() => {
+            timeout = setTimeout(() => {
                 child.kill('SIGKILL');
                 finish({ status: 'timed_out', code: 'timeout' });
             }, request.timeoutMs);
@@ -79,10 +101,9 @@ export class YtDlpProcess {
                 chunks.push(chunk);
             });
             child.on('error', (error) => {
-                const code =
-                    'code' in error && error.code === 'ENOENT'
-                        ? 'binary_missing'
-                        : 'process_failed';
+                const code = 'code' in error && error.code === 'ENOENT'
+                    ? 'binary_missing'
+                    : 'process_failed';
                 finish({ status: 'failed', code });
             });
             child.on('close', (code) => {

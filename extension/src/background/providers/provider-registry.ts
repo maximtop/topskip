@@ -1,3 +1,7 @@
+/**
+ * @file Immutable lookup of registered LLM provider adapters.
+ */
+
 import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
 
 /**
@@ -28,6 +32,7 @@ export class ProviderRegistry {
      * Looks up an adapter by its unique identifier.
      *
      * @param id - Provider identifier (e.g. `'openrouter'`).
+     *
      * @returns The adapter, or `undefined` if not registered.
      */
     get(id: string | null | undefined): LlmProviderAdapter | undefined {

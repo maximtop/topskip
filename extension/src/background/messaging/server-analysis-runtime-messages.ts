@@ -1,10 +1,28 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+/**
+ * @file Handles session-bound Server-mode analysis runtime messages,
+ * keeping every HTTP operation and route-ownership check in the background.
+ */
+
+import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
+import {
+    PROMO_DETECTION_STATUS,
+    type PromoBlock,
+} from '@topskip/common/promo-types';
+import {
+    SERVER_ANALYSIS_API_VERSION,
+    SERVER_ANALYSIS_FAILURE_CODE,
+    serverAnalysisFailureSchema,
+    serverTranscriptIdentitySchema,
+    type ServerAnalysisFailure,
+    type ServerAnalysisResponse,
+    type ServerTranscriptIdentity,
+} from '@topskip/common/server-analysis-contract';
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
-import { ServerAnalysisConfiguration } from '@/background/server-analysis-configuration';
 import { ServerAnalysisClient } from '@/background/server-analysis-client';
+import { ServerAnalysisConfiguration } from '@/background/server-analysis-configuration';
 import { BackgroundServerAnalysisLog } from '@/background/server-analysis-log';
 import { ServerTranscriptIdentity as ServerTranscriptFingerprint } from '@/background/server-transcript-identity';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
@@ -30,25 +48,13 @@ import {
     type ServerPromoDetectionSource,
     type TopSkipRuntimeMessage,
 } from '@/shared/messages';
-import { isTopSkipContentDocumentUrl } from '@/shared/watch-route';
-import { CaptionTranscriptCanonicalizer } from '@topskip/common/captions/canonical-transcript';
-import {
-    PROMO_DETECTION_STATUS,
-    type PromoBlock,
-} from '@topskip/common/promo-types';
-import {
-    SERVER_ANALYSIS_API_VERSION,
-    SERVER_ANALYSIS_FAILURE_CODE,
-    serverAnalysisFailureSchema,
-    serverTranscriptIdentitySchema,
-    type ServerAnalysisFailure,
-    type ServerAnalysisResponse,
-    type ServerTranscriptIdentity,
-} from '@topskip/common/server-analysis-contract';
 import {
     SERVER_FAILURE_CATEGORY,
     classifyServerFailure,
 } from '@/shared/server-analysis-failure';
+import { isTopSkipContentDocumentUrl } from '@/shared/watch-route';
+
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 const LOCAL_SESSION_FAILURE_CODE = {
     [SERVER_ANALYSIS_SESSION_EVENT.CaptionsUnavailable]:
@@ -62,8 +68,7 @@ const LOCAL_SESSION_FAILURE_CODE = {
 /**
  * Fresh backend responses may be computed or served by the backend cache.
  */
-type ReadyServerDetectionSource =
-    | typeof PROMO_DETECTION_SOURCE.Server
+type ReadyServerDetectionSource = | typeof PROMO_DETECTION_SOURCE.Server
     | typeof PROMO_DETECTION_SOURCE.ServerCache;
 
 /**
@@ -74,6 +79,7 @@ export class ServerAnalysisRuntimeMessages {
      * Converts unknown client failures to the allow-listed response vocabulary.
      *
      * @param error - Opaque transport or validation failure.
+     *
      * @returns Safe stable failure details.
      */
     private static normalizeClientFailure(
@@ -92,10 +98,33 @@ export class ServerAnalysisRuntimeMessages {
     }
 
     /**
+     * Prefers the response-observed algorithm version over the cached config's,
+     * so a fresh server-reported version is never shadowed by a stale one.
+     *
+     * @param algorithmVersion - Version observed in config or a response.
+     * @param configAlgorithmVersion - Version from the cached compatibility config.
+     *
+     * @returns Spreadable field, or an empty object when neither is known.
+     */
+    private static resolveAlgorithmVersionField(
+        algorithmVersion: string | undefined,
+        configAlgorithmVersion: string | undefined,
+    ): { algorithmVersion: string } | Record<string, never> {
+        if (algorithmVersion !== undefined) {
+            return { algorithmVersion };
+        }
+        if (configAlgorithmVersion !== undefined) {
+            return { algorithmVersion: configAlgorithmVersion };
+        }
+        return {};
+    }
+
+    /**
      * Enriches stable failure details only from already validated local metadata.
      *
      * @param failure - Validated message-free failure details.
      * @param algorithmVersion - Version observed in config or a response.
+     *
      * @returns Runtime-safe failure context for localized popup copy.
      */
     private static async buildFailureContext(
@@ -113,11 +142,10 @@ export class ServerAnalysisRuntimeMessages {
                 : { retryAfterSec: failure.retryAfterSec }),
             apiVersion: config?.apiVersion ?? SERVER_ANALYSIS_API_VERSION,
             extensionVersion: browser.runtime.getManifest().version,
-            ...(algorithmVersion === undefined
-                ? config?.algorithmVersion === undefined
-                    ? {}
-                    : { algorithmVersion: config.algorithmVersion }
-                : { algorithmVersion }),
+            ...ServerAnalysisRuntimeMessages.resolveAlgorithmVersionField(
+                algorithmVersion,
+                config?.algorithmVersion,
+            ),
             ...(config?.supportIssueBaseUrl === undefined
                 ? {}
                 : { supportIssueBaseUrl: config.supportIssueBaseUrl }),
@@ -128,6 +156,12 @@ export class ServerAnalysisRuntimeMessages {
      * Publishes one safe Server failure without retaining captions or raw responses.
      *
      * @param input - Target session, stable failure, and optional server version.
+     * @param input.tabId - Source tab that owns the session.
+     * @param input.sessionId - Content-owned session id.
+     * @param input.videoId - Video id tied to the session.
+     * @param input.failure - Stable failure details to publish.
+     * @param input.algorithmVersion - Server-reported version, when known.
+     *
      * @returns Whether the failure still belonged to the live content route.
      */
     private static async publishFailure(input: {
@@ -138,11 +172,10 @@ export class ServerAnalysisRuntimeMessages {
         algorithmVersion?: string;
     }): Promise<boolean> {
         const category = classifyServerFailure(input.failure.code);
-        const failureContext =
-            await ServerAnalysisRuntimeMessages.buildFailureContext(
-                input.failure,
-                input.algorithmVersion,
-            );
+        const failureContext = await ServerAnalysisRuntimeMessages.buildFailureContext(
+            input.failure,
+            input.algorithmVersion,
+        );
         if (
             !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 input.tabId,
@@ -179,6 +212,13 @@ export class ServerAnalysisRuntimeMessages {
      * Delivers exact-session blocks through content and popup paths.
      *
      * @param input - Current tab/session, blocks, and cache origin.
+     * @param input.tabId - Source tab that owns the session.
+     * @param input.sessionId - Content-owned session id.
+     * @param input.videoId - Video id the blocks apply to.
+     * @param input.promoBlocks - Detected promo blocks to deliver.
+     * @param input.source - Origin of these blocks (server, server cache, or local cache).
+     * @param input.durationSec - Video duration, when known.
+     *
      * @returns Whether the exact live route accepted the delivery.
      */
     private static async deliverDetectedBlocks(input: {
@@ -187,7 +227,7 @@ export class ServerAnalysisRuntimeMessages {
         videoId: string;
         promoBlocks: PromoBlock[];
         source: ServerPromoDetectionSource;
-        durationSec?: number;
+        durationSec?: number | undefined;
     }): Promise<boolean> {
         if (
             !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
@@ -235,12 +275,11 @@ export class ServerAnalysisRuntimeMessages {
             return false;
         }
 
-        const durationState =
-            input.durationSec !== undefined &&
-            Number.isFinite(input.durationSec) &&
-            input.durationSec >= 0
-                ? { durationSec: input.durationSec }
-                : {};
+        const durationState = input.durationSec !== undefined
+            && Number.isFinite(input.durationSec)
+            && input.durationSec >= 0
+            ? { durationSec: input.durationSec }
+            : {};
         await PromoDetectionStore.set(input.tabId, {
             videoId: input.videoId,
             sessionId: input.sessionId,
@@ -296,6 +335,7 @@ export class ServerAnalysisRuntimeMessages {
      * @param tabId - Source tab that initiated the session.
      * @param videoId - Video id tied to the session.
      * @param sessionId - Content-owned session expected to remain active.
+     *
      * @returns Whether the current bundle still owns the requested route.
      */
     private static async isCurrentServerRoute(
@@ -316,12 +356,12 @@ export class ServerAnalysisRuntimeMessages {
             }
             const current = parsed.output;
             return (
-                current.extensionVersion ===
-                    browser.runtime.getManifest().version &&
-                current.videoId === videoId &&
-                current.enabled &&
-                current.analysisMode === ANALYSIS_MODE.Server &&
-                current.serverSessionId === sessionId
+                current.extensionVersion
+                    === browser.runtime.getManifest().version
+                && current.videoId === videoId
+                && current.enabled
+                && current.analysisMode === ANALYSIS_MODE.Server
+                && current.serverSessionId === sessionId
             );
         } catch {
             return false;
@@ -333,6 +373,7 @@ export class ServerAnalysisRuntimeMessages {
      * document while leaving mutable route ownership to the live content probe.
      *
      * @param sender - Browser-authenticated runtime sender metadata.
+     *
      * @returns Trusted source tab id, or `null` without document proof.
      */
     private static trustedSenderTabId(
@@ -341,11 +382,11 @@ export class ServerAnalysisRuntimeMessages {
         const tabId = sender.tab?.id;
         const senderUrl = sender.url;
         if (
-            sender.id !== browser.runtime.id ||
-            tabId === undefined ||
-            sender.frameId !== TOP_FRAME_ID ||
-            senderUrl === undefined ||
-            !isTopSkipContentDocumentUrl(senderUrl)
+            sender.id !== browser.runtime.id
+            || tabId === undefined
+            || sender.frameId !== TOP_FRAME_ID
+            || senderUrl === undefined
+            || !isTopSkipContentDocumentUrl(senderUrl)
         ) {
             return null;
         }
@@ -356,15 +397,16 @@ export class ServerAnalysisRuntimeMessages {
      * Extracts authoritative identity only from an identified response variant.
      *
      * @param response - Validated public server response.
+     *
      * @returns Complete identity, or `null` for pre-identity failures.
      */
     private static responseIdentity(
         response: ServerAnalysisResponse,
     ): ServerTranscriptIdentity | null {
         if (
-            !('videoId' in response) ||
-            !('languageCode' in response) ||
-            !('transcriptHash' in response)
+            !('videoId' in response)
+            || !('languageCode' in response)
+            || !('transcriptHash' in response)
         ) {
             return null;
         }
@@ -381,6 +423,13 @@ export class ServerAnalysisRuntimeMessages {
      * Maps a validated backend response into one session-bound runtime acknowledgement.
      *
      * @param input - Tab/session request metadata and known response.
+     * @param input.tabId - Source tab that owns the session.
+     * @param input.sessionId - Content-owned session id.
+     * @param input.requestedVideoId - Video id the request was made for.
+     * @param input.response - Validated backend response to map.
+     * @param input.durationSec - Video duration, when known.
+     * @param input.readySource - Origin to record for a `ready` result.
+     *
      * @returns Runtime acknowledgement consumed by the content-owned lifecycle.
      */
     private static async applyServerResponse(input: {
@@ -388,12 +437,12 @@ export class ServerAnalysisRuntimeMessages {
         sessionId: string;
         requestedVideoId: string;
         response: ServerAnalysisResponse;
-        durationSec?: number;
+        durationSec?: number | undefined;
         readySource: ReadyServerDetectionSource;
     }): Promise<RequestServerAnalysisResponse> {
         if (
-            !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+            !(await ServerAnalysisRuntimeMessages.loadServerModeActive())
+            || !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 input.tabId,
                 input.requestedVideoId,
                 input.sessionId,
@@ -445,15 +494,14 @@ export class ServerAnalysisRuntimeMessages {
                 } catch {
                     // Cache persistence cannot block a valid terminal result.
                 }
-                const delivered =
-                    await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
-                        tabId: input.tabId,
-                        sessionId: input.sessionId,
-                        videoId: input.response.videoId,
-                        promoBlocks: input.response.promoBlocks,
-                        source: input.readySource,
-                        durationSec: input.durationSec,
-                    });
+                const delivered = await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
+                    tabId: input.tabId,
+                    sessionId: input.sessionId,
+                    videoId: input.response.videoId,
+                    promoBlocks: input.response.promoBlocks,
+                    source: input.readySource,
+                    durationSec: input.durationSec,
+                });
                 if (!delivered) {
                     return { ok: true, status: 'inactive' };
                 }
@@ -498,7 +546,9 @@ export class ServerAnalysisRuntimeMessages {
                     return { ok: true, status: 'inactive' };
                 }
                 return { ok: true, status: input.response.status };
+            // no default
         }
+        return { ok: true, status: 'inactive' };
     }
 
     /**
@@ -506,6 +556,7 @@ export class ServerAnalysisRuntimeMessages {
      *
      * @param payload - Validated session event from content.
      * @param sender - Browser sender containing the source tab.
+     *
      * @returns Safe acknowledgement after the local state update.
      */
     static async handleSessionEvent(
@@ -529,8 +580,8 @@ export class ServerAnalysisRuntimeMessages {
             return { ok: true };
         }
         if (
-            !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+            !(await ServerAnalysisRuntimeMessages.loadServerModeActive())
+            || !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 tabId,
                 payload.videoId,
                 payload.sessionId,
@@ -566,16 +617,17 @@ export class ServerAnalysisRuntimeMessages {
      * Canonicalizes captions before cache/config/network work can begin.
      *
      * @param payload - Validated runtime transcript submission.
+     *
      * @returns Exact browser identity excluding the server algorithm, or a safe failure.
      */
     private static async buildLocalIdentity(
         payload: RequestServerAnalysisPayload,
     ): Promise<
         | {
-              ok: true;
-              languageCode: string;
-              transcriptHash: string;
-          }
+            ok: true;
+            languageCode: string;
+            transcriptHash: string;
+        }
         | { ok: false; failure: ServerAnalysisFailure }
     > {
         const canonical = CaptionTranscriptCanonicalizer.canonicalize(payload);
@@ -596,6 +648,7 @@ export class ServerAnalysisRuntimeMessages {
      *
      * @param payload - Session-bound timed caption upload.
      * @param sender - Browser sender containing the source tab.
+     *
      * @returns Processing or terminal acknowledgement.
      */
     static async handleRequest(
@@ -609,8 +662,8 @@ export class ServerAnalysisRuntimeMessages {
             return { ok: true, status: 'inactive' };
         }
         if (
-            !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+            !(await ServerAnalysisRuntimeMessages.loadServerModeActive())
+            || !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 tabId,
                 payload.videoId,
                 payload.sessionId,
@@ -626,8 +679,7 @@ export class ServerAnalysisRuntimeMessages {
             source: PROMO_DETECTION_SOURCE.Server,
             serverAnalysisPhase: SERVER_ANALYSIS_PHASE.CaptionAcquisition,
         });
-        const localIdentity =
-            await ServerAnalysisRuntimeMessages.buildLocalIdentity(payload);
+        const localIdentity = await ServerAnalysisRuntimeMessages.buildLocalIdentity(payload);
         if (!localIdentity.ok) {
             if (
                 !(await ServerAnalysisRuntimeMessages.publishFailure({
@@ -644,15 +696,14 @@ export class ServerAnalysisRuntimeMessages {
 
         try {
             const config = await ServerAnalysisConfiguration.loadActive();
-            const cached =
-                config === null
-                    ? null
-                    : await ServerResultCacheStorage.loadExact({
-                            videoId: payload.videoId,
-                            languageCode: localIdentity.languageCode,
-                            transcriptHash: localIdentity.transcriptHash,
-                            algorithmVersion: config.algorithmVersion,
-                        });
+            const cached = config === null
+                ? null
+                : await ServerResultCacheStorage.loadExact({
+                    videoId: payload.videoId,
+                    languageCode: localIdentity.languageCode,
+                    transcriptHash: localIdentity.transcriptHash,
+                    algorithmVersion: config.algorithmVersion,
+                });
             if (cached?.status === 'ready') {
                 if (
                     !(await ServerAnalysisRuntimeMessages.deliverDetectedBlocks({
@@ -713,8 +764,7 @@ export class ServerAnalysisRuntimeMessages {
                 readySource: PROMO_DETECTION_SOURCE.ServerCache,
             });
         } catch (error) {
-            const failure =
-                ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
+            const failure = ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
             if (
                 !(await ServerAnalysisRuntimeMessages.publishFailure({
                     tabId,
@@ -734,6 +784,7 @@ export class ServerAnalysisRuntimeMessages {
      *
      * @param payload - Session/job identity that survives worker restart.
      * @param sender - Browser sender containing the source tab.
+     *
      * @returns Processing, resubmission, or terminal acknowledgement.
      */
     static async handleRefreshStatus(
@@ -747,9 +798,9 @@ export class ServerAnalysisRuntimeMessages {
             return { ok: true, status: 'inactive' };
         }
         if (
-            payload.videoId !== payload.identity.videoId ||
-            !(await ServerAnalysisRuntimeMessages.loadServerModeActive()) ||
-            !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
+            payload.videoId !== payload.identity.videoId
+            || !(await ServerAnalysisRuntimeMessages.loadServerModeActive())
+            || !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
                 tabId,
                 payload.videoId,
                 payload.sessionId,
@@ -765,8 +816,8 @@ export class ServerAnalysisRuntimeMessages {
                 tabId,
             });
             if (
-                response.status === 'error' &&
-                response.error.code === SERVER_ANALYSIS_FAILURE_CODE.JobNotFound
+                response.status === 'error'
+                && response.error.code === SERVER_ANALYSIS_FAILURE_CODE.JobNotFound
             ) {
                 if (
                     !(await ServerAnalysisRuntimeMessages.isCurrentServerRoute(
@@ -787,8 +838,7 @@ export class ServerAnalysisRuntimeMessages {
                 readySource: PROMO_DETECTION_SOURCE.Server,
             });
         } catch (error) {
-            const failure =
-                ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
+            const failure = ServerAnalysisRuntimeMessages.normalizeClientFailure(error);
             if (
                 !(await ServerAnalysisRuntimeMessages.publishFailure({
                     tabId,

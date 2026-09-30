@@ -1,4 +1,31 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS } from '@/content/captions/caption-page-bridge-contract';
+import {
+    ACTIVATION_VISIBLE_BUDGET_MS,
+    DEFAULT_CAPTURE_TIMEOUT_MS,
+    EMPTY_BODY_RELOAD_BASE_DELAY_MS,
+    EMPTY_BODY_RELOAD_MAX_DELAY_MS,
+    MAX_POT_EMPTY_BODY_RELOADS,
+    PlayerCaptionCapture,
+} from '@/content/captions/player-caption-capture';
+import { WatchCaptions } from '@/content/watch-captions';
+import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import { TOPSKIP_MESSAGE } from '@/shared/messages';
+
+import { TestCustomEvent } from '../../helpers/test-custom-event';
+import { TestMessageEvent } from '../../helpers/test-message-event';
+
+import type * as ConstantsModule from '@/shared/constants';
 
 const {
     mockActivateBridge,
@@ -35,8 +62,7 @@ vi.mock('@/shared/browser', () => ({
 }));
 
 vi.mock('@/shared/constants', async (importOriginal) => {
-    const constants =
-        await importOriginal<typeof import('@/shared/constants')>();
+    const constants = await importOriginal<typeof ConstantsModule>();
     return {
         ...constants,
         CAPTION_CAPTURE_VERBOSE_LOGS: true,
@@ -58,26 +84,12 @@ const { contentLogInfo } = vi.hoisted(() => ({
     contentLogInfo: vi.fn<(...args: unknown[]) => void>(),
 }));
 
-// The CONTENT_LOG relay is dev-gated (`__TOPSKIP_INCLUDE_DEV_LOCAL__` is
+// The CONTENT_LOG relay is dev-gated (`TOPSKIP_INCLUDE_DEV_LOCAL` is
 // false under vitest), so the exact verbose dev lines are observed at the
 // contentLog module boundary instead of through runtime.sendMessage.
 vi.mock('@/content/content-log', () => ({
     contentLog: { info: contentLogInfo, warn: vi.fn(), error: vi.fn() },
 }));
-
-import { CAPTION_PAGE_BRIDGE_ACTIVE_LEASE_MS } from '@/content/captions/caption-page-bridge-contract';
-import {
-    ACTIVATION_VISIBLE_BUDGET_MS,
-    DEFAULT_CAPTURE_TIMEOUT_MS,
-    EMPTY_BODY_RELOAD_BASE_DELAY_MS,
-    EMPTY_BODY_RELOAD_MAX_DELAY_MS,
-    MAX_POT_EMPTY_BODY_RELOADS,
-    PlayerCaptionCapture,
-} from '@/content/captions/player-caption-capture';
-import { WatchCaptions } from '@/content/watch-captions';
-import { DEBUG_LOG_BRIDGE_DIAGNOSTICS_PER_SESSION } from '@/shared/debug-log-constants';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 const PAGE_EVENT = 'topskip:caption-capture-page';
 const ACTIVATION_RETRY_DELAY_MS = 250;
@@ -96,29 +108,6 @@ const ANY_NUMBER: unknown = expect.any(Number);
 
 type WindowListener = (event: MessageEvent<unknown>) => void;
 type BridgeTransport = 'window' | 'document';
-
-class TestMessageEvent<T = unknown> {
-    readonly type: string;
-
-    readonly data: T | undefined;
-
-    readonly source: unknown;
-
-    constructor(type: string, init: { data?: T; source?: unknown } = {}) {
-        this.type = type;
-        this.data = init.data;
-        this.source = init.source;
-    }
-}
-
-class TestCustomEvent<T = unknown> extends Event {
-    readonly detail: T | undefined;
-
-    constructor(type: string, init: { detail?: T } = {}) {
-        super(type);
-        this.detail = init.detail;
-    }
-}
 
 function installWindowStub(): void {
     const listeners = new Map<string, WindowListener[]>();
@@ -260,6 +249,9 @@ function dispatchPageDiagnostic(
 /**
  * Dispatches one empty-body diagnostic whose sanitized URL shape reports
  * whether the player had already minted the `pot` token.
+ *
+ * @param messageId Diagnostic message id to dispatch.
+ * @param hasPot Whether the reported URL shape should include a `pot` param.
  */
 function dispatchEmptyBody(messageId: string, hasPot: boolean): void {
     dispatchPageDiagnostic(messageId, 'window', {
@@ -278,9 +270,9 @@ function countRuntimeMessages(type: string): number {
     return mockSendMessage.mock.calls.filter((call) => {
         const message: unknown = Reflect.get(call, '0');
         return (
-            message !== null &&
-            typeof message === 'object' &&
-            Reflect.get(message, 'type') === type
+            message !== null
+            && typeof message === 'object'
+            && Reflect.get(message, 'type') === type
         );
     }).length;
 }
@@ -300,10 +292,9 @@ function debugLogCalls(event: string): unknown[][] {
 function pageStageCalls(): unknown[][] {
     return debugLogCalls(DEBUG_LOG_EVENT.CaptureStage).filter((call) => {
         const fields: unknown = call[1];
-        const stage: unknown =
-            fields !== null && typeof fields === 'object'
-                ? Reflect.get(fields, 'stage')
-                : undefined;
+        const stage: unknown = fields !== null && typeof fields === 'object'
+            ? Reflect.get(fields, 'stage')
+            : undefined;
         return typeof stage === 'string' && stage.startsWith('page:');
     });
 }
@@ -311,6 +302,8 @@ function pageStageCalls(): unknown[][] {
 /**
  * Reports the tab as hidden or visible to the activation loop; the stubbed
  * document has no visibility state of its own.
+ *
+ * @param state Visibility state to report.
  */
 function setVisibilityState(state: 'hidden' | 'visible'): void {
     Object.defineProperty(document, 'visibilityState', {
@@ -325,10 +318,9 @@ function setVisibilityState(state: 'hidden' | 'visible'): void {
 function captureStageNames(): string[] {
     return debugLogCalls(DEBUG_LOG_EVENT.CaptureStage).flatMap((call) => {
         const fields: unknown = call[1];
-        const stage: unknown =
-            fields !== null && typeof fields === 'object'
-                ? Reflect.get(fields, 'stage')
-                : undefined;
+        const stage: unknown = fields !== null && typeof fields === 'object'
+            ? Reflect.get(fields, 'stage')
+            : undefined;
         return typeof stage === 'string' ? [stage] : [];
     });
 }
@@ -336,6 +328,8 @@ function captureStageNames(): string[] {
 /**
  * Starts an owned capture and waits for activation; the run promise is
  * wrapped so the async helper does not adopt (and await) it.
+ *
+ * @param videoId Video id to start capture for.
  */
 async function startCapture(videoId: string): Promise<{ run: Promise<unknown> }> {
     const run = PlayerCaptionCapture.capture({
@@ -377,10 +371,9 @@ describe('PlayerCaptionCapture', () => {
 
     it('captures through the local bridge while runtime scripting is unavailable', async () => {
         mockSendMessage.mockImplementation((message: unknown) => {
-            const messageType: unknown =
-                message !== null && typeof message === 'object'
-                    ? Reflect.get(message, 'type')
-                    : null;
+            const messageType: unknown = message !== null && typeof message === 'object'
+                ? Reflect.get(message, 'type')
+                : null;
             if (messageType === TOPSKIP_MESSAGE.CONTENT_LOG) {
                 return Promise.resolve({ ok: true });
             }
@@ -637,9 +630,9 @@ describe('PlayerCaptionCapture', () => {
             debugLogCalls(DEBUG_LOG_EVENT.CaptureStage).filter((call) => {
                 const fields: unknown = call[1];
                 return (
-                    fields !== null &&
-                    typeof fields === 'object' &&
-                    Reflect.get(fields, 'stage') === 'reload-skipped'
+                    fields !== null
+                    && typeof fields === 'object'
+                    && Reflect.get(fields, 'stage') === 'reload-skipped'
                 );
             }),
         ).toEqual([
@@ -806,10 +799,10 @@ describe('PlayerCaptionCapture', () => {
         expect(contentLogInfo).toHaveBeenCalledWith(
             'caption-capture',
             'page:timedtext-empty-body',
-            'transport=xhr videoId=abc languageCode=en status=200 ' +
-                'bodyLength=0 urlShape={"pathname":"/api/timedtext",' +
-                '"paramNames":["fmt","lang","pot","v"],"fmt":"json3",' +
-                '"hasPot":true}',
+            'transport=xhr videoId=abc languageCode=en status=200 '
+                + 'bodyLength=0 urlShape={"pathname":"/api/timedtext",'
+                + '"paramNames":["fmt","lang","pot","v"],"fmt":"json3",'
+                + '"hasPot":true}',
         );
     });
 
@@ -903,11 +896,11 @@ describe('PlayerCaptionCapture', () => {
             }
             const payload: unknown = Reflect.get(msg, 'payload');
             return (
-                Reflect.get(msg, 'type') ===
-                    TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT &&
-                payload !== null &&
-                typeof payload === 'object' &&
-                Reflect.get(payload, 'ok') === true
+                Reflect.get(msg, 'type')
+                    === TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT
+                && payload !== null
+                && typeof payload === 'object'
+                && Reflect.get(payload, 'ok') === true
             );
         });
         expect(successMessages).toHaveLength(1);
@@ -1029,10 +1022,9 @@ describe('PlayerCaptionCapture', () => {
         const failedFields: unknown = debugLogCalls(
             DEBUG_LOG_EVENT.CaptureFailed,
         )[0]?.[1];
-        const attempts: unknown =
-            failedFields !== null && typeof failedFields === 'object'
-                ? Reflect.get(failedFields, 'attempts')
-                : undefined;
+        const attempts: unknown = failedFields !== null && typeof failedFields === 'object'
+            ? Reflect.get(failedFields, 'attempts')
+            : undefined;
         expect(typeof attempts === 'number' ? attempts : 0).toBeGreaterThan(0);
     });
 
@@ -1040,12 +1032,11 @@ describe('PlayerCaptionCapture', () => {
         // Each Activate takes as long as the gap that follows it, so a
         // wall-clock budget buys half the attempts a retry count would.
         mockActivateBridge.mockImplementation(
-            () =>
-                new Promise((resolve) => {
-                    globalThis.setTimeout(() => {
-                        resolve(PLAYER_NOT_READY_RESULT);
-                    }, ACTIVATION_RETRY_DELAY_MS);
-                }),
+            () => new Promise((resolve) => {
+                globalThis.setTimeout(() => {
+                    resolve(PLAYER_NOT_READY_RESULT);
+                }, ACTIVATION_RETRY_DELAY_MS);
+            }),
         );
         const run = PlayerCaptionCapture.capture({
             videoId: 'dQw4w9WgXcQ',
@@ -1069,13 +1060,11 @@ describe('PlayerCaptionCapture', () => {
 
     it('defers activation while the tab is hidden and resumes when it is shown', async () => {
         setVisibilityState('hidden');
-        mockActivateBridge.mockImplementation(() =>
-            Promise.resolve(
-                document.visibilityState === 'hidden'
-                    ? PLAYER_NOT_READY_RESULT
-                    : { ok: true },
-            ),
-        );
+        mockActivateBridge.mockImplementation(() => Promise.resolve(
+            document.visibilityState === 'hidden'
+                ? PLAYER_NOT_READY_RESULT
+                : { ok: true },
+        ));
         const run = PlayerCaptionCapture.capture({
             videoId: 'abc',
             signal: new AbortController().signal,
@@ -1110,13 +1099,11 @@ describe('PlayerCaptionCapture', () => {
 
     it('ignores forged empty bodies while activation is parked on a hidden tab', async () => {
         setVisibilityState('hidden');
-        mockActivateBridge.mockImplementation(() =>
-            Promise.resolve(
-                document.visibilityState === 'hidden'
-                    ? PLAYER_NOT_READY_RESULT
-                    : { ok: true },
-            ),
-        );
+        mockActivateBridge.mockImplementation(() => Promise.resolve(
+            document.visibilityState === 'hidden'
+                ? PLAYER_NOT_READY_RESULT
+                : { ok: true },
+        ));
         const addListener = vi.spyOn(document, 'addEventListener');
         const run = PlayerCaptionCapture.capture({
             videoId: 'abc',
@@ -1130,10 +1117,11 @@ describe('PlayerCaptionCapture', () => {
         // otherwise the negative assertions below could pass for the wrong
         // reason, e.g. because the helper flushed too few microtask ticks.
         expect(countContentLogStage('activation-deferred')).toBe(1);
-        const countVisibilityListeners = (): number =>
-            addListener.mock.calls.filter(
+        const countVisibilityListeners = (): number => {
+            return addListener.mock.calls.filter(
                 (call) => call[0] === 'visibilitychange',
             ).length;
+        };
         const parkedListeners = countVisibilityListeners();
 
         // The page can forge these: without an accepted activation they must
@@ -1217,10 +1205,10 @@ describe('PlayerCaptionCapture', () => {
         expect(contentLogInfo).toHaveBeenCalledWith(
             'caption-capture',
             'activation-accepted',
-            'videoId=abc attempt=1 ok=true wasOn=false ' +
-                'userIntervened=false hasTracks=2 ' +
-                'actions=["hide-style-added","loadModule:captions",' +
-                '"setOption:track","toggleSubtitlesOn"]',
+            'videoId=abc attempt=1 ok=true wasOn=false '
+                + 'userIntervened=false hasTracks=2 '
+                + 'actions=["hide-style-added","loadModule:captions",'
+                + '"setOption:track","toggleSubtitlesOn"]',
         );
     });
 
@@ -1321,11 +1309,11 @@ describe('PlayerCaptionCapture', () => {
                 }
                 const payload: unknown = Reflect.get(message, 'payload');
                 return (
-                    Reflect.get(message, 'type') ===
-                        TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT &&
-                    payload !== null &&
-                    typeof payload === 'object' &&
-                    Reflect.get(payload, 'reason') === 'capture-timeout'
+                    Reflect.get(message, 'type')
+                        === TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT
+                    && payload !== null
+                    && typeof payload === 'object'
+                    && Reflect.get(payload, 'reason') === 'capture-timeout'
                 );
             },
         );
@@ -1385,7 +1373,7 @@ describe('PlayerCaptionCapture', () => {
         expect(mockTeardownBridge).toHaveBeenCalledOnce();
         expect(mockDisposeBridge).toHaveBeenCalled();
         expect(mockDeactivateBridge.mock.invocationCallOrder[0]).toBeLessThan(
-            mockTeardownBridge.mock.invocationCallOrder[0],
+            mockTeardownBridge.mock.invocationCallOrder[0]!,
         );
         expect(mockTeardownBridge.mock.invocationCallOrder[0]).toBeLessThan(
             mockDisposeBridge.mock.invocationCallOrder.at(-1) ?? 0,
@@ -1444,12 +1432,12 @@ describe('PlayerCaptionCapture', () => {
             }
             const payload: unknown = Reflect.get(message, 'payload');
             return (
-                Reflect.get(message, 'type') ===
-                    TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT &&
-                payload !== null &&
-                typeof payload === 'object' &&
-                Reflect.get(payload, 'ok') === true &&
-                Reflect.get(payload, 'videoId') === 'same-video'
+                Reflect.get(message, 'type')
+                    === TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT
+                && payload !== null
+                && typeof payload === 'object'
+                && Reflect.get(payload, 'ok') === true
+                && Reflect.get(payload, 'videoId') === 'same-video'
             );
         });
         expect(readyMessageSent).toBe(true);
@@ -1722,7 +1710,14 @@ describe('PlayerCaptionCapture', () => {
                 [DEBUG_LOG_EVENT.CaptureStage, { stage: 'bridge-ready' }, { video: 'dQw4w9WgXcQ' }],
                 [
                     DEBUG_LOG_EVENT.CaptureActivation,
-                    { ok: true, wasOn: false, userIntervened: false, hasTracks: 2, actions: 2 },
+                    {
+
+                        ok: true,
+                        wasOn: false,
+                        userIntervened: false,
+                        hasTracks: 2,
+                        actions: 2,
+                    },
                     { video: 'dQw4w9WgXcQ' },
                 ],
                 [

@@ -1,4 +1,8 @@
 /**
+ * @file Guard that serializes popup detection-status refreshes.
+ */
+
+/**
  * Serializes popup status reads while preserving one coalesced follow-up.
  */
 export class DetectionRefreshGuard {

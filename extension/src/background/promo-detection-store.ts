@@ -1,3 +1,11 @@
+/**
+ * @file In-memory, session-mirrored store of per-tab promo detection state,
+ * including Server-mode session identity and stale/retired session tracking.
+ */
+
+import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
+import * as v from 'valibot';
+
 import { PromoDetectionBroadcast } from '@/background/messaging/broadcast-promo-detection-updated';
 import browser from '@/shared/browser';
 import {
@@ -8,15 +16,12 @@ import {
     type PromoDetectionStatePayload,
     type ServerPromoDetectionSource,
 } from '@/shared/messages';
-import { PROMO_DETECTION_STATUS } from '@topskip/common/promo-types';
-import * as v from 'valibot';
 
-const SERVER_DETECTION_SOURCES: ReadonlySet<ServerPromoDetectionSource> =
-    new Set([
-        PROMO_DETECTION_SOURCE.Server,
-        PROMO_DETECTION_SOURCE.LocalCache,
-        PROMO_DETECTION_SOURCE.ServerCache,
-    ]);
+const SERVER_DETECTION_SOURCES: ReadonlySet<ServerPromoDetectionSource> = new Set([
+    PROMO_DETECTION_SOURCE.Server,
+    PROMO_DETECTION_SOURCE.LocalCache,
+    PROMO_DETECTION_SOURCE.ServerCache,
+]);
 const SERVER_ANALYSIS_STORE_PHASE = {
     ...SERVER_ANALYSIS_PHASE,
     Terminal: SERVER_ANALYSIS_TERMINAL_PHASE,
@@ -35,12 +40,22 @@ const MAX_RETIRED_SERVER_SESSIONS_PER_TAB = 32;
 const SESSION_STORAGE_KEY = 'topskipPromoDetectionStore';
 
 /**
+ * Minimal check of one persisted tab payload: only `status` is verified.
+ */
+const persistedTabStateSchema = v.looseObject({ status: v.string() });
+
+/**
  * Structural check for the persisted mirror; payloads are trusted because only
  * this store (a trusted context) writes the key.
  */
 const persistedStoreSchema = v.strictObject({
     tabState: v.array(
-        v.tuple([v.number(), v.looseObject({ status: v.string() })]),
+        v.tuple([
+            v.number(),
+            v.custom<PromoDetectionStatePayload>((input) => {
+                return v.is(persistedTabStateSchema, input);
+            }),
+        ]),
     ),
     activeServerSession: v.array(v.tuple([v.number(), v.string()])),
     retiredServerSessions: v.array(v.tuple([v.number(), v.array(v.string())])),
@@ -49,8 +64,7 @@ const persistedStoreSchema = v.strictObject({
 /**
  * Store ordering includes the internal terminal sentinel absent from payloads.
  */
-type ServerAnalysisStorePhase =
-    (typeof SERVER_ANALYSIS_STORE_PHASE)[keyof typeof SERVER_ANALYSIS_STORE_PHASE];
+type ServerAnalysisStorePhase = (typeof SERVER_ANALYSIS_STORE_PHASE)[keyof typeof SERVER_ANALYSIS_STORE_PHASE];
 
 /**
  * In-memory promo detection snapshots keyed by browser tab id (background
@@ -104,6 +118,7 @@ export class PromoDetectionStore {
      * Returns the last promo detection payload published for a tab.
      *
      * @param tabId - Browser tab id
+     *
      * @returns Last known detection snapshot for the tab, or `null`
      */
     static get(tabId: number): PromoDetectionStatePayload | null {
@@ -116,6 +131,7 @@ export class PromoDetectionStore {
      *
      * @param tabId - Browser tab id
      * @param state - Snapshot to store
+     *
      * @returns Promise that settles after persistence and notification
      */
     static async set(
@@ -128,8 +144,7 @@ export class PromoDetectionStore {
             return;
         }
         const previous = PromoDetectionStore.tabState.get(tabId);
-        const activeSessionBefore =
-            PromoDetectionStore.activeServerSession.get(tabId);
+        const activeSessionBefore = PromoDetectionStore.activeServerSession.get(tabId);
         if (PromoDetectionStore.isServerState(state)) {
             if (!PromoDetectionStore.acceptServerTransition(tabId, state)) {
                 await PromoDetectionStore.waitForQueuedPersistence();
@@ -138,12 +153,10 @@ export class PromoDetectionStore {
         } else {
             PromoDetectionStore.retireActiveSession(tabId);
         }
-        const sessionChanged =
-            activeSessionBefore !==
-            PromoDetectionStore.activeServerSession.get(tabId);
-        const stateChanged =
-            previous === undefined ||
-            !PromoDetectionStore.areStatesEqual(previous, state);
+        const sessionChanged = activeSessionBefore
+            !== PromoDetectionStore.activeServerSession.get(tabId);
+        const stateChanged = previous === undefined
+            || !PromoDetectionStore.areStatesEqual(previous, state);
         if (!stateChanged && !sessionChanged) {
             await PromoDetectionStore.waitForQueuedPersistence();
             return;
@@ -162,25 +175,24 @@ export class PromoDetectionStore {
      *
      * @param tabId - Browser tab id.
      * @param sessionId - Optional Server session that alone may clear its state.
+     *
      * @returns Promise that settles after persistence and notification.
      */
     static async clear(tabId: number, sessionId?: string): Promise<void> {
         await PromoDetectionStore.ready();
         if (
-            sessionId !== undefined &&
-            PromoDetectionStore.activeServerSession.get(tabId) !== sessionId
+            sessionId !== undefined
+            && PromoDetectionStore.activeServerSession.get(tabId) !== sessionId
         ) {
             await PromoDetectionStore.waitForQueuedPersistence();
             return;
         }
-        const hadActiveSession =
-            PromoDetectionStore.activeServerSession.has(tabId);
+        const hadActiveSession = PromoDetectionStore.activeServerSession.has(tabId);
         PromoDetectionStore.retireActiveSession(tabId);
         const hadState = PromoDetectionStore.tabState.delete(tabId);
         let removedRetiredSessions = false;
         if (sessionId === undefined) {
-            removedRetiredSessions =
-                PromoDetectionStore.retiredServerSessions.delete(tabId);
+            removedRetiredSessions = PromoDetectionStore.retiredServerSessions.delete(tabId);
         }
         if (!hadActiveSession && !hadState && !removedRetiredSessions) {
             await PromoDetectionStore.waitForQueuedPersistence();
@@ -258,10 +270,7 @@ export class PromoDetectionStore {
         }
         for (const [tabId, state] of parsed.output.tabState) {
             if (!PromoDetectionStore.tabState.has(tabId)) {
-                PromoDetectionStore.tabState.set(
-                    tabId,
-                    state as PromoDetectionStatePayload,
-                );
+                PromoDetectionStore.tabState.set(tabId, state);
             }
         }
         for (const [tabId, sessionId] of parsed.output.activeServerSession) {
@@ -283,12 +292,13 @@ export class PromoDetectionStore {
      * Recognizes states produced by the Server route, including its exact local cache.
      *
      * @param state - Candidate background snapshot.
+     *
      * @returns Whether session ordering applies to the state.
      */
     private static isServerState(state: PromoDetectionStatePayload): boolean {
         if (
-            state.source === undefined ||
-            state.source === PROMO_DETECTION_SOURCE.LocalProvider
+            state.source === undefined
+            || state.source === PROMO_DETECTION_SOURCE.LocalProvider
         ) {
             return false;
         }
@@ -299,6 +309,7 @@ export class PromoDetectionStore {
      * Rejects optional-field combinations that would make phase ordering ambiguous.
      *
      * @param state - Candidate background snapshot.
+     *
      * @returns Whether Server and BYOK fields form one coherent state.
      */
     private static isValidFieldCombination(
@@ -314,10 +325,10 @@ export class PromoDetectionStore {
         }
         if (state.status === PROMO_DETECTION_STATUS.Analyzing) {
             return (
-                state.source === PROMO_DETECTION_SOURCE.Server &&
-                (rawPhase ===
-                    SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition ||
-                    rawPhase === SERVER_ANALYSIS_STORE_PHASE.ServerAnalysis)
+                state.source === PROMO_DETECTION_SOURCE.Server
+                && (rawPhase
+                    === SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition
+                    || rawPhase === SERVER_ANALYSIS_STORE_PHASE.ServerAnalysis)
             );
         }
         return rawPhase === undefined;
@@ -329,6 +340,7 @@ export class PromoDetectionStore {
      *
      * @param tabId - Browser tab owning the state.
      * @param state - Valid Server snapshot.
+     *
      * @returns Whether the transition may replace the current snapshot.
      */
     private static acceptServerTransition(
@@ -340,13 +352,11 @@ export class PromoDetectionStore {
         if (sessionId === null || phase === null) {
             return false;
         }
-        const activeSessionId =
-            PromoDetectionStore.activeServerSession.get(tabId);
+        const activeSessionId = PromoDetectionStore.activeServerSession.get(tabId);
         if (activeSessionId === undefined) {
-            const sessionWasRetired =
-                PromoDetectionStore.retiredServerSessions
-                    .get(tabId)
-                    ?.has(sessionId) === true;
+            const sessionWasRetired = PromoDetectionStore.retiredServerSessions
+                .get(tabId)
+                ?.has(sessionId) === true;
             if (sessionWasRetired) {
                 return false;
             }
@@ -354,12 +364,10 @@ export class PromoDetectionStore {
             return true;
         }
         if (activeSessionId !== sessionId) {
-            const startsWithAcquisition =
-                phase === SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition;
-            const sessionWasRetired =
-                PromoDetectionStore.retiredServerSessions
-                    .get(tabId)
-                    ?.has(sessionId) === true;
+            const startsWithAcquisition = phase === SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition;
+            const sessionWasRetired = PromoDetectionStore.retiredServerSessions
+                .get(tabId)
+                ?.has(sessionId) === true;
             if (!startsWithAcquisition || sessionWasRetired) {
                 return false;
             }
@@ -370,24 +378,21 @@ export class PromoDetectionStore {
 
         const current = PromoDetectionStore.tabState.get(tabId);
         if (
-            current === undefined ||
-            !PromoDetectionStore.isServerState(current)
+            current === undefined
+            || !PromoDetectionStore.isServerState(current)
         ) {
-            const canEstablishSessionState =
-                phase === SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition ||
-                phase === SERVER_ANALYSIS_STORE_PHASE.Terminal;
+            const canEstablishSessionState = phase === SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition
+                || phase === SERVER_ANALYSIS_STORE_PHASE.Terminal;
             return canEstablishSessionState;
         }
         const currentPhase = PromoDetectionStore.readPhase(current);
-        const currentIsTerminal =
-            currentPhase === SERVER_ANALYSIS_STORE_PHASE.Terminal;
+        const currentIsTerminal = currentPhase === SERVER_ANALYSIS_STORE_PHASE.Terminal;
         if (currentIsTerminal) {
             return false;
         }
-        const transitionDoesNotRegress =
-            currentPhase !== null &&
-            SERVER_ANALYSIS_PHASE_RANK[phase] >=
-                SERVER_ANALYSIS_PHASE_RANK[currentPhase];
+        const transitionDoesNotRegress = currentPhase !== null
+            && SERVER_ANALYSIS_PHASE_RANK[phase]
+                >= SERVER_ANALYSIS_PHASE_RANK[currentPhase];
         return transitionDoesNotRegress;
     }
 
@@ -395,6 +400,7 @@ export class PromoDetectionStore {
      * Reads a validated Server session without trusting compile-time callers.
      *
      * @param state - Candidate Server snapshot.
+     *
      * @returns Valid UUID or `null`.
      */
     private static readSessionId(
@@ -411,6 +417,7 @@ export class PromoDetectionStore {
      * Maps pending snapshots onto their explicit phase and all others to terminal.
      *
      * @param state - Valid Server snapshot.
+     *
      * @returns Ordered phase or `null` for malformed runtime input.
      */
     private static readPhase(
@@ -420,8 +427,8 @@ export class PromoDetectionStore {
             return SERVER_ANALYSIS_STORE_PHASE.Terminal;
         }
         const phase: unknown = Reflect.get(state, 'serverAnalysisPhase');
-        return phase === SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition ||
-            phase === SERVER_ANALYSIS_STORE_PHASE.ServerAnalysis
+        return phase === SERVER_ANALYSIS_STORE_PHASE.CaptionAcquisition
+            || phase === SERVER_ANALYSIS_STORE_PHASE.ServerAnalysis
             ? phase
             : null;
     }
@@ -432,6 +439,7 @@ export class PromoDetectionStore {
      *
      * @param left - Current snapshot.
      * @param right - Candidate replacement.
+     *
      * @returns Whether both snapshots carry the same serialized value.
      */
     private static areStatesEqual(
@@ -439,19 +447,19 @@ export class PromoDetectionStore {
         right: PromoDetectionStatePayload,
     ): boolean {
         return (
-            left.videoId === right.videoId &&
-            left.status === right.status &&
-            left.source === right.source &&
-            left.sessionId === right.sessionId &&
-            left.serverAnalysisPhase === right.serverAnalysisPhase &&
-            left.durationSec === right.durationSec &&
-            left.error === right.error &&
-            left.partialCoverage === right.partialCoverage &&
-            PromoDetectionStore.arePromoBlocksEqual(
+            left.videoId === right.videoId
+            && left.status === right.status
+            && left.source === right.source
+            && left.sessionId === right.sessionId
+            && left.serverAnalysisPhase === right.serverAnalysisPhase
+            && left.durationSec === right.durationSec
+            && left.error === right.error
+            && left.partialCoverage === right.partialCoverage
+            && PromoDetectionStore.arePromoBlocksEqual(
                 left.promoBlocks,
                 right.promoBlocks,
-            ) &&
-            PromoDetectionStore.areFailureContextsEqual(
+            )
+            && PromoDetectionStore.areFailureContextsEqual(
                 left.serverFailure,
                 right.serverFailure,
             )
@@ -463,6 +471,7 @@ export class PromoDetectionStore {
      *
      * @param left - Current optional block list.
      * @param right - Candidate optional block list.
+     *
      * @returns Whether block boundaries and confidence labels are equal.
      */
     private static arePromoBlocksEqual(
@@ -473,14 +482,14 @@ export class PromoDetectionStore {
             return left === right;
         }
         return (
-            left.length === right.length &&
-            left.every((block, index) => {
+            left.length === right.length
+            && left.every((block, index) => {
                 const candidate = right[index];
                 return (
-                    candidate !== undefined &&
-                    block.startSec === candidate.startSec &&
-                    block.endSec === candidate.endSec &&
-                    block.confidence === candidate.confidence
+                    candidate !== undefined
+                    && block.startSec === candidate.startSec
+                    && block.endSec === candidate.endSec
+                    && block.confidence === candidate.confidence
                 );
             })
         );
@@ -492,6 +501,7 @@ export class PromoDetectionStore {
      *
      * @param left - Current optional failure context.
      * @param right - Candidate optional failure context.
+     *
      * @returns Whether every safe diagnostic field is equal.
      */
     private static areFailureContextsEqual(
@@ -502,13 +512,13 @@ export class PromoDetectionStore {
             return left === right;
         }
         return (
-            left.code === right.code &&
-            left.supportId === right.supportId &&
-            left.retryAfterSec === right.retryAfterSec &&
-            left.apiVersion === right.apiVersion &&
-            left.algorithmVersion === right.algorithmVersion &&
-            left.extensionVersion === right.extensionVersion &&
-            left.supportIssueBaseUrl === right.supportIssueBaseUrl
+            left.code === right.code
+            && left.supportId === right.supportId
+            && left.retryAfterSec === right.retryAfterSec
+            && left.apiVersion === right.apiVersion
+            && left.algorithmVersion === right.algorithmVersion
+            && left.extensionVersion === right.extensionVersion
+            && left.supportIssueBaseUrl === right.supportIssueBaseUrl
         );
     }
 
@@ -516,15 +526,13 @@ export class PromoDetectionStore {
      * Moves the current identity to the stale set before route replacement.
      *
      * @param tabId - Browser tab whose active Server session ends.
-     * @returns Nothing.
      */
     private static retireActiveSession(tabId: number): void {
         const active = PromoDetectionStore.activeServerSession.get(tabId);
         if (active === undefined) {
             return;
         }
-        const retired =
-            PromoDetectionStore.retiredServerSessions.get(tabId) ?? new Set();
+        const retired = PromoDetectionStore.retiredServerSessions.get(tabId) ?? new Set();
         retired.add(active);
         if (retired.size > MAX_RETIRED_SERVER_SESSIONS_PER_TAB) {
             const oldest = retired.values().next().value;

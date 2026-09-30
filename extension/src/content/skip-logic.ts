@@ -1,3 +1,8 @@
+/**
+ * @file Legacy fixed-window (30s-60s) skip decision logic, kept alongside the
+ * promo-detection skip logic for videos without a usable transcript.
+ */
+
 import { SKIP_END_SEC, SKIP_START_SEC } from '@/shared/constants';
 
 /**
@@ -8,8 +13,7 @@ export const MAX_PLAYBACK_DELTA_SEC = 2.75;
 /**
  * Result of the legacy fixed-window skip decision.
  */
-export type SkipDecision =
-    | { action: 'none' }
+export type SkipDecision = | { action: 'none' }
     | { action: 'skip'; targetTime: number };
 
 /**
@@ -17,6 +21,7 @@ export type SkipDecision =
  * not run.
  *
  * @param duration Media duration in seconds.
+ *
  * @returns Seek target seconds, or `null` when skipping does not apply.
  */
 export function computeSkipTarget(duration: number): number | null {
@@ -32,30 +37,58 @@ export function computeSkipTarget(duration: number): number | null {
 /**
  * Playback state needed to decide whether fixed-window skip should fire.
  */
-export type ShouldFireSkipInput = {
+export interface ShouldFireSkipInput {
+    /**
+     * Media time in seconds at the previous `timeupdate`.
+     */
     prevTime: number;
+
+    /**
+     * Media time in seconds at the current `timeupdate`.
+     */
     currentTime: number;
+
+    /**
+     * Whether the fixed-window skip already fired for this playback.
+     */
     skipFired: boolean;
+
+    /**
+     * Whether fixed-window skip is enabled for this video/session.
+     */
     enabled: boolean;
+
+    /**
+     * Media duration in seconds.
+     */
     duration: number;
+
     /**
      * True while the browser is seeking (user scrub or programmatic seek).
      */
     isSeeking: boolean;
-};
+}
 
 /**
  * Decide whether to fire the one-time 30→60 skip when crossing SKIP_START_SEC
  * during playback.
  *
  * @param input Previous/current time, duration, enabled flag, and seek state.
+ *
  * @returns Whether to skip and the target time, or no action.
  */
 export function evaluateSkipOnTimeUpdate(
     input: ShouldFireSkipInput,
 ): SkipDecision {
-    const { prevTime, currentTime, skipFired, enabled, duration, isSeeking } =
-        input;
+    const {
+
+        prevTime,
+        currentTime,
+        skipFired,
+        enabled,
+        duration,
+        isSeeking,
+    } = input;
 
     if (!enabled || skipFired) {
         return { action: 'none' };
@@ -70,10 +103,9 @@ export function evaluateSkipOnTimeUpdate(
         return { action: 'none' };
     }
 
-    const crossed =
-        prevTime < SKIP_START_SEC &&
-        currentTime >= SKIP_START_SEC &&
-        currentTime < SKIP_END_SEC + 0.001;
+    const crossed = prevTime < SKIP_START_SEC
+        && currentTime >= SKIP_START_SEC
+        && currentTime < SKIP_END_SEC + 0.001;
 
     if (!crossed) {
         return { action: 'none' };

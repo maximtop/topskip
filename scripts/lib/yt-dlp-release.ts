@@ -1,12 +1,23 @@
+/**
+ * @file Resolves and verifies the pinned yt-dlp standalone binary used by repository tooling.
+ */
+
 import { createHash } from 'node:crypto';
 
 /**
  * Describes a verified standalone artifact from the pinned nightly release.
  */
-export type YtDlpReleaseAsset = {
+export interface YtDlpReleaseAsset {
+    /**
+     * Name of the release asset as published on the yt-dlp nightly builds repository.
+     */
     assetName: string;
+
+    /**
+     * Expected SHA-256 digest (lowercase hex) of the downloaded asset.
+     */
     sha256: string;
-};
+}
 
 /**
  * Pinned upstream build keeps bootstrap installs reproducible in CI.
@@ -32,7 +43,10 @@ const LINUX_X64_ASSET: YtDlpReleaseAsset = {
  *
  * @param platform - Node platform identifier.
  * @param architecture - Node architecture identifier.
+ *
  * @returns Pinned asset name and expected digest.
+ *
+ * @throws {Error} When the platform/architecture pair has no managed yt-dlp binary.
  */
 export function selectYtDlpReleaseAsset(
     platform: NodeJS.Platform,
@@ -55,6 +69,7 @@ export function selectYtDlpReleaseAsset(
  *
  * @param contents - Downloaded release artifact.
  * @param expectedSha256 - Trusted digest stored in this repository.
+ *
  * @returns Whether the artifact matches the pinned digest.
  */
 export function verifyYtDlpAssetChecksum(

@@ -1,17 +1,3 @@
-import * as v from 'valibot';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { BackendApiProtection } from '@topskip/backend/api-protection';
-import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
-import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
-import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
-import { BackendPublicState } from '@topskip/backend/public-state';
-import { BACKEND_CAPTION_SOURCE } from '@topskip/backend/server-config';
-import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
-import {
-    transcriptArtifactSchema,
-    type TranscriptArtifact,
-} from '@topskip/backend/extraction/subtitle-extraction-types';
 import {
     CaptionTranscriptCanonicalizer,
     MAX_TRANSCRIPT_CHARACTER_COUNT,
@@ -21,6 +7,28 @@ import {
     SERVER_ANALYSIS_ALGORITHM_VERSION,
     type ServerAnalysisRequest,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
+import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
+import { BackendAnalysisJobs } from '@topskip/backend/analysis-jobs';
+import { BackendApiProtection } from '@topskip/backend/api-protection';
+import {
+    transcriptArtifactSchema,
+    type TranscriptArtifact,
+} from '@topskip/backend/extraction/subtitle-extraction-types';
+import { BackendPublicState } from '@topskip/backend/public-state';
+import { BACKEND_CAPTION_SOURCE } from '@topskip/backend/server-config';
+import { TranscriptFingerprint } from '@topskip/backend/transcript-fingerprint';
 
 const TEST_NOW_MS = 1_900_000_000_000;
 const PRIMARY_VIDEO_ID = 'dQw4w9WgXcQ';
@@ -102,8 +110,8 @@ describe('BackendAnalysisApi', () => {
             .spyOn(BackendAnalysisJobs, 'start')
             .mockImplementation((input) => {
                 if (
-                    !('source' in input) ||
-                    input.source !== 'extension_upload'
+                    !('source' in input)
+                    || input.source !== 'extension_upload'
                 ) {
                     throw new Error('Expected an upload job.');
                 }
@@ -124,10 +132,10 @@ describe('BackendAnalysisApi', () => {
             const lookup = exactLookup.mock.calls.at(-1)?.[0];
             const startInput = start.mock.calls.at(-1)?.[0];
             if (
-                lookup === undefined ||
-                startInput === undefined ||
-                !('source' in startInput) ||
-                startInput.source !== 'extension_upload'
+                lookup === undefined
+                || startInput === undefined
+                || !('source' in startInput)
+                || startInput.source !== 'extension_upload'
             ) {
                 throw new Error('Expected exact upload orchestration.');
             }
@@ -355,9 +363,9 @@ describe('BackendAnalysisApi', () => {
         );
         expect(initial.statusCode).toBe(202);
         if (
-            initial.body.status !== 'processing' ||
-            !('languageCode' in initial.body) ||
-            !('transcriptHash' in initial.body)
+            initial.body.status !== 'processing'
+            || !('languageCode' in initial.body)
+            || !('transcriptHash' in initial.body)
         ) {
             throw new Error('Expected processing response.');
         }
@@ -388,11 +396,10 @@ describe('BackendAnalysisApi', () => {
         });
 
         BackendAnalysisJobs.resetForTests();
-        const cachedWithDifferentHint =
-            BackendAnalysisApi.handleAnalysisRequest(
-                buildUploadRequest({ durationSec: 10_000 }),
-                { nowMs: TEST_NOW_MS + 1 },
-            );
+        const cachedWithDifferentHint = BackendAnalysisApi.handleAnalysisRequest(
+            buildUploadRequest({ durationSec: 10_000 }),
+            { nowMs: TEST_NOW_MS + 1 },
+        );
         expect(cachedWithDifferentHint).toMatchObject({
             statusCode: 200,
             body: { ...identity },
@@ -400,11 +407,12 @@ describe('BackendAnalysisApi', () => {
     });
 
     it('returns an identified rate failure without starting a third cold job', () => {
-        const submit = (videoId: string, nowMs: number) =>
-            BackendAnalysisApi.handleAnalysisRequest(
+        const submit = (videoId: string, nowMs: number) => {
+            return BackendAnalysisApi.handleAnalysisRequest(
                 buildUploadRequest({ videoId }),
                 { nowMs },
             );
+        };
         expect(submit(PRIMARY_VIDEO_ID, TEST_NOW_MS).statusCode).toBe(202);
         expect(submit(SECONDARY_VIDEO_ID, TEST_NOW_MS + 1).statusCode).toBe(
             202,

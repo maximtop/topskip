@@ -1,5 +1,18 @@
+/**
+ * @file SQLite-backed persistence for public-server credentials, quotas, model
+ * spend budgets, and retained failure records, isolated from the transcript
+ * analysis artifact schema owned elsewhere.
+ */
+
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, rmSync, statfsSync } from 'node:fs';
+import {
+
+    chmodSync,
+    existsSync,
+    mkdirSync,
+    rmSync,
+    statfsSync,
+} from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -37,64 +50,125 @@ const INCREMENTAL_VACUUM_PAGE_COUNT = 256;
 /**
  * Successful anonymous credential issuance returns the raw token only to its caller.
  */
-type InstallationRegistrationSuccess = {
+interface InstallationRegistrationSuccess {
+    /**
+     * Discriminant confirming registration succeeded.
+     */
     ok: true;
+
+    /**
+     * Raw bearer credential returned once to the extension and never persisted.
+     */
     token: string;
+
+    /**
+     * SHA-256 hash of `token`, the value actually stored and matched against.
+     */
     installationHash: string;
+
+    /**
+     * Unix epoch milliseconds after which the credential is no longer valid.
+     */
     expiresAtMs: number;
-};
+}
 
 /**
  * Registration denials expose only bounded retry metadata.
  */
-type InstallationRegistrationFailure = {
+interface InstallationRegistrationFailure {
+    /**
+     * Discriminant confirming registration was denied.
+     */
     ok: false;
+
+    /**
+     * Whole seconds the caller must wait before the IP registration quota resets.
+     */
     retryAfterSec: number;
-};
+}
 
 /**
  * Installation registration result keeps raw credentials out of persistence.
  */
-export type InstallationRegistrationResult =
-    | InstallationRegistrationSuccess
+export type InstallationRegistrationResult = | InstallationRegistrationSuccess
     | InstallationRegistrationFailure;
 
 /**
  * Successful auth resolves the stored credential hash used for ownership and quotas.
  */
-export type InstallationAuthenticationResult =
-    | { ok: true; installationHash: string }
+export type InstallationAuthenticationResult = | { ok: true; installationHash: string }
     | { ok: false; code: 'token_invalid' | 'token_expired' };
 
 /**
  * Quota decisions are retryable without exposing counter internals.
  */
-export type PublicQuotaDecision =
-    | { allowed: true }
+export type PublicQuotaDecision = | { allowed: true }
     | { allowed: false; retryAfterSec: number };
 
 /**
  * Reservations prevent parallel model calls from overspending a shared period.
  */
-export type ModelBudgetReservation = {
+export interface ModelBudgetReservation {
+    /**
+     * Opaque identity used to settle or expire this reservation later.
+     */
     reservationId: string;
+
+    /**
+     * USD amount held against both the daily and monthly budgets.
+     */
     reservedUsd: number;
-};
+}
 
 /**
  * Safe retained failures correlate user reports without retaining provider details.
  */
-export type RetainedPublicFailure = {
+export interface RetainedPublicFailure {
+    /**
+     * Opaque identity returned to the extension so a user can reference this failure in support.
+     */
     supportId: string;
+
+    /**
+     * Stable failure classification, safe to retain and display.
+     */
     code: string;
+
+    /**
+     * YouTube video identity, when the failure is tied to one; absent for account-level failures.
+     */
     videoId?: string;
+
+    /**
+     * Analysis job identity, when the failure is tied to one; absent otherwise.
+     */
     jobId?: string;
+
+    /**
+     * Server API contract version in effect when the failure was recorded.
+     */
     apiVersion: number;
+
+    /**
+     * Promo-detection algorithm version in effect when the failure was recorded.
+     */
     algorithmVersion: string;
+
+    /**
+     * Extension version that reported the failure, when known.
+     */
     extensionVersion?: string;
+
+    /**
+     * Unix epoch milliseconds when the failure was recorded.
+     */
     createdAtMs: number;
+
+    /**
+     * Unix epoch milliseconds after which the retained record is pruned.
+     */
     expiresAtMs: number;
-};
+}
 
 /**
  * Legacy rows may predate safe version retention while new writes always carry server versions.
@@ -133,6 +207,8 @@ export class BackendPublicState {
 
     /**
      * Opens and probes production persistence before the HTTP listener becomes healthy.
+     *
+     * @throws {Error} When the database cannot be opened or the probe update fails.
      */
     static assertReady(): void {
         const database = BackendPublicState.getDatabase();
@@ -152,7 +228,12 @@ export class BackendPublicState {
      * Issues a random installation credential after enforcing the IP registration quota.
      *
      * @param input - HMAC IP identity and deterministic registration timestamp.
+     * @param input.ipHash - HMAC hash of the caller's IP address.
+     * @param input.nowMs - Deterministic registration timestamp in Unix epoch milliseconds.
+     *
      * @returns Raw one-time credential or retry metadata.
+     *
+     * @throws {Error} When the underlying database transaction fails.
      */
     static registerInstallation(input: {
         ipHash: string;
@@ -201,7 +282,13 @@ export class BackendPublicState {
                 nowMs: input.nowMs,
             });
             database.exec('COMMIT');
-            return { ok: true, token, installationHash, expiresAtMs };
+            return {
+
+                ok: true,
+                token,
+                installationHash,
+                expiresAtMs,
+            };
         } catch (error) {
             BackendPublicState.rollbackSafely(database);
             throw error;
@@ -212,6 +299,9 @@ export class BackendPublicState {
      * Resolves a bearer credential to its hash without ever storing the raw token.
      *
      * @param input - Raw credential and deterministic auth timestamp.
+     * @param input.token - Raw bearer credential presented by the extension.
+     * @param input.nowMs - Deterministic timestamp in Unix epoch milliseconds used for expiry.
+     *
      * @returns Authenticated installation identity or a stable failure code.
      */
     static authenticateInstallation(input: {
@@ -241,6 +331,9 @@ export class BackendPublicState {
      * Applies the minute-level request ceiling to all authenticated analysis traffic.
      *
      * @param input - Installation identity and request timestamp.
+     * @param input.installationHash - Hash of the authenticated installation's credential.
+     * @param input.nowMs - Deterministic request timestamp in Unix epoch milliseconds.
+     *
      * @returns Allow or bounded retry decision.
      */
     static consumeAuthenticatedRequest(input: {
@@ -261,7 +354,13 @@ export class BackendPublicState {
      * Atomically spends both installation and IP cold-work quota only after cache/join misses.
      *
      * @param input - Hashed installation/IP identities and cold-start timestamp.
+     * @param input.installationHash - Hash of the requesting installation's credential.
+     * @param input.ipHash - HMAC hash of the caller's IP address.
+     * @param input.nowMs - Deterministic cold-start timestamp in Unix epoch milliseconds.
+     *
      * @returns Allow or the longest relevant retry delay.
+     *
+     * @throws {Error} When the underlying database transaction fails.
      */
     static consumeColdJobQuota(input: {
         installationHash: string;
@@ -301,22 +400,19 @@ export class BackendPublicState {
         try {
             const retryDelays = checks
                 .filter(
-                    (check) =>
-                        BackendPublicState.countEvents(database, {
-                            kind: check.kind,
-                            subjectHash: check.subjectHash,
-                            sinceMs: input.nowMs - check.windowMs,
-                        }) >= check.limit,
-                )
-                .map((check) =>
-                    BackendPublicState.retryAfterOldestEvent(database, {
+                    (check) => BackendPublicState.countEvents(database, {
                         kind: check.kind,
                         subjectHash: check.subjectHash,
                         sinceMs: input.nowMs - check.windowMs,
-                        windowMs: check.windowMs,
-                        nowMs: input.nowMs,
-                    }),
-                );
+                    }) >= check.limit,
+                )
+                .map((check) => BackendPublicState.retryAfterOldestEvent(database, {
+                    kind: check.kind,
+                    subjectHash: check.subjectHash,
+                    sinceMs: input.nowMs - check.windowMs,
+                    windowMs: check.windowMs,
+                    nowMs: input.nowMs,
+                }));
             if (retryDelays.length > 0) {
                 database.exec('ROLLBACK');
                 return {
@@ -347,7 +443,11 @@ export class BackendPublicState {
      * Reserves provider spend in both current UTC periods before a model call begins.
      *
      * @param input - Deterministic reservation timestamp.
+     * @param input.nowMs - Deterministic reservation timestamp in Unix epoch milliseconds.
+     *
      * @returns Reservation identity, or `null` when either budget is exhausted.
+     *
+     * @throws {Error} When the underlying database transaction fails.
      */
     static reserveModelBudget(input: {
         nowMs: number;
@@ -366,10 +466,10 @@ export class BackendPublicState {
                 periods.month,
             );
             if (
-                daily.spentUsd + daily.reservedUsd + MODEL_RESERVATION_USD >
-                    MODEL_DAILY_BUDGET_USD ||
-                monthly.spentUsd + monthly.reservedUsd + MODEL_RESERVATION_USD >
-                    MODEL_MONTHLY_BUDGET_USD
+                daily.spentUsd + daily.reservedUsd + MODEL_RESERVATION_USD
+                    > MODEL_DAILY_BUDGET_USD
+                || monthly.spentUsd + monthly.reservedUsd + MODEL_RESERVATION_USD
+                    > MODEL_MONTHLY_BUDGET_USD
             ) {
                 database.exec('ROLLBACK');
                 return null;
@@ -414,10 +514,14 @@ export class BackendPublicState {
      * Converts one reservation into reported spend or the conservative full reserve.
      *
      * @param input - Reservation identity and optional validated provider cost.
+     * @param input.reservationId - Identity returned by {@link BackendPublicState.reserveModelBudget}.
+     * @param input.costUsd - Provider-reported cost; falls back to the full reservation when absent or invalid.
+     *
+     * @throws {Error} When the stored reservation row is missing its day/month key or amount.
      */
     static settleModelBudget(input: {
         reservationId: string;
-        costUsd?: number;
+        costUsd?: number | undefined;
     }): void {
         const database = BackendPublicState.getDatabase();
         database.exec('BEGIN IMMEDIATE');
@@ -442,12 +546,11 @@ export class BackendPublicState {
             if (dayKey === null || monthKey === null || reservedUsd === null) {
                 throw new Error('Invalid model budget reservation.');
             }
-            const costUsd =
-                input.costUsd !== undefined &&
-                Number.isFinite(input.costUsd) &&
-                input.costUsd >= 0
-                    ? input.costUsd
-                    : reservedUsd;
+            const costUsd = input.costUsd !== undefined
+                && Number.isFinite(input.costUsd)
+                && input.costUsd >= 0
+                ? input.costUsd
+                : reservedUsd;
             BackendPublicState.settleBudgetPeriod(
                 database,
                 dayKey,
@@ -476,6 +579,8 @@ export class BackendPublicState {
      * Upserts one validated artifact without materializing unrelated transcripts.
      *
      * @param record - Validated backend artifact record from the repository boundary.
+     *
+     * @throws {Error} When `record` is missing required identity fields, or the transaction fails.
      */
     static upsertArtifact(record: unknown): void {
         const identity = BackendPublicState.readArtifactIdentity(record);
@@ -525,6 +630,10 @@ export class BackendPublicState {
      * Queries only one video's retained rows, optionally constrained to one algorithm.
      *
      * @param input - Indexed artifact identity and deterministic read timestamp.
+     * @param input.videoId - YouTube video identity to look up.
+     * @param input.algorithmVersion - Optional promo-detection algorithm version filter.
+     * @param input.nowMs - Deterministic read timestamp; defaults to `Date.now()` when absent.
+     *
      * @returns Parsed unknown payloads for validation by the artifact repository.
      */
     static findArtifacts(input: {
@@ -535,26 +644,25 @@ export class BackendPublicState {
         const nowMs = input.nowMs ?? Date.now();
         BackendPublicState.runHousekeeping(nowMs);
         const database = BackendPublicState.getDatabase();
-        const rows =
-            input.algorithmVersion === undefined
-                ? database
-                        .prepare(
-                            `SELECT payload_json
+        const rows = input.algorithmVersion === undefined
+            ? database
+                .prepare(
+                    `SELECT payload_json
                            FROM analysis_artifacts
                            WHERE video_id = ? AND expires_at_ms > ?
                            ORDER BY completed_at_ms ASC`,
-                        )
-                        .all(input.videoId, nowMs)
-                : database
-                        .prepare(
-                            `SELECT payload_json
+                )
+                .all(input.videoId, nowMs)
+            : database
+                .prepare(
+                    `SELECT payload_json
                            FROM analysis_artifacts
                            WHERE video_id = ?
                              AND algorithm_version = ?
                              AND expires_at_ms > ?
                            ORDER BY completed_at_ms ASC`,
-                        )
-                        .all(input.videoId, input.algorithmVersion, nowMs);
+                )
+                .all(input.videoId, input.algorithmVersion, nowMs);
         return rows.flatMap((row) => {
             const payload = BackendPublicState.readString(row, 'payload_json');
             if (payload === null) {
@@ -572,6 +680,12 @@ export class BackendPublicState {
      * Queries only rows matching the authoritative uploaded-caption identity.
      *
      * @param input - Exact indexed identity and deterministic read timestamp.
+     * @param input.videoId - YouTube video identity to look up.
+     * @param input.algorithmVersion - Promo-detection algorithm version to match exactly.
+     * @param input.languageCode - Caption language code to match exactly.
+     * @param input.transcriptHash - Hash of the uploaded transcript to match exactly.
+     * @param input.nowMs - Deterministic read timestamp; defaults to `Date.now()` when absent.
+     *
      * @returns Parsed unknown payloads for validation by the artifact repository.
      */
     static findArtifactsExact(input: {
@@ -727,6 +841,7 @@ export class BackendPublicState {
      * Reads one retained support record for persistence tests.
      *
      * @param supportId - Opaque returned support identity.
+     *
      * @returns Safe retained metadata, or `null` when absent.
      */
     static findFailureForTests(
@@ -761,10 +876,10 @@ export class BackendPublicState {
             expiresAtMs: BackendPublicState.readNumber(row, 'expires_at_ms'),
         };
         if (
-            read.supportId === null ||
-            read.code === null ||
-            read.createdAtMs === null ||
-            read.expiresAtMs === null
+            read.supportId === null
+            || read.code === null
+            || read.createdAtMs === null
+            || read.expiresAtMs === null
         ) {
             return null;
         }
@@ -797,8 +912,7 @@ export class BackendPublicState {
             return BackendPublicState.database;
         }
         const path = BackendPublicState.resolveDatabasePath();
-        const databaseFileExists =
-            path !== SQLITE_MEMORY_PATH && existsSync(path);
+        const databaseFileExists = path !== SQLITE_MEMORY_PATH && existsSync(path);
         if (path !== SQLITE_MEMORY_PATH) {
             mkdirSync(dirname(path), {
                 recursive: true,
@@ -812,9 +926,9 @@ export class BackendPublicState {
         );
         if (path !== SQLITE_MEMORY_PATH) {
             if (
-                databaseFileExists &&
-                BackendPublicState.readPragmaNumber(database, 'auto_vacuum') !==
-                    2
+                databaseFileExists
+                && BackendPublicState.readPragmaNumber(database, 'auto_vacuum')
+                    !== 2
             ) {
                 database.exec('PRAGMA auto_vacuum = INCREMENTAL; VACUUM;');
             }
@@ -833,15 +947,15 @@ export class BackendPublicState {
      */
     private static resolveDatabasePath(): string {
         if (
-            BackendPublicState.databasePathForTests === null &&
-            (process.env.VITEST === 'true' || process.env.VITEST === '1')
+            BackendPublicState.databasePathForTests === null
+            && (process.env.VITEST === 'true' || process.env.VITEST === '1')
         ) {
             return SQLITE_MEMORY_PATH;
         }
         return (
-            BackendPublicState.databasePathForTests ??
-            process.env[DATABASE_PATH_ENVIRONMENT_VARIABLE] ??
-            join(
+            BackendPublicState.databasePathForTests
+            ?? process.env[DATABASE_PATH_ENVIRONMENT_VARIABLE]
+            ?? join(
                 process.cwd(),
                 DEFAULT_DATABASE_DIRECTORY,
                 DEFAULT_DATABASE_FILE_NAME,
@@ -983,8 +1097,7 @@ export class BackendPublicState {
             .prepare('PRAGMA table_info(analysis_failures)')
             .all()
             .some(
-                (row) =>
-                    BackendPublicState.readString(row, 'name') === columnName,
+                (row) => BackendPublicState.readString(row, 'name') === columnName,
             );
         if (exists) {
             return;
@@ -1008,8 +1121,7 @@ export class BackendPublicState {
             .prepare('PRAGMA table_info(analysis_artifacts)')
             .all()
             .some(
-                (row) =>
-                    BackendPublicState.readString(row, 'name') === columnName,
+                (row) => BackendPublicState.readString(row, 'name') === columnName,
             );
         if (exists) {
             return;
@@ -1023,7 +1135,15 @@ export class BackendPublicState {
      * Applies one sliding-window quota in a short write transaction.
      *
      * @param input - Quota identity, window, limit, and timestamp.
+     * @param input.kind - Stable quota category identifier.
+     * @param input.subjectHash - Hashed identity being throttled.
+     * @param input.nowMs - Deterministic request timestamp in Unix epoch milliseconds.
+     * @param input.windowMs - Sliding window length in milliseconds.
+     * @param input.limit - Maximum allowed events inside the window.
+     *
      * @returns Allow or retry decision.
+     *
+     * @throws {Error} When the underlying database transaction fails.
      */
     private static consumeSingleQuota(input: {
         kind: string;
@@ -1063,6 +1183,10 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param input - Event identity and inclusive lower timestamp.
+     * @param input.kind - Stable quota category identifier.
+     * @param input.subjectHash - Hashed identity being counted.
+     * @param input.sinceMs - Exclusive lower bound; only events strictly after this count.
+     *
      * @returns Number of matching events.
      */
     private static countEvents(
@@ -1084,6 +1208,9 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param input - Stable event kind, hashed identity, and timestamp.
+     * @param input.kind - Stable quota category identifier.
+     * @param input.subjectHash - Hashed identity the event belongs to.
+     * @param input.nowMs - Event timestamp in Unix epoch milliseconds.
      */
     private static insertEvent(
         database: DatabaseSync,
@@ -1102,6 +1229,12 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param input - Event/window identity and current timestamp.
+     * @param input.kind - Stable quota category identifier.
+     * @param input.subjectHash - Hashed identity being throttled.
+     * @param input.sinceMs - Exclusive lower bound of the sliding window.
+     * @param input.windowMs - Sliding window length in milliseconds.
+     * @param input.nowMs - Deterministic current timestamp in Unix epoch milliseconds.
+     *
      * @returns Positive whole-second retry delay.
      */
     private static retryAfterOldestEvent(
@@ -1121,8 +1254,7 @@ export class BackendPublicState {
                  WHERE event_kind = ? AND subject_hash = ? AND created_at_ms > ?`,
             )
             .get(input.kind, input.subjectHash, input.sinceMs);
-        const oldestAtMs =
-            BackendPublicState.readNumber(row, 'oldest_at_ms') ?? input.nowMs;
+        const oldestAtMs = BackendPublicState.readNumber(row, 'oldest_at_ms') ?? input.nowMs;
         return Math.max(
             1,
             Math.ceil(
@@ -1136,6 +1268,7 @@ export class BackendPublicState {
      *
      * @param database - Active transaction connection.
      * @param periodKey - UTC day or month key.
+     *
      * @returns Current period accounting.
      */
     private static readBudgetPeriod(
@@ -1212,6 +1345,7 @@ export class BackendPublicState {
      * Produces deterministic UTC keys independent of the server timezone.
      *
      * @param nowMs - Timestamp to bucket.
+     *
      * @returns Day and month keys.
      */
     private static periodKeys(nowMs: number): { day: string; month: string } {
@@ -1226,7 +1360,10 @@ export class BackendPublicState {
      * Extracts bounded artifact identity before a JSON payload enters SQLite.
      *
      * @param record - Validated artifact record from its owning repository.
+     *
      * @returns Indexed artifact fields.
+     *
+     * @throws {Error} When `record` is not an object, or is missing a required identity field.
      */
     private static readArtifactIdentity(record: unknown): {
         recordId: string;
@@ -1262,10 +1399,10 @@ export class BackendPublicState {
         );
         const sourceType = BackendPublicState.readString(video, 'sourceType');
         if (
-            recordId === null ||
-            videoId === null ||
-            algorithmVersion === null ||
-            completedAtMs === null
+            recordId === null
+            || videoId === null
+            || algorithmVersion === null
+            || completedAtMs === null
         ) {
             throw new Error('Invalid artifact record.');
         }
@@ -1301,8 +1438,7 @@ export class BackendPublicState {
                 'SELECT COUNT(*) AS artifact_count FROM analysis_artifacts',
             )
             .get();
-        const artifactCount =
-            BackendPublicState.readNumber(row, 'artifact_count') ?? 0;
+        const artifactCount = BackendPublicState.readNumber(row, 'artifact_count') ?? 0;
         const excessCount = Math.max(0, artifactCount - artifactLimit);
         if (excessCount === 0) {
             return;
@@ -1344,6 +1480,7 @@ export class BackendPublicState {
      *
      * @param database - Open SQLite connection.
      * @param pragmaName - Hard-coded PRAGMA identifier selected by this module.
+     *
      * @returns Numeric PRAGMA value, or `null` when unavailable.
      */
     private static readPragmaNumber(
@@ -1379,6 +1516,7 @@ export class BackendPublicState {
      * Hashes bearer credentials into a fixed-length database identity.
      *
      * @param token - Raw installation credential held by the extension.
+     *
      * @returns Lowercase SHA-256 digest.
      */
     private static hashToken(token: string): string {
@@ -1390,6 +1528,7 @@ export class BackendPublicState {
      *
      * @param row - Unknown query result.
      * @param key - Allow-listed numeric column.
+     *
      * @returns Finite number or `null`.
      */
     private static readNumber(row: unknown, key: string): number | null {
@@ -1407,6 +1546,7 @@ export class BackendPublicState {
      *
      * @param row - Unknown query/object result.
      * @param key - Allow-listed string field.
+     *
      * @returns String or `null`.
      */
     private static readString(row: unknown, key: string): string | null {
@@ -1447,13 +1587,15 @@ export class BackendPublicState {
      * Bounds event/history growth and conservatively settles model reservations left by crashes.
      *
      * @param nowMs - Current request timestamp used for retention cutoffs.
+     *
+     * @throws {Error} When the underlying database transaction fails.
      */
     private static runHousekeeping(nowMs: number): void {
         if (
-            BackendPublicState.lastHousekeepingAtMs !== 0 &&
-            nowMs >= BackendPublicState.lastHousekeepingAtMs &&
-            nowMs - BackendPublicState.lastHousekeepingAtMs <
-                HOUSEKEEPING_INTERVAL_MS
+            BackendPublicState.lastHousekeepingAtMs !== 0
+            && nowMs >= BackendPublicState.lastHousekeepingAtMs
+            && nowMs - BackendPublicState.lastHousekeepingAtMs
+                < HOUSEKEEPING_INTERVAL_MS
         ) {
             return;
         }
@@ -1482,30 +1624,29 @@ export class BackendPublicState {
                     'reserved_usd',
                 );
                 if (
-                    reservationId === null ||
-                    dayKey === null ||
-                    monthKey === null ||
-                    reservedUsd === null
+                    reservationId !== null
+                    && dayKey !== null
+                    && monthKey !== null
+                    && reservedUsd !== null
                 ) {
-                    continue;
+                    BackendPublicState.settleBudgetPeriod(
+                        database,
+                        dayKey,
+                        reservedUsd,
+                        reservedUsd,
+                    );
+                    BackendPublicState.settleBudgetPeriod(
+                        database,
+                        monthKey,
+                        reservedUsd,
+                        reservedUsd,
+                    );
+                    database
+                        .prepare(
+                            'DELETE FROM model_budget_reservations WHERE reservation_id = ?',
+                        )
+                        .run(reservationId);
                 }
-                BackendPublicState.settleBudgetPeriod(
-                    database,
-                    dayKey,
-                    reservedUsd,
-                    reservedUsd,
-                );
-                BackendPublicState.settleBudgetPeriod(
-                    database,
-                    monthKey,
-                    reservedUsd,
-                    reservedUsd,
-                );
-                database
-                    .prepare(
-                        'DELETE FROM model_budget_reservations WHERE reservation_id = ?',
-                    )
-                    .run(reservationId);
             }
             database
                 .prepare('DELETE FROM quota_events WHERE created_at_ms <= ?')

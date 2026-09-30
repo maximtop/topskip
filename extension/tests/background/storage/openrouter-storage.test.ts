@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { STORAGE_KEY_OPENROUTER } from '@/shared/constants';

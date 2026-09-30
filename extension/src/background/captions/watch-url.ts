@@ -1,3 +1,7 @@
+/**
+ * @file Parses the YouTube watch-page video id out of a navigation URL.
+ */
+
 import { YOUTUBE_WATCH_VIDEO_ID_PARAM } from '@/shared/constants';
 
 /**
@@ -5,13 +9,13 @@ import { YOUTUBE_WATCH_VIDEO_ID_PARAM } from '@/shared/constants';
  * Ignores Shorts, embeds, and non-watch paths.
  *
  * @param urlString Full URL (e.g. from `window.location` or messaging).
+ *
  * @returns The video id, or `null` when not a standard watch URL.
  */
 export function videoIdFromYoutubeWatchUrl(urlString: string): string | null {
     try {
         const u = new URL(urlString);
-        const hostOk =
-            u.hostname === 'www.youtube.com' || u.hostname === 'm.youtube.com';
+        const hostOk = u.hostname === 'www.youtube.com' || u.hostname === 'm.youtube.com';
         if (!hostOk) {
             return null;
         }

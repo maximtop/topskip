@@ -1,4 +1,9 @@
 /**
+ * @file YouTube watch-page route constants shared by the manifest composer
+ * and runtime code.
+ */
+
+/**
  * Exact YouTube origin receiving the declarative TopSkip bundles.
  */
 export const YOUTUBE_ORIGIN = 'https://www.youtube.com';
@@ -24,10 +29,9 @@ export const YOUTUBE_WATCH_VIDEO_ID_PARAM = 'v';
  * manifest composition reads it from `extension/build-modes.ts` instead. The
  * `typeof` guard keeps this module importable by that Node-side tooling.
  */
-export const DEV_E2E_ORIGIN: string | null =
-    typeof __TOPSKIP_DEV_E2E_ORIGIN__ === 'undefined'
-        ? null
-        : __TOPSKIP_DEV_E2E_ORIGIN__;
+export const DEV_E2E_ORIGIN: string | null = typeof TOPSKIP_DEV_E2E_ORIGIN === 'undefined'
+    ? null
+    : TOPSKIP_DEV_E2E_ORIGIN;
 
 /**
  * Stable synthetic identity used by the local fixture page.
@@ -38,6 +42,7 @@ export const DEV_E2E_FIXTURE_VIDEO_ID = 'e2eFixture1';
  * Recognizes only origins that receive the declarative isolated bundle.
  *
  * @param input - Absolute document URL supplied by the browser.
+ *
  * @returns Whether the document belongs to a statically matched origin.
  */
 export function isTopSkipContentDocumentUrl(input: string | URL): boolean {
@@ -58,6 +63,7 @@ export function isTopSkipContentDocumentUrl(input: string | URL): boolean {
  * same strict origin policy can be reused by every extension context.
  *
  * @param input - Absolute candidate URL.
+ *
  * @returns Current watch video identity, or `null` outside supported routes.
  */
 export function getWatchVideoIdFromUrl(input: string | URL): string | null {
@@ -73,8 +79,7 @@ export function getWatchVideoIdFromUrl(input: string | URL): string | null {
     if (url.origin === DEV_E2E_ORIGIN) {
         return DEV_E2E_FIXTURE_VIDEO_ID;
     }
-    const isYouTubeWatchRoute =
-        url.origin === YOUTUBE_ORIGIN && url.pathname === YOUTUBE_WATCH_PATH;
+    const isYouTubeWatchRoute = url.origin === YOUTUBE_ORIGIN && url.pathname === YOUTUBE_WATCH_PATH;
     if (!isYouTubeWatchRoute) {
         return null;
     }

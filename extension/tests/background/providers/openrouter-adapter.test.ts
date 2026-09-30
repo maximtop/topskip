@@ -1,4 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     PROVIDER_AVAILABILITY,
@@ -35,8 +43,7 @@ vi.mock('@/shared/browser', () => ({
 }));
 
 // Must import after mock setup so vi.mock takes effect.
-const { OpenRouterAdapter } =
-    await import('@/background/providers/openrouter-adapter');
+const { OpenRouterAdapter } = await import('@/background/providers/openrouter-adapter');
 
 const baseParams: AnalyzeTranscriptParams = {
     transcript: 'videoId=abc\nlanguage=en\n\nhello world',
@@ -172,7 +179,7 @@ describe('OpenRouterAdapter', () => {
                 model: 'openai/gpt-4o',
                 signal: undefined,
                 messages: [
-                    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+
                     { role: 'system', content: expect.any(String) },
                     { role: 'user', content: baseParams.transcript },
                 ],
@@ -245,8 +252,7 @@ describe('OpenRouterAdapter', () => {
                 kind: 'http',
             });
 
-            const result =
-                await new OpenRouterAdapter().analyzeTranscript(baseParams);
+            const result = await new OpenRouterAdapter().analyzeTranscript(baseParams);
 
             expect(result).toMatchObject({
                 ok: false,

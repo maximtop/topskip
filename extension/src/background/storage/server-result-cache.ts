@@ -1,10 +1,8 @@
-import * as v from 'valibot';
+/**
+ * @file Background-owned exact-match cache for terminal server analysis
+ * results, keyed by transcript identity and indexed to avoid full scans.
+ */
 
-import browser from '@/shared/browser';
-import {
-    STORAGE_KEY_SERVER_RESULT_CACHE,
-    STORAGE_KEY_SERVER_RESULT_CACHE_INDEX,
-} from '@/shared/constants';
 import {
     noPromoResponseSchema,
     normalizedCaptionLanguageCodeSchema,
@@ -16,6 +14,13 @@ import {
     type NoPromoResponse,
     type ReadyResponse,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
+import browser from '@/shared/browser';
+import {
+    STORAGE_KEY_SERVER_RESULT_CACHE,
+    STORAGE_KEY_SERVER_RESULT_CACHE_INDEX,
+} from '@/shared/constants';
 
 const MAX_ALGORITHM_VERSION_LENGTH = 64;
 const MAX_OPAQUE_ID_LENGTH = 160;
@@ -84,12 +89,27 @@ export type ServerResultCacheEntry = v.InferOutput<
 /**
  * Exact cache lookup key excludes captions while distinguishing their digest.
  */
-export type ServerResultCacheIdentity = {
+export interface ServerResultCacheIdentity {
+    /**
+     * YouTube video id.
+     */
     videoId: string;
+
+    /**
+     * Normalized caption track language code.
+     */
     languageCode: string;
+
+    /**
+     * Server-computed hash of the canonical transcript tuple.
+     */
     transcriptHash: string;
+
+    /**
+     * Server-owned analysis algorithm version that produced the cached result.
+     */
     algorithmVersion: string;
-};
+}
 
 /**
  * Background-owned exact result cache; static API only.
@@ -99,6 +119,7 @@ export class ServerResultCacheStorage {
      * Builds the private storage key for one exact observed identity.
      *
      * @param input - Server-owned transcript identity.
+     *
      * @returns Stable browser-storage key.
      */
     private static keyFor(input: ServerResultCacheIdentity): string {
@@ -116,6 +137,7 @@ export class ServerResultCacheStorage {
      * the index forgets the row as well.
      *
      * @param key - Storage row to remove.
+     *
      * @returns Promise resolved after the repair attempt.
      */
     private static async removeInvalidEntry(key: string): Promise<void> {
@@ -140,6 +162,7 @@ export class ServerResultCacheStorage {
      * no index exists yet (installs that predate it).
      *
      * @param activeAlgorithmVersion - Server-owned algorithm currently observed.
+     *
      * @returns Promise resolved after best-effort cleanup.
      */
     static async removeOtherAlgorithmVersions(
@@ -155,10 +178,9 @@ export class ServerResultCacheStorage {
                 migrated = true;
             } else {
                 keys = indexed;
-                stored =
-                    keys.length === 0
-                        ? {}
-                        : await browser.storage.local.get(keys);
+                stored = keys.length === 0
+                    ? {}
+                    : await browser.storage.local.get(keys);
             }
         } catch {
             return;
@@ -170,8 +192,8 @@ export class ServerResultCacheStorage {
                 Reflect.get(stored, key),
             );
             return (
-                !parsed.success ||
-                parsed.output.algorithmVersion !== activeAlgorithmVersion
+                !parsed.success
+                || parsed.output.algorithmVersion !== activeAlgorithmVersion
             );
         });
         if (obsoleteKeys.length === 0 && !migrated) {
@@ -241,6 +263,7 @@ export class ServerResultCacheStorage {
      * Reads only a fresh row whose complete server identity matches the captions.
      *
      * @param input - Exact identity and optional deterministic clock.
+     *
      * @returns Fresh exact cache entry, otherwise `null`.
      */
     static async loadExact(
@@ -268,11 +291,11 @@ export class ServerResultCacheStorage {
         const entry = parsed.output;
         const nowMs = input.nowMs ?? Date.now();
         if (
-            entry.videoId !== input.videoId ||
-            entry.languageCode !== input.languageCode ||
-            entry.transcriptHash !== input.transcriptHash ||
-            entry.algorithmVersion !== input.algorithmVersion ||
-            entry.freshness.expiresAtMs <= nowMs
+            entry.videoId !== input.videoId
+            || entry.languageCode !== input.languageCode
+            || entry.transcriptHash !== input.transcriptHash
+            || entry.algorithmVersion !== input.algorithmVersion
+            || entry.freshness.expiresAtMs <= nowMs
         ) {
             await ServerResultCacheStorage.removeInvalidEntry(key);
             return null;
@@ -285,16 +308,16 @@ export class ServerResultCacheStorage {
      *
      * @param response - Valid ready or no-promo server response.
      * @param nowMs - Local write time, injectable for tests.
+     *
      * @returns Promise resolved after the exact row is written.
      */
     static async saveTerminalResponse(
         response: ReadyResponse | NoPromoResponse,
         nowMs = Date.now(),
     ): Promise<void> {
-        const terminal =
-            response.status === 'ready'
-                ? v.parse(readyResponseSchema, response)
-                : v.parse(noPromoResponseSchema, response);
+        const terminal = response.status === 'ready'
+            ? v.parse(readyResponseSchema, response)
+            : v.parse(noPromoResponseSchema, response);
         const entry = v.parse(serverResultCacheEntrySchema, {
             status: terminal.status,
             videoId: terminal.videoId,
@@ -310,8 +333,7 @@ export class ServerResultCacheStorage {
         });
         const key = ServerResultCacheStorage.keyFor(entry);
         const indexed = await ServerResultCacheStorage.readIndexKeys();
-        const keys =
-            indexed ?? (await ServerResultCacheStorage.scanCacheRows()).keys;
+        const keys = indexed ?? (await ServerResultCacheStorage.scanCacheRows()).keys;
         await browser.storage.local.set({
             [key]: entry,
             [STORAGE_KEY_SERVER_RESULT_CACHE_INDEX]: keys.includes(key)
@@ -325,6 +347,7 @@ export class ServerResultCacheStorage {
      *
      * @param response - Valid ready server response.
      * @param nowMs - Local write time, injectable for tests.
+     *
      * @returns Promise resolved after the exact row is written.
      */
     static async saveReadyResponse(

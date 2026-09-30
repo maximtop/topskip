@@ -1,40 +1,16 @@
+/**
+ * @file Small runtime handler that doesn't warrant its own module:
+ * promo-detection status queries for the popup.
+ */
+
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import browser from '@/shared/browser';
 import { getErrorMessage } from '@/shared/error';
 import {
-    type ContentLogLevel,
     type GetDetectionStatusResponse,
     type PromoDetectionStatePayload,
 } from '@/shared/messages';
-import { LOG_PREFIX_CONTENT } from '@/shared/constants';
-
-/**
- * Handles `TOPSKIP_CONTENT_LOG` messages from the content
- * script and replays them to the service worker console.
- */
-export class ContentLogMessages {
-    /**
-     * Prints a content-script log line in the service-worker console,
-     * prefixed with the originating tab id when available.
-     *
-     * @param level - Console method to call (`info`, `warn`, or `error`).
-     * @param args - Arguments to forward verbatim to the console method.
-     * @param tabId - Tab id from the sender, or `undefined` when not present.
-     */
-    static log(
-        level: ContentLogLevel,
-        args: unknown[],
-        tabId: number | undefined,
-    ): void {
-        const tag =
-            tabId !== undefined
-                ? `[TopSkip content t${tabId}]`
-                : LOG_PREFIX_CONTENT;
-
-        console[level](tag, ...args);
-    }
-}
 
 /**
  * Handles promo detection status queries from the popup; not instantiable.
@@ -58,10 +34,22 @@ export class PromoDetectionRuntimeMessages {
             });
             const tabId = tabs[0]?.id;
             if (tabId === undefined) {
-                return { ok: true, tabId: null, state: null, debugLoggingEnabled };
+                return {
+
+                    ok: true,
+                    tabId: null,
+                    state: null,
+                    debugLoggingEnabled,
+                };
             }
             const state = PromoDetectionStore.get(tabId);
-            return { ok: true, tabId, state, debugLoggingEnabled };
+            return {
+
+                ok: true,
+                tabId,
+                state,
+                debugLoggingEnabled,
+            };
         } catch (e) {
             return { ok: false, error: getErrorMessage(e) };
         }
@@ -72,13 +60,14 @@ export class PromoDetectionRuntimeMessages {
      *
      * @param state - Detection state to store, or `null` to clear it.
      * @param tabId - Sender tab id whose popup state should be seeded.
+     *
      * @returns Ack response for the dev-only mutation.
      */
     static async handleDevSet(
         state: PromoDetectionStatePayload | null,
         tabId: number | undefined,
     ): Promise<{ ok: true } | { ok: false; error: string }> {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return {
                 ok: false,
                 error: 'Dev detection seeding is disabled.',

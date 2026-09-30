@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const storageGet = vi.fn();
 const storageSet = vi.fn();
@@ -15,8 +22,7 @@ vi.mock('@/shared/browser', () => ({
 }));
 
 const { PrefsSyncStorage } = await import('@/background/storage/prefs-sync');
-const { DEFAULT_DETECTION_MODEL_ID, CHROME_BUILTIN_MODEL_ID } =
-    await import('@/shared/detection-models');
+const { DEFAULT_DETECTION_MODEL_ID, CHROME_BUILTIN_MODEL_ID } = await import('@/shared/detection-models');
 
 describe('PrefsSyncStorage model migration', () => {
     beforeEach(() => {

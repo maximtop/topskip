@@ -1,4 +1,17 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import {
+    EXTENSION_CONTEXT_POLL_INTERVAL_MS,
+    ExtensionContextWatch,
+} from '@/content/extension-context-watch';
 
 const runtimeState = vi.hoisted(
     (): { id: string | undefined; throwOnRead: boolean } => ({
@@ -19,11 +32,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-import {
-    EXTENSION_CONTEXT_POLL_INTERVAL_MS,
-    ExtensionContextWatch,
-} from '@/content/extension-context-watch';
 
 describe('ExtensionContextWatch', () => {
     beforeEach(() => {

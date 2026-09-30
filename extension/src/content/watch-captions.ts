@@ -1,10 +1,16 @@
+/**
+ * @file Watch-page facade over `PlayerCaptionCapture`: routes real capture
+ * through the player bridge and returns a deterministic fixture on the e2e host.
+ */
+
 import { PlayerCaptionCapture } from '@/content/captions/player-caption-capture';
+import { E2E_HOST } from '@/content/page-guards';
+import { CAPTION_TRANSCRIPT_DEV_ENABLED } from '@/shared/constants';
+
 import type {
     CaptionCaptureInput,
     CaptionCaptureResult,
 } from '@/content/captions/caption-capture-types';
-import { E2E_HOST } from '@/content/page-guards';
-import { CAPTION_TRANSCRIPT_DEV_ENABLED } from '@/shared/constants';
 
 const E2E_CAPTION_LANGUAGE = 'en';
 const E2E_CAPTION_TEXT = 'TopSkip deterministic caption fixture';
@@ -43,7 +49,7 @@ export class WatchCaptions {
      * Confirms passive page hooks before player caption requests begin.
      */
     static preparePageBridge(): void {
-        if (!CAPTION_TRANSCRIPT_DEV_ENABLED || location.hostname === E2E_HOST) {
+        if (!CAPTION_TRANSCRIPT_DEV_ENABLED || globalThis.location.hostname === E2E_HOST) {
             return;
         }
         PlayerCaptionCapture.prepareBridgeForPage();
@@ -63,6 +69,7 @@ export class WatchCaptions {
      * Returns timed captions without choosing Server or Private BYOK routing.
      *
      * @param input Session-bound capture identity and cancellation signal.
+     *
      * @returns Player captions or a bounded terminal capture outcome.
      */
     static capture(
@@ -71,7 +78,7 @@ export class WatchCaptions {
         if (input.signal.aborted) {
             return Promise.resolve({ status: 'cancelled' });
         }
-        const hostname = input.hostname ?? location.hostname;
+        const hostname = input.hostname ?? globalThis.location.hostname;
         if (hostname === E2E_HOST) {
             return Promise.resolve({
                 status: 'ready',
@@ -105,7 +112,7 @@ export class WatchCaptions {
         if (!CAPTION_TRANSCRIPT_DEV_ENABLED) {
             return;
         }
-        if (videoId === null || location.hostname === E2E_HOST) {
+        if (videoId === null || globalThis.location.hostname === E2E_HOST) {
             PlayerCaptionCapture.scheduleForVideoId(null, source);
             return;
         }

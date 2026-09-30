@@ -7,6 +7,7 @@ import {
     shouldRefetchPreview,
     toDiagnosticsPhase,
 } from '@/options/diagnostics-state';
+
 import type { DebugLogStatusPayload } from '@/shared/messages';
 
 const STATUS_ON: DebugLogStatusPayload = {
@@ -19,7 +20,14 @@ const STATUS_ON: DebugLogStatusPayload = {
     capBytes: 5 * 1024 * 1024,
     evictedCount: 0,
     oldestRetainedMs: 1_755_856_800_000,
-    dropped: { incognito: 0, coalesced: 0, ceiling: 0, unreachable: 0, lost: 0 },
+    dropped: {
+
+        incognito: 0,
+        coalesced: 0,
+        ceiling: 0,
+        unreachable: 0,
+        lost: 0,
+    },
     revision: 3,
 };
 const STATUS_OFF_STORED: DebugLogStatusPayload = {

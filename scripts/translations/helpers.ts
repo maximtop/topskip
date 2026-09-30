@@ -1,3 +1,8 @@
+/**
+ * @file Shared read/write helpers and colour-coded console logging for the
+ * translation CLI scripts (`download`, `upload`, `validate`, `unused`).
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -9,10 +14,17 @@ import {
 /**
  * One entry of a Chrome `messages.json` file.
  */
-export type LocaleMessage = {
+export interface LocaleMessage {
+    /**
+     * Translated (or source) text shown to the user.
+     */
     message: string;
+
+    /**
+     * Translator-facing note explaining the message's context; not shown to users.
+     */
     description?: string;
-};
+}
 
 /**
  * Contents of a locale's `messages.json`, keyed by message name.
@@ -37,6 +49,7 @@ export const cliLog = {
     info: (str: string): void => {
         console.log(str);
     },
+
     /**
      * Prints a green line.
      *
@@ -45,6 +58,7 @@ export const cliLog = {
     success: (str: string): void => {
         console.log(`${GREEN}${str}${RESET}`);
     },
+
     /**
      * Prints a yellow line.
      *
@@ -53,6 +67,7 @@ export const cliLog = {
     warning: (str: string): void => {
         console.log(`${YELLOW}${str}${RESET}`);
     },
+
     /**
      * Prints a bold red line.
      *
@@ -67,6 +82,7 @@ export const cliLog = {
  * Absolute path to a locale's message file.
  *
  * @param locale - Locale code, e.g. `pt_BR`.
+ *
  * @returns Path to that locale's `messages.json`.
  */
 export function localeMessagesPath(locale: string): string {
@@ -77,6 +93,7 @@ export function localeMessagesPath(locale: string): string {
  * Reads and validates one locale's messages.
  *
  * @param locale - Locale code to read.
+ *
  * @returns Parsed messages for that locale.
  */
 export async function readMessagesByLocale(
@@ -93,9 +110,9 @@ export async function readMessagesByLocale(
     const messages: LocaleMessages = {};
     for (const [key, value] of Object.entries(parsed)) {
         if (
-            typeof value !== 'object' ||
-            value === null ||
-            typeof (value as { message?: unknown }).message !== 'string'
+            typeof value !== 'object'
+            || value === null
+            || typeof (value as { message?: unknown }).message !== 'string'
         ) {
             throw new Error(`${filePath}: '${key}' has no string 'message'.`);
         }
@@ -115,6 +132,7 @@ export async function readMessagesByLocale(
  *
  * @param messages - Messages to serialize.
  * @param locale - Locale code being written.
+ *
  * @returns Nothing.
  */
 export async function writeMessagesByLocale(

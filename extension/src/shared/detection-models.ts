@@ -1,3 +1,8 @@
+/**
+ * @file Builds the catalog of detection models offered to users: built-in
+ * presets per provider plus user-added OpenRouter slugs.
+ */
+
 import { CHROME_PROMPT_API_MODEL_NAME } from '@/shared/chrome-prompt-api';
 import {
     OPENROUTER_DEFAULT_MODEL_SLUG,
@@ -12,14 +17,37 @@ import {
 /**
  * Model option shown to users while keeping provider routing metadata hidden.
  */
-export type DetectionModel = {
+export interface DetectionModel {
+    /**
+     * Stable provider-prefixed identifier persisted as the active model.
+     */
     id: string;
+
+    /**
+     * User-facing model name shown in selection UI.
+     */
     label: string;
+
+    /**
+     * Provider this model routes through.
+     */
     providerId: ProviderId;
+
+    /**
+     * User-facing name of the provider this model routes through.
+     */
     providerLabel: string;
+
+    /**
+     * Provider-native model name (not the prefixed id) sent in requests.
+     */
     modelName: string;
+
+    /**
+     * Whether using this model requires a configured provider connection.
+     */
     requiresConnection: boolean;
-};
+}
 
 /**
  * Initial OpenAI presets exposed by model-first settings.
@@ -34,6 +62,7 @@ export const OPENAI_MODEL_PRESETS = [
  * Prefixes OpenRouter slugs so active model IDs are provider-unique.
  *
  * @param slug - OpenRouter model slug.
+ *
  * @returns Stable model-first ID.
  */
 export function buildOpenRouterModelId(slug: string): string {
@@ -44,6 +73,7 @@ export function buildOpenRouterModelId(slug: string): string {
  * Prefixes OpenAI model names so active model IDs are provider-unique.
  *
  * @param model - OpenAI model name.
+ *
  * @returns Stable model-first ID.
  */
 export function buildOpenAiModelId(model: string): string {
@@ -100,6 +130,7 @@ export function getBuiltinDetectionModels(): DetectionModel[] {
  * Full catalog with user-added OpenRouter models appended after built-ins.
  *
  * @param customOpenRouterModels - Saved custom OpenRouter slugs.
+ *
  * @returns Ordered model catalog.
  */
 export function getDetectionModels(
@@ -132,6 +163,7 @@ export function getDetectionModels(
  *
  * @param modelId - Stored or incoming active model ID.
  * @param customOpenRouterModels - Saved custom OpenRouter slugs.
+ *
  * @returns Matching model or default model.
  */
 export function resolveDetectionModel(
@@ -141,11 +173,11 @@ export function resolveDetectionModel(
     return (
         getDetectionModels(customOpenRouterModels).find(
             (model) => model.id === modelId,
-        ) ??
-        getBuiltinDetectionModels().find(
+        )
+        ?? getBuiltinDetectionModels().find(
             (model) => model.id === DEFAULT_DETECTION_MODEL_ID,
-        ) ??
-        null
+        )
+        ?? null
     );
 }
 
@@ -160,6 +192,7 @@ export const DEBUG_LOG_CUSTOM_MODEL_ID = 'custom';
  *
  * @param providerId - Provider the model is configured for.
  * @param modelId - Provider-prefixed model id.
+ *
  * @returns `true` only for a shipped preset of that provider.
  */
 export function isPresetModelId(providerId: string, modelId: string): boolean {
@@ -174,6 +207,7 @@ export function isPresetModelId(providerId: string, modelId: string): boolean {
  *
  * @param providerId - Provider the model is configured for.
  * @param modelId - Provider-prefixed model id.
+ *
  * @returns Loggable model id.
  */
 export function toDebugLogModelId(providerId: string, modelId: string): string {
@@ -189,6 +223,7 @@ export function toDebugLogModelId(providerId: string, modelId: string): string {
  *
  * @param providerId - Provider that produced the model name.
  * @param modelName - Provider-native model name (not the prefixed id).
+ *
  * @returns Loggable model name.
  */
 export function toDebugLogModelName(
@@ -196,8 +231,7 @@ export function toDebugLogModelName(
     modelName: string,
 ): string {
     const preset = getBuiltinDetectionModels().some(
-        (model) =>
-            model.providerId === providerId && model.modelName === modelName,
+        (model) => model.providerId === providerId && model.modelName === modelName,
     );
     return preset ? modelName : DEBUG_LOG_CUSTOM_MODEL_ID;
 }

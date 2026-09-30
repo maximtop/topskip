@@ -1,14 +1,16 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+/**
+ * @file Runtime handlers for the debug-log messages: append, status, preview,
+ * bundle export, enable/disable, and the dev-only seed command.
+ */
+
 import * as v from 'valibot';
 
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogBroadcast } from '@/background/debug-log/debug-log-broadcast';
-import {
-    DebugLogExport,
-    EnvironmentProbe,
-} from '@/background/debug-log/debug-log-export';
+import { DebugLogExport } from '@/background/debug-log/debug-log-export';
 import { DebugLogLifecycle } from '@/background/debug-log/debug-log-lifecycle';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { EnvironmentProbe } from '@/background/debug-log/environment-probe';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import { RuntimeSenderTrust } from '@/background/messaging/runtime-sender-trust';
 import { DEBUG_LOG_PREVIEW_TAIL_BYTES } from '@/shared/debug-log-constants';
@@ -25,6 +27,8 @@ import {
     type GetDebugLogStatusResponse,
     type SetDebugLoggingResponse,
 } from '@/shared/messages';
+
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 /**
  * Returned for a seed request whose payload fails validation.
@@ -48,6 +52,7 @@ export class DebugLogRuntimeMessages {
      *
      * @param payload - Schema-validated append payload.
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Switch state for the content client, or a refusal.
      */
     static async handleAppend(
@@ -76,6 +81,7 @@ export class DebugLogRuntimeMessages {
      * Cheap status for the Options poll and the popup indicator.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Status, or a refusal for non-extension senders.
      */
     static async handleGetStatus(
@@ -96,6 +102,7 @@ export class DebugLogRuntimeMessages {
      * Bounded tail for the Options preview.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Tail text and sizes, or a refusal.
      */
     static async handleGetPreview(
@@ -117,6 +124,7 @@ export class DebugLogRuntimeMessages {
      * event is stamped later than the snapshot.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Bundle text and its snapshot instant, or a refusal/error.
      */
     static async handleGetBundle(
@@ -146,6 +154,7 @@ export class DebugLogRuntimeMessages {
      *
      * @param enabled - Requested switch state.
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Status after the change, or a refusal/error.
      */
     static async handleSetEnabled(
@@ -177,13 +186,14 @@ export class DebugLogRuntimeMessages {
      *
      * @param payload - Requested state and approximate size.
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Ack, or a refusal/validation error.
      */
     static async handleDevSeed(
         payload: DevSeedDebugLogPayload,
         sender: Runtime.MessageSender,
     ): Promise<DevSeedDebugLogResponse> {
-        if (!__TOPSKIP_INCLUDE_DEV_LOCAL__) {
+        if (!TOPSKIP_INCLUDE_DEV_LOCAL) {
             return { ok: false, error: DEV_SEED_DISABLED_ERROR };
         }
         if (!RuntimeSenderTrust.isExtensionPage(sender)) {

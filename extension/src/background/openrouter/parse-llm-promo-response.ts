@@ -1,14 +1,21 @@
+/**
+ * @file Parses and validates the LLM's promo-detection JSON response,
+ * stripping markdown fences and clamping blocks to the known duration.
+ */
+
+import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
+import { sortAndDedupePromoBlocks } from '@topskip/common/promo-dedupe';
 import { parse, ValiError } from 'valibot';
 
 import { extractMessageFromValiError } from '@/shared/valibot';
-import { llmPromoDetectionSchema } from '@topskip/common/openrouter-llm-schema';
+
 import type { PromoBlock } from '@topskip/common/promo-types';
-import { sortAndDedupePromoBlocks } from '@topskip/common/promo-dedupe';
 
 /**
  * Strips optional markdown code fences from model output.
  *
  * @param raw - Assistant message string
+ *
  * @returns Inner JSON text
  */
 function stripMarkdownFences(raw: string): string {
@@ -31,6 +38,7 @@ function stripMarkdownFences(raw: string): string {
  *
  * @param blocks - Blocks from parsed JSON
  * @param durationSec - Video duration when known
+ *
  * @returns Validated blocks or error message
  */
 export function refinePromoBlocks(
@@ -48,15 +56,17 @@ export function refinePromoBlocks(
             }
         }
         let block: PromoBlock = { ...b };
+        let withinDuration = true;
         if (durationSec !== undefined && Number.isFinite(durationSec)) {
             if (block.startSec >= durationSec) {
-                continue;
-            }
-            if (block.endSec !== undefined && block.endSec > durationSec) {
+                withinDuration = false;
+            } else if (block.endSec !== undefined && block.endSec > durationSec) {
                 block = { ...block, endSec: durationSec };
             }
         }
-        refined.push(block);
+        if (withinDuration) {
+            refined.push(block);
+        }
     }
     return { ok: true, blocks: sortAndDedupePromoBlocks(refined) };
 }
@@ -66,6 +76,7 @@ export function refinePromoBlocks(
  *
  * @param assistantRaw - Raw assistant message
  * @param durationSec - Optional known duration for clamping
+ *
  * @returns Parsed result or error string
  */
 export function parseLlmPromoResponse(

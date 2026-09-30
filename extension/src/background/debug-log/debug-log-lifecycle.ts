@@ -1,11 +1,17 @@
+/**
+ * @file Owns the worker/browser/extension restart markers and the debug log's
+ * own enable/disable markers.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogBroadcast } from '@/background/debug-log/debug-log-broadcast';
-import { EnvironmentProbe } from '@/background/debug-log/debug-log-export';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { EnvironmentProbe } from '@/background/debug-log/environment-probe';
 import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
 import browser from '@/shared/browser';
 import { SESSION_STORAGE_KEY_DEBUG_LOG_WORKER } from '@/shared/constants';
 import { DEBUG_LOG_EVENT, type DebugLogFields } from '@/shared/debug-log-events';
+
 import type { DebugLogStatusPayload } from '@/shared/messages';
 
 /**
@@ -22,8 +28,7 @@ const EXTENSION_RESTART_REASONS: ReadonlySet<string> = new Set(['install', 'upda
 /**
  * A browser signal observed before or after the worker-started marker.
  */
-type RestartCause =
-    | { kind: 'browser' }
+type RestartCause = | { kind: 'browser' }
     | { kind: 'extension'; reason: string };
 
 /**
@@ -76,6 +81,7 @@ export class DebugLogLifecycle {
      * opens the facade. Never rejects.
      *
      * @param buildLabel - Current build label.
+     *
      * @returns Promise settled when the start markers are recorded.
      */
     static async markWorkerStarted(buildLabel: string): Promise<void> {
@@ -116,6 +122,7 @@ export class DebugLogLifecycle {
      * line of the fresh log; idempotent through the store.
      *
      * @param nowMs - Enable time.
+     *
      * @returns Status after the change.
      */
     static async enable(nowMs: number): Promise<DebugLogStatusPayload> {
@@ -134,6 +141,7 @@ export class DebugLogLifecycle {
      * idempotent through the store.
      *
      * @param nowMs - Disable time.
+     *
      * @returns Status after the change.
      */
     static disable(nowMs: number): Promise<DebugLogStatusPayload> {

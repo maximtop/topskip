@@ -24,6 +24,7 @@ const DYNAMIC = {
  * Parses `[sec] text` merged-transcript lines for planner tests.
  *
  * @param mergedText - Newline-joined `[sec] text` transcript
+ *
  * @returns Timed lines the planner consumes
  */
 function toLines(mergedText: string): TimedLine[] {
@@ -31,12 +32,11 @@ function toLines(mergedText: string): TimedLine[] {
     for (const raw of mergedText.split('\n')) {
         const line = raw.trimEnd();
         const m = /^\[(\d+(?:\.\d+)?)\]\s*(.*)$/.exec(line);
-        if (!m) {
-            continue;
-        }
-        const sec = Number(m[1]);
-        if (Number.isFinite(sec)) {
-            rows.push({ sec, line });
+        if (m) {
+            const sec = Number(m[1]);
+            if (Number.isFinite(sec)) {
+                rows.push({ sec, line });
+            }
         }
     }
     return rows;
@@ -48,6 +48,7 @@ function toLines(mergedText: string): TimedLine[] {
  * @param lineCount - Number of lines
  * @param secStep - Seconds between consecutive line timestamps
  * @param bodyRepeat - Repeated character count after the bracket prefix
+ *
  * @returns Newline-joined transcript
  */
 function makeTimedTranscript(
@@ -57,7 +58,7 @@ function makeTimedTranscript(
 ): string {
     const pad = 'x'.repeat(bodyRepeat);
     const lines: string[] = [];
-    for (let i = 0; i < lineCount; i++) {
+    for (let i = 0; i < lineCount; i += 1) {
         lines.push(`[${String(i * secStep)}] ${pad}`);
     }
     return lines.join('\n');
@@ -175,9 +176,9 @@ describe('ChunkPlanner.buildChunkPlan', () => {
         });
         expect(plan.chunks.length).toBeGreaterThan(1);
         expect(plan.partialCoverage).toBe(false);
-        for (let i = 1; i < plan.chunks.length; i++) {
-            const prev = plan.chunks[i - 1];
-            const next = plan.chunks[i];
+        for (let i = 1; i < plan.chunks.length; i += 1) {
+            const prev = plan.chunks[i - 1]!;
+            const next = plan.chunks[i]!;
             expect(next.startSec).toBeLessThanOrEqual(prev.endSec - 239);
         }
     });

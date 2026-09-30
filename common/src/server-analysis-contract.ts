@@ -1,11 +1,17 @@
+/**
+ * @file Wire contract (valibot schemas and request/response types) for the
+ * public server promo-analysis API, shared by the backend and the extension.
+ */
+
 import * as v from 'valibot';
 
-import type { CaptionSegment } from '@topskip/common/caption-types';
 import {
     CaptionTranscriptCanonicalizer,
     MAX_TRANSCRIPT_SEGMENT_COUNT,
     MAX_TRANSCRIPT_TIMELINE_SEC,
 } from '@topskip/common/captions/canonical-transcript';
+
+import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * Server-owned algorithm version separates exact uploaded-caption artifacts from older results.
@@ -63,8 +69,7 @@ const MAX_SUPPORT_ID_LENGTH = 80;
 const MAX_ALGORITHM_VERSION_LENGTH = 64;
 const MAX_OPAQUE_ID_LENGTH = 160;
 const MAX_INPUT_LANGUAGE_CODE_LENGTH = 80;
-const CHROME_EXTENSION_SEMVER_PATTERN =
-    /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
+const CHROME_EXTENSION_SEMVER_PATTERN = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/u;
 const INPUT_LANGUAGE_CODE_PATTERN = /^\s*[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*\s*$/u;
 const NORMALIZED_LANGUAGE_CODE_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const GITHUB_HOSTNAME = 'github.com';
@@ -108,8 +113,7 @@ export const extensionVersionSchema = v.pipe(
         'Extension version must use MAJOR.MINOR.PATCH.',
     ),
     v.check(
-        (value) =>
-            value.split('.').every((component) => Number(component) <= 65_535),
+        (value) => value.split('.').every((component) => Number(component) <= 65_535),
         'Extension version components must not exceed 65535.',
     ),
 );
@@ -195,14 +199,12 @@ const registrationEntries = {
 /**
  * Prevents the backend from emitting accidental installation fields.
  */
-export const installationRegistrationResponseEmissionSchema =
-    v.strictObject(registrationEntries);
+export const installationRegistrationResponseEmissionSchema = v.strictObject(registrationEntries);
 
 /**
  * Lets older extension clients ignore future additive registration metadata.
  */
-export const installationRegistrationResponseSchema =
-    v.object(registrationEntries);
+export const installationRegistrationResponseSchema = v.object(registrationEntries);
 
 const supportIssueBaseUrlSchema = v.pipe(
     v.string(),
@@ -210,14 +212,14 @@ const supportIssueBaseUrlSchema = v.pipe(
     v.check((value) => {
         const url = new URL(value);
         return (
-            url.protocol === 'https:' &&
-            url.hostname === GITHUB_HOSTNAME &&
-            url.port === '' &&
-            url.username === '' &&
-            url.password === '' &&
-            url.search === '' &&
-            url.hash === '' &&
-            GITHUB_NEW_ISSUE_PATH_PATTERN.test(url.pathname)
+            url.protocol === 'https:'
+            && url.hostname === GITHUB_HOSTNAME
+            && url.port === ''
+            && url.username === ''
+            && url.password === ''
+            && url.search === ''
+            && url.hash === ''
+            && GITHUB_NEW_ISSUE_PATH_PATTERN.test(url.pathname)
         );
     }, 'Support URL must be a GitHub HTTPS new-issue URL.'),
 );
@@ -229,8 +231,7 @@ const serverConfigEntries = {
         v.array(serverAnalysisCapabilitySchema),
         v.maxLength(MAX_CAPABILITY_COUNT),
         v.check(
-            (capabilities) =>
-                new Set(capabilities).size === capabilities.length,
+            (capabilities) => new Set(capabilities).size === capabilities.length,
             'Supported capabilities must be unique.',
         ),
     ),
@@ -241,8 +242,7 @@ const serverConfigEntries = {
 /**
  * Prevents accidental fields from entering the public configuration response.
  */
-export const serverConfigResponseEmissionSchema =
-    v.strictObject(serverConfigEntries);
+export const serverConfigResponseEmissionSchema = v.strictObject(serverConfigEntries);
 
 /**
  * Lets an older extension consume additive public configuration fields safely.
@@ -270,6 +270,7 @@ export const SERVER_ANALYSIS_UNAVAILABLE_REASON = {
  */
 export const SERVER_ANALYSIS_FAILURE_CODE = {
     ...SERVER_ANALYSIS_UNAVAILABLE_REASON,
+
     /**
      * Extension-local recovery exhausted; never emitted by public `/v1`.
      */
@@ -754,6 +755,7 @@ export type ErrorResponse = v.InferOutput<typeof errorResponseSchema>;
  * Checks whether a candidate matches the canonical YouTube video-ID shape.
  *
  * @param videoId - Candidate watch-page identifier.
+ *
  * @returns True when the identifier is safe for public analysis.
  */
 export function isValidYouTubeVideoId(videoId: string): boolean {
@@ -764,11 +766,20 @@ export function isValidYouTubeVideoId(videoId: string): boolean {
  * Builds the official request from one canonicalized timed-caption payload.
  *
  * @param input - Current video metadata and captured caption payload.
+ * @param input.videoId YouTube watch-page video identifier.
+ * @param input.durationSec Reported video duration in seconds, when known.
+ * @param input.extensionVersion Installed extension version making the request.
+ * @param input.languageCode Untrusted caption language spelling to canonicalize.
+ * @param input.segments Untrusted, order-sensitive timed caption cues to canonicalize.
+ *
  * @returns Strict public request without client hash or algorithm fields.
+ *
+ * @throws {Error} When the caption transcript fails canonicalization (too
+ * many segments, transcript too large, video too long, or invalid input).
  */
 export function buildServerAnalysisRequest(input: {
     videoId: string;
-    durationSec?: number;
+    durationSec?: number | undefined;
     extensionVersion: string;
     languageCode: string;
     segments: readonly CaptionSegment[];

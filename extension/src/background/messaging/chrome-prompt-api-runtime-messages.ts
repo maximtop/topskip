@@ -1,11 +1,16 @@
-import { LOG_PREFIX_TOPSKIP, PERCENT_SCALE } from '@/shared/constants';
+/**
+ * @file Runtime handlers for Chrome Built-in model status queries and
+ * download triggers.
+ */
+
+import { DevConsole } from '@/background/dev-console';
 import {
     DOWNLOAD_PROGRESS_EVENT,
     LANGUAGE_MODEL_GLOBAL,
     LANGUAGE_MODEL_METHOD,
     PROVIDER_AVAILABILITY,
 } from '@/shared/chrome-prompt-api';
-import { DevConsole } from '@/background/dev-console';
+import { LOG_PREFIX_TOPSKIP, PERCENT_SCALE } from '@/shared/constants';
 import { getErrorMessage } from '@/shared/error';
 import {
     type GetChromePromptApiStatusResponse,
@@ -33,14 +38,13 @@ const PROGRESS_ROUND_FACTOR = 10;
  * `ProviderAvailabilityMessage`. Falls back to unavailable when the runtime
  * emits an unexpected value.
  */
-const AVAILABILITY_MAP: Readonly<Record<string, ProviderAvailabilityMessage>> =
-    Object.freeze({
-        [PROVIDER_AVAILABILITY.AVAILABLE]: PROVIDER_AVAILABILITY.AVAILABLE,
-        [PROVIDER_AVAILABILITY.DOWNLOADABLE]:
+const AVAILABILITY_MAP: Readonly<Record<string, ProviderAvailabilityMessage>> = Object.freeze({
+    [PROVIDER_AVAILABILITY.AVAILABLE]: PROVIDER_AVAILABILITY.AVAILABLE,
+    [PROVIDER_AVAILABILITY.DOWNLOADABLE]:
             PROVIDER_AVAILABILITY.DOWNLOADABLE,
-        [PROVIDER_AVAILABILITY.DOWNLOADING]: PROVIDER_AVAILABILITY.DOWNLOADING,
-        [PROVIDER_AVAILABILITY.UNAVAILABLE]: PROVIDER_AVAILABILITY.UNAVAILABLE,
-    });
+    [PROVIDER_AVAILABILITY.DOWNLOADING]: PROVIDER_AVAILABILITY.DOWNLOADING,
+    [PROVIDER_AVAILABILITY.UNAVAILABLE]: PROVIDER_AVAILABILITY.UNAVAILABLE,
+});
 
 /**
  * Resolves the current `LanguageModel.availability()` as a
@@ -53,8 +57,8 @@ async function resolveAvailability(): Promise<ProviderAvailabilityMessage> {
     const lm: unknown = Reflect.get(globalThis, LANGUAGE_MODEL_GLOBAL);
     if (!lm || (typeof lm !== 'object' && typeof lm !== 'function')) {
         DevConsole.info(
-            `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG} ${LANGUAGE_MODEL_GLOBAL}` +
-                ' global not found — requires Chrome 138+ with Prompt API enabled',
+            `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG} ${LANGUAGE_MODEL_GLOBAL}`
+                + ' global not found — requires Chrome 138+ with Prompt API enabled',
         );
         return PROVIDER_AVAILABILITY.UNAVAILABLE;
     }
@@ -64,20 +68,19 @@ async function resolveAvailability(): Promise<ProviderAvailabilityMessage> {
     );
     if (typeof availFn !== 'function') {
         DevConsole.info(
-            `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}` +
-                ` ${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.AVAILABILITY} is` +
-                ' not a function',
+            `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}`
+                + ` ${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.AVAILABILITY} is`
+                + ' not a function',
         );
         return PROVIDER_AVAILABILITY.UNAVAILABLE;
     }
     const raw: unknown = await (availFn as () => Promise<unknown>).call(lm);
-    const mapped: ProviderAvailabilityMessage =
-        typeof raw === 'string' && raw in AVAILABILITY_MAP
-            ? AVAILABILITY_MAP[raw]
-            : PROVIDER_AVAILABILITY.UNAVAILABLE;
+    const mapped: ProviderAvailabilityMessage = typeof raw === 'string' && raw in AVAILABILITY_MAP
+        ? AVAILABILITY_MAP[raw]! // `raw in AVAILABILITY_MAP` guarantees the key exists
+        : PROVIDER_AVAILABILITY.UNAVAILABLE;
     DevConsole.info(
-        `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}` +
-            ` ${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.AVAILABILITY}() →`,
+        `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}`
+            + ` ${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.AVAILABILITY}() →`,
         raw,
         '→',
         mapped,
@@ -138,9 +141,9 @@ export class ChromePromptApiRuntimeMessages {
 
         ChromePromptApiRuntimeMessages.downloadProgress = 0;
         DevConsole.info(
-            `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}` +
-                ` triggering model download via ${LANGUAGE_MODEL_GLOBAL}.` +
-                `${LANGUAGE_MODEL_METHOD.CREATE}()`,
+            `${LOG_PREFIX_TOPSKIP} ${CHROME_BUILTIN_LOG}`
+                + ` triggering model download via ${LANGUAGE_MODEL_GLOBAL}.`
+                + `${LANGUAGE_MODEL_METHOD.CREATE}()`,
         );
 
         // Fire-and-forget: start download, track progress, clean up when done.
@@ -165,13 +168,12 @@ export class ChromePromptApiRuntimeMessages {
                             DOWNLOAD_PROGRESS_EVENT,
                             (ev: { loaded: number; total: number }) => {
                                 // `loaded` is a 0–1 fraction; `total` is always 1.
-                                const pct =
-                                    ev.total > 0
-                                        ? (ev.loaded / ev.total) * PERCENT_SCALE
-                                        : ev.loaded * PERCENT_SCALE;
-                                ChromePromptApiRuntimeMessages.downloadProgress =
-                                    Math.round(pct * PROGRESS_ROUND_FACTOR) /
-                                    PROGRESS_ROUND_FACTOR;
+                                const pct = ev.total > 0
+                                    ? (ev.loaded / ev.total) * PERCENT_SCALE
+                                    : ev.loaded * PERCENT_SCALE;
+                                const rounded = Math.round(pct * PROGRESS_ROUND_FACTOR)
+                                    / PROGRESS_ROUND_FACTOR;
+                                ChromePromptApiRuntimeMessages.downloadProgress = rounded;
                             },
                         );
                     }

@@ -1,4 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLogBroadcast } from '@/background/debug-log/debug-log-broadcast';
+import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 const browserMocks = vi.hoisted(() => ({
     tabsQuery: vi.fn(),
@@ -15,9 +25,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-import { DebugLogBroadcast } from '@/background/debug-log/debug-log-broadcast';
-import { TOPSKIP_MESSAGE } from '@/shared/messages';
 
 describe('DebugLogBroadcast.notifyStateChanged', () => {
     beforeEach(() => {

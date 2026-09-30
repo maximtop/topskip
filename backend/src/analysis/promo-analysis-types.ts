@@ -1,10 +1,15 @@
-import * as v from 'valibot';
+/**
+ * @file Shared types and Valibot schemas for the backend LLM analysis adapter boundary and the
+ * stored analysis run artifact, so every adapter and consumer agrees on one wire/storage shape.
+ */
 
-import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
 import {
     promoBlockSchema,
     youtubeVideoIdSchema,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
+import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
 
 const finiteEpochMsSchema = v.pipe(
     v.number(),
@@ -93,39 +98,80 @@ export const analysisRunArtifactSchema = v.strictObject({
 /**
  * Input passed to backend-owned analysis adapters.
  */
-export type BackendLlmAnalysisAdapterInput = {
+export interface BackendLlmAnalysisAdapterInput {
+    /**
+     * Canonical transcript artifact selected for this analysis run.
+     */
     transcriptArtifact: TranscriptArtifact;
-};
+}
 
 /**
  * Provider accounting retained without storing request credentials or reasoning text.
  */
-export type BackendLlmAnalysisUsage = {
+export interface BackendLlmAnalysisUsage {
+    /**
+     * Number of prompt tokens billed for this analysis request, as reported by the provider.
+     */
     inputTokens: number;
+
+    /**
+     * Number of completion tokens billed for this analysis request, as reported by the provider.
+     */
     outputTokens: number;
-    costUsd?: number;
-};
+
+    /**
+     * Provider-reported cost in US dollars for this request; absent when the provider did not
+     * report cost.
+     */
+    costUsd?: number | undefined;
+}
 
 /**
  * Adapter output couples the raw assistant JSON with stable model diagnostics.
  */
-export type BackendLlmAnalysisAdapterResult = {
+export interface BackendLlmAnalysisAdapterResult {
+    /**
+     * Raw assistant JSON text returned by the model, retained unparsed for storage/diagnostics.
+     */
     rawModelResponse: string;
+
+    /**
+     * Model identifier actually used to serve the request, as reported by the provider.
+     */
     model: string;
-    usage?: BackendLlmAnalysisUsage;
-};
+
+    /**
+     * Token/cost accounting for this request; absent when the provider returned no usage metadata.
+     */
+    usage?: BackendLlmAnalysisUsage | undefined;
+}
 
 /**
  * Backend-only adapter boundary for deterministic or future model analysis.
  */
-export type BackendLlmAnalysisAdapter = {
+export interface BackendLlmAnalysisAdapter {
+    /**
+     * Stable provider identity stored in backend analysis artifacts.
+     */
     providerId: string;
+
+    /**
+     * Model identifier this adapter is configured to use, before any provider override.
+     */
     model: string;
+
+    /**
+     * Prompt identity stored alongside analysis runs, known before the request is sent.
+     */
     promptVersion: string;
+
+    /**
+     * Runs one analysis request against the configured provider for the given transcript.
+     */
     analyze: (
         input: BackendLlmAnalysisAdapterInput,
     ) => Promise<BackendLlmAnalysisAdapterResult>;
-};
+}
 
 /**
  * Parsed model result retained after raw response validation.

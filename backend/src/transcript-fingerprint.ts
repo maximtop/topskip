@@ -1,3 +1,8 @@
+/**
+ * @file Authoritative transcript hashing kept in the Node-owned backend boundary,
+ * used to derive the stable identity behind exact cache and job lookups.
+ */
+
 import { createHash } from 'node:crypto';
 
 /**
@@ -8,6 +13,7 @@ export class TranscriptFingerprint {
      * Produces the lowercase digest used by exact cache and job identity.
      *
      * @param bytes - Canonical transcript tuple bytes.
+     *
      * @returns Lowercase SHA-256 hexadecimal digest.
      */
     static sha256Hex(bytes: Uint8Array): string {

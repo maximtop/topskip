@@ -26,7 +26,7 @@ const repositoryRoot = path.resolve(
  * precedence over the root `.env` because dotenv does not override values that
  * are already set.
  *
- * @returns Nothing; throws when the build fails.
+ * @throws {Error} When the build exits with a non-zero status.
  */
 export default function globalSetup(): void {
     const result = spawnSync(
@@ -45,8 +45,8 @@ export default function globalSetup(): void {
 
     if (result.status !== 0) {
         throw new Error(
-            `Failed to build the extension for E2E against ${E2E_BACKEND_ORIGIN} ` +
-                `(exit code ${String(result.status)}).`,
+            `Failed to build the extension for E2E against ${E2E_BACKEND_ORIGIN} `
+                + `(exit code ${String(result.status)}).`,
         );
     }
 
@@ -70,8 +70,8 @@ export default function globalSetup(): void {
     );
     if (validation.status !== 0) {
         throw new Error(
-            'The extension built for E2E failed manifest policy validation ' +
-                `(exit code ${String(validation.status)}).`,
+            'The extension built for E2E failed manifest policy validation '
+                + `(exit code ${String(validation.status)}).`,
         );
     }
 }

@@ -1,3 +1,8 @@
+/**
+ * @file CLI helper that fetches translated locale data for the given locales
+ * from the localization service and writes each into its locale directory.
+ */
+
 import fs from 'node:fs';
 import path from 'node:path';
 
@@ -16,6 +21,7 @@ const API_DOWNLOAD_URL = `${API_URL}/download`;
  * Builds the query string for downloading one locale.
  *
  * @param lang - Locale code to request.
+ *
  * @returns Encoded query string.
  */
 function getQueryString(lang: string): string {
@@ -32,6 +38,7 @@ function getQueryString(lang: string): string {
  *
  * @param filePath - Destination file.
  * @param data - Raw response body.
+ *
  * @returns Nothing.
  */
 async function saveFile(filePath: string, data: string): Promise<void> {
@@ -46,6 +53,7 @@ async function saveFile(filePath: string, data: string): Promise<void> {
  * Downloads the given locales from the localization service.
  *
  * @param locales - Locale codes to fetch.
+ *
  * @returns Nothing.
  */
 export async function downloadAndSave(locales: string[]): Promise<void> {

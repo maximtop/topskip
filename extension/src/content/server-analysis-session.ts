@@ -1,31 +1,37 @@
+/**
+ * @file Per-video content-side session for server-mode analysis: retains one
+ * accepted caption payload and its immutable in-flight runtime operation
+ * across polling and MV3 transport recovery.
+ */
+
+import {
+    CaptionTranscriptCanonicalizer,
+    MAX_TRANSCRIPT_TIMELINE_SEC,
+} from '@topskip/common/captions/canonical-transcript';
 import * as v from 'valibot';
 
-import type { CaptionsFromContentSuccessPayload } from '@/shared/messages';
-import {
-    refreshServerAnalysisStatusPayloadSchema,
-    requestServerAnalysisPayloadSchema,
-    SERVER_ANALYSIS_SESSION_EVENT,
-    serverAnalysisSessionIdSchema,
-    type RefreshServerAnalysisStatusPayload,
-    type RequestServerAnalysisPayload,
-    type ServerAnalysisSessionEventPayload,
-} from '@/shared/messages';
 import {
     MS_PER_SECOND,
     SECONDS_PER_MINUTE,
 } from '@/shared/constants';
 import {
-    CaptionTranscriptCanonicalizer,
-    MAX_TRANSCRIPT_TIMELINE_SEC,
-} from '@topskip/common/captions/canonical-transcript';
+    refreshServerAnalysisStatusPayloadSchema,
+    requestServerAnalysisPayloadSchema,
+    serverAnalysisSessionIdSchema,
+    type CaptionsFromContentSuccessPayload,
+    type RefreshServerAnalysisStatusPayload,
+    type RequestServerAnalysisPayload,
+    type SERVER_ANALYSIS_SESSION_EVENT,
+    type ServerAnalysisSessionEventPayload,
+} from '@/shared/messages';
+
 import type { ServerTranscriptIdentity } from '@topskip/common/server-analysis-contract';
 
 /**
  * A lost runtime acknowledgement is allowed to wait this long before the
  * immutable operation is treated as interrupted.
  */
-export const SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS =
-    SECONDS_PER_MINUTE * MS_PER_SECOND;
+export const SERVER_ANALYSIS_RUNTIME_MESSAGE_TIMEOUT_MS = SECONDS_PER_MINUTE * MS_PER_SECOND;
 
 /**
  * Short bounded recovery delays let a replacement MV3 worker attach before
@@ -41,8 +47,7 @@ export const SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS = [
 /**
  * The route lifetime covers the backend's bounded cold-job queue and model deadline.
  */
-export const SERVER_ANALYSIS_SESSION_DEADLINE_MS =
-    35 * SECONDS_PER_MINUTE * MS_PER_SECOND;
+export const SERVER_ANALYSIS_SESSION_DEADLINE_MS = 35 * SECONDS_PER_MINUTE * MS_PER_SECOND;
 
 /**
  * Immutable operation kinds determine which runtime payload may be replayed.
@@ -65,38 +70,70 @@ const SERVER_ANALYSIS_SESSION_STATE = {
 /**
  * Request operations retain the exact canonical captions used by the first POST.
  */
-type ServerAnalysisRequestOperation = {
+interface ServerAnalysisRequestOperation {
+    /**
+     * Monotonic local identity rejecting completions from superseded operations.
+     */
     operationId: number;
+
+    /**
+     * Whether this is the initial submission or the one exact recovery resubmit.
+     */
     kind:
         | typeof SERVER_ANALYSIS_OPERATION_KIND.Submit
         | typeof SERVER_ANALYSIS_OPERATION_KIND.ExactResubmit;
+
+    /**
+     * Canonical caption request retained for replay.
+     */
     payload: RequestServerAnalysisPayload;
-};
+}
 
 /**
  * Poll operations retain the server-authoritative job and transcript identity.
  */
-type ServerAnalysisPollOperation = {
+interface ServerAnalysisPollOperation {
+    /**
+     * Monotonic local identity rejecting completions from superseded operations.
+     */
     operationId: number;
+
+    /**
+     * Fixed poll kind, distinguishing this from a request operation.
+     */
     kind: typeof SERVER_ANALYSIS_OPERATION_KIND.Poll;
+
+    /**
+     * Server-authoritative job and transcript identity to poll with.
+     */
     payload: RefreshServerAnalysisStatusPayload;
-};
+}
 
 /**
  * One immutable runtime operation may be replayed without recapturing captions.
  */
-export type ServerAnalysisPendingOperation =
-    | ServerAnalysisRequestOperation
+export type ServerAnalysisPendingOperation = | ServerAnalysisRequestOperation
     | ServerAnalysisPollOperation;
 
 /**
  * A bounded retry carries the same operation and its deterministic delay.
  */
-export type ServerAnalysisTransportRetry = {
+export interface ServerAnalysisTransportRetry {
+    /**
+     * Defensive copy of the operation to replay.
+     */
     operation: ServerAnalysisPendingOperation;
+
+    /**
+     * Deterministic delay in ms before the retry should be attempted.
+     */
     retryAfterMs: number;
+
+    /**
+     * 1-based count of this retry within the bounded backoff schedule.
+     */
     retryNumber: number;
-};
+}
 
 /**
  * Safe interruption details are the only terminal event with a reason field.
@@ -109,33 +146,38 @@ export type ServerAnalysisInterruptionReason = Extract<
 /**
  * Terminal local failures remain deliverable without retaining captions.
  */
-export type ServerAnalysisTerminalEvent =
-    | {
-          event: Exclude<
-              ServerAnalysisSessionEventPayload['event'],
+export type ServerAnalysisTerminalEvent = | {
+    event: Exclude<
+        ServerAnalysisSessionEventPayload['event'],
               | typeof SERVER_ANALYSIS_SESSION_EVENT.AcquisitionStarted
               | typeof SERVER_ANALYSIS_SESSION_EVENT.Cancelled
               | typeof SERVER_ANALYSIS_SESSION_EVENT.AnalysisInterrupted
-          >;
-      }
+    >;
+}
     | {
-          event: typeof SERVER_ANALYSIS_SESSION_EVENT.AnalysisInterrupted;
-          reason: ServerAnalysisInterruptionReason;
-      };
+        event: typeof SERVER_ANALYSIS_SESSION_EVENT.AnalysisInterrupted;
+        reason: ServerAnalysisInterruptionReason;
+    };
 
 /**
  * A bounded terminal-event retry reuses the same safe transport delays.
  */
-export type ServerAnalysisTerminalEventDeliveryRetry = {
+export interface ServerAnalysisTerminalEventDeliveryRetry {
+    /**
+     * Deterministic delay in ms before the retry should be attempted.
+     */
     retryAfterMs: number;
+
+    /**
+     * 1-based count of this retry within the current wake cycle's budget.
+     */
     retryNumber: number;
-};
+}
 
 /**
  * Explicit lifecycle states keep terminal sessions as same-video sentinels.
  */
-type ServerAnalysisSessionState =
-    (typeof SERVER_ANALYSIS_SESSION_STATE)[keyof typeof SERVER_ANALYSIS_SESSION_STATE];
+type ServerAnalysisSessionState = (typeof SERVER_ANALYSIS_SESSION_STATE)[keyof typeof SERVER_ANALYSIS_SESSION_STATE];
 
 /**
  * Only `processing` acknowledgements carry a job id, so a freshly pinned job
@@ -147,24 +189,62 @@ const PINNED_JOB_INITIAL_STATUS = 'processing';
  * Poll bookkeeping for the pinned job; the background keeps no per-job
  * polling memory, so the content session is the only place these are known.
  */
-type ServerAnalysisPollJob = {
+interface ServerAnalysisPollJob {
+    /**
+     * Opaque backend job identifier for the pinned processing job.
+     */
     jobId: string;
+
+    /**
+     * Wall-clock time (ms) the job was first pinned, for `totalMs`.
+     */
     startedAtMs: number;
+
+    /**
+     * Acknowledged polls counted toward this job.
+     */
     polls: number;
+
+    /**
+     * Transport retries counted toward this job.
+     */
     retries: number;
+
+    /**
+     * Most recently observed contract status, or `failed` for a retry.
+     */
     lastStatus: string;
-};
+}
 
 /**
  * Snapshot for the `poll-summary` event.
  */
-export type ServerAnalysisPollSummary = {
+export interface ServerAnalysisPollSummary {
+    /**
+     * Opaque backend job identifier the summary is for.
+     */
     job: string;
+
+    /**
+     * Acknowledged polls counted toward this job.
+     */
     polls: number;
+
+    /**
+     * Transport retries counted toward this job.
+     */
     retries: number;
+
+    /**
+     * Elapsed ms since the job was pinned.
+     */
     totalMs: number;
+
+    /**
+     * Most recently observed contract status, or `failed` for a retry.
+     */
     lastStatus: string;
-};
+}
 
 /**
  * Retains one accepted caption payload across polling and MV3 transport recovery.
@@ -258,8 +338,7 @@ export class ServerAnalysisSession {
     /**
      * Terminal and cancelled states remain distinguishable for route cleanup.
      */
-    private state: ServerAnalysisSessionState =
-        SERVER_ANALYSIS_SESSION_STATE.Active;
+    private state: ServerAnalysisSessionState = SERVER_ANALYSIS_SESSION_STATE.Active;
 
     /**
      * Initializes state only after the factory validates the externally visible UUID.
@@ -287,6 +366,7 @@ export class ServerAnalysisSession {
      * @param videoId - Current watch video identifier.
      * @param sessionIdFactory - UUID source, normally Web Crypto.
      * @param startedAtMs - Wall-clock start, injectable for deterministic tests.
+     *
      * @returns Fresh cancellable Server-analysis session.
      */
     static create(
@@ -305,6 +385,7 @@ export class ServerAnalysisSession {
      * Returns a defensive operation copy so callers cannot alter retry payloads.
      *
      * @param operation - Internally retained immutable operation.
+     *
      * @returns Structured copy safe for orchestration and tests.
      */
     private static cloneOperation(
@@ -352,6 +433,7 @@ export class ServerAnalysisSession {
      *
      * @param captions - Successful player-mediated caption capture.
      * @param durationSec - Optional untrusted player duration hint.
+     *
      * @returns Defensive request payload, or `null` for stale/cancelled input.
      */
     acceptCaptions(
@@ -368,13 +450,12 @@ export class ServerAnalysisSession {
         if (!canonical.ok) {
             return null;
         }
-        const duration =
-            durationSec !== undefined &&
-            Number.isFinite(durationSec) &&
-            durationSec >= 0 &&
-            durationSec <= MAX_TRANSCRIPT_TIMELINE_SEC
-                ? { durationSec }
-                : {};
+        const duration = durationSec !== undefined
+            && Number.isFinite(durationSec)
+            && durationSec >= 0
+            && durationSec <= MAX_TRANSCRIPT_TIMELINE_SEC
+            ? { durationSec }
+            : {};
         const parsed = v.safeParse(requestServerAnalysisPayloadSchema, {
             sessionId: this.sessionId,
             videoId: this.videoId,
@@ -427,6 +508,7 @@ export class ServerAnalysisSession {
      * Checks the fixed deadline without mutating recovery state.
      *
      * @param nowMs - Current wall-clock time.
+     *
      * @returns Whether the bounded session lifetime has elapsed.
      */
     isDeadlineReached(nowMs = Date.now()): boolean {
@@ -439,6 +521,7 @@ export class ServerAnalysisSession {
      * @param jobId - Opaque backend job identifier.
      * @param identity - Server-authoritative transcript identity from the ack.
      * @param nowMs - Wall-clock time, injectable for deterministic tests.
+     *
      * @returns Validated poll payload, or `null` for mismatched state.
      */
     pinProcessing(
@@ -447,10 +530,10 @@ export class ServerAnalysisSession {
         nowMs = Date.now(),
     ): RefreshServerAnalysisStatusPayload | null {
         if (
-            !this.isActive() ||
-            this.retainedRequest === null ||
-            identity.videoId !== this.videoId ||
-            identity.languageCode !== this.retainedRequest.languageCode
+            !this.isActive()
+            || this.retainedRequest === null
+            || identity.videoId !== this.videoId
+            || identity.languageCode !== this.retainedRequest.languageCode
         ) {
             return null;
         }
@@ -508,12 +591,13 @@ export class ServerAnalysisSession {
      * Rejects a late response after an authoritative ack advanced the session.
      *
      * @param operationId - Local identity captured before runtime messaging.
+     *
      * @returns Whether that operation still owns the active response slot.
      */
     isCurrentOperation(operationId: number): boolean {
         return (
-            this.isActive() &&
-            this.pendingOperation?.operationId === operationId
+            this.isActive()
+            && this.pendingOperation?.operationId === operationId
         );
     }
 
@@ -526,8 +610,7 @@ export class ServerAnalysisSession {
         if (!this.isActive() || this.pendingOperation === null) {
             return null;
         }
-        const retryAfterMs =
-            SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[this.transportRetryCount];
+        const retryAfterMs = SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[this.transportRetryCount];
         if (retryAfterMs === undefined) {
             return null;
         }
@@ -567,6 +650,7 @@ export class ServerAnalysisSession {
      * Diagnostic summary of the pinned job's polling loop.
      *
      * @param nowMs - Wall-clock time used for `totalMs`.
+     *
      * @returns Bounded scalar summary, or `null` when no job is pinned.
      */
     getPollSummary(nowMs = Date.now()): ServerAnalysisPollSummary | null {
@@ -589,9 +673,9 @@ export class ServerAnalysisSession {
      */
     takeExactResubmission(): RequestServerAnalysisPayload | null {
         if (
-            !this.isActive() ||
-            this.retainedRequest === null ||
-            this.resubmissionUsed
+            !this.isActive()
+            || this.retainedRequest === null
+            || this.resubmissionUsed
         ) {
             return null;
         }
@@ -612,9 +696,9 @@ export class ServerAnalysisSession {
      */
     takeFinalPoll(): ServerAnalysisPollOperation | null {
         if (
-            !this.isActive() ||
-            this.finalPollUsed ||
-            this.pendingOperation?.kind !== SERVER_ANALYSIS_OPERATION_KIND.Poll
+            !this.isActive()
+            || this.finalPollUsed
+            || this.pendingOperation?.kind !== SERVER_ANALYSIS_OPERATION_KIND.Poll
         ) {
             return null;
         }
@@ -644,6 +728,7 @@ export class ServerAnalysisSession {
      * Retains one safe local failure before analysis becomes terminal.
      *
      * @param event - Caption or transport failure without sensitive details.
+     *
      * @returns Whether this became the pending terminal event.
      */
     retainTerminalEvent(event: ServerAnalysisTerminalEvent): boolean {
@@ -687,10 +772,9 @@ export class ServerAnalysisSession {
         if (!this.isTerminal() || this.pendingTerminalEvent === null) {
             return null;
         }
-        const retryAfterMs =
-            SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[
-                this.terminalEventDeliveryRetryCount
-            ];
+        const retryAfterMs = SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS[
+            this.terminalEventDeliveryRetryCount
+        ];
         if (retryAfterMs === undefined) {
             return null;
         }

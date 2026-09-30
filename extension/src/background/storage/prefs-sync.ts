@@ -1,3 +1,8 @@
+/**
+ * @file Owns reading, validating, repairing and writing user preferences in
+ * `browser.storage.local`; the only module that touches that key.
+ */
+
 import * as v from 'valibot';
 
 import { BackgroundStorageAccess } from '@/background/storage/background-storage-access';
@@ -40,19 +45,18 @@ export class PrefsSyncStorage {
      * Parses and validates a value from storage using `userPreferencesSchema`.
      *
      * @param raw Untrusted value previously read from `browser.storage.local`.
+     *
      * @returns Validated preferences object.
      */
     private static parseStoredPrefs(raw: unknown): UserPreferences {
         const parsed = v.parse(userPreferencesSchema, raw);
         const rawActiveModelId = PrefsSyncStorage.readRawActiveModelId(raw);
-        const activeModelId =
-            rawActiveModelId !== undefined && rawActiveModelId.length > 0
-                ? rawActiveModelId
-                : PrefsSyncStorage.legacyProviderToModelId(parsed.providerId);
+        const activeModelId = rawActiveModelId !== undefined && rawActiveModelId.length > 0
+            ? rawActiveModelId
+            : PrefsSyncStorage.legacyProviderToModelId(parsed.providerId);
         const model = resolveDetectionModel(activeModelId, []);
-        const providerId =
-            model?.providerId ??
-            PrefsSyncStorage.providerIdFromModelId(activeModelId);
+        const providerId = model?.providerId
+            ?? PrefsSyncStorage.providerIdFromModelId(activeModelId);
         return {
             enabled: parsed.enabled,
             providerId,
@@ -66,14 +70,15 @@ export class PrefsSyncStorage {
      * legacy row had no model-first field.
      *
      * @param raw Untrusted storage value.
+     *
      * @returns Raw active model id when present.
      */
     private static readRawActiveModelId(raw: unknown): string | undefined {
         if (
-            raw === null ||
-            typeof raw !== 'object' ||
-            !('activeModelId' in raw) ||
-            typeof raw.activeModelId !== 'string'
+            raw === null
+            || typeof raw !== 'object'
+            || !('activeModelId' in raw)
+            || typeof raw.activeModelId !== 'string'
         ) {
             return undefined;
         }
@@ -85,6 +90,7 @@ export class PrefsSyncStorage {
      *
      * @param raw Previous storage value.
      * @param prefs Normalized preferences.
+     *
      * @returns Whether a repair write is unnecessary.
      */
     private static storedPrefsMatch(
@@ -92,16 +98,16 @@ export class PrefsSyncStorage {
         prefs: UserPreferences,
     ): boolean {
         return (
-            raw !== null &&
-            typeof raw === 'object' &&
-            'enabled' in raw &&
-            'providerId' in raw &&
-            'activeModelId' in raw &&
-            'analysisMode' in raw &&
-            raw.enabled === prefs.enabled &&
-            raw.providerId === prefs.providerId &&
-            raw.activeModelId === prefs.activeModelId &&
-            raw.analysisMode === prefs.analysisMode
+            raw !== null
+            && typeof raw === 'object'
+            && 'enabled' in raw
+            && 'providerId' in raw
+            && 'activeModelId' in raw
+            && 'analysisMode' in raw
+            && raw.enabled === prefs.enabled
+            && raw.providerId === prefs.providerId
+            && raw.activeModelId === prefs.activeModelId
+            && raw.analysisMode === prefs.analysisMode
         );
     }
 
@@ -110,6 +116,7 @@ export class PrefsSyncStorage {
      * stable selection after upgrade.
      *
      * @param providerId Legacy provider id.
+     *
      * @returns Equivalent default model id.
      */
     private static legacyProviderToModelId(providerId: string): string {
@@ -124,6 +131,7 @@ export class PrefsSyncStorage {
      * their prefix still preserves runtime routing.
      *
      * @param modelId Stored active model id.
+     *
      * @returns Provider route inferred from the model id.
      */
     private static providerIdFromModelId(modelId: string): string {
@@ -162,6 +170,7 @@ export class PrefsSyncStorage {
      * Command: validates and persists preferences under `STORAGE_KEY_PREFS`.
      *
      * @param prefs Preferences to store after validation.
+     *
      * @returns A promise that resolves when the value has been written.
      */
     static async save(prefs: UserPreferences): Promise<void> {
@@ -174,6 +183,7 @@ export class PrefsSyncStorage {
      *
      * @param raw Previous storage value.
      * @param prefs Normalized preferences.
+     *
      * @returns Promise resolved after optional repair.
      */
     private static async repairIfChanged(

@@ -1,5 +1,5 @@
 /**
- * Chrome Prompt API (Web AI) surface identifiers.
+ * @file Chrome Prompt API (Web AI) surface identifiers.
  *
  * Pure constants — no I/O — so they safely live in `shared/`. Used by both
  * the background (message handlers) and options (direct `LanguageModel`
@@ -19,6 +19,7 @@ export const LANGUAGE_MODEL_METHOD = {
      * Returns current model availability state.
      */
     AVAILABILITY: 'availability',
+
     /**
      * Creates a new model session (triggers download if needed).
      */

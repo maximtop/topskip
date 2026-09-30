@@ -1,9 +1,13 @@
+/**
+ * @file Runtime handlers for provider-selection messages: active provider
+ * lookup, availability listing, and switching the user's chosen provider.
+ */
+
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
 import { defaultRegistry } from '@/background/providers/default-registry';
 import { PROVIDER_ID } from '@/background/providers/llm-provider-adapter';
-import type { ProviderRegistry } from '@/background/providers/provider-registry';
 import { OpenRouterStorage } from '@/background/storage/openrouter-storage';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { CHROME_PROMPT_API_MODEL_NAME } from '@/shared/chrome-prompt-api';
@@ -13,6 +17,8 @@ import {
     type GetProviderListResponse,
     type SetActiveProviderResponse,
 } from '@/shared/messages';
+
+import type { ProviderRegistry } from '@/background/providers/provider-registry';
 
 /**
  * Handles runtime provider-selection messages; not instantiable.
@@ -90,6 +96,7 @@ export class ProviderRuntimeMessages {
      * Validates and persists the user’s chosen LLM provider id.
      *
      * @param providerId - Non-empty provider id string from the SET payload.
+     *
      * @returns Save result
      */
     static async handleSetActive(

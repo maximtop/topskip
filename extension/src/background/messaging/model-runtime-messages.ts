@@ -1,10 +1,15 @@
+/**
+ * @file Runtime handlers for model-first settings: model catalog, active
+ * model selection, and per-provider connection key save/test.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { PrefsBroadcast } from '@/background/messaging/broadcast-prefs-updated';
 import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
-import { fetchOpenRouterModelList } from '@/background/openrouter/openrouter-models-api';
 import { testOpenAiApiKey } from '@/background/openai/openai-client';
+import { fetchOpenRouterModelList } from '@/background/openrouter/openrouter-models-api';
+import { ProviderHostAccess } from '@/background/permissions/provider-host-access';
 import {
     OpenAiStorage,
     type OpenAiConfig,
@@ -33,14 +38,14 @@ import {
     type TestConnectionKeyResponse,
 } from '@/shared/messages';
 import {
+    PROVIDER_HOST_ACCESS_STATUS,
+    type ProviderHostAccessStatus,
+} from '@/shared/provider-host-permissions';
+import {
     PROVIDER_ID,
     PROVIDER_LABEL,
     type ProviderId,
 } from '@/shared/providers';
-import {
-    PROVIDER_HOST_ACCESS_STATUS,
-    type ProviderHostAccessStatus,
-} from '@/shared/provider-host-permissions';
 
 const ERROR_UNKNOWN_MODEL = 'Unknown model';
 const ERROR_OPENROUTER_KEY_REQUIRED = 'OpenRouter API key is required.';
@@ -63,10 +68,17 @@ type ConnectionHostAccess = Record<
 /**
  * Storage rows needed when persisting a provider-specific selected model.
  */
-type ProviderStorageSnapshot = {
+interface ProviderStorageSnapshot {
+    /**
+     * Full OpenRouter config row, preserved except for the field being saved.
+     */
     openRouterConfig: OpenRouterConfig;
+
+    /**
+     * Full OpenAI config row, preserved except for the field being saved.
+     */
     openAiConfig: OpenAiConfig;
-};
+}
 
 /**
  * Persists the selected provider model while preserving unrelated config.
@@ -79,16 +91,36 @@ type SelectedModelSaver = (
 /**
  * Provider-specific key operations used by the generic connection handler.
  */
-type ConnectionProviderConfig = {
+interface ConnectionProviderConfig {
+    /**
+     * Provider id this connection row represents.
+     */
     providerId: ConnectionProviderId;
+
+    /**
+     * Human label shown in the options connection row.
+     */
     providerLabel: string;
+
+    /**
+     * Message returned when the provider's key is required but missing.
+     */
     missingApiKeyError: string;
     loadApiKey(): Promise<string>;
     saveApiKey(apiKey: string): Promise<void>;
     maskApiKey(apiKey: string): string | null;
     testApiKey(apiKey: string): Promise<TestConnectionKeyResponse>;
-};
+}
 
+/**
+ * Prefers an in-progress draft key over the already-saved one, so testing a
+ * connection reflects what the user is about to save, not stale storage.
+ *
+ * @param apiKey - Draft key from the request, if the user is editing one.
+ * @param savedApiKey - Key currently persisted for this provider.
+ *
+ * @returns The key to test.
+ */
 const resolveConnectionTestKey = (
     apiKey: string | undefined,
     savedApiKey: string,
@@ -97,6 +129,14 @@ const resolveConnectionTestKey = (
     return draftApiKey.length > 0 ? draftApiKey : savedApiKey;
 };
 
+/**
+ * Confirms an OpenRouter key by fetching the model list, since OpenRouter has
+ * no dedicated auth-check endpoint.
+ *
+ * @param apiKey - Key to test.
+ *
+ * @returns Validation result.
+ */
 const testOpenRouterApiKey = async (
     apiKey: string,
 ): Promise<TestConnectionKeyResponse> => {
@@ -173,7 +213,14 @@ const SELECTED_MODEL_SAVER_BY_PROVIDER: Partial<
     },
 };
 
-const skipSelectedModelSave: SelectedModelSaver = () => Promise.resolve();
+/**
+ * No-op saver for providers without a provider-specific selected-model field.
+ *
+ * @returns Already-resolved promise.
+ */
+const skipSelectedModelSave: SelectedModelSaver = () => {
+    return Promise.resolve();
+};
 
 /**
  * Handles model-first settings and connection messages.
@@ -185,6 +232,7 @@ export class ModelRuntimeMessages {
      * @param customOpenRouterModels - Saved custom OpenRouter slugs.
      * @param connectionApiKeys - Raw keys indexed by connection provider.
      * @param connectionHostAccess - Current optional-host grant states.
+     *
      * @returns Runtime-safe model messages.
      */
     private static buildModelMessages(
@@ -194,17 +242,15 @@ export class ModelRuntimeMessages {
     ): DetectionModelMessage[] {
         const connectionAvailability: Partial<Record<ProviderId, boolean>> = {};
         for (const connection of CONNECTION_PROVIDER_CONFIGS) {
-            connectionAvailability[connection.providerId] =
-                connectionApiKeys[connection.providerId].length > 0 &&
-                connectionHostAccess[connection.providerId] ===
-                    PROVIDER_HOST_ACCESS_STATUS.Granted;
+            connectionAvailability[connection.providerId] = connectionApiKeys[connection.providerId].length > 0
+                && connectionHostAccess[connection.providerId]
+                    === PROVIDER_HOST_ACCESS_STATUS.Granted;
         }
 
         return getDetectionModels(customOpenRouterModels).map((model) => {
-            const availability =
-                connectionAvailability[model.providerId] === false
-                    ? PROVIDER_AVAILABILITY.UNAVAILABLE
-                    : PROVIDER_AVAILABILITY.AVAILABLE;
+            const availability = connectionAvailability[model.providerId] === false
+                ? PROVIDER_AVAILABILITY.UNAVAILABLE
+                : PROVIDER_AVAILABILITY.AVAILABLE;
             return { ...model, availability };
         });
     }
@@ -215,6 +261,7 @@ export class ModelRuntimeMessages {
      * @param activeProviderId - Provider used by current active model.
      * @param connectionApiKeys - Raw keys indexed by connection provider.
      * @param connectionHostAccess - Current optional-host grant states.
+     *
      * @returns Masked connection rows.
      */
     private static buildConnectionMessages(
@@ -264,8 +311,7 @@ export class ModelRuntimeMessages {
                 openRouterConfig.customModels,
             );
             const activeModelId = activeModel?.id ?? prefs.activeModelId;
-            const activeProviderId =
-                activeModel?.providerId ?? prefs.providerId;
+            const activeProviderId = activeModel?.providerId ?? prefs.providerId;
             const connectionApiKeys = {
                 [PROVIDER_ID.OpenRouter]: openRouterConfig.apiKey,
                 [PROVIDER_ID.OpenAI]: openAiConfig.apiKey,
@@ -294,6 +340,7 @@ export class ModelRuntimeMessages {
      * Persists active model and updates provider-specific selected model.
      *
      * @param modelId - Incoming active model id.
+     *
      * @returns Save result.
      */
     static async handleSetActiveModel(
@@ -314,9 +361,8 @@ export class ModelRuntimeMessages {
                 return { ok: false, error: ERROR_UNKNOWN_MODEL };
             }
 
-            const saveSelectedModel =
-                SELECTED_MODEL_SAVER_BY_PROVIDER[model.providerId] ??
-                skipSelectedModelSave;
+            const saveSelectedModel = SELECTED_MODEL_SAVER_BY_PROVIDER[model.providerId]
+                ?? skipSelectedModelSave;
             await saveSelectedModel(model.modelName, {
                 openRouterConfig,
                 openAiConfig,
@@ -342,6 +388,7 @@ export class ModelRuntimeMessages {
      *
      * @param providerId - Connection provider id.
      * @param apiKey - Raw key draft.
+     *
      * @returns Masked saved key or error.
      */
     static async handleSaveConnectionKey(
@@ -369,6 +416,7 @@ export class ModelRuntimeMessages {
      *
      * @param providerId - Connection provider id.
      * @param apiKey - Optional draft key; saved key is used when omitted.
+     *
      * @returns Validation result.
      */
     static async handleTestConnectionKey(

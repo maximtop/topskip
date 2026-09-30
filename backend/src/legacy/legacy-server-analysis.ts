@@ -1,14 +1,24 @@
-import * as v from 'valibot';
+/**
+ * @file Orchestrates the private, operator-only legacy metadata-extraction path:
+ * cache lookup, job join, quota admission, and cold-job start, kept isolated
+ * from the public caption-upload path.
+ */
 
 import {
-    BACKEND_REQUEST_COST_CLASS,
-    BackendApiProtection,
-} from '@topskip/backend/api-protection';
+    SERVER_ANALYSIS_ALGORITHM_VERSION,
+    SERVER_ANALYSIS_FAILURE_CODE,
+} from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
 import { AnalysisArtifactStore } from '@topskip/backend/analysis-artifact-store';
 import {
     BackendAnalysisJobs,
     type BackendAnalysisJobResponse,
 } from '@topskip/backend/analysis-jobs';
+import {
+    BACKEND_REQUEST_COST_CLASS,
+    BackendApiProtection,
+} from '@topskip/backend/api-protection';
 import { BackendCacheFixtures } from '@topskip/backend/cache-fixtures';
 import {
     legacyServerAnalysisResponseSchema,
@@ -17,10 +27,6 @@ import {
     type LegacyServerAnalysisResponse,
 } from '@topskip/backend/legacy/legacy-server-analysis-contract';
 import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
-import {
-    SERVER_ANALYSIS_ALGORITHM_VERSION,
-    SERVER_ANALYSIS_FAILURE_CODE,
-} from '@topskip/common/server-analysis-contract';
 
 const MAX_VIDEO_DURATION_SEC = 5 * 60 * 60;
 const CAPACITY_RETRY_AFTER_SEC = 3;
@@ -28,10 +34,17 @@ const CAPACITY_RETRY_AFTER_SEC = 3;
 /**
  * Legacy orchestration returns only the private process-selected response contract.
  */
-export type BackendLegacyAnalysisResult = {
+export interface BackendLegacyAnalysisResult {
+    /**
+     * HTTP status code matching `body.status` for the legacy response.
+     */
     statusCode: 200 | 202 | 422 | 429;
+
+    /**
+     * Private legacy response payload to return as-is.
+     */
     body: LegacyServerAnalysisResponse;
-};
+}
 
 /**
  * Keeps metadata-only extraction isolated from the public caption-upload path; static API only.
@@ -42,6 +55,13 @@ export class BackendLegacyServerAnalysis {
      *
      * @param request - Private metadata request accepted by a legacy-mode process.
      * @param options - Hashed ownership context and deterministic request time.
+     * @param options.nowMs Deterministic timestamp used for quota accounting.
+     * @param options.installationHash Hashed installation identity used for job-join and quota lookups.
+     * @param options.ipHash Hashed request IP used for job-join and quota lookups.
+     * @param options.requestId Safe request correlation identifier used only for logging.
+     * @param options.publicContext Whether cold-start quota should be charged against the
+     * installation/IP bucket instead of the local process counter.
+     *
      * @returns Private legacy response with its HTTP status.
      */
     static handle(
@@ -50,7 +70,7 @@ export class BackendLegacyServerAnalysis {
             nowMs: number;
             installationHash: string;
             ipHash: string;
-            requestId?: string;
+            requestId?: string | undefined;
             publicContext: boolean;
         },
     ): BackendLegacyAnalysisResult {
@@ -74,9 +94,9 @@ export class BackendLegacyServerAnalysis {
             SERVER_ANALYSIS_ALGORITHM_VERSION,
         );
         if (
-            artifact !== null &&
-            (artifact.terminalResponse.status === 'ready' ||
-                artifact.terminalResponse.status === 'no_promo')
+            artifact !== null
+            && (artifact.terminalResponse.status === 'ready'
+                || artifact.terminalResponse.status === 'no_promo')
         ) {
             BackendLegacyServerAnalysis.recordCacheHit(
                 request.videoId,
@@ -115,8 +135,8 @@ export class BackendLegacyServerAnalysis {
         }
 
         if (
-            request.durationSec !== undefined &&
-            request.durationSec > MAX_VIDEO_DURATION_SEC
+            request.durationSec !== undefined
+            && request.durationSec > MAX_VIDEO_DURATION_SEC
         ) {
             return {
                 statusCode: 422,
@@ -145,9 +165,9 @@ export class BackendLegacyServerAnalysis {
             nowMs: options.nowMs,
             ...(options.publicContext
                 ? {
-                        installationHash: options.installationHash,
-                        ipHash: options.ipHash,
-                    }
+                    installationHash: options.installationHash,
+                    ipHash: options.ipHash,
+                }
                 : {}),
         });
         if (!protection.allowed) {
@@ -209,6 +229,7 @@ export class BackendLegacyServerAnalysis {
      * Maps a legacy job response to its asynchronous HTTP status.
      *
      * @param response - Source-tagged job response from the shared scheduler.
+     *
      * @returns Strict private response and matching HTTP status.
      */
     private static jobResult(
@@ -225,6 +246,7 @@ export class BackendLegacyServerAnalysis {
      * Rejects any accidental public upload shape at the private legacy boundary.
      *
      * @param response - Candidate job or artifact response.
+     *
      * @returns Strict private legacy response.
      */
     private static parseResponse(
@@ -240,6 +262,7 @@ export class BackendLegacyServerAnalysis {
      * @param requestId - Safe request correlation identifier.
      * @param code - Stable capacity outcome.
      * @param retryAfterSec - Positive whole-second retry delay.
+     *
      * @returns Private retry response.
      */
     private static rateLimited(

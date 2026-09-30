@@ -1,5 +1,21 @@
+/**
+ * @file YouTube watch-page orchestration: binds the `<video>` element,
+ * routes fixed-window and server/promo-block skip logic, drives server-mode
+ * analysis submission/polling/retry, and reports content lifecycle state.
+ */
+
 import * as v from 'valibot';
 
+import {
+    DEBUG_LOG_SEEK_KIND,
+    DebugLogClient,
+    type DebugLogEventIds,
+} from '@/content/debug-log-client';
+import {
+    E2E_HOST,
+    getWatchVideoIdFromSearch,
+    shouldActivateTopSkip,
+} from '@/content/page-guards';
 import {
     evaluatePromoBlocksSkip,
     explainSuppressedPromoSkip,
@@ -7,11 +23,7 @@ import {
     resetFiredIndicesOnBackwardSeek,
     type PromoBlocksSkipInput,
 } from '@/content/promo-skip-logic';
-import {
-    E2E_HOST,
-    getWatchVideoIdFromSearch,
-    shouldActivateTopSkip,
-} from '@/content/page-guards';
+import { ContentServerAnalysisLog } from '@/content/server-analysis-log';
 import {
     buildRefreshServerAnalysisStatusMessage,
     buildRequestServerAnalysisMessage,
@@ -26,21 +38,19 @@ import {
     type ServerAnalysisPollSummary,
     type ServerAnalysisTerminalEvent,
 } from '@/content/server-analysis-session';
-import {
-    DEBUG_LOG_SEEK_KIND,
-    DebugLogClient,
-    type DebugLogEventIds,
-} from '@/content/debug-log-client';
-import {
-    DEBUG_LOG_EVENT,
-    formatPromoBlockTimings,
-    roundLogSeconds,
-} from '@/shared/debug-log-events';
-import { DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS } from '@/shared/debug-log-constants';
-import { ContentServerAnalysisLog } from '@/content/server-analysis-log';
 import { WatchCaptions } from '@/content/watch-captions';
+import {
+    SKIP_TOAST_BOTTOM_PX,
+    SKIP_TOAST_DISPLAY_MS,
+    SKIP_TOAST_FADE_MS,
+    SKIP_TOAST_ID,
+    SKIP_TOAST_Z_INDEX,
+    VIDEO_BINDING_POLL_INTERVAL_MS,
+    YOUTUBE_AD_OVERLAY_SELECTOR,
+    YOUTUBE_PLAYER_SELECTOR,
+    YOUTUBE_VIDEO_ELEMENT_SELECTOR,
+} from '@/content/youtube-dom';
 import browser from '@/shared/browser';
-import { getExtensionBuildLabel } from '@/shared/extension-build';
 import {
     ANALYSIS_MODE,
     MS_PER_SECOND,
@@ -48,6 +58,14 @@ import {
     type AnalysisMode,
     type UserPreferences,
 } from '@/shared/constants';
+import { DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS } from '@/shared/debug-log-constants';
+import {
+    DEBUG_LOG_EVENT,
+    formatPromoBlockTimings,
+    roundLogSeconds,
+} from '@/shared/debug-log-events';
+import { getExtensionBuildLabel } from '@/shared/extension-build';
+import { translator } from '@/shared/i18n/translator';
 import {
     CAPTION_CAPTURE_FAILURE_REASON,
     CONTENT_SCRIPT_PROTOCOL_VERSION,
@@ -64,19 +82,8 @@ import {
     type ServerAnalysisSessionEventPayload,
     type TopSkipRuntimeMessage,
 } from '@/shared/messages';
+
 import type { PromoBlock } from '@topskip/common/promo-types';
-import { translator } from '@/shared/i18n/translator';
-import {
-    SKIP_TOAST_BOTTOM_PX,
-    SKIP_TOAST_DISPLAY_MS,
-    SKIP_TOAST_FADE_MS,
-    SKIP_TOAST_ID,
-    SKIP_TOAST_Z_INDEX,
-    VIDEO_BINDING_POLL_INTERVAL_MS,
-    YOUTUBE_AD_OVERLAY_SELECTOR,
-    YOUTUBE_PLAYER_SELECTOR,
-    YOUTUBE_VIDEO_ELEMENT_SELECTOR,
-} from '@/content/youtube-dom';
 
 /**
  * Stores the teardown callback for each bound `<video>` element.
@@ -116,6 +123,7 @@ const CONTENT_RUNTIME_OUTCOME_STATUS = {
 } as const;
 const SERVER_ANALYSIS_DEADLINE_TIMER_REASON = 'analysis-deadline';
 const SERVER_ANALYSIS_FAILED_ACK_LOG_STATUS = 'failed';
+
 /**
  * Polling stops for the old job when the server asks for an exact resubmit.
  */
@@ -169,6 +177,7 @@ const TIMEUPDATE_JUMP_THRESHOLD_SEC = 2;
  * other field.
  *
  * @param message - Value delivered by `runtime.onMessage`.
+ *
  * @returns The `type` field, or `undefined` for non-objects.
  */
 function readRuntimeMessageType(message: unknown): unknown {
@@ -180,71 +189,90 @@ function readRuntimeMessageType(message: unknown): unknown {
 /**
  * Safe retry reasons keep diagnostics free of rejected runtime details.
  */
-type ContentPrefsRetryReason =
-    | typeof CONTENT_RUNTIME_FAILURE_REASON.InvalidResponse
+type ContentPrefsRetryReason = | typeof CONTENT_RUNTIME_FAILURE_REASON.InvalidResponse
     | typeof CONTENT_RUNTIME_FAILURE_REASON.RuntimeRejected
     | typeof CONTENT_RUNTIME_FAILURE_REASON.WatchdogTimeout;
 
 /**
  * Runtime outcomes separate an acknowledged response from worker transport loss.
  */
-type ServerAnalysisRuntimeOutcome =
+type ServerAnalysisRuntimeOutcome = | {
+    status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Response;
+    response: unknown;
+}
     | {
-          status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Response;
-          response: unknown;
-      }
-    | {
-          status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Failed;
-          reason:
+        status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Failed;
+        reason:
               | typeof CONTENT_RUNTIME_FAILURE_REASON.RuntimeRejected
               | typeof CONTENT_RUNTIME_FAILURE_REASON.WatchdogTimeout;
-      }
+    }
     | { status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled };
 
 /**
  * Terminal-event outcomes distinguish a durable ack from safe retry causes.
  */
-type ServerAnalysisTerminalEventDeliveryOutcome =
-    | { status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Acknowledged }
+type ServerAnalysisTerminalEventDeliveryOutcome = | { status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Acknowledged }
     | {
-          status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Failed;
-          reason:
+        status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Failed;
+        reason:
               | typeof CONTENT_RUNTIME_FAILURE_REASON.InvalidAck
               | typeof CONTENT_RUNTIME_FAILURE_REASON.RuntimeRejected
               | typeof CONTENT_RUNTIME_FAILURE_REASON.WatchdogTimeout;
-      }
+    }
     | { status: typeof CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled };
 
 /**
  * A single token prevents an old session with the same local operation number
  * from releasing ownership held by its replacement.
  */
-type ServerAnalysisOperationOwner = {
+interface ServerAnalysisOperationOwner {
+    /**
+     * Session that owns the operation.
+     */
     session: ServerAnalysisSession;
+
+    /**
+     * Local operation identity captured at scheduling.
+     */
     operationId: number;
-};
+}
 
 /**
  * Attempt ownership prevents late terminal-event completions crossing routes.
  */
-type ServerAnalysisTerminalEventDeliveryOwner = {
+interface ServerAnalysisTerminalEventDeliveryOwner {
+    /**
+     * Session that owns the delivery attempt.
+     */
     session: ServerAnalysisSession;
+
+    /**
+     * Local attempt identity captured when delivery started.
+     */
     attemptId: number;
-};
+}
 
 /**
  * Retry timer ownership prevents an old route from clearing replacement work.
  */
-type ServerAnalysisTerminalEventRetryTimer = {
+interface ServerAnalysisTerminalEventRetryTimer {
+    /**
+     * Session that owns the retry timer.
+     */
     session: ServerAnalysisSession;
+
+    /**
+     * Timer id returned by `setTimeout`, so only its owner can clear it.
+     */
     timerId: number;
-};
+}
 
 /**
  * Retains an assigned route until navigation clears the current-video lock.
  *
  * @param currentMode - Route already assigned to the active video, if any.
  * @param prefs - Latest preference snapshot.
+ *
  * @returns Existing route, or the selected route when the video is first routed.
  */
 export function resolveAnalysisModeForCurrentVideo(
@@ -272,27 +300,56 @@ export const PROMO_BLOCKS_REJECTION_CAUSE = {
 /**
  * Rejection cause literal union.
  */
-export type PromoBlocksRejectionCause =
-    (typeof PROMO_BLOCKS_REJECTION_CAUSE)[keyof typeof PROMO_BLOCKS_REJECTION_CAUSE];
+export type PromoBlocksRejectionCause = (typeof PROMO_BLOCKS_REJECTION_CAUSE)[
+    keyof typeof PROMO_BLOCKS_REJECTION_CAUSE
+];
 
 /**
  * Route identity compared against the delivered block-message identity.
  */
-export type PromoBlocksAcceptanceInput = {
+export interface PromoBlocksAcceptanceInput {
+    /**
+     * Video id bound to the active route, or `null` off watch.
+     */
     currentVideoId: string | null;
+
+    /**
+     * Video id carried by the delivered block message.
+     */
     messageVideoId: string;
+
+    /**
+     * Where the delivered blocks came from (server or promo detection).
+     */
     source: PromoDetectionSource;
+
+    /**
+     * Whether TopSkip is currently enabled.
+     */
     enabled: boolean;
+
+    /**
+     * Route already assigned to the active video, or `null` before routing.
+     */
     analysisMode: AnalysisMode | null;
+
+    /**
+     * Session id owned by the active route, or `null` outside server mode.
+     */
     activeSessionId: string | null;
-    messageSessionId?: string;
-};
+
+    /**
+     * Session id carried by the delivered message, when the source reports one.
+     */
+    messageSessionId?: string | undefined;
+}
 
 /**
  * Explains why delivered blocks must be refused for the active route, or
  * `null` when they are acceptable.
  *
  * @param input - Current route identity and the delivered block-message identity.
+ *
  * @returns Stable cause, or `null` when playback may accept the blocks.
  */
 export function explainPromoBlocksRejection(
@@ -313,8 +370,8 @@ export function explainPromoBlocksRejection(
         return PROMO_BLOCKS_REJECTION_CAUSE.RouteMismatch;
     }
     if (
-        input.activeSessionId === null ||
-        input.messageSessionId !== input.activeSessionId
+        input.activeSessionId === null
+        || input.messageSessionId !== input.activeSessionId
     ) {
         return PROMO_BLOCKS_REJECTION_CAUSE.SessionMismatch;
     }
@@ -325,6 +382,7 @@ export function explainPromoBlocksRejection(
  * Rejects late Server blocks after navigation or a same-video session replacement.
  *
  * @param input - Current route identity and the delivered block-message identity.
+ *
  * @returns Whether playback may accept the blocks.
  */
 export function shouldAcceptPromoBlocksForActiveRoute(
@@ -339,6 +397,7 @@ export function shouldAcceptPromoBlocksForActiveRoute(
  * @param analysisMode - Route locked to the current video.
  * @param videoId - Current non-empty video id.
  * @param requestedVideoId - Video id already preflighted, if any.
+ *
  * @returns Whether the current video needs its one readiness probe.
  */
 export function shouldRequestByokSetupPreflight(
@@ -357,104 +416,122 @@ export class YoutubeWatch {
      * Preferences from background; `null` means routing waits for GET_PREFS.
      */
     private static prefs: UserPreferences | null = null;
+
     /**
      * A request generation lets timed-out replies lose to newer state.
      */
     private static prefsRequestSequence = 0;
+
     /**
      * Only one logical preferences read may own response application.
      */
     private static activePrefsRequestId: number | null = null;
+
     /**
      * Timer bounding the currently owned preferences read.
      */
     private static prefsRequestTimeoutTimerId: number | null = null;
+
     /**
      * Timer delaying the next preferences read after a bounded failure.
      */
     private static prefsRetryTimerId: number | null = null;
+
     /**
      * Disposed contexts reject every late timer and runtime completion.
      */
     private static prefsLoadingActive = false;
+
     /**
      * Watch URL video id (or e2e fixture id) for the bound player.
      */
     private static currentVideoId: string | null = null;
+
     /**
      * Analysis route fixed for the lifetime of the current video id.
      */
     private static analysisModeForCurrentVideo: AnalysisMode | null = null;
+
     /**
      * Video id whose caption-independent BYOK readiness probe was sent.
      */
     private static byokPreflightVideoId: string | null = null;
+
     /**
      * Active Server route owns cancellation, retained captions, and poll identity.
      */
     private static serverAnalysisSession: ServerAnalysisSession | null = null;
+
     /**
      * Timer id for the content-owned server job polling loop.
      */
     private static serverAnalysisPollTimerId: number | null = null;
+
     /**
      * Runtime recovery waits independently of the backend-requested poll cadence.
      */
     private static serverAnalysisRetryTimerId: number | null = null;
+
     /**
      * Fixed session deadline remains active across every transport retry.
      */
     private static serverAnalysisDeadlineTimerId: number | null = null;
+
     /**
      * One owner token prevents concurrent work and cross-session ABA release.
      */
-    private static serverAnalysisOperationOwner: ServerAnalysisOperationOwner | null =
-        null;
+    private static serverAnalysisOperationOwner: ServerAnalysisOperationOwner | null = null;
 
     /**
      * Deadline expiry waits for an in-flight operation before taking the final poll.
      */
     private static serverAnalysisFinalPollPending = false;
+
     /**
      * Independent terminal-event delivery survives the analysis terminal signal.
      */
-    private static terminalEventDeliveryOwner: ServerAnalysisTerminalEventDeliveryOwner | null =
-        null;
+    private static terminalEventDeliveryOwner: ServerAnalysisTerminalEventDeliveryOwner | null = null;
 
     /**
      * Monotonic attempt ids reject late completions from timed-out deliveries.
      */
     private static terminalEventDeliveryAttemptSequence = 0;
+
     /**
      * A retry timer remains tied to the terminal session that scheduled it.
      */
-    private static terminalEventRetryTimer: ServerAnalysisTerminalEventRetryTimer | null =
-        null;
+    private static terminalEventRetryTimer: ServerAnalysisTerminalEventRetryTimer | null = null;
 
     /**
      * Last emitted route snapshot prevents the binding poll from flooding logs.
      */
     private static serverAnalysisRouteLogKey: string | null = null;
+
     /**
      * Last video id for which BYOK caption capture was scheduled.
      */
     private static captionScheduledVideoId: string | null = null;
+
     /**
      * Last `timeupdate` position used for seek / skip heuristics.
      */
     private static lastTime = 0;
+
     /**
      * True while the user is scrubbing so we do not treat jumps as promos.
      */
     private static isSeeking = false;
+
     /**
      * Currently bound `<video>` element, if any.
      */
     private static boundVideo: HTMLVideoElement | null = null;
+
     /**
      * Merged promo blocks from background for the current video.
      */
     private static promoBlocks: PromoBlock[] = [];
+
     /**
      * Rounded {@link promoBlockStartKey} for blocks that already skipped.
      */
@@ -473,7 +550,7 @@ export class YoutubeWatch {
      * @returns The video id from the URL, or `null`.
      */
     private static getWatchVideoId(): string | null {
-        return getWatchVideoIdFromSearch(location.hostname, location.search);
+        return getWatchVideoIdFromSearch(globalThis.location.hostname, globalThis.location.search);
     }
 
     /**
@@ -539,9 +616,9 @@ export class YoutubeWatch {
      */
     static shouldActivateForPage(): boolean {
         return shouldActivateTopSkip({
-            hostname: location.hostname,
-            pathname: location.pathname,
-            search: location.search,
+            hostname: globalThis.location.hostname,
+            pathname: globalThis.location.pathname,
+            search: globalThis.location.search,
         });
     }
 
@@ -568,9 +645,9 @@ export class YoutubeWatch {
      * @returns The main player video element, or `null` if not found.
      */
     private static getMainVideo(): HTMLVideoElement | null {
-        if (location.hostname === E2E_HOST) {
-            const v = document.querySelector('video');
-            return v instanceof HTMLVideoElement ? v : null;
+        if (globalThis.location.hostname === E2E_HOST) {
+            const videoElement = document.querySelector('video');
+            return videoElement instanceof HTMLVideoElement ? videoElement : null;
         }
         const el = document.querySelector(YOUTUBE_VIDEO_ELEMENT_SELECTOR);
         return el instanceof HTMLVideoElement ? el : null;
@@ -596,9 +673,9 @@ export class YoutubeWatch {
                 'border-radius:0.5rem',
                 'border:1px solid rgba(255,255,255,0.12)',
                 'box-shadow:0 14px 30px rgba(15,23,42,0.35)',
-                'font:0.8125rem/1.4 system-ui,' +
-                    '-apple-system,"Segoe UI",Roboto,' +
-                    'Helvetica,Arial,sans-serif',
+                'font:0.8125rem/1.4 system-ui,'
+                    + '-apple-system,"Segoe UI",Roboto,'
+                    + 'Helvetica,Arial,sans-serif',
                 'pointer-events:none',
                 `transition:opacity ${SKIP_TOAST_FADE_MS}ms ease-out`,
             ].join(';');
@@ -634,6 +711,7 @@ export class YoutubeWatch {
         video: HTMLVideoElement,
         targetTime: number,
     ): void {
+        // eslint-disable-next-line no-param-reassign -- seeking means setting currentTime on the player element
         video.currentTime = targetTime;
         YoutubeWatch.lastTime = targetTime;
         YoutubeWatch.showSkipToast();
@@ -647,23 +725,23 @@ export class YoutubeWatch {
      */
     private static onTimeUpdate(video: HTMLVideoElement): void {
         if (
-            YoutubeWatch.prefs?.enabled !== true ||
-            YoutubeWatch.isLikelyAdPlaying()
+            YoutubeWatch.prefs?.enabled !== true
+            || YoutubeWatch.isLikelyAdPlaying()
         ) {
             YoutubeWatch.lastTime = video.currentTime;
             return;
         }
 
-        const duration = video.duration;
+        const { duration } = video;
         if (
-            !Number.isFinite(duration) ||
-            duration === Number.POSITIVE_INFINITY
+            !Number.isFinite(duration)
+            || duration === Number.POSITIVE_INFINITY
         ) {
             YoutubeWatch.lastTime = video.currentTime;
             return;
         }
 
-        const currentTime = video.currentTime;
+        const { currentTime } = video;
         const prev = YoutubeWatch.lastTime;
 
         if (YoutubeWatch.promoBlocks.length > 0) {
@@ -802,8 +880,7 @@ export class YoutubeWatch {
                 const fromSec = YoutubeWatch.lastTime;
                 const toSec = video.currentTime;
                 if (toSec < fromSec) {
-                    const firedBefore =
-                        YoutubeWatch.firedPromoBlockStartKeys.size;
+                    const firedBefore = YoutubeWatch.firedPromoBlockStartKeys.size;
                     resetFiredIndicesOnBackwardSeek({
                         currentTime: toSec,
                         prevTime: fromSec,
@@ -859,8 +936,8 @@ export class YoutubeWatch {
         YoutubeWatch.unbindVideo();
         YoutubeWatch.cancelServerAnalysisSession('navigation');
         if (
-            YoutubeWatch.analysisModeForCurrentVideo !== null ||
-            YoutubeWatch.captionScheduledVideoId !== null
+            YoutubeWatch.analysisModeForCurrentVideo !== null
+            || YoutubeWatch.captionScheduledVideoId !== null
         ) {
             WatchCaptions.cancel(WATCH_CAPTION_CANCEL_REASON.Navigation);
         }
@@ -880,10 +957,9 @@ export class YoutubeWatch {
      * issuing cleanup commands when the route never acquired capture ownership.
      */
     private static deactivateDisabledRoute(): void {
-        const hadCaptionRouteOwnership =
-            YoutubeWatch.analysisModeForCurrentVideo !== null ||
-            YoutubeWatch.serverAnalysisSession !== null ||
-            YoutubeWatch.captionScheduledVideoId !== null;
+        const hadCaptionRouteOwnership = YoutubeWatch.analysisModeForCurrentVideo !== null
+            || YoutubeWatch.serverAnalysisSession !== null
+            || YoutubeWatch.captionScheduledVideoId !== null;
 
         YoutubeWatch.cancelServerAnalysisSession(
             WATCH_CAPTION_CANCEL_REASON.Disabled,
@@ -908,11 +984,10 @@ export class YoutubeWatch {
      * @param reason - Stable reason included when an active poll is stopped.
      */
     private static clearServerAnalysisPolling(reason = 'cleared'): void {
-        const pollPayload =
-            YoutubeWatch.serverAnalysisSession?.getPollPayload() ?? null;
+        const pollPayload = YoutubeWatch.serverAnalysisSession?.getPollPayload() ?? null;
         if (
-            YoutubeWatch.serverAnalysisPollTimerId !== null ||
-            pollPayload !== null
+            YoutubeWatch.serverAnalysisPollTimerId !== null
+            || pollPayload !== null
         ) {
             ContentServerAnalysisLog.info('polling-stopped', {
                 videoId: pollPayload?.videoId,
@@ -977,8 +1052,8 @@ export class YoutubeWatch {
         YoutubeWatch.clearServerAnalysisRetry(reason);
         YoutubeWatch.clearServerAnalysisDeadline();
         if (
-            session === null ||
-            YoutubeWatch.serverAnalysisOperationOwner?.session === session
+            session === null
+            || YoutubeWatch.serverAnalysisOperationOwner?.session === session
         ) {
             YoutubeWatch.serverAnalysisOperationOwner = null;
         }
@@ -1004,8 +1079,8 @@ export class YoutubeWatch {
             });
         }
         if (
-            session === null ||
-            YoutubeWatch.terminalEventDeliveryOwner?.session === session
+            session === null
+            || YoutubeWatch.terminalEventDeliveryOwner?.session === session
         ) {
             YoutubeWatch.terminalEventDeliveryOwner = null;
         }
@@ -1047,8 +1122,8 @@ export class YoutubeWatch {
         reason: string,
     ): void {
         if (
-            session !== YoutubeWatch.serverAnalysisSession ||
-            !session.isActive()
+            session !== YoutubeWatch.serverAnalysisSession
+            || !session.isActive()
         ) {
             return;
         }
@@ -1069,9 +1144,9 @@ export class YoutubeWatch {
         reason: string,
     ): void {
         if (
-            session !== YoutubeWatch.serverAnalysisSession ||
-            !session.isActive() ||
-            !session.retainTerminalEvent(event)
+            session !== YoutubeWatch.serverAnalysisSession
+            || !session.isActive()
+            || !session.retainTerminalEvent(event)
         ) {
             return;
         }
@@ -1128,6 +1203,7 @@ export class YoutubeWatch {
      * Narrows runtime acks from background server-analysis handlers.
      *
      * @param response - Untyped `runtime.sendMessage` response.
+     *
      * @returns Whether the response has the supported ack shape.
      */
     private static isServerAnalysisResponse(
@@ -1141,18 +1217,19 @@ export class YoutubeWatch {
      * Rechecks all route ownership before sending or applying asynchronous work.
      *
      * @param session - Session expected to own the current Server route.
+     *
      * @returns Whether the same tab route may still advance that session.
      */
     private static isServerAnalysisRouteActive(
         session: ServerAnalysisSession,
     ): boolean {
         return (
-            session === YoutubeWatch.serverAnalysisSession &&
-            session.isActive() &&
-            session.getVideoId() === YoutubeWatch.currentVideoId &&
-            YoutubeWatch.analysisModeForCurrentVideo === ANALYSIS_MODE.Server &&
-            YoutubeWatch.prefs !== null &&
-            shouldUseServerAnalysis(YoutubeWatch.prefs)
+            session === YoutubeWatch.serverAnalysisSession
+            && session.isActive()
+            && session.getVideoId() === YoutubeWatch.currentVideoId
+            && YoutubeWatch.analysisModeForCurrentVideo === ANALYSIS_MODE.Server
+            && YoutubeWatch.prefs !== null
+            && shouldUseServerAnalysis(YoutubeWatch.prefs)
         );
     }
 
@@ -1160,6 +1237,7 @@ export class YoutubeWatch {
      * Converts the retained operation into its existing validated runtime envelope.
      *
      * @param operation - Immutable submit, exact resubmit, or poll operation.
+     *
      * @returns Runtime message owned by the background HTTP boundary.
      */
     private static buildServerAnalysisOperationMessage(
@@ -1175,6 +1253,7 @@ export class YoutubeWatch {
      *
      * @param session - Active route session owning cancellation.
      * @param message - Validated runtime message for the background.
+     *
      * @returns Acknowledgement, transport failure, or local cancellation.
      */
     private static async waitForServerAnalysisRuntime(
@@ -1187,6 +1266,12 @@ export class YoutubeWatch {
 
         return new Promise((resolve) => {
             let settled = false;
+            // Forward-declared: `finish` below must clear the eventual timer
+            // and remove the eventual abort listener, both of which close
+            // over `finish` themselves, so the three cannot be declared in
+            // reference order.
+            let timeoutId: number;
+            let onAbort: () => void;
             const finish = (outcome: ServerAnalysisRuntimeOutcome): void => {
                 if (settled) {
                     return;
@@ -1196,10 +1281,10 @@ export class YoutubeWatch {
                 session.signal.removeEventListener('abort', onAbort);
                 resolve(outcome);
             };
-            const onAbort = (): void => {
+            onAbort = (): void => {
                 finish({ status: CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled });
             };
-            const timeoutId = window.setTimeout(() => {
+            timeoutId = window.setTimeout(() => {
                 finish({
                     status: CONTENT_RUNTIME_OUTCOME_STATUS.Failed,
                     reason: CONTENT_RUNTIME_FAILURE_REASON.WatchdogTimeout,
@@ -1279,9 +1364,9 @@ export class YoutubeWatch {
         session: ServerAnalysisSession,
     ): void {
         if (
-            !YoutubeWatch.serverAnalysisFinalPollPending ||
-            YoutubeWatch.serverAnalysisOperationOwner !== null ||
-            !YoutubeWatch.isServerAnalysisRouteActive(session)
+            !YoutubeWatch.serverAnalysisFinalPollPending
+            || YoutubeWatch.serverAnalysisOperationOwner !== null
+            || !YoutubeWatch.isServerAnalysisRouteActive(session)
         ) {
             return;
         }
@@ -1305,6 +1390,8 @@ export class YoutubeWatch {
      * Schedules the next status refresh while the current video stays active.
      *
      * @param input - Polling job id, video id, and server interval.
+     * @param input.session - Session owning the pinned job to poll.
+     * @param input.pollAfterSec - Server-directed delay in seconds before the next poll.
      */
     private static scheduleServerAnalysisStatusRefresh(input: {
         session: ServerAnalysisSession;
@@ -1312,8 +1399,8 @@ export class YoutubeWatch {
     }): void {
         const pollPayload = input.session.getPollPayload();
         if (
-            pollPayload === null ||
-            !YoutubeWatch.isServerAnalysisRouteActive(input.session)
+            pollPayload === null
+            || !YoutubeWatch.isServerAnalysisRouteActive(input.session)
         ) {
             return;
         }
@@ -1350,8 +1437,8 @@ export class YoutubeWatch {
             return;
         }
         if (
-            session.isDeadlineReached() ||
-            YoutubeWatch.serverAnalysisFinalPollPending
+            session.isDeadlineReached()
+            || YoutubeWatch.serverAnalysisFinalPollPending
         ) {
             YoutubeWatch.handleServerAnalysisDeadline(session);
             return;
@@ -1398,6 +1485,7 @@ export class YoutubeWatch {
      * @param session - Active route session.
      * @param operation - Immutable submit, exact resubmit, or poll operation.
      * @param isFinalPoll - Whether deadline policy forbids another retry.
+     *
      * @returns Promise resolved after response or recovery scheduling.
      */
     private static async executeServerAnalysisOperation(
@@ -1406,9 +1494,9 @@ export class YoutubeWatch {
         isFinalPoll = false,
     ): Promise<void> {
         if (
-            !YoutubeWatch.isServerAnalysisRouteActive(session) ||
-            !session.isCurrentOperation(operation.operationId) ||
-            YoutubeWatch.serverAnalysisOperationOwner !== null
+            !YoutubeWatch.isServerAnalysisRouteActive(session)
+            || !session.isCurrentOperation(operation.operationId)
+            || YoutubeWatch.serverAnalysisOperationOwner !== null
         ) {
             return;
         }
@@ -1431,17 +1519,17 @@ export class YoutubeWatch {
             YoutubeWatch.buildServerAnalysisOperationMessage(operation),
         );
         if (
-            YoutubeWatch.serverAnalysisOperationOwner?.session === session &&
-            YoutubeWatch.serverAnalysisOperationOwner.operationId ===
-                operation.operationId
+            YoutubeWatch.serverAnalysisOperationOwner?.session === session
+            && YoutubeWatch.serverAnalysisOperationOwner.operationId
+                === operation.operationId
         ) {
             YoutubeWatch.serverAnalysisOperationOwner = null;
         }
 
         if (
-            outcome.status === CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled ||
-            !YoutubeWatch.isServerAnalysisRouteActive(session) ||
-            !session.isCurrentOperation(operation.operationId)
+            outcome.status === CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled
+            || !YoutubeWatch.isServerAnalysisRouteActive(session)
+            || !session.isCurrentOperation(operation.operationId)
         ) {
             return;
         }
@@ -1465,9 +1553,9 @@ export class YoutubeWatch {
         }
 
         if (
-            YoutubeWatch.serverAnalysisFinalPollPending &&
-            YoutubeWatch.serverAnalysisOperationOwner === null &&
-            YoutubeWatch.isServerAnalysisRouteActive(session)
+            YoutubeWatch.serverAnalysisFinalPollPending
+            && YoutubeWatch.serverAnalysisOperationOwner === null
+            && YoutubeWatch.isServerAnalysisRouteActive(session)
         ) {
             YoutubeWatch.runFinalServerAnalysisPoll(session);
         }
@@ -1484,9 +1572,9 @@ export class YoutubeWatch {
         YoutubeWatch.serverAnalysisPollTimerId = null;
 
         if (
-            session === null ||
-            operation?.kind !== SERVER_ANALYSIS_OPERATION_KIND.Poll ||
-            !YoutubeWatch.isServerAnalysisRouteActive(session)
+            session === null
+            || operation?.kind !== SERVER_ANALYSIS_OPERATION_KIND.Poll
+            || !YoutubeWatch.isServerAnalysisRouteActive(session)
         ) {
             YoutubeWatch.cancelServerAnalysisSession('route-inactive');
             return;
@@ -1540,15 +1628,14 @@ export class YoutubeWatch {
         });
         // The pending operation is still the poll that produced this ack:
         // `pinProcessing`/`takeExactResubmission` replace it further below.
-        const isPollAck =
-            session.getPendingOperation()?.kind ===
-            SERVER_ANALYSIS_OPERATION_KIND.Poll;
+        const isPollAck = session.getPendingOperation()?.kind
+            === SERVER_ANALYSIS_OPERATION_KIND.Poll;
         if (isPollAck) {
             session.recordPollStatus(ackStatus, false);
             const interim = session.getPollSummary();
             if (
-                interim !== null &&
-                interim.polls % DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS === 0
+                interim !== null
+                && interim.polls % DEBUG_LOG_POLL_SUMMARY_EVERY_POLLS === 0
             ) {
                 YoutubeWatch.logPollSummary(session, interim, {
                     terminal: false,
@@ -1585,8 +1672,8 @@ export class YoutubeWatch {
                 return;
             }
             if (
-                session.isDeadlineReached() ||
-                YoutubeWatch.serverAnalysisFinalPollPending
+                session.isDeadlineReached()
+                || YoutubeWatch.serverAnalysisFinalPollPending
             ) {
                 YoutubeWatch.serverAnalysisFinalPollPending = true;
                 return;
@@ -1679,6 +1766,7 @@ export class YoutubeWatch {
      *
      * @param session - Active route session.
      * @param event - Safe local acquisition outcome.
+     *
      * @returns Promise resolved after best-effort background delivery.
      */
     private static async sendServerAnalysisSessionEvent(
@@ -1708,13 +1796,14 @@ export class YoutubeWatch {
      * Accepts only a durable acknowledgement from the background event handler.
      *
      * @param response - Opaque runtime acknowledgement.
+     *
      * @returns Whether background accepted and persisted the terminal event.
      */
     private static isTerminalEventDeliveryAck(response: unknown): boolean {
         return (
-            response !== null &&
-            typeof response === 'object' &&
-            Reflect.get(response, 'ok') === true
+            response !== null
+            && typeof response === 'object'
+            && Reflect.get(response, 'ok') === true
         );
     }
 
@@ -1722,17 +1811,18 @@ export class YoutubeWatch {
      * Rejects delivery work after navigation, acknowledgement, or cancellation.
      *
      * @param session - Terminal session expected to own the pending event.
+     *
      * @returns Whether the same terminal route still needs delivery.
      */
     private static isTerminalEventDeliveryCurrent(
         session: ServerAnalysisSession,
     ): boolean {
         return (
-            session === YoutubeWatch.serverAnalysisSession &&
-            session.isTerminal() &&
-            session.getPendingTerminalEvent() !== null &&
-            !session.getTerminalEventDeliverySignal().aborted &&
-            session.getVideoId() === YoutubeWatch.currentVideoId
+            session === YoutubeWatch.serverAnalysisSession
+            && session.isTerminal()
+            && session.getPendingTerminalEvent() !== null
+            && !session.getTerminalEventDeliverySignal().aborted
+            && session.getVideoId() === YoutubeWatch.currentVideoId
         );
     }
 
@@ -1741,6 +1831,7 @@ export class YoutubeWatch {
      *
      * @param session - Terminal route retaining the event.
      * @param event - Safe local terminal event without captions or server data.
+     *
      * @returns Durable ack, retryable failure, or route cancellation.
      */
     private static async waitForTerminalEventDelivery(
@@ -1753,6 +1844,12 @@ export class YoutubeWatch {
         }
         return new Promise((resolve) => {
             let settled = false;
+            // Forward-declared: `finish` below must clear the eventual timer
+            // and remove the eventual abort listener, both of which close
+            // over `finish` themselves, so the three cannot be declared in
+            // reference order.
+            let timeoutId: number;
+            let onAbort: () => void;
             const finish = (
                 outcome: ServerAnalysisTerminalEventDeliveryOutcome,
             ): void => {
@@ -1764,10 +1861,10 @@ export class YoutubeWatch {
                 signal.removeEventListener('abort', onAbort);
                 resolve(outcome);
             };
-            const onAbort = (): void => {
+            onAbort = (): void => {
                 finish({ status: CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled });
             };
-            const timeoutId = window.setTimeout(() => {
+            timeoutId = window.setTimeout(() => {
                 finish({
                     status: CONTENT_RUNTIME_OUTCOME_STATUS.Failed,
                     reason: CONTENT_RUNTIME_FAILURE_REASON.WatchdogTimeout,
@@ -1789,18 +1886,18 @@ export class YoutubeWatch {
                         finish(
                             YoutubeWatch.isTerminalEventDeliveryAck(response)
                                 ? {
-                                        status:
+                                    status:
                                             CONTENT_RUNTIME_OUTCOME_STATUS
                                                 .Acknowledged,
-                                    }
+                                }
                                 : {
-                                        status:
+                                    status:
                                             CONTENT_RUNTIME_OUTCOME_STATUS
                                                 .Failed,
-                                        reason:
+                                    reason:
                                             CONTENT_RUNTIME_FAILURE_REASON
                                                 .InvalidAck,
-                                    },
+                                },
                         );
                     },
                     () => {
@@ -1856,8 +1953,8 @@ export class YoutubeWatch {
         });
         const timerId = window.setTimeout(() => {
             if (
-                YoutubeWatch.terminalEventRetryTimer?.session !== session ||
-                YoutubeWatch.terminalEventRetryTimer.timerId !== timerId
+                YoutubeWatch.terminalEventRetryTimer?.session !== session
+                || YoutubeWatch.terminalEventRetryTimer.timerId !== timerId
             ) {
                 return;
             }
@@ -1871,6 +1968,7 @@ export class YoutubeWatch {
      * Delivers one retained terminal event through an ownership-safe attempt.
      *
      * @param session - Terminal route retaining the event.
+     *
      * @returns Promise resolved after ack or recovery scheduling.
      */
     private static async deliverPendingTerminalEvent(
@@ -1878,10 +1976,10 @@ export class YoutubeWatch {
     ): Promise<void> {
         const event = session.getPendingTerminalEvent();
         if (
-            event === null ||
-            !YoutubeWatch.isTerminalEventDeliveryCurrent(session) ||
-            YoutubeWatch.terminalEventDeliveryOwner !== null ||
-            YoutubeWatch.terminalEventRetryTimer !== null
+            event === null
+            || !YoutubeWatch.isTerminalEventDeliveryCurrent(session)
+            || YoutubeWatch.terminalEventDeliveryOwner !== null
+            || YoutubeWatch.terminalEventRetryTimer !== null
         ) {
             return;
         }
@@ -1898,14 +1996,14 @@ export class YoutubeWatch {
             event,
         );
         if (
-            YoutubeWatch.terminalEventDeliveryOwner?.session === session &&
-            YoutubeWatch.terminalEventDeliveryOwner.attemptId === attemptId
+            YoutubeWatch.terminalEventDeliveryOwner?.session === session
+            && YoutubeWatch.terminalEventDeliveryOwner.attemptId === attemptId
         ) {
             YoutubeWatch.terminalEventDeliveryOwner = null;
         }
         if (
-            outcome.status === CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled ||
-            !YoutubeWatch.isTerminalEventDeliveryCurrent(session)
+            outcome.status === CONTENT_RUNTIME_OUTCOME_STATUS.Cancelled
+            || !YoutubeWatch.isTerminalEventDeliveryCurrent(session)
         ) {
             return;
         }
@@ -1933,11 +2031,11 @@ export class YoutubeWatch {
     private static resumePendingTerminalEventDelivery(): void {
         const session = YoutubeWatch.serverAnalysisSession;
         if (
-            session === null ||
-            YoutubeWatch.terminalEventDeliveryOwner !== null ||
-            YoutubeWatch.terminalEventRetryTimer !== null ||
-            !YoutubeWatch.isTerminalEventDeliveryCurrent(session) ||
-            !session.restartTerminalEventDeliveryRetries()
+            session === null
+            || YoutubeWatch.terminalEventDeliveryOwner !== null
+            || YoutubeWatch.terminalEventRetryTimer !== null
+            || !YoutubeWatch.isTerminalEventDeliveryCurrent(session)
+            || !session.restartTerminalEventDeliveryRetries()
         ) {
             return;
         }
@@ -1955,6 +2053,7 @@ export class YoutubeWatch {
      * @param session - Active cancellable route session.
      * @param video - Bound player used only for an optional duration hint.
      * @param videoId - Watch video owned by the session.
+     *
      * @returns Promise resolved after the request or local terminal outcome.
      */
     private static async captureAndRequestServerAnalysis(
@@ -1972,18 +2071,17 @@ export class YoutubeWatch {
             signal: session.signal,
         });
         if (
-            session !== YoutubeWatch.serverAnalysisSession ||
-            session.signal.aborted ||
-            capture.status === 'cancelled'
+            session !== YoutubeWatch.serverAnalysisSession
+            || session.signal.aborted
+            || capture.status === 'cancelled'
         ) {
             return;
         }
         if (capture.status === 'failed') {
-            const eventName =
-                capture.failure.reason ===
-                CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable
-                    ? SERVER_ANALYSIS_SESSION_EVENT.CaptionsUnavailable
-                    : SERVER_ANALYSIS_SESSION_EVENT.CaptionExtractionFailed;
+            const eventName = capture.failure.reason
+                === CAPTION_CAPTURE_FAILURE_REASON.CaptionsUnavailable
+                ? SERVER_ANALYSIS_SESSION_EVENT.CaptionsUnavailable
+                : SERVER_ANALYSIS_SESSION_EVENT.CaptionExtractionFailed;
             const event: ServerAnalysisTerminalEvent = {
                 event: eventName,
             };
@@ -2027,6 +2125,7 @@ export class YoutubeWatch {
      *
      * @param video - Active watch player element.
      * @param videoId - Current watch video id.
+     *
      * @returns Deduplicated route outcome for development diagnostics.
      */
     private static requestServerAnalysis(
@@ -2058,6 +2157,11 @@ export class YoutubeWatch {
      * Emits route state only when a meaningful watch prerequisite changes.
      *
      * @param input - Current video identity, prerequisite state, and outcome.
+     * @param input.videoId - Current watch video id, or `null` off watch.
+     * @param input.outcome - Routing outcome reached for this evaluation.
+     * @param input.hasVideo - Whether a bound `<video>` element is present.
+     * @param input.enabled - Whether TopSkip is currently enabled.
+     * @param input.analysisMode - Route assigned to the current video, if any.
      */
     private static logServerAnalysisRoute(input: {
         videoId: string | null;
@@ -2111,7 +2215,7 @@ export class YoutubeWatch {
             YoutubeWatch.resetForNewVideo(vid);
         }
 
-        const prefs = YoutubeWatch.prefs;
+        const { prefs } = YoutubeWatch;
         if (prefs === null) {
             YoutubeWatch.logServerAnalysisRoute({
                 videoId: vid,
@@ -2143,8 +2247,7 @@ export class YoutubeWatch {
             return;
         }
 
-        const isVideoElementSwap =
-            !isNewVideo && YoutubeWatch.boundVideo !== video;
+        const isVideoElementSwap = !isNewVideo && YoutubeWatch.boundVideo !== video;
         // A deferred first bind (prefs arrived after the initial sync pass)
         // has no previous element, so it must not read as a player swap.
         const hadBoundVideo = YoutubeWatch.boundVideo !== null;
@@ -2157,11 +2260,10 @@ export class YoutubeWatch {
             );
         }
 
-        YoutubeWatch.analysisModeForCurrentVideo =
-            resolveAnalysisModeForCurrentVideo(
-                YoutubeWatch.analysisModeForCurrentVideo,
-                prefs,
-            );
+        YoutubeWatch.analysisModeForCurrentVideo = resolveAnalysisModeForCurrentVideo(
+            YoutubeWatch.analysisModeForCurrentVideo,
+            prefs,
+        );
         const analysisMode = YoutubeWatch.analysisModeForCurrentVideo;
         if (analysisMode === null) {
             YoutubeWatch.logServerAnalysisRoute({
@@ -2224,15 +2326,16 @@ export class YoutubeWatch {
      * Narrows an untrusted runtime reply before it may control route selection.
      *
      * @param response - Opaque GET_PREFS acknowledgement.
+     *
      * @returns Valid preferences or `null` when another read is required.
      */
     private static parsePrefsResponse(
         response: unknown,
     ): UserPreferences | null {
         if (
-            response === null ||
-            typeof response !== 'object' ||
-            Reflect.get(response, 'ok') !== true
+            response === null
+            || typeof response !== 'object'
+            || Reflect.get(response, 'ok') !== true
         ) {
             return null;
         }
@@ -2249,6 +2352,7 @@ export class YoutubeWatch {
      * logging on by accident.
      *
      * @param response - Opaque GET_PREFS acknowledgement.
+     *
      * @returns Whether debug logging is on.
      */
     private static parseDebugLogEnabled(response: unknown): boolean {
@@ -2299,12 +2403,13 @@ export class YoutubeWatch {
      * Releases one request only if it still owns the latest generation.
      *
      * @param requestId - Generation captured before runtime messaging.
+     *
      * @returns Whether this completion may advance preferences state.
      */
     private static finishPrefsRequest(requestId: number): boolean {
         if (
-            !YoutubeWatch.prefsLoadingActive ||
-            YoutubeWatch.activePrefsRequestId !== requestId
+            !YoutubeWatch.prefsLoadingActive
+            || YoutubeWatch.activePrefsRequestId !== requestId
         ) {
             return false;
         }
@@ -2320,10 +2425,10 @@ export class YoutubeWatch {
      */
     private static schedulePrefsRetry(reason: ContentPrefsRetryReason): void {
         if (
-            !YoutubeWatch.prefsLoadingActive ||
-            YoutubeWatch.prefs !== null ||
-            YoutubeWatch.activePrefsRequestId !== null ||
-            YoutubeWatch.prefsRetryTimerId !== null
+            !YoutubeWatch.prefsLoadingActive
+            || YoutubeWatch.prefs !== null
+            || YoutubeWatch.activePrefsRequestId !== null
+            || YoutubeWatch.prefsRetryTimerId !== null
         ) {
             return;
         }
@@ -2358,10 +2463,10 @@ export class YoutubeWatch {
      */
     private static loadPrefsFromBackground(): void {
         if (
-            !YoutubeWatch.prefsLoadingActive ||
-            YoutubeWatch.prefs !== null ||
-            YoutubeWatch.activePrefsRequestId !== null ||
-            YoutubeWatch.prefsRetryTimerId !== null
+            !YoutubeWatch.prefsLoadingActive
+            || YoutubeWatch.prefs !== null
+            || YoutubeWatch.activePrefsRequestId !== null
+            || YoutubeWatch.prefsRetryTimerId !== null
         ) {
             return;
         }
@@ -2536,9 +2641,8 @@ export class YoutubeWatch {
             return;
         }
 
-        const replacesActiveAnalysisMode =
-            previousPrefs?.enabled === true &&
-            previousPrefs.analysisMode !== m.prefs.analysisMode;
+        const replacesActiveAnalysisMode = previousPrefs?.enabled === true
+            && previousPrefs.analysisMode !== m.prefs.analysisMode;
         if (replacesActiveAnalysisMode) {
             YoutubeWatch.cancelServerAnalysisSession(
                 WATCH_CAPTION_CANCEL_REASON.AnalysisModeChanged,

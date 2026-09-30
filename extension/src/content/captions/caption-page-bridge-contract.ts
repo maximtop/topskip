@@ -1,3 +1,8 @@
+/**
+ * @file Wire contract for the ISOLATED/MAIN caption page bridge: command and
+ * result envelope shapes, protocol constants, and their valibot parsers.
+ */
+
 import * as v from 'valibot';
 
 /**
@@ -88,31 +93,68 @@ export const TIMEDTEXT_TRANSLATION_PARAM = 'tlang';
 /**
  * Commands accepted by the declaratively installed MAIN bridge.
  */
-export type CaptionPageBridgeCommand =
-    (typeof CAPTION_PAGE_BRIDGE_COMMAND)[keyof typeof CAPTION_PAGE_BRIDGE_COMMAND];
+export type CaptionPageBridgeCommand = (typeof CAPTION_PAGE_BRIDGE_COMMAND)[keyof typeof CAPTION_PAGE_BRIDGE_COMMAND];
 
 /**
  * Strict local request transported from ISOLATED to MAIN as JSON event detail.
  */
-export type CaptionPageBridgeCommandRequest = {
+export interface CaptionPageBridgeCommandRequest {
+    /**
+     * Fixed world tag rejecting traffic that did not originate from ISOLATED.
+     */
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Isolated;
+
+    /**
+     * Fixed message kind distinguishing this envelope from a command result.
+     */
     kind: typeof CAPTION_PAGE_BRIDGE_KIND.Command;
+
+    /**
+     * Protocol version the sender was built against.
+     */
     protocolVersion: typeof CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION;
+
+    /**
+     * Correlation id matched against the eventual command result.
+     */
     requestId: string;
+
+    /**
+     * Lifecycle command the MAIN bridge should execute.
+     */
     command: CaptionPageBridgeCommand;
-};
+}
 
 /**
  * Correlated local result transported from MAIN to ISOLATED as JSON event
  * detail.
  */
-export type CaptionPageBridgeCommandResult = {
+export interface CaptionPageBridgeCommandResult {
+    /**
+     * Fixed world tag rejecting traffic that did not originate from MAIN.
+     */
     source: typeof CAPTION_PAGE_BRIDGE_SOURCE.Main;
+
+    /**
+     * Fixed message kind distinguishing this envelope from a command request.
+     */
     kind: typeof CAPTION_PAGE_BRIDGE_KIND.CommandResult;
+
+    /**
+     * Protocol version the sender was built against.
+     */
     protocolVersion: typeof CAPTION_PAGE_BRIDGE_PROTOCOL_VERSION;
+
+    /**
+     * Correlation id matching the originating command request.
+     */
     requestId: string;
+
+    /**
+     * Command-specific result, left opaque to the transport layer.
+     */
     result: unknown;
-};
+}
 
 const requestIdSchema = v.pipe(
     v.string(),
@@ -148,6 +190,7 @@ const commandResultSchema = v.strictObject({
  * object references across worlds.
  *
  * @param value Candidate CustomEvent detail.
+ *
  * @returns Parsed JSON value, or `null` when detail is not valid JSON text.
  */
 function parseJsonEventDetail(value: unknown): unknown {
@@ -165,6 +208,7 @@ function parseJsonEventDetail(value: unknown): unknown {
  * Accepts only the complete bounded ISOLATED command envelope.
  *
  * @param value Untrusted command-event detail.
+ *
  * @returns Validated command request, or `null` for malformed traffic.
  */
 export function parseCaptionPageBridgeCommandRequest(
@@ -182,6 +226,7 @@ export function parseCaptionPageBridgeCommandRequest(
  * command-specific result opaque to the transport.
  *
  * @param value Untrusted result-event detail.
+ *
  * @returns Validated command result, or `null` for malformed traffic.
  */
 export function parseCaptionPageBridgeCommandResult(

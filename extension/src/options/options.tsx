@@ -1,3 +1,8 @@
+/**
+ * @file Options page root: the OpenRouter/model settings form, sidebar
+ * navigation, and per-section content, plus the `Options.init()` bootstrap.
+ */
+
 import '@mantine/core/styles.css';
 
 import {
@@ -21,14 +26,31 @@ import {
 } from 'react';
 import { createRoot } from 'react-dom/client';
 
-import { getErrorMessage } from '@/shared/error';
+import { AddModelPanel } from '@/options/AddModelPanel';
+import { AnalysisModePanel } from '@/options/AnalysisModePanel';
+import {
+    ConnectionsPanel,
+    type ConnectionTestState,
+} from '@/options/ConnectionsPanel';
+import { OPTIONS_SECTION_HASH_PREFIX } from '@/options/constants';
+import { DiagnosticsSection } from '@/options/DiagnosticsSection';
+import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
+import {
+    ProviderHostAccessActions,
+    type ProviderHostAccessActionEffects,
+    type ProviderHostAccessActionInput,
+} from '@/options/provider-host-access-actions';
+import { ProviderHostAccessRequest } from '@/options/provider-host-access-request';
 import browser from '@/shared/browser';
 import {
     ANALYSIS_MODE,
     PREFS_PORT_NAME,
     type AnalysisMode,
 } from '@/shared/constants';
-import { PROVIDER_ID } from '@/shared/providers';
+import { getErrorMessage } from '@/shared/error';
+import { ErrorBoundary } from '@/shared/ErrorBoundary';
+import { i18n } from '@/shared/i18n/i18n';
+import { translator } from '@/shared/i18n/translator';
 import {
     CONNECTION_STATUS,
     TOPSKIP_MESSAGE,
@@ -49,25 +71,12 @@ import {
     type ValidateOpenRouterModelResponse,
     isPrefsPortMessage,
 } from '@/shared/messages';
+import {
+    PROVIDER_HOST_ACCESS_REQUEST_OUTCOME,
+    PROVIDER_HOST_ACCESS_STATUS,
+} from '@/shared/provider-host-permissions';
+import { PROVIDER_ID } from '@/shared/providers';
 import { topskipTheme } from '@/shared/theme';
-import { ErrorBoundary } from '@/shared/ErrorBoundary';
-import { i18n } from '@/shared/i18n/i18n';
-import { translator } from '@/shared/i18n/translator';
-import { AddModelPanel } from '@/options/AddModelPanel';
-import { AnalysisModePanel } from '@/options/AnalysisModePanel';
-import {
-    ConnectionsPanel,
-    type ConnectionTestState,
-} from '@/options/ConnectionsPanel';
-import {
-    ProviderHostAccessActions,
-    type ProviderHostAccessActionEffects,
-    type ProviderHostAccessActionInput,
-} from '@/options/provider-host-access-actions';
-import { ProviderHostAccessRequest } from '@/options/provider-host-access-request';
-import { ModelSelectionPanel } from '@/options/ModelSelectionPanel';
-import { OPTIONS_SECTION_HASH_PREFIX } from '@/options/constants';
-import { DiagnosticsSection } from '@/options/DiagnosticsSection';
 import {
     ActivityIcon,
     HomeIcon,
@@ -77,10 +86,6 @@ import {
     TargetIcon,
     TopSkipLogoIcon,
 } from '@/shared/topskip-icons';
-import {
-    PROVIDER_HOST_ACCESS_REQUEST_OUTCOME,
-    PROVIDER_HOST_ACCESS_STATUS,
-} from '@/shared/provider-host-permissions';
 
 /**
  * Successful OpenRouter config response used after runtime shape narrowing.
@@ -106,8 +111,7 @@ type ProviderListGetOkPayload = Extract<GetProviderListResponse, { ok: true }>;
 /**
  * Section identifiers used by the options sidebar and content switcher.
  */
-export type OptionsSectionId =
-    | 'general'
+export type OptionsSectionId = | 'general'
     | 'detection'
     | 'appearance'
     | 'shortcuts'
@@ -134,6 +138,7 @@ const DEFAULT_OPTIONS_SECTION_LABEL_KEY = 'options_section_general';
  * One localized label per section, shared by the sidebar and section titles.
  *
  * @param sectionId - Section to label.
+ *
  * @returns Localized section label.
  */
 export function getOptionsSectionLabel(sectionId: OptionsSectionId): string {
@@ -148,6 +153,7 @@ export function getOptionsSectionLabel(sectionId: OptionsSectionId): string {
  * without changing any setting; unknown hashes fall back to the default.
  *
  * @param hash - `window.location.hash` (with or without the `#`).
+ *
  * @returns Matching section id, or `null` when the hash names none.
  */
 export function parseOptionsSectionHash(
@@ -170,6 +176,7 @@ const OPTIONS_MUTED = '#64748b';
  * Keeps provider configuration available only for the intentional BYOK route.
  *
  * @param analysisMode - Current user-selected analysis route.
+ *
  * @returns Whether provider, key, and model controls should be rendered.
  */
 export function shouldShowByokSettings(analysisMode: AnalysisMode): boolean {
@@ -180,6 +187,9 @@ export function shouldShowByokSettings(analysisMode: AnalysisMode): boolean {
  * Sidebar icons keep navigation recognizable without adding an icon package.
  *
  * @param props - Section identity plus active state.
+ * @param props.sectionId - Section the icon represents.
+ * @param props.active - Whether the section is currently selected.
+ *
  * @returns SVG icon for the section.
  */
 function OptionsSectionIcon(props: {
@@ -201,6 +211,7 @@ function OptionsSectionIcon(props: {
             return <ActivityIcon size={16} color={color} />;
         case 'about':
             return <InfoIcon size={16} color={color} />;
+        // no default
     }
 }
 
@@ -208,6 +219,9 @@ function OptionsSectionIcon(props: {
  * Sidebar navigation for the options page sections.
  *
  * @param props - Active section and navigation callback.
+ * @param props.activeSection - Currently selected section.
+ * @param props.onSectionChange - Called when the user picks a section.
+ *
  * @returns Options sidebar navigation.
  */
 export function OptionsSidebar(props: {
@@ -269,6 +283,8 @@ export function OptionsSidebar(props: {
  * Safe placeholder for future settings sections.
  *
  * @param props - Future section id to describe.
+ * @param props.sectionId - Section the placeholder stands in for.
+ *
  * @returns Placeholder settings content.
  */
 export function PlaceholderSettingsSection(props: {
@@ -291,6 +307,8 @@ export function PlaceholderSettingsSection(props: {
  * About content keeps extension metadata out of the compact popup.
  *
  * @param props - Runtime extension metadata.
+ * @param props.extensionVersion - Installed extension version to display.
+ *
  * @returns Minimal About settings content.
  */
 export function AboutSettingsSection(props: {
@@ -322,6 +340,10 @@ export function AboutSettingsSection(props: {
  * Accessible provider selection cards.
  *
  * @param props - Provider list, active id, and selection callback.
+ * @param props.providers - Providers available for selection.
+ * @param props.activeProviderId - Currently selected provider id.
+ * @param props.onProviderChange - Called when the user picks a provider.
+ *
  * @returns Provider choice card group.
  */
 export function ProviderChoiceCards(props: {
@@ -402,14 +424,15 @@ export function ProviderChoiceCards(props: {
  * Detects errors where retrying `sendMessage` after SW wake-up may succeed.
  *
  * @param err - Error from `runtime.sendMessage`
+ *
  * @returns Whether another attempt may help (cold MV3 service worker).
  */
 export function isTransientSendMessageFailure(err: unknown): boolean {
     const msg = getErrorMessage(err).toLowerCase();
     return (
-        msg.includes('receiving end does not exist') ||
-        msg.includes('could not establish connection') ||
-        msg.includes('extension context invalidated')
+        msg.includes('receiving end does not exist')
+        || msg.includes('could not establish connection')
+        || msg.includes('extension context invalidated')
     );
 }
 
@@ -433,8 +456,8 @@ export async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
         } catch (e) {
             lastErr = e;
             if (
-                !isTransientSendMessageFailure(e) ||
-                attempt === maxAttempts - 1
+                !isTransientSendMessageFailure(e)
+                || attempt === maxAttempts - 1
             ) {
                 throw new Error(getErrorMessage(e), { cause: e });
             }
@@ -450,10 +473,12 @@ export async function sendGetOpenRouterConfigWithRetry(): Promise<unknown> {
 }
 
 // FIXME use valibot at the options↔background boundary; document in AGENTS.md.
+
 /**
  * Narrows GET_OPENROUTER_CONFIG responses to the success payload shape.
  *
  * @param res - Untyped runtime response
+ *
  * @returns Parsed success payload, or `null` if shape is unusable
  */
 export function parseGetOpenRouterConfigOk(
@@ -495,6 +520,7 @@ export function parseGetOpenRouterConfigOk(
  * Narrows GET_ACTIVE_PROVIDER responses to the success payload shape.
  *
  * @param res - Untyped runtime response
+ *
  * @returns Parsed active provider payload, or `null` if shape is unusable
  */
 export function parseGetActiveProviderOk(
@@ -524,6 +550,7 @@ export function parseGetActiveProviderOk(
  * Narrows GET_PROVIDER_LIST responses to the success payload shape.
  *
  * @param res - Untyped runtime response
+ *
  * @returns Parsed provider list payload, or `null` if shape is unusable
  */
 export function parseGetProviderListOk(
@@ -547,9 +574,9 @@ export function parseGetProviderListOk(
         const displayName: unknown = Reflect.get(item, 'displayName');
         const availability: unknown = Reflect.get(item, 'availability');
         if (
-            typeof id !== 'string' ||
-            typeof displayName !== 'string' ||
-            typeof availability !== 'string'
+            typeof id !== 'string'
+            || typeof displayName !== 'string'
+            || typeof availability !== 'string'
         ) {
             return [];
         }
@@ -571,16 +598,17 @@ export function parseGetProviderListOk(
  * Type guard for successful SET_OPENROUTER_CONFIG responses.
  *
  * @param res - Untyped runtime response
+ *
  * @returns Whether the payload is a successful OpenRouter SET response
  */
 export function isSetOpenRouterOk(
     res: unknown,
 ): res is Extract<SetOpenRouterConfigResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
     );
 }
 
@@ -588,18 +616,19 @@ export function isSetOpenRouterOk(
  * Type guard for successful custom model add/remove responses.
  *
  * @param res - Untyped runtime response
+ *
  * @returns Whether the payload is a successful add/remove custom model response
  */
 export function isMutateOpenRouterCustomModelOk(
     res: unknown,
 ): res is Extract<MutateOpenRouterCustomModelResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true &&
-        'customModels' in res &&
-        Array.isArray((res as { customModels: unknown }).customModels)
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
+        && 'customModels' in res
+        && Array.isArray((res as { customModels: unknown }).customModels)
     );
 }
 
@@ -607,47 +636,20 @@ export function isMutateOpenRouterCustomModelOk(
  * Type guard for successful VALIDATE_OPENROUTER_MODEL responses.
  *
  * @param res - Untyped runtime response
+ *
  * @returns Whether the payload is a successful validation response
  */
 export function isValidateOpenRouterModelOk(
     res: unknown,
 ): res is Extract<ValidateOpenRouterModelResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true &&
-        'valid' in res &&
-        typeof (res as { valid: unknown }).valid === 'boolean'
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
+        && 'valid' in res
+        && typeof (res as { valid: unknown }).valid === 'boolean'
     );
-}
-
-/**
- * Options page root; not instantiable.
- */
-export class Options {
-    /**
-     * Mounts the options React app under `#root`.
-     *
-     * @returns Promise resolving after i18n init and render
-     */
-    static async init(): Promise<void> {
-        await i18n.init();
-        const rootEl = document.getElementById('root');
-        if (!rootEl) {
-            throw new Error('Missing #root');
-        }
-
-        createRoot(rootEl).render(
-            <StrictMode>
-                <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
-                    <ErrorBoundary>
-                        <OptionsApp />
-                    </ErrorBoundary>
-                </MantineProvider>
-            </StrictMode>,
-        );
-    }
 }
 
 /**
@@ -672,8 +674,7 @@ function OptionsApp(): ReactElement {
     const [connectionDrafts, setConnectionDrafts] = useState<
         Record<ConnectionProviderId, string>
     >({ openrouter: '', openai: '' });
-    const [busyProviderId, setBusyProviderId] =
-        useState<ConnectionProviderId | null>(null);
+    const [busyProviderId, setBusyProviderId] = useState<ConnectionProviderId | null>(null);
     const [testStates, setTestStates] = useState<
         Partial<Record<ConnectionProviderId, ConnectionTestState>>
     >({});
@@ -682,9 +683,8 @@ function OptionsApp(): ReactElement {
     const [error, setError] = useState<string | null>(null);
     const [activeSection, setActiveSection] = useState<OptionsSectionId>(
         // Read once on load; the page never writes the hash back.
-        () =>
-            parseOptionsSectionHash(window.location.hash) ??
-            DEFAULT_OPTIONS_SECTION,
+        () => parseOptionsSectionHash(window.location.hash)
+            ?? DEFAULT_OPTIONS_SECTION,
     );
 
     const missingConnectionProviderId = useMemo(() => {
@@ -717,18 +717,18 @@ function OptionsApp(): ReactElement {
                 }),
             ]);
             if (
-                typeof res !== 'object' ||
-                res === null ||
-                Reflect.get(res, 'ok') !== true
+                typeof res !== 'object'
+                || res === null
+                || Reflect.get(res, 'ok') !== true
             ) {
                 setError(safeLoadError);
                 return false;
             }
             const data = res as Extract<GetModelSettingsResponse, { ok: true }>;
             if (
-                typeof prefsRes !== 'object' ||
-                prefsRes === null ||
-                Reflect.get(prefsRes, 'ok') !== true
+                typeof prefsRes !== 'object'
+                || prefsRes === null
+                || Reflect.get(prefsRes, 'ok') !== true
             ) {
                 setError(safeLoadError);
                 return false;
@@ -773,21 +773,20 @@ function OptionsApp(): ReactElement {
                 analysisMode: nextMode,
             });
             if (
-                typeof res !== 'object' ||
-                res === null ||
-                Reflect.get(res, 'ok') !== true
+                typeof res !== 'object'
+                || res === null
+                || Reflect.get(res, 'ok') !== true
             ) {
-                const rawError: unknown =
-                    typeof res === 'object' && res !== null
-                        ? Reflect.get(res, 'error')
-                        : undefined;
+                const rawError: unknown = typeof res === 'object' && res !== null
+                    ? Reflect.get(res, 'error')
+                    : undefined;
                 setAnalysisMode(previousMode);
                 setError(
                     typeof rawError === 'string'
                         ? rawError
                         : translator.getMessage(
-                                'options_analysis_mode_save_error',
-                            ),
+                            'options_analysis_mode_save_error',
+                        ),
                 );
                 return;
             }
@@ -823,14 +822,13 @@ function OptionsApp(): ReactElement {
                 modelId,
             });
             if (
-                typeof res !== 'object' ||
-                res === null ||
-                Reflect.get(res, 'ok') !== true
+                typeof res !== 'object'
+                || res === null
+                || Reflect.get(res, 'ok') !== true
             ) {
-                const rawError: unknown =
-                    typeof res === 'object' && res !== null
-                        ? Reflect.get(res, 'error')
-                        : null;
+                const rawError: unknown = typeof res === 'object' && res !== null
+                    ? Reflect.get(res, 'error')
+                    : null;
                 setActiveModelId(previousModelId);
                 setError(
                     typeof rawError === 'string'
@@ -869,14 +867,13 @@ function OptionsApp(): ReactElement {
                 apiKey: connectionDrafts[providerId],
             });
             if (
-                typeof res !== 'object' ||
-                res === null ||
-                Reflect.get(res, 'ok') !== true
+                typeof res !== 'object'
+                || res === null
+                || Reflect.get(res, 'ok') !== true
             ) {
-                const rawError: unknown =
-                    typeof res === 'object' && res !== null
-                        ? Reflect.get(res, 'error')
-                        : null;
+                const rawError: unknown = typeof res === 'object' && res !== null
+                    ? Reflect.get(res, 'error')
+                    : null;
                 setError(
                     typeof rawError === 'string'
                         ? rawError
@@ -892,20 +889,16 @@ function OptionsApp(): ReactElement {
                 ...current,
                 [providerId]: '',
             }));
-            setConnections((current) =>
-                current.map((entry) =>
-                    entry.providerId === providerId
-                        ? {
-                                ...entry,
-                                apiKeyMasked: saved.apiKeyMasked,
-                                status:
+            setConnections((current) => current.map((entry) => (entry.providerId === providerId
+                ? {
+                    ...entry,
+                    apiKeyMasked: saved.apiKeyMasked,
+                    status:
                                   saved.apiKeyMasked === null
                                       ? 'missing'
                                       : 'saved',
-                            }
-                        : entry,
-                ),
-            );
+                }
+                : entry)));
             await load();
         } catch (e) {
             setError(getErrorMessage(e));
@@ -923,25 +916,23 @@ function OptionsApp(): ReactElement {
         return {
             providerId,
             hasCredential:
-                connection?.status === CONNECTION_STATUS.Saved ||
-                connectionDrafts[providerId].trim().length > 0,
+                connection?.status === CONNECTION_STATUS.Saved
+                || connectionDrafts[providerId].trim().length > 0,
             hostAccessStatus:
-                connection?.hostAccessStatus ??
-                PROVIDER_HOST_ACCESS_STATUS.Missing,
+                connection?.hostAccessStatus
+                ?? PROVIDER_HOST_ACCESS_STATUS.Missing,
         };
     };
 
-    const createHostAccessActionEffects =
-        (): ProviderHostAccessActionEffects => ({
-            request: (providerId) =>
-                ProviderHostAccessRequest.request(providerId),
+    const createHostAccessActionEffects = (): ProviderHostAccessActionEffects => {
+        return {
+            request: (providerId) => ProviderHostAccessRequest.request(providerId),
             reload: load,
-            sendTest: (providerId) =>
-                browser.runtime.sendMessage({
-                    type: TOPSKIP_MESSAGE.TEST_CONNECTION_KEY,
-                    providerId,
-                    apiKey: connectionDrafts[providerId],
-                }),
+            sendTest: (providerId) => browser.runtime.sendMessage({
+                type: TOPSKIP_MESSAGE.TEST_CONNECTION_KEY,
+                providerId,
+                apiKey: connectionDrafts[providerId],
+            }),
             showKeyRequired: (providerId) => {
                 setTestStates((current) => ({
                     ...current,
@@ -951,11 +942,10 @@ function OptionsApp(): ReactElement {
                 }));
             },
             showRequestOutcome: (providerId, outcome) => {
-                const kind =
-                    outcome ===
-                    PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Denied
-                        ? 'access_denied'
-                        : 'access_request_failed';
+                const kind = outcome
+                    === PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Denied
+                    ? 'access_denied'
+                    : 'access_request_failed';
                 setTestStates((current) => ({
                     ...current,
                     [providerId]: { kind },
@@ -995,19 +985,16 @@ function OptionsApp(): ReactElement {
                 }));
             },
             markAccessMissing: (providerId) => {
-                setConnections((current) =>
-                    current.map((entry) =>
-                        entry.providerId === providerId
-                            ? {
-                                    ...entry,
-                                    hostAccessStatus:
+                setConnections((current) => current.map((entry) => (entry.providerId === providerId
+                    ? {
+                        ...entry,
+                        hostAccessStatus:
                                         PROVIDER_HOST_ACCESS_STATUS.Missing,
-                                }
-                            : entry,
-                    ),
-                );
+                    }
+                    : entry)));
             },
-        });
+        };
+    };
 
     const onGrantHostAccess = (
         providerId: ConnectionProviderId,
@@ -1040,8 +1027,8 @@ function OptionsApp(): ReactElement {
             }
             if (!validationRes.valid) {
                 setError(
-                    validationRes.error ??
-                        translator.getMessage('options_error_add_model'),
+                    validationRes.error
+                        ?? translator.getMessage('options_error_add_model'),
                 );
                 return;
             }
@@ -1082,6 +1069,93 @@ function OptionsApp(): ReactElement {
             setRemoveBusySlug(null);
         }
     };
+
+    let sectionContent: ReactElement;
+    if (activeSection === 'general') {
+        sectionContent = (
+            <Stack gap="md">
+                <Stack gap={4}>
+                    <Title order={1} size="h3" c={OPTIONS_TEXT}>
+                        {translator.getMessage('options_general_heading')}
+                    </Title>
+                    <Text size="xs" c={OPTIONS_MUTED}>
+                        {translator.getMessage(
+                            'options_general_description',
+                        )}
+                    </Text>
+                </Stack>
+
+                {error ? (
+                    <Alert color="error" role="alert">
+                        {error}
+                    </Alert>
+                ) : null}
+                <AnalysisModePanel
+                    value={analysisMode}
+                    disabled={analysisModeSaving}
+                    onChange={(value) => {
+                        void onAnalysisModeChange(value);
+                    }}
+                />
+                {shouldShowByokSettings(analysisMode) ? (
+                    <>
+                        <ModelSelectionPanel
+                            activeModelId={activeModelId}
+                            models={models}
+                            missingConnectionProviderId={
+                                missingConnectionProviderId
+                            }
+                            onModelChange={(modelId) => {
+                                void onModelChange(modelId);
+                            }}
+                            onOpenConnection={(_providerId) => {
+                                setActiveSection('general');
+                            }}
+                        />
+                        <ConnectionsPanel
+                            connections={connections}
+                            drafts={connectionDrafts}
+                            busyProviderId={busyProviderId}
+                            testStates={testStates}
+                            onDraftChange={onConnectionDraftChange}
+                            onSave={(providerId) => {
+                                void onSaveConnection(providerId);
+                            }}
+                            onTest={(providerId) => {
+                                onTestConnection(providerId);
+                            }}
+                            onGrantHostAccess={(providerId) => {
+                                onGrantHostAccess(providerId);
+                            }}
+                        />
+                        <AddModelPanel
+                            customModels={customModels}
+                            newModelDraft={newModelDraft}
+                            addBusy={addBusy}
+                            removeBusySlug={removeBusySlug}
+                            onNewModelDraftChange={setNewModelDraft}
+                            onAddCustomModel={() => {
+                                void onAddCustomModel();
+                            }}
+                            onRemoveCustomModel={(slug) => {
+                                void onRemoveCustomModel(slug);
+                            }}
+                        />
+                    </>
+                ) : null}
+            </Stack>
+        );
+    } else if (activeSection === 'diagnostics') {
+        sectionContent = <DiagnosticsSection />;
+    } else if (activeSection === 'about') {
+        sectionContent = (
+            <AboutSettingsSection extensionVersion={extensionVersion} />
+        );
+    } else {
+        sectionContent = (
+            <PlaceholderSettingsSection sectionId={activeSection} />
+        );
+    }
 
     return (
         <Box
@@ -1135,91 +1209,37 @@ function OptionsApp(): ReactElement {
                     />
                 </Box>
                 <Box p="lg" style={{ minWidth: 0 }}>
-                    {activeSection === 'general' ? (
-                        <Stack gap="md">
-                            <Stack gap={4}>
-                                <Title order={1} size="h3" c={OPTIONS_TEXT}>
-                                    {translator.getMessage(
-                                        'options_general_heading',
-                                    )}
-                                </Title>
-                                <Text size="xs" c={OPTIONS_MUTED}>
-                                    {translator.getMessage(
-                                        'options_general_description',
-                                    )}
-                                </Text>
-                            </Stack>
-
-                            {error ? (
-                                <Alert color="error" role="alert">
-                                    {error}
-                                </Alert>
-                            ) : null}
-                            <AnalysisModePanel
-                                value={analysisMode}
-                                disabled={analysisModeSaving}
-                                onChange={(value) => {
-                                    void onAnalysisModeChange(value);
-                                }}
-                            />
-                            {shouldShowByokSettings(analysisMode) ? (
-                                <>
-                                    <ModelSelectionPanel
-                                        activeModelId={activeModelId}
-                                        models={models}
-                                        missingConnectionProviderId={
-                                            missingConnectionProviderId
-                                        }
-                                        onModelChange={(modelId) => {
-                                            void onModelChange(modelId);
-                                        }}
-                                        onOpenConnection={(_providerId) => {
-                                            setActiveSection('general');
-                                        }}
-                                    />
-                                    <ConnectionsPanel
-                                        connections={connections}
-                                        drafts={connectionDrafts}
-                                        busyProviderId={busyProviderId}
-                                        testStates={testStates}
-                                        onDraftChange={onConnectionDraftChange}
-                                        onSave={(providerId) => {
-                                            void onSaveConnection(providerId);
-                                        }}
-                                        onTest={(providerId) => {
-                                            onTestConnection(providerId);
-                                        }}
-                                        onGrantHostAccess={(providerId) => {
-                                            onGrantHostAccess(providerId);
-                                        }}
-                                    />
-                                    <AddModelPanel
-                                        customModels={customModels}
-                                        newModelDraft={newModelDraft}
-                                        addBusy={addBusy}
-                                        removeBusySlug={removeBusySlug}
-                                        onNewModelDraftChange={setNewModelDraft}
-                                        onAddCustomModel={() => {
-                                            void onAddCustomModel();
-                                        }}
-                                        onRemoveCustomModel={(slug) => {
-                                            void onRemoveCustomModel(slug);
-                                        }}
-                                    />
-                                </>
-                            ) : null}
-                        </Stack>
-                    ) : activeSection === 'diagnostics' ? (
-                        <DiagnosticsSection />
-                    ) : activeSection === 'about' ? (
-                        <AboutSettingsSection
-                            extensionVersion={extensionVersion}
-                        />
-                    ) : (
-                        <PlaceholderSettingsSection sectionId={activeSection} />
-                    )}
+                    {sectionContent}
                 </Box>
             </Box>
         </Box>
     );
+}
+
+/**
+ * Options page root; not instantiable.
+ */
+export class Options {
+    /**
+     * Mounts the options React app under `#root`.
+     *
+     * @returns Promise resolving after i18n init and render
+     */
+    static async init(): Promise<void> {
+        await i18n.init();
+        const rootEl = document.getElementById('root');
+        if (!rootEl) {
+            throw new Error('Missing #root');
+        }
+
+        createRoot(rootEl).render(
+            <StrictMode>
+                <MantineProvider theme={topskipTheme} defaultColorScheme="auto">
+                    <ErrorBoundary>
+                        <OptionsApp />
+                    </ErrorBoundary>
+                </MantineProvider>
+            </StrictMode>,
+        );
+    }
 }

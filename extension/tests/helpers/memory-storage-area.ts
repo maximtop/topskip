@@ -3,8 +3,7 @@ import { vi, type Mock } from 'vitest';
 /**
  * Key selector shapes `chrome.storage.StorageArea.get` accepts.
  */
-export type StorageKeys =
-    | string
+export type StorageKeys = | string
     | string[]
     | Record<string, unknown>
     | null
@@ -15,7 +14,7 @@ export type StorageKeys =
  * `vi.fn` so a test can override one call (`mockRejectedValueOnce`) and then
  * `restore()` the Chrome-like defaults; `data` is the backing object.
  */
-export type MemoryStorageArea = {
+export interface MemoryStorageArea {
     data: Record<string, unknown>;
     get: Mock<(keys?: StorageKeys) => Promise<Record<string, unknown>>>;
     set: Mock<(items: Record<string, unknown>) => Promise<void>>;
@@ -25,7 +24,7 @@ export type MemoryStorageArea = {
     bytesInUse(): number;
     restore(): void;
     reset(): void;
-};
+}
 
 const UTF8 = new TextEncoder();
 
@@ -34,6 +33,7 @@ const UTF8 = new TextEncoder();
  *
  * @param keys - Selector (`null`/`undefined` = every key).
  * @param all - Every key currently stored.
+ *
  * @returns Keys to read.
  */
 function toKeyList(keys: string | string[] | null | undefined, all: string[]): string[] {
@@ -48,16 +48,16 @@ function toKeyList(keys: string | string[] | null | undefined, all: string[]): s
  *
  * @param data - Backing object.
  * @param wanted - Keys to account for.
+ *
  * @returns Accounted bytes.
  */
 function bytesOf(data: Record<string, unknown>, wanted: ReadonlySet<string>): number {
     return Object.entries(data)
         .filter(([key]) => wanted.has(key))
         .reduce(
-            (sum, [key, value]) =>
-                sum +
-                UTF8.encode(key).byteLength +
-                UTF8.encode(JSON.stringify(value) ?? '').byteLength,
+            (sum, [key, value]) => sum
+                + UTF8.encode(key).byteLength
+                + UTF8.encode(JSON.stringify(value) ?? '').byteLength,
             0,
         );
 }
@@ -114,8 +114,8 @@ export function createMemoryStorageArea(): MemoryStorageArea {
                 }
                 return Promise.resolve();
             });
-            area.getBytesInUse.mockImplementation((keys) =>
-                Promise.resolve(bytesOf(data, new Set(toKeyList(keys, Object.keys(data))))),
+            area.getBytesInUse.mockImplementation(
+                (keys) => Promise.resolve(bytesOf(data, new Set(toKeyList(keys, Object.keys(data))))),
             );
         },
         reset: () => {

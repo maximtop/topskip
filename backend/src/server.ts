@@ -1,3 +1,10 @@
+/**
+ * @file Local HTTP server for the TopSkip backend: routes health/config/registration/analysis
+ * requests, enforces auth, CORS, and body-size/timeout limits, and maps results onto the
+ * process-selected caption-source response contract.
+ */
+
+import { createHmac, randomUUID } from 'node:crypto';
 import {
     createServer,
     type IncomingMessage,
@@ -5,19 +12,7 @@ import {
     type ServerResponse,
 } from 'node:http';
 import { pathToFileURL } from 'node:url';
-import { createHmac, randomUUID } from 'node:crypto';
-import * as v from 'valibot';
 
-import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
-import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
-import { BackendServerAnalysisBoundary } from '@topskip/backend/server-analysis-boundary';
-import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
-import {
-    BACKEND_CAPTION_SOURCE,
-    BackendServerConfig,
-    type BackendCaptionSource,
-} from '@topskip/backend/server-config';
-import { BackendPublicState } from '@topskip/backend/public-state';
 import { MIME_APPLICATION_JSON } from '@topskip/common/constants';
 import {
     errorResponseSchema,
@@ -32,6 +27,18 @@ import {
     TOPSKIP_CAPABILITIES_HEADER_NAME,
     type ErrorResponse,
 } from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
+import { BackendAnalysisApi } from '@topskip/backend/analysis-api';
+import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
+import { BackendPublicState } from '@topskip/backend/public-state';
+import { BackendServerAnalysisBoundary } from '@topskip/backend/server-analysis-boundary';
+import { BackendServerAnalysisLog } from '@topskip/backend/server-analysis-log';
+import {
+    BACKEND_CAPTION_SOURCE,
+    BackendServerConfig,
+    type BackendCaptionSource,
+} from '@topskip/backend/server-config';
 
 const DEFAULT_BACKEND_HOST = '127.0.0.1';
 const DEFAULT_BACKEND_PORT = 8787;
@@ -64,61 +71,123 @@ let activeAnalysisBodyReads = 0;
 /**
  * Result of parsing the local API request body at the HTTP boundary.
  */
-type ReadJsonBodyResult =
-    | { ok: true; body: unknown }
+type ReadJsonBodyResult = | { ok: true; body: unknown }
     | {
-          ok: false;
-          statusCode: 400 | 408 | 413 | 415 | 503;
-          body: unknown;
-          closeConnection?: boolean;
-      };
+        ok: false;
+        statusCode: 400 | 408 | 413 | 415 | 503;
+        body: unknown;
+        closeConnection?: boolean;
+    };
 
 /**
  * Raw reader settings keep the large public upload isolated from small fixture routes.
  */
-type ReadJsonBodyOptions = {
+interface ReadJsonBodyOptions {
+    /**
+     * Maximum accepted request body size in bytes; larger uploads are rejected.
+     */
     maxBytes: number;
+
+    /**
+     * Milliseconds to wait for the body to finish before failing the read with a timeout.
+     */
     timeoutMs: number;
+
+    /**
+     * Whether this read must hold one of the bounded concurrent analysis-body read slots.
+     */
     reserveAnalysisSlot: boolean;
-};
+}
 
 /**
  * Server factory options keep public auth tests explicit while preserving local fixtures.
  */
-type BackendHttpServerOptions = {
+interface BackendHttpServerOptions {
+    /**
+     * Whether analysis/polling routes require a bearer credential; defaults to non-test `NODE_ENV`.
+     */
     requireAuth?: boolean;
+
+    /**
+     * Deterministic clock override for tests; defaults to `Date.now`.
+     */
     now?: () => number;
+
+    /**
+     * Whether production CORS/host policy applies; defaults to `NODE_ENV === 'production'`.
+     */
     production?: boolean;
+
+    /**
+     * Caption source the analysis boundary validates requests/responses against.
+     */
     captionSource?: BackendCaptionSource;
+
+    /**
+     * Milliseconds allowed to read an analysis request body; defaults to `ANALYSIS_BODY_READ_TIMEOUT_MS`.
+     */
     analysisBodyReadTimeoutMs?: number;
-};
+}
 
 /**
  * Authenticated request identity contains hashes only.
  */
-type AuthenticatedRequest = {
+interface AuthenticatedRequest {
+    /**
+     * Hash of the caller's installation credential, used for ownership and quota keys.
+     */
     installationHash: string;
+
+    /**
+     * HMAC hash of the caller's IP address, used for cold-start quota keys.
+     */
     ipHash: string;
-};
+}
 
 /**
  * Request-scoped negotiation and correlation prevent capabilities leaking across calls.
  */
-type BackendHttpRequestContext = {
+interface BackendHttpRequestContext {
+    /**
+     * Whether this request must present a valid bearer credential.
+     */
     requireAuth: boolean;
+
+    /**
+     * Whether production CORS/host policy applies to this request.
+     */
     production: boolean;
+
+    /**
+     * Deterministic clock used for all timestamps derived while handling this request.
+     */
     now: () => number;
+
+    /**
+     * Caption source this request's analysis boundary validates against.
+     */
     captionSource: BackendCaptionSource;
+
+    /**
+     * Opaque per-request correlation identifier used in logs and error responses.
+     */
     requestId: string;
+
+    /**
+     * Extension version reported by the parsed analysis request body, once parsed; `undefined` until then.
+     */
     extensionVersion: string | undefined;
+
+    /**
+     * Milliseconds allowed to read this request's analysis body.
+     */
     analysisBodyReadTimeoutMs: number;
-};
+}
 
 /**
  * Bounded route templates prevent path parameters or arbitrary URLs entering logs.
  */
-type BackendRouteTemplate =
-    | '/v1/health'
+type BackendRouteTemplate = | '/v1/health'
     | '/v1/config'
     | '/v1/installations/register'
     | '/v1/analysis'
@@ -135,16 +204,14 @@ export class BackendHttpServer {
      * Creates an unstarted Node HTTP server for tests or the dev script.
      *
      * @param options - Optional public-auth policy and deterministic clock.
+     *
      * @returns Local backend HTTP server.
      */
     static create(options: BackendHttpServerOptions = {}): Server {
-        const requireAuth =
-            options.requireAuth ?? process.env.NODE_ENV !== 'test';
-        const production =
-            options.production ?? process.env.NODE_ENV === 'production';
+        const requireAuth = options.requireAuth ?? process.env.NODE_ENV !== 'test';
+        const production = options.production ?? process.env.NODE_ENV === 'production';
         const now = options.now ?? Date.now;
-        const captionSource =
-            options.captionSource ?? BACKEND_CAPTION_SOURCE.ExtensionUpload;
+        const captionSource = options.captionSource ?? BACKEND_CAPTION_SOURCE.ExtensionUpload;
         return createServer((req, res) => {
             const startedAtMs = Date.now();
             const url = BackendHttpServer.parseRequestUrl(req.url);
@@ -156,13 +223,12 @@ export class BackendHttpServer {
                 requestId: `request-${randomUUID()}`,
                 extensionVersion: undefined,
                 analysisBodyReadTimeoutMs:
-                    options.analysisBodyReadTimeoutMs ??
-                    ANALYSIS_BODY_READ_TIMEOUT_MS,
+                    options.analysisBodyReadTimeoutMs
+                    ?? ANALYSIS_BODY_READ_TIMEOUT_MS,
             };
             BackendHttpServer.applyCorsHeaders(req, res, production);
             const route = BackendHttpServer.routeTemplate(url);
-            const routineHealthCheck =
-                req.method === 'GET' && route === '/v1/health';
+            const routineHealthCheck = req.method === 'GET' && route === '/v1/health';
             if (!routineHealthCheck) {
                 BackendHttpServer.logHttpReceived(
                     requestContext.requestId,
@@ -216,8 +282,6 @@ export class BackendHttpServer {
 
     /**
      * Starts the local backend on the configured development address.
-     *
-     * @returns Nothing.
      */
     static listen(): void {
         const runtimeConfig = BackendServerConfig.prepare();
@@ -237,7 +301,7 @@ export class BackendHttpServer {
             DEFAULT_BACKEND_PORT,
         );
         server.listen(port, host, () => {
-            console.info(
+            console.debug(
                 `TopSkip backend listening on http://${host}:${port} (captionSource ${runtimeConfig.captionSource})`,
             );
         });
@@ -249,6 +313,7 @@ export class BackendHttpServer {
      * @param req - Incoming Node request.
      * @param res - Node response writer.
      * @param context - Request-scoped auth, clock, correlation, and capabilities.
+     *
      * @returns Promise that resolves after the response is written.
      */
     private static async route(
@@ -290,8 +355,8 @@ export class BackendHttpServer {
         }
 
         if (
-            req.method === 'POST' &&
-            url.pathname === '/v1/installations/register'
+            req.method === 'POST'
+            && url.pathname === '/v1/installations/register'
         ) {
             BackendHttpServer.handleRegistration(req, res, context);
             return;
@@ -332,9 +397,9 @@ export class BackendHttpServer {
             }
 
             if (
-                FIXTURE_COMPLETION_ENABLED &&
-                req.method === 'POST' &&
-                jobRoute.kind === 'fixture-result'
+                FIXTURE_COMPLETION_ENABLED
+                && req.method === 'POST'
+                && jobRoute.kind === 'fixture-result'
             ) {
                 await BackendHttpServer.handleFixtureCompletion(
                     req,
@@ -361,6 +426,7 @@ export class BackendHttpServer {
      * @param req - Incoming analysis request stream.
      * @param res - Node response writer.
      * @param context - Request-scoped auth, clock, correlation, and capabilities.
+     *
      * @returns Promise that resolves after the response is written.
      */
     private static async handleAnalysis(
@@ -424,9 +490,9 @@ export class BackendHttpServer {
                 nowMs: context.now(),
                 context: context.requireAuth
                     ? {
-                            ...authenticated,
-                            requestId: context.requestId,
-                        }
+                        ...authenticated,
+                        requestId: context.requestId,
+                    }
                     : undefined,
                 captionSource: context.captionSource,
             },
@@ -507,6 +573,7 @@ export class BackendHttpServer {
      * @param req - Incoming analysis or polling request.
      * @param res - Response writer used for typed auth failures.
      * @param context - Public-auth mode, negotiation, and deterministic clock.
+     *
      * @returns Hashed request identity or `null` after an error response.
      */
     private static authenticate(
@@ -520,10 +587,10 @@ export class BackendHttpServer {
                 ipHash: 'local-development',
             };
         }
-        const authorization = req.headers.authorization;
+        const { authorization } = req.headers;
         if (
-            typeof authorization !== 'string' ||
-            !authorization.startsWith(AUTHORIZATION_BEARER_PREFIX)
+            typeof authorization !== 'string'
+            || !authorization.startsWith(AUTHORIZATION_BEARER_PREFIX)
         ) {
             const failure = BackendHttpServer.error(
                 SERVER_ANALYSIS_FAILURE_CODE.TokenMissing,
@@ -581,6 +648,7 @@ export class BackendHttpServer {
      * @param req - Incoming completion request stream.
      * @param res - Node response writer.
      * @param jobId - Local job id decoded from the route.
+     *
      * @returns Promise that resolves after the response is written.
      */
     private static async handleFixtureCompletion(
@@ -628,6 +696,7 @@ export class BackendHttpServer {
      * Extracts the supported local job routes without matching unknown paths.
      *
      * @param url - Parsed request URL.
+     *
      * @returns Job route data, or `null` when the path is not a job route.
      */
     private static parseJobRoute(
@@ -635,23 +704,23 @@ export class BackendHttpServer {
     ): { kind: 'status' | 'fixture-result'; jobId: string } | null {
         const parts = url.pathname.split('/').filter((part) => part.length > 0);
         if (
-            parts.length === 4 &&
-            parts[0] === 'v1' &&
-            parts[1] === 'analysis' &&
-            parts[2] === 'jobs'
+            parts.length === 4
+            && parts[0] === 'v1'
+            && parts[1] === 'analysis'
+            && parts[2] === 'jobs'
         ) {
-            const jobId = BackendHttpServer.decodeJobId(parts[3]);
+            const jobId = BackendHttpServer.decodeJobId(parts[3]!);
             return jobId === null ? null : { kind: 'status', jobId };
         }
 
         if (
-            parts.length === 5 &&
-            parts[0] === 'v1' &&
-            parts[1] === 'analysis' &&
-            parts[2] === 'jobs' &&
-            parts[4] === 'fixture-result'
+            parts.length === 5
+            && parts[0] === 'v1'
+            && parts[1] === 'analysis'
+            && parts[2] === 'jobs'
+            && parts[4] === 'fixture-result'
         ) {
-            const jobId = BackendHttpServer.decodeJobId(parts[3]);
+            const jobId = BackendHttpServer.decodeJobId(parts[3]!);
             return jobId === null ? null : { kind: 'fixture-result', jobId };
         }
 
@@ -662,6 +731,7 @@ export class BackendHttpServer {
      * Maps raw request paths onto a fixed template vocabulary for logging.
      *
      * @param url - Parsed URL containing an untrusted path.
+     *
      * @returns Known route template or the bounded unmatched marker.
      */
     private static routeTemplate(url: URL): BackendRouteTemplate {
@@ -692,6 +762,7 @@ export class BackendHttpServer {
      *
      * @param req - Incoming Node request stream.
      * @param options - Per-route byte, deadline, and concurrency policy.
+     *
      * @returns Parsed JSON body or a typed request error.
      */
     private static async readJsonBody(
@@ -699,8 +770,8 @@ export class BackendHttpServer {
         options: ReadJsonBodyOptions,
     ): Promise<ReadJsonBodyResult> {
         if (
-            !BackendHttpServer.hasJsonContentType(req) ||
-            !BackendHttpServer.hasIdentityContentEncoding(req)
+            !BackendHttpServer.hasJsonContentType(req)
+            || !BackendHttpServer.hasIdentityContentEncoding(req)
         ) {
             return {
                 ok: false,
@@ -724,8 +795,8 @@ export class BackendHttpServer {
             };
         }
         if (
-            typeof declaredLength === 'number' &&
-            declaredLength > options.maxBytes
+            typeof declaredLength === 'number'
+            && declaredLength > options.maxBytes
         ) {
             return {
                 ok: false,
@@ -752,10 +823,19 @@ export class BackendHttpServer {
             };
         }
 
-        return await new Promise<ReadJsonBodyResult>((resolve) => {
+        return new Promise<ReadJsonBodyResult>((resolve) => {
             const chunks: Buffer[] = [];
             let byteLength = 0;
             let settled = false;
+
+            // Forward-declared so `cleanup` can reference them; each is assigned
+            // its handler below before any listener is attached or can fire.
+            let timeout: ReturnType<typeof setTimeout>;
+            let onData: (chunk: Buffer) => void;
+            let onEnd: () => void;
+            let onAborted: () => void;
+            let onClose: () => void;
+            let onError: () => void;
 
             const cleanup = (): void => {
                 clearTimeout(timeout);
@@ -784,7 +864,7 @@ export class BackendHttpServer {
                     ...(closeConnection ? { closeConnection: true } : {}),
                 });
             };
-            const onData = (chunk: Buffer): void => {
+            onData = (chunk: Buffer): void => {
                 byteLength += chunk.byteLength;
                 if (byteLength > options.maxBytes) {
                     req.pause();
@@ -800,7 +880,7 @@ export class BackendHttpServer {
                 }
                 chunks.push(chunk);
             };
-            const onEnd = (): void => {
+            onEnd = (): void => {
                 if (byteLength === 0) {
                     finish({ ok: true, body: {} });
                     return;
@@ -817,14 +897,18 @@ export class BackendHttpServer {
                     invalidRequest(false);
                 }
             };
-            const onAborted = (): void => invalidRequest(true);
-            const onClose = (): void => {
+            onAborted = (): void => {
+                return invalidRequest(true);
+            };
+            onClose = (): void => {
                 if (!req.complete) {
                     invalidRequest(true);
                 }
             };
-            const onError = (): void => invalidRequest(true);
-            const timeout = setTimeout(() => {
+            onError = (): void => {
+                return invalidRequest(true);
+            };
+            timeout = setTimeout(() => {
                 req.pause();
                 finish({
                     ok: false,
@@ -869,6 +953,7 @@ export class BackendHttpServer {
      * Parses a decimal Content-Length without accepting ambiguous or unsafe values.
      *
      * @param req - Incoming request carrying the optional length header.
+     *
      * @returns Nonnegative length, `undefined`, or the invalid marker.
      */
     private static readContentLength(
@@ -891,7 +976,6 @@ export class BackendHttpServer {
      * @param req - Incoming body stream to stop reusing.
      * @param res - Response whose completion precedes socket destruction.
      * @param failure - Body-read failure carrying the connection policy.
-     * @returns Nothing.
      */
     private static prepareBodyReadFailureConnection(
         req: IncomingMessage,
@@ -911,7 +995,6 @@ export class BackendHttpServer {
      * @param res - Node response writer.
      * @param statusCode - HTTP status code.
      * @param body - JSON-serializable response body.
-     * @returns Nothing.
      */
     private static sendJson(
         res: ServerResponse,
@@ -932,13 +1015,14 @@ export class BackendHttpServer {
      *
      * @param req - Incoming request whose origin is evaluated.
      * @param production - Whether missing or non-allow-listed origins must be denied.
+     *
      * @returns Whether the request can reach a state-changing endpoint.
      */
     private static isTrustedMutation(
         req: IncomingMessage,
         production: boolean,
     ): boolean {
-        const origin = req.headers.origin;
+        const { origin } = req.headers;
         if (origin === undefined) {
             return !production;
         }
@@ -957,10 +1041,10 @@ export class BackendHttpServer {
         res: ServerResponse,
         production: boolean,
     ): void {
-        const origin = req.headers.origin;
+        const { origin } = req.headers;
         if (
-            typeof origin !== 'string' ||
-            !BackendHttpServer.isAllowedCorsOrigin(origin, production)
+            typeof origin !== 'string'
+            || !BackendHttpServer.isAllowedCorsOrigin(origin, production)
         ) {
             return;
         }
@@ -983,10 +1067,10 @@ export class BackendHttpServer {
         res: ServerResponse,
         context: BackendHttpRequestContext,
     ): void {
-        const origin = req.headers.origin;
+        const { origin } = req.headers;
         if (
-            typeof origin === 'string' &&
-            BackendHttpServer.isAllowedCorsOrigin(origin, context.production)
+            typeof origin === 'string'
+            && BackendHttpServer.isAllowedCorsOrigin(origin, context.production)
         ) {
             res.statusCode = HTTP_STATUS_NO_CONTENT;
             res.end();
@@ -1007,6 +1091,7 @@ export class BackendHttpServer {
      *
      * @param origin - Browser Origin header value.
      * @param production - Whether wildcard development matching is disabled.
+     *
      * @returns Whether CORS may echo this origin.
      */
     private static isAllowedCorsOrigin(
@@ -1022,6 +1107,7 @@ export class BackendHttpServer {
      * Requires a non-safelisted JSON media type before accepting a mutation.
      *
      * @param req - Incoming request whose content type is evaluated.
+     *
      * @returns Whether the request declares a JSON body.
      */
     private static hasJsonContentType(req: IncomingMessage): boolean {
@@ -1044,14 +1130,15 @@ export class BackendHttpServer {
      * Refuses compressed request bodies because the byte bound applies to wire input directly.
      *
      * @param req - Incoming request whose content encoding is evaluated.
+     *
      * @returns Whether the body is absent from encoding transforms.
      */
     private static hasIdentityContentEncoding(req: IncomingMessage): boolean {
         const contentEncoding = req.headers['content-encoding'];
         return (
-            contentEncoding === undefined ||
-            (typeof contentEncoding === 'string' &&
-                contentEncoding.trim().toLowerCase() === 'identity')
+            contentEncoding === undefined
+            || (typeof contentEncoding === 'string'
+                && contentEncoding.trim().toLowerCase() === 'identity')
         );
     }
 
@@ -1059,13 +1146,14 @@ export class BackendHttpServer {
      * Logs a video identity only after the shared 11-character validation passes.
      *
      * @param input - Parsed untrusted request value.
+     *
      * @returns Validated video ID or `undefined` when absent or malformed.
      */
     private static readValidatedVideoId(input: unknown): string | undefined {
         if (
-            input === null ||
-            typeof input !== 'object' ||
-            !('videoId' in input)
+            input === null
+            || typeof input !== 'object'
+            || !('videoId' in input)
         ) {
             return undefined;
         }
@@ -1079,6 +1167,7 @@ export class BackendHttpServer {
      * Enforces the public identifier bound while decoding poll route parameters.
      *
      * @param rawJobId - Percent-encoded route segment.
+     *
      * @returns Decoded job id, or `null` for malformed encoding.
      */
     private static decodeJobId(rawJobId: string): string | null {
@@ -1096,6 +1185,7 @@ export class BackendHttpServer {
      * Keeps malformed request targets inside normal unmatched-route handling.
      *
      * @param raw - Optional raw Node request target.
+     *
      * @returns Parsed URL or a fixed unmatched sentinel URL.
      */
     private static parseRequestUrl(raw: string | undefined): URL {
@@ -1140,6 +1230,7 @@ export class BackendHttpServer {
      *
      * @param code - Stable error code from the local backend contract.
      * @param supportId - Optional persisted correlation for internal faults.
+     *
      * @returns Validated error response.
      */
     private static error(
@@ -1166,6 +1257,7 @@ export class BackendHttpServer {
      *
      * @param code - Safe rate or capacity code.
      * @param retryAfterSec - Whole-second retry delay mirrored into HTTP headers.
+     *
      * @returns Strict response candidate for the process-selected serializer.
      */
     private static rateLimitedError(
@@ -1183,6 +1275,7 @@ export class BackendHttpServer {
      * Persists one unexpected request failure without risking a second throw.
      *
      * @param context - Request identity and timestamp source.
+     *
      * @returns Support identity only when durable recording succeeded.
      */
     private static recordRequestFailureSafely(
@@ -1212,16 +1305,18 @@ export class BackendHttpServer {
      * Hashes only the trusted Cloudflare client-IP header and otherwise uses a shared unknown bucket.
      *
      * @param req - Incoming request received from loopback/cloudflared.
+     *
      * @returns HMAC identity safe for quota persistence.
+     *
+     * @throws {Error} When running in production without a configured 32+ character HMAC secret.
      */
     private static hashRequestIp(req: IncomingMessage): string {
         const header = req.headers['cf-connecting-ip'];
         const clientIp = typeof header === 'string' ? header : 'unknown';
-        const configuredSecret =
-            process.env[IP_HMAC_SECRET_ENVIRONMENT_VARIABLE];
+        const configuredSecret = process.env[IP_HMAC_SECRET_ENVIRONMENT_VARIABLE];
         if (
-            process.env.NODE_ENV === 'production' &&
-            (configuredSecret ?? '').trim().length < 32
+            process.env.NODE_ENV === 'production'
+            && (configuredSecret ?? '').trim().length < 32
         ) {
             throw new Error(
                 'TOPSKIP_IP_HMAC_SECRET is required for production IP quotas.',
@@ -1236,6 +1331,7 @@ export class BackendHttpServer {
      *
      * @param body - Candidate analysis response produced by backend orchestration.
      * @param context - Immutable caption-source selection captured by `create`.
+     *
      * @returns Strictly validated response for the selected process mode.
      */
     private static serializeAnalysisResponse(
@@ -1251,6 +1347,7 @@ export class BackendHttpServer {
      * Mirrors retry metadata into the normative HTTP `Retry-After` header.
      *
      * @param body - Typed or safe legacy retry response.
+     *
      * @returns Positive whole seconds, or `null` for non-retry responses.
      */
     private static readResponseRetryAfterSec(body: unknown): number | null {
@@ -1263,9 +1360,9 @@ export class BackendHttpServer {
         }
         const direct: unknown = Reflect.get(body, 'retryAfterSec');
         if (
-            typeof direct === 'number' &&
-            Number.isInteger(direct) &&
-            direct > 0
+            typeof direct === 'number'
+            && Number.isInteger(direct)
+            && direct > 0
         ) {
             return direct;
         }
@@ -1274,9 +1371,9 @@ export class BackendHttpServer {
             return null;
         }
         const nested: unknown = Reflect.get(error, 'retryAfterSec');
-        return typeof nested === 'number' &&
-            Number.isInteger(nested) &&
-            nested > 0
+        return typeof nested === 'number'
+            && Number.isInteger(nested)
+            && nested > 0
             ? nested
             : null;
     }
@@ -1286,7 +1383,10 @@ export class BackendHttpServer {
      *
      * @param raw - Optional decimal port string.
      * @param fallback - Development port used when absent.
+     *
      * @returns Valid TCP port.
+     *
+     * @throws {Error} When `raw` is present but not a valid TCP port number.
      */
     private static readPort(raw: string | undefined, fallback: number): number {
         if (raw === undefined) {
@@ -1301,8 +1401,8 @@ export class BackendHttpServer {
 }
 
 if (
-    process.argv[1] !== undefined &&
-    import.meta.url === pathToFileURL(process.argv[1]).href
+    process.argv[1] !== undefined
+    && import.meta.url === pathToFileURL(process.argv[1]).href
 ) {
     BackendHttpServer.listen();
 }

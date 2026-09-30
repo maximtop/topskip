@@ -1,3 +1,8 @@
+/**
+ * @file Tuning constants for the client-side ring-buffer debug log: capacity,
+ * flush cadence, rate limits, and export/display bounds.
+ */
+
 import { BYTES_PER_KIB, BYTES_PER_MIB } from '@/shared/constants';
 
 /**
@@ -141,6 +146,5 @@ export const DEBUG_LOG_STORE_VERSION = 1;
  * module also loads where the define is absent (Playwright imports it in
  * Node).
  */
-export const DEBUG_LOG_DEFAULT_ENABLED =
-    typeof __TOPSKIP_INCLUDE_DEV_LOCAL__ !== 'undefined' &&
-    __TOPSKIP_INCLUDE_DEV_LOCAL__;
+export const DEBUG_LOG_DEFAULT_ENABLED = typeof TOPSKIP_INCLUDE_DEV_LOCAL !== 'undefined'
+    && TOPSKIP_INCLUDE_DEV_LOCAL;

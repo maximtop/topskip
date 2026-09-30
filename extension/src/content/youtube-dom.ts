@@ -1,5 +1,5 @@
 /**
- * YouTube DOM selectors and skip-toast timing constants used by the watch
+ * @file YouTube DOM selectors and skip-toast timing constants used by the watch
  * content script.
  *
  * Kept co-located in `src/content/` because they are bundle-specific (only

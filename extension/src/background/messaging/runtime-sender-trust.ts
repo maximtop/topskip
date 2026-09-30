@@ -1,8 +1,13 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+/**
+ * @file Decides which senders may control, read or feed the debug log,
+ * based only on browser-provided sender metadata.
+ */
 
 import browser from '@/shared/browser';
 import { TOP_FRAME_ID } from '@/shared/constants';
 import { isTopSkipContentDocumentUrl } from '@/shared/watch-route';
+
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 /**
  * Decides who may control, read or feed the debug log from browser-provided
@@ -16,6 +21,7 @@ export class RuntimeSenderTrust {
      * Options page) and sent by this extension id.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Whether control/read commands may be honoured.
      */
     static isExtensionPage(sender: Runtime.MessageSender): boolean {
@@ -39,16 +45,17 @@ export class RuntimeSenderTrust {
      * by this extension id; extension pages fail this check by origin.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Trusted tab id, or `null` when appends must be refused.
      */
     static contentTabId(sender: Runtime.MessageSender): number | null {
         const tabId = sender.tab?.id;
         if (
-            sender.id !== browser.runtime.id ||
-            tabId === undefined ||
-            sender.frameId !== TOP_FRAME_ID ||
-            sender.url === undefined ||
-            !isTopSkipContentDocumentUrl(sender.url)
+            sender.id !== browser.runtime.id
+            || tabId === undefined
+            || sender.frameId !== TOP_FRAME_ID
+            || sender.url === undefined
+            || !isTopSkipContentDocumentUrl(sender.url)
         ) {
             return null;
         }
@@ -59,6 +66,7 @@ export class RuntimeSenderTrust {
      * `origin` is populated by Chrome but absent from the polyfill typings.
      *
      * @param sender - Browser-provided sender metadata.
+     *
      * @returns Document origin, or `undefined`.
      */
     private static readOrigin(sender: Runtime.MessageSender): string | undefined {

@@ -1,3 +1,7 @@
+/**
+ * @file Broadcasts promo-detection state changes to open extension pages.
+ */
+
 import browser from '@/shared/browser';
 import {
     TOPSKIP_MESSAGE,

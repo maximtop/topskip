@@ -1,3 +1,8 @@
+/**
+ * @file Maps the public server failure code vocabulary to popup-facing UX
+ * categories and report-button prominence, without exposing server details.
+ */
+
 import {
     SERVER_ANALYSIS_FAILURE_CODE,
     type ServerAnalysisFailureCode,
@@ -27,14 +32,14 @@ export const SERVER_FAILURE_REPORT_ACTION = {
 /**
  * Category names used by localized popup copy.
  */
-export type ServerFailureCategory =
-    (typeof SERVER_FAILURE_CATEGORY)[keyof typeof SERVER_FAILURE_CATEGORY];
+export type ServerFailureCategory = (typeof SERVER_FAILURE_CATEGORY)[keyof typeof SERVER_FAILURE_CATEGORY];
 
 /**
  * Report-button variants used without exposing server details to the UI.
  */
-export type ServerFailureReportAction =
-    (typeof SERVER_FAILURE_REPORT_ACTION)[keyof typeof SERVER_FAILURE_REPORT_ACTION];
+export type ServerFailureReportAction = (typeof SERVER_FAILURE_REPORT_ACTION)[
+    keyof typeof SERVER_FAILURE_REPORT_ACTION
+];
 
 const VIDEO_LIMITATION_CODES = new Set<ServerAnalysisFailureCode>([
     SERVER_ANALYSIS_FAILURE_CODE.FixtureUnavailable,
@@ -64,6 +69,7 @@ const EXTENSION_FAILURE_CODES = new Set<ServerAnalysisFailureCode>([
  * Maps the public failure vocabulary to one stable UX category.
  *
  * @param code - Validated server failure code.
+ *
  * @returns Popup behavior category.
  */
 export function classifyServerFailure(
@@ -91,6 +97,7 @@ export function classifyServerFailure(
  * Allows reports for actionable failures while avoiding capacity-incident spam.
  *
  * @param code - Validated server failure code.
+ *
  * @returns Requested issue-button prominence.
  */
 export function getServerFailureReportAction(

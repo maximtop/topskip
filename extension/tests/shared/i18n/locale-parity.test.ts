@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import { AVAILABLE_LOCALES } from '@/shared/i18n/locale-constants';
@@ -9,8 +10,10 @@ const REFERENCE_LOCALE = 'en';
 
 /**
  * Reads one `messages.json` as an ordered entry list.
+ *
+ * @param locale Locale directory name under `_locales`.
  */
-function readMessages(locale: string): Array<[string, { message: string }]> {
+function readMessages(locale: string): [string, { message: string }][] {
     const text = readFileSync(path.join(LOCALES_DIR, locale, 'messages.json'), 'utf8');
     return Object.entries(JSON.parse(text) as Record<string, { message: string }>);
 }

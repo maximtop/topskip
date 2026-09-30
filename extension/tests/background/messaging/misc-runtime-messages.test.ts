@@ -1,4 +1,14 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { ContentLogMessages } from '@/background/messaging/content-log-messages';
 
 const mocks = vi.hoisted(() => ({
     tabsQuery: vi.fn(),
@@ -8,8 +18,8 @@ const mocks = vi.hoisted(() => ({
     debugLogIsEnabled: vi.fn(() => false),
 }));
 
-// Prevent webextension-polyfill from throwing in Node; ContentLogMessages does
-// not touch browser APIs, but this module pulls them in for its other exports.
+// Prevent webextension-polyfill from throwing in Node while this module pulls
+// in `browser` for its promo-detection status query.
 vi.mock('@/shared/browser', () => ({
     default: {
         runtime: {},
@@ -31,12 +41,13 @@ vi.mock('@/background/debug-log/debug-log-store', () => ({
     },
 }));
 
-const { ContentLogMessages, PromoDetectionRuntimeMessages } =
-    await import('@/background/messaging/misc-runtime-messages');
+const { PromoDetectionRuntimeMessages } = await import(
+    '@/background/messaging/misc-runtime-messages'
+);
 
 describe('ContentLogMessages.log', () => {
     beforeEach(() => {
-        vi.spyOn(console, 'info').mockImplementation(() => undefined);
+        vi.spyOn(console, 'debug').mockImplementation(() => undefined);
         vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         vi.spyOn(console, 'error').mockImplementation(() => undefined);
     });
@@ -45,9 +56,9 @@ describe('ContentLogMessages.log', () => {
         vi.restoreAllMocks();
     });
 
-    it('calls console.info for level "info"', () => {
+    it('calls console.debug for level "info"', () => {
         ContentLogMessages.log('info', ['hello'], undefined);
-        expect(console.info).toHaveBeenCalledWith('[TopSkip content]', 'hello');
+        expect(console.debug).toHaveBeenCalledWith('[TopSkip content]', 'hello');
     });
 
     it('calls console.warn for level "warn"', () => {
@@ -65,12 +76,12 @@ describe('ContentLogMessages.log', () => {
 
     it('includes the tab id in the tag when tabId is provided', () => {
         ContentLogMessages.log('info', ['x'], 42);
-        expect(console.info).toHaveBeenCalledWith('[TopSkip content t42]', 'x');
+        expect(console.debug).toHaveBeenCalledWith('[TopSkip content t42]', 'x');
     });
 
     it('spreads multiple args into the console call', () => {
         ContentLogMessages.log('info', ['a', 'b', 'c'], undefined);
-        expect(console.info).toHaveBeenCalledWith(
+        expect(console.debug).toHaveBeenCalledWith(
             '[TopSkip content]',
             'a',
             'b',
@@ -93,7 +104,13 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.detectionGet.mockReturnValue(state);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: 82, state, debugLoggingEnabled: false },
+            {
+
+                ok: true,
+                tabId: 82,
+                state,
+                debugLoggingEnabled: false,
+            },
         );
         expect(mocks.detectionGet).toHaveBeenCalledWith(82);
     });
@@ -102,7 +119,13 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.tabsQuery.mockResolvedValue([]);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: null, state: null, debugLoggingEnabled: false },
+            {
+
+                ok: true,
+                tabId: null,
+                state: null,
+                debugLoggingEnabled: false,
+            },
         );
         expect(mocks.detectionGet).not.toHaveBeenCalled();
     });
@@ -113,12 +136,16 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
             [82, { videoId: 'frontVideo', status: 'no_promo' }],
         ]);
         mocks.tabsQuery.mockResolvedValue([{ id: 82 }]);
-        mocks.detectionGet.mockImplementation((tabId: number) =>
-            states.get(tabId),
-        );
+        mocks.detectionGet.mockImplementation((tabId: number) => states.get(tabId));
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: 82, state: states.get(82), debugLoggingEnabled: false },
+            {
+
+                ok: true,
+                tabId: 82,
+                state: states.get(82),
+                debugLoggingEnabled: false,
+            },
         );
         expect(mocks.detectionGet).not.toHaveBeenCalledWith(41);
     });
@@ -128,7 +155,13 @@ describe('PromoDetectionRuntimeMessages.handleGet', () => {
         mocks.debugLogIsEnabled.mockReturnValue(true);
 
         await expect(PromoDetectionRuntimeMessages.handleGet()).resolves.toEqual(
-            { ok: true, tabId: null, state: null, debugLoggingEnabled: true },
+            {
+
+                ok: true,
+                tabId: null,
+                state: null,
+                debugLoggingEnabled: true,
+            },
         );
         expect(mocks.debugLogReady).toHaveBeenCalled();
     });

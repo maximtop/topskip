@@ -1,3 +1,8 @@
+/**
+ * @file Polls for the content script's extension runtime being invalidated
+ * (reload/update/removal) and notifies once, since no event announces it.
+ */
+
 import browser from '@/shared/browser';
 
 /**
@@ -38,11 +43,11 @@ export class ExtensionContextWatch {
      * so the callback runs exactly once.
      *
      * @param onInvalidated - Cleanup to run once the runtime is gone.
+     *
      * @returns Idempotent stop callback for a replacement content bundle.
      */
     static start(onInvalidated: () => void): () => void {
-        let intervalId: ReturnType<typeof globalThis.setInterval> | null =
-            null;
+        let intervalId: ReturnType<typeof globalThis.setInterval> | null = null;
         const stop = (): void => {
             if (intervalId === null) {
                 return;

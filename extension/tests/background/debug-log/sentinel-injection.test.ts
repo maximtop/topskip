@@ -1,8 +1,39 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DebugLog } from '@/background/debug-log/debug-log';
+import {
+    DebugLogExport,
+    type DebugLogEnvironment,
+} from '@/background/debug-log/debug-log-export';
+import { DebugLogStore } from '@/background/debug-log/debug-log-store';
+import { EnvironmentProbe } from '@/background/debug-log/environment-probe';
+import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
+import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
+import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
+import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
+import { CaptureDiagnostics } from '@/content/captions/capture-diagnostics';
+import { ANALYSIS_MODE } from '@/shared/constants';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import { PROVIDER_ID } from '@/shared/providers';
+
+import { makeContentSender } from '../../helpers/runtime-senders';
+
+import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
+import type { DebugLogAppendPayload } from '@/shared/messages';
 
 const storage = await vi.hoisted(async () => {
     const { createMemoryStorageArea } = await import(
-        '../../helpers/memory-storage-area',
+        '../../helpers/memory-storage-area'
     );
     return {
         local: createMemoryStorageArea(),
@@ -107,27 +138,6 @@ vi.mock('@/background/captions/log-transcript-dev', () => ({
     logTranscriptForDeveloper: vi.fn(),
 }));
 
-import { DebugLog } from '@/background/debug-log/debug-log';
-import {
-    DebugLogExport,
-    EnvironmentProbe,
-    type DebugLogEnvironment,
-} from '@/background/debug-log/debug-log-export';
-import { DebugLogStore } from '@/background/debug-log/debug-log-store';
-import { TabAttributionRegistry } from '@/background/debug-log/tab-attribution-registry';
-import { ContentScriptReattach } from '@/background/lifecycle/content-script-reattach';
-import { CaptionRuntimeMessages } from '@/background/messaging/caption-runtime-messages';
-import { ModelRuntimeMessages } from '@/background/messaging/model-runtime-messages';
-import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { PROVIDER_AVAILABILITY } from '@/background/providers/llm-provider-adapter';
-import type { LlmProviderAdapter } from '@/background/providers/llm-provider-adapter';
-import { CaptureDiagnostics } from '@/content/captions/capture-diagnostics';
-import { ANALYSIS_MODE } from '@/shared/constants';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import type { DebugLogAppendPayload } from '@/shared/messages';
-import { PROVIDER_ID } from '@/shared/providers';
-import { makeContentSender } from '../../helpers/runtime-senders';
-
 const NOW_MS = 1_900_000_000_000;
 const TAB_ID = 5;
 const REATTACH_TAB_ID = 41;
@@ -174,6 +184,15 @@ const ENV: DebugLogEnvironment = {
 };
 
 /**
+ * Sender for the trusted content tab.
+ *
+ * @returns Message sender as Chrome would populate it.
+ */
+function contentSender(): ReturnType<typeof makeContentSender> {
+    return makeContentSender({ tabId: TAB_ID, videoId: VIDEO_ID });
+}
+
+/**
  * Hydrates store and registry, turns the switch on, opens the facade and
  * makes the content tab known (non-incognito) so its events are kept.
  *
@@ -200,18 +219,10 @@ async function exportBundle(): Promise<string> {
 }
 
 /**
- * Sender for the trusted content tab.
- *
- * @returns Message sender as Chrome would populate it.
- */
-function contentSender(): ReturnType<typeof makeContentSender> {
-    return makeContentSender({ tabId: TAB_ID, videoId: VIDEO_ID });
-}
-
-/**
  * BYOK adapter returning the given analysis result for every chunk.
  *
  * @param result - Analysis result every `analyzeTranscript` call resolves to.
+ *
  * @returns Adapter double for the provider registry mock.
  */
 function makeAdapter(
@@ -238,57 +249,6 @@ function captionsPayload(): Parameters<typeof PromoAnalysis.onCaptionsReady>[1] 
         languageCode: 'en',
         segments: [{ text: SENTINEL.CaptionBody, startSec: 0, durationSec: 2 }],
     };
-}
-
-/**
- * Runs a BYOK analysis to completion (the detection store mock observes the
- * terminal status) and returns once `byok-run-ended` has been recorded.
- *
- * @param adapter - Adapter double the provider registry serves.
- * @returns Promise settled once the run's end was recorded.
- */
-async function driveByokRun(adapter: LlmProviderAdapter): Promise<void> {
-    providerRegistryMocks.get.mockReturnValue(adapter);
-    PromoAnalysis.onCaptionsReady(contentSender(), captionsPayload());
-    await vi.waitFor(async () => {
-        const bundle = await exportBundle();
-        expect(bundle).toContain(DEBUG_LOG_EVENT.ByokRunEnded);
-    });
-}
-
-/**
- * Drives every emitter of this suite once with its sentinel.
- *
- * @returns Promise settled once every emitter ran.
- */
-async function driveAllEmitters(): Promise<void> {
-    await CaptionRuntimeMessages.handle(
-        { ok: false, videoId: VIDEO_ID, reason: 'capture-timeout', error: SENTINEL.SignedUrl },
-        contentSender(),
-    );
-    browserMocks.executeScript.mockRejectedValue(new Error(SENTINEL.ExecuteScriptUrl));
-    await ContentScriptReattach.handleRequest();
-    await driveByokRun(
-        makeAdapter({
-            ok: false,
-            error: `${SENTINEL.ProviderBody} ${SENTINEL.TranscriptHash}`,
-            rawAssistant: SENTINEL.AssistantText,
-            status: 500,
-            kind: 'http',
-        }),
-    );
-    await ModelRuntimeMessages.handleSaveConnectionKey(
-        PROVIDER_ID.OpenRouter,
-        SENTINEL.ApiKey,
-    );
-    appendCaptureFailure({
-        stage: 'capture-parse-failed',
-        reason: 'capture-parse-failed',
-        error: SENTINEL.ValidationText,
-        title: SENTINEL.PageTitle,
-        cookie: SENTINEL.Cookie,
-        token: SENTINEL.InstallToken,
-    });
 }
 
 /**
@@ -319,6 +279,64 @@ function appendCaptureFailure(details: Record<string, unknown>): void {
         },
         NOW_MS,
     );
+}
+
+/**
+ * Runs a BYOK analysis to completion (the detection store mock observes the
+ * terminal status) and returns once `byok-run-ended` has been recorded.
+ *
+ * @param adapter - Adapter double the provider registry serves.
+ *
+ * @returns Promise settled once the run's end was recorded.
+ */
+async function driveByokRun(adapter: LlmProviderAdapter): Promise<void> {
+    providerRegistryMocks.get.mockReturnValue(adapter);
+    PromoAnalysis.onCaptionsReady(contentSender(), captionsPayload());
+    await vi.waitFor(async () => {
+        const bundle = await exportBundle();
+        expect(bundle).toContain(DEBUG_LOG_EVENT.ByokRunEnded);
+    });
+}
+
+/**
+ * Drives every emitter of this suite once with its sentinel.
+ *
+ * @returns Promise settled once every emitter ran.
+ */
+async function driveAllEmitters(): Promise<void> {
+    await CaptionRuntimeMessages.handle(
+        {
+
+            ok: false,
+            videoId: VIDEO_ID,
+            reason: 'capture-timeout',
+            error: SENTINEL.SignedUrl,
+        },
+        contentSender(),
+    );
+    browserMocks.executeScript.mockRejectedValue(new Error(SENTINEL.ExecuteScriptUrl));
+    await ContentScriptReattach.handleRequest();
+    await driveByokRun(
+        makeAdapter({
+            ok: false,
+            error: `${SENTINEL.ProviderBody} ${SENTINEL.TranscriptHash}`,
+            rawAssistant: SENTINEL.AssistantText,
+            status: 500,
+            kind: 'http',
+        }),
+    );
+    await ModelRuntimeMessages.handleSaveConnectionKey(
+        PROVIDER_ID.OpenRouter,
+        SENTINEL.ApiKey,
+    );
+    appendCaptureFailure({
+        stage: 'capture-parse-failed',
+        reason: 'capture-parse-failed',
+        error: SENTINEL.ValidationText,
+        title: SENTINEL.PageTitle,
+        cookie: SENTINEL.Cookie,
+        token: SENTINEL.InstallToken,
+    });
 }
 
 describe('sentinel injection (FR-046, SC-002)', () => {
@@ -361,7 +379,13 @@ describe('sentinel injection (FR-046, SC-002)', () => {
 
     it('caption-failure: payload.error never reaches the bundle', async () => {
         await CaptionRuntimeMessages.handle(
-            { ok: false, videoId: VIDEO_ID, reason: 'capture-timeout', error: SENTINEL.SignedUrl },
+            {
+
+                ok: false,
+                videoId: VIDEO_ID,
+                reason: 'capture-timeout',
+                error: SENTINEL.SignedUrl,
+            },
             contentSender(),
         );
 

@@ -1,6 +1,6 @@
-import type { Runtime } from 'webextension-polyfill';
-
 import { TOP_FRAME_ID } from '@/shared/constants';
+
+import type { Runtime } from 'webextension-polyfill';
 
 /**
  * Stable 32-character extension id used by every sender-trust test; tests
@@ -21,18 +21,19 @@ const FOREIGN_EXTENSION_ID = 'zzzzzzzzzzzzzzzzzzzzzzzzzzzzzzzz';
 /**
  * Content-sender options.
  */
-export type ContentSenderOptions = {
+export interface ContentSenderOptions {
     tabId: number;
     videoId?: string;
     incognito?: boolean;
     frameId?: number;
-};
+}
 
 /**
  * Minimal `Tabs.Tab` for a sender; only the fields the background reads.
  *
  * @param tabId - Tab id.
  * @param incognito - Incognito flag.
+ *
  * @returns Tab object.
  */
 function makeTab(tabId: number, incognito: boolean): Runtime.MessageSender['tab'] {
@@ -51,6 +52,7 @@ function makeTab(tabId: number, incognito: boolean): Runtime.MessageSender['tab'
  * Sender of the ISOLATED content script on a YouTube watch page (top frame).
  *
  * @param options - Tab id, optional video id / incognito flag / frame id.
+ *
  * @returns Sender as Chrome would populate it.
  */
 export function makeContentSender(options: ContentSenderOptions): Runtime.MessageSender {
@@ -68,6 +70,8 @@ export function makeContentSender(options: ContentSenderOptions): Runtime.Messag
  * Sender of the Options page, which always lives in a tab.
  *
  * @param options - Tab id hosting the Options page.
+ * @param options.tabId Id of the tab hosting the Options page.
+ *
  * @returns Sender as Chrome would populate it.
  */
 export function makeOptionsSender(options: { tabId: number }): Runtime.MessageSender {

@@ -1,3 +1,8 @@
+/**
+ * @file Fans out the debug-log switch state to live tabs and open extension
+ * pages after it changes.
+ */
+
 import browser from '@/shared/browser';
 import {
     TOPSKIP_MESSAGE,
@@ -15,6 +20,7 @@ export class DebugLogBroadcast {
      * rest, and no failure surfaces as a console line.
      *
      * @param enabled - New switch state.
+     *
      * @returns Promise settled after every delivery attempt.
      */
     static async notifyStateChanged(enabled: boolean): Promise<void> {

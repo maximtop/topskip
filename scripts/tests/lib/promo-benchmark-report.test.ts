@@ -10,7 +10,13 @@ import {
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+} from 'vitest';
 
 import { runBenchmarkPreflight } from '../../lib/promo-benchmark-core';
 import { writeBenchmarkReadme } from '../../lib/promo-benchmark-report';
@@ -22,7 +28,9 @@ const temporaryRoots: string[] = [];
 function responseStream(): Response {
     const text = [
         'data: {"choices":[{"delta":{"reasoning_content":"SECRET_REASONING_SENTINEL"}}]}\n',
-        'data: {"id":"REQUEST_ID_SENTINEL","model":"PROVIDER_SENTINEL","choices":[{"delta":{"content":"{\\"hasPromo\\":false}"},"finish_reason":"stop"}],"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110}}\n',
+        'data: {"id":"REQUEST_ID_SENTINEL","model":"PROVIDER_SENTINEL",'
+                + '"choices":[{"delta":{"content":"{\\"hasPromo\\":false}"},"finish_reason":"stop"}],'
+                + '"usage":{"prompt_tokens":100,"completion_tokens":10,"total_tokens":110}}\n',
         'data: [DONE]\n',
     ].join('');
     return new Response(text, {
@@ -106,10 +114,9 @@ describe('promo benchmark resume and report', () => {
             preflight,
             baseUrl: 'https://SECRET_HOST_SENTINEL.invalid/api/v1',
             apiKey: 'SECRET_KEY_SENTINEL',
-            fetchFunction: () =>
-                Promise.reject(
-                    new Error('Resume unexpectedly performed inference.'),
-                ),
+            fetchFunction: () => Promise.reject(
+                new Error('Resume unexpectedly performed inference.'),
+            ),
         });
         expect(resumed).toEqual({ completed: 30, resumed: 30, total: 30 });
         expect(readFileSync(samplePath, 'utf8')).toBe(firstSample);

@@ -1,16 +1,30 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import {
 
+    afterEach,
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 import { PREFS_PORT_NAME } from '@/shared/constants';
 import { TOPSKIP_MESSAGE } from '@/shared/messages';
+
+// Must import after vi.mock so the module picks up the mocked
+// browser.runtime.onConnect instead of the real one.
 
 /**
  * Builds a fake Port with the same listener surface as
  * `browser.runtime.Port` so PrefsPortHub can be tested
  * without the real extension runtime.
+ *
+ * @param name Port name to expose on the fake port.
  */
 function createMockPort(name: string = PREFS_PORT_NAME) {
-    const onDisconnectListeners: Array<(port: unknown) => void> = [];
-    const onMessageListeners: Array<(msg: unknown, port: unknown) => void> = [];
+    const onDisconnectListeners: ((port: unknown) => void)[] = [];
+    const onMessageListeners: ((msg: unknown, port: unknown) => void)[] = [];
     const port = {
         name,
         postMessage: vi.fn(),
@@ -30,6 +44,7 @@ function createMockPort(name: string = PREFS_PORT_NAME) {
     };
     return {
         port,
+
         /**
          * Triggers stored onDisconnect listeners so tests can verify
          * cleanup behavior without a real browser runtime.
@@ -39,9 +54,12 @@ function createMockPort(name: string = PREFS_PORT_NAME) {
                 fn(port);
             }
         },
+
         /**
          * Triggers stored onMessage listeners so tests can inject
          * arbitrary payloads without a real browser runtime.
+         *
+         * @param msg Payload to deliver to stored listeners.
          */
         simulateMessage: (msg: unknown) => {
             for (const fn of onMessageListeners) {
@@ -51,7 +69,7 @@ function createMockPort(name: string = PREFS_PORT_NAME) {
     };
 }
 
-const onConnectListeners: Array<(port: unknown) => void> = [];
+const onConnectListeners: ((port: unknown) => void)[] = [];
 
 vi.mock('@/shared/browser', () => ({
     default: {
@@ -64,10 +82,6 @@ vi.mock('@/shared/browser', () => ({
         },
     },
 }));
-
-// Must import after vi.mock so the module picks up the mocked
-// browser.runtime.onConnect instead of the real one.
-import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
 
 describe('PrefsPortHub', () => {
     beforeEach(() => {
@@ -90,21 +104,21 @@ describe('PrefsPortHub', () => {
         const { port } = createMockPort(PREFS_PORT_NAME);
         // Trigger the listener that register() stored, as if
         // the browser just opened a new port connection.
-        onConnectListeners[0](port);
+        onConnectListeners[0]!(port);
         expect(port.onDisconnect.addListener).toHaveBeenCalledOnce();
         expect(PrefsPortHub.connectedCount()).toBe(1);
     });
 
     it('ignores a port with the wrong name', () => {
         const { port } = createMockPort('some-other-port');
-        onConnectListeners[0](port);
+        onConnectListeners[0]!(port);
         expect(port.onDisconnect.addListener).not.toHaveBeenCalled();
         expect(PrefsPortHub.connectedCount()).toBe(0);
     });
 
     it('removes a port on disconnect', () => {
         const { port, simulateDisconnect } = createMockPort();
-        onConnectListeners[0](port);
+        onConnectListeners[0]!(port);
         expect(PrefsPortHub.connectedCount()).toBe(1);
         simulateDisconnect();
         expect(PrefsPortHub.connectedCount()).toBe(0);
@@ -113,8 +127,8 @@ describe('PrefsPortHub', () => {
     it('broadcastPrefsUpdate posts to all connected ports', () => {
         const m1 = createMockPort();
         const m2 = createMockPort();
-        onConnectListeners[0](m1.port);
-        onConnectListeners[0](m2.port);
+        onConnectListeners[0]!(m1.port);
+        onConnectListeners[0]!(m2.port);
 
         PrefsPortHub.broadcastPrefsUpdate({
             enabled: false,
@@ -139,8 +153,8 @@ describe('PrefsPortHub', () => {
     it('broadcastPrefsUpdate skips disconnected ports gracefully', () => {
         const m1 = createMockPort();
         const m2 = createMockPort();
-        onConnectListeners[0](m1.port);
-        onConnectListeners[0](m2.port);
+        onConnectListeners[0]!(m1.port);
+        onConnectListeners[0]!(m2.port);
         m2.simulateDisconnect();
 
         PrefsPortHub.broadcastPrefsUpdate({
@@ -156,8 +170,8 @@ describe('PrefsPortHub', () => {
     it('disconnectAll clears all ports', () => {
         const m1 = createMockPort();
         const m2 = createMockPort();
-        onConnectListeners[0](m1.port);
-        onConnectListeners[0](m2.port);
+        onConnectListeners[0]!(m1.port);
+        onConnectListeners[0]!(m2.port);
         expect(PrefsPortHub.connectedCount()).toBe(2);
 
         PrefsPortHub.disconnectAll();

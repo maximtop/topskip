@@ -1,4 +1,20 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
+import {
+    CONTENT_SCRIPT_PROTOCOL_VERSION,
+    TOPSKIP_MESSAGE,
+} from '@/shared/messages';
+
+import { makeContentSender, makeOptionsSender } from '../../helpers/runtime-senders';
 
 // The real sender-trust check runs inside the dispatcher, so the mocked
 // runtime id must match the id the sender helpers stamp on their senders.
@@ -67,8 +83,10 @@ vi.mock('@/background/storage/background-storage-access', () => ({
 vi.mock('@/background/lifecycle/content-script-reattach', () => ({
     ContentScriptReattach: { handleRequest: vi.fn() },
 }));
-vi.mock('@/background/messaging/misc-runtime-messages', () => ({
+vi.mock('@/background/messaging/content-log-messages', () => ({
     ContentLogMessages: { log: vi.fn() },
+}));
+vi.mock('@/background/messaging/misc-runtime-messages', () => ({
     PromoDetectionRuntimeMessages: { handleGet: vi.fn(), handleDevSet: vi.fn() },
 }));
 vi.mock('@/background/messaging/caption-runtime-messages', () => ({
@@ -99,18 +117,12 @@ vi.mock('@/background/server-analysis-issue-report', () => ({
     ServerAnalysisIssueReport: {},
 }));
 
-import { registerRuntimeMessages } from '@/background/messaging/register-runtime-messages';
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-import {
-    CONTENT_SCRIPT_PROTOCOL_VERSION,
-    TOPSKIP_MESSAGE,
-} from '@/shared/messages';
-import { makeContentSender, makeOptionsSender } from '../../helpers/runtime-senders';
-
 type Listener = (message: unknown, sender: unknown) => Promise<unknown> | undefined;
 
 /**
  * Registers the dispatcher and returns the listener it installed.
+ *
+ * @throws {Error} When the listener was not registered.
  */
 function installDispatcher(): Listener {
     registerRuntimeMessages({} as never);

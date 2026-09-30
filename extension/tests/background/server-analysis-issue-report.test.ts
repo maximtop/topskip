@@ -1,4 +1,13 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
 
 const prefsMocks = vi.hoisted(() => ({
     ready: vi.fn().mockResolvedValue(undefined),
@@ -42,10 +51,9 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-import { DEBUG_LOG_EVENT } from '@/shared/debug-log-events';
-
-const { DEBUG_LOG_ISSUE_HINT_LINE, ServerAnalysisIssueReport } =
-    await import('@/background/server-analysis-issue-report');
+const { DEBUG_LOG_ISSUE_HINT_LINE, ServerAnalysisIssueReport } = await import(
+    '@/background/server-analysis-issue-report'
+);
 
 describe('ServerAnalysisIssueReport', () => {
     beforeEach(() => {
@@ -202,7 +210,8 @@ describe('ServerAnalysisIssueReport', () => {
         expect(lines.filter((line) => line === DEBUG_LOG_ISSUE_HINT_LINE)).toHaveLength(1);
         expect(lines.at(-1)).toBe(DEBUG_LOG_ISSUE_HINT_LINE);
         expect(DEBUG_LOG_ISSUE_HINT_LINE).toBe(
-            'If you enabled Debug logging in Options → Diagnostics, you can attach the exported log (it lists the video IDs you watched while logging; review it first).',
+            'If you enabled Debug logging in Options → Diagnostics, you can attach the exported log '
+                + '(it lists the video IDs you watched while logging; review it first).',
         );
         expect(body).not.toContain('dQw4w9WgXcQ');
 

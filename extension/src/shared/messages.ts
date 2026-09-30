@@ -1,6 +1,19 @@
-import * as v from 'valibot';
+/**
+ * @file Wire contract for every `runtime.sendMessage`/port message the
+ * extension bundles exchange: message type strings, request/response types,
+ * and the Valibot schemas that validate them at the trust boundary.
+ */
 
 import { captionSegmentSchema } from '@topskip/common/caption-types';
+import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
+import {
+    extensionVersionSchema,
+    serverTranscriptIdentitySchema,
+    youtubeVideoIdSchema,
+    type ServerAnalysisFailureCode,
+} from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
+
 import {
     analysisModeSchema,
     type AnalysisMode,
@@ -19,24 +32,18 @@ import {
     debugLogEventNameSchema,
     type DebugLogDropReason,
 } from '@/shared/debug-log-events';
-import {
-    PROMO_DETECTION_STATUS,
-    type PromoBlock,
-    type PromoDetectionStatus,
-} from '@topskip/common/promo-types';
-import {
-    extensionVersionSchema,
-    serverTranscriptIdentitySchema,
-    youtubeVideoIdSchema,
-    type ServerAnalysisFailureCode,
-} from '@topskip/common/server-analysis-contract';
-import { MAX_TRANSCRIPT_TIMELINE_SEC } from '@topskip/common/captions/canonical-transcript';
 import { PROVIDER_ID, type ProviderId } from '@/shared/providers';
+
 import type { PROVIDER_AVAILABILITY } from './chrome-prompt-api';
 import type {
     ConnectionProviderId,
     ProviderHostAccessStatus,
 } from './provider-host-permissions';
+import type {
+    PromoBlock,
+    PromoDetectionStatus,
+    PROMO_DETECTION_STATUS,
+} from '@topskip/common/promo-types';
 
 export type { ConnectionProviderId } from './provider-host-permissions';
 
@@ -56,6 +63,7 @@ export const TOPSKIP_MESSAGE = {
     SAVE_CONNECTION_KEY: 'TOPSKIP_SAVE_CONNECTION_KEY',
     TEST_CONNECTION_KEY: 'TOPSKIP_TEST_CONNECTION_KEY',
     PREFS_UPDATED: 'TOPSKIP_PREFS_UPDATED',
+
     /**
      * Watch content forwards validated captions to the background-owned
      * analysis pipeline.
@@ -77,47 +85,58 @@ export const TOPSKIP_MESSAGE = {
     DEV_SET_DETECTION_STATUS: 'TOPSKIP_DEV_SET_DETECTION_STATUS',
     GET_CHROME_PROMPT_API_STATUS: 'TOPSKIP_GET_CHROME_PROMPT_API_STATUS',
     TRIGGER_CHROME_MODEL_DOWNLOAD: 'TOPSKIP_TRIGGER_CHROME_MODEL_DOWNLOAD',
+
     /**
      * Content → background: bounded batch of allow-listed debug events.
      */
     DEBUG_LOG_APPEND: 'TOPSKIP_DEBUG_LOG_APPEND',
+
     /**
      * Options/popup → background: switch state and store counters.
      */
     GET_DEBUG_LOG_STATUS: 'TOPSKIP_GET_DEBUG_LOG_STATUS',
+
     /**
      * Options → background: bounded tail of the stored log for the preview.
      */
     GET_DEBUG_LOG_PREVIEW: 'TOPSKIP_GET_DEBUG_LOG_PREVIEW',
+
     /**
      * Options → background: full plain-text bundle for Copy/Download.
      */
     GET_DEBUG_LOG_BUNDLE: 'TOPSKIP_GET_DEBUG_LOG_BUNDLE',
+
     /**
      * Options → background: turn the Debug logging switch on or off.
      */
     SET_DEBUG_LOGGING: 'TOPSKIP_SET_DEBUG_LOGGING',
+
     /**
      * Background → content tabs and extension pages: the switch changed.
      */
     DEBUG_LOG_STATE_UPDATED: 'TOPSKIP_DEBUG_LOG_STATE_UPDATED',
+
     /**
      * Dev-only: seed the store into a known state for E2E.
      */
     DEV_SEED_DEBUG_LOG: 'TOPSKIP_DEV_SEED_DEBUG_LOG',
+
     /**
      * Worker-start wake that lets a live watch script resume pending delivery.
      */
     CONTENT_SCRIPT_READY: 'TOPSKIP_CONTENT_SCRIPT_READY',
+
     /**
      * Background asks the live isolated bundle to prove current route ownership.
      */
     CONTENT_ROUTE_STATUS: 'TOPSKIP_CONTENT_ROUTE_STATUS',
+
     /**
      * Content script forwards a log line to the background
      * service worker console for easier debugging.
      */
     CONTENT_LOG: 'TOPSKIP_CONTENT_LOG',
+
     /**
      * Popup asks the background to re-inject the watch bundles into the active
      * tab when an install/update/reload left it without a live content context.
@@ -158,8 +177,9 @@ export const CAPTION_CAPTURE_FAILURE_REASON = {
 /**
  * Failure reason literals accepted in caption capture diagnostics.
  */
-export type CaptionCaptureFailureReason =
-    (typeof CAPTION_CAPTURE_FAILURE_REASON)[keyof typeof CAPTION_CAPTURE_FAILURE_REASON];
+export type CaptionCaptureFailureReason = (typeof CAPTION_CAPTURE_FAILURE_REASON)[
+    keyof typeof CAPTION_CAPTURE_FAILURE_REASON
+];
 
 const captionCaptureFailureReasonSchema = v.picklist([
     CAPTION_CAPTURE_FAILURE_REASON.PlayerNotReady,
@@ -245,8 +265,7 @@ export type CaptionsFromContentRuntimeMessage = v.InferOutput<
 /**
  * Result of interpreting an unknown runtime message in the captions handler.
  */
-export type CaptionsFromContentIncomingOutcome =
-    | { kind: 'ignore' }
+export type CaptionsFromContentIncomingOutcome = | { kind: 'ignore' }
     | { kind: 'invalid_captions' }
     | { kind: 'ok'; payload: CaptionsFromContentPayload };
 
@@ -279,27 +298,24 @@ export const captionsFromContentIncomingMessageSchema = v.pipe(
 /**
  * Sanitized OpenRouter settings for the options page (never raw API key).
  */
-export type GetOpenRouterConfigResponse =
-    | {
-          ok: true;
-          model: string;
-          apiKeyMasked: string | null;
-          customModels: string[];
-      }
+export type GetOpenRouterConfigResponse = | {
+    ok: true;
+    model: string;
+    apiKeyMasked: string | null;
+    customModels: string[];
+}
     | { ok: false; error: string };
 
 /**
  * Result of saving OpenRouter API key and selected model.
  */
-export type SetOpenRouterConfigResponse =
-    | { ok: true }
+export type SetOpenRouterConfigResponse = | { ok: true }
     | { ok: false; error: string };
 
 /**
  * Response for add/remove custom OpenRouter model slug (options page).
  */
-export type MutateOpenRouterCustomModelResponse =
-    | { ok: true; customModels: string[] }
+export type MutateOpenRouterCustomModelResponse = | { ok: true; customModels: string[] }
     | { ok: false; error: string };
 
 /**
@@ -315,8 +331,7 @@ export const PROMO_DETECTION_SOURCE = {
 /**
  * Origin of the latest promo detection state shown in the popup.
  */
-export type PromoDetectionSource =
-    (typeof PROMO_DETECTION_SOURCE)[keyof typeof PROMO_DETECTION_SOURCE];
+export type PromoDetectionSource = (typeof PROMO_DETECTION_SOURCE)[keyof typeof PROMO_DETECTION_SOURCE];
 
 /**
  * Server and exact-cache paths exclude the private local provider source.
@@ -330,15 +345,43 @@ export type ServerPromoDetectionSource = Exclude<
  * Message-free server context used for localized popup copy and safe issue
  * reporting.
  */
-export type ServerAnalysisFailureContext = {
+export interface ServerAnalysisFailureContext {
+    /**
+     * Stable server failure code driving popup copy and category.
+     */
     code: ServerAnalysisFailureCode;
+
+    /**
+     * Opaque id for correlating a user issue report with server logs, when
+     * the server attached one.
+     */
     supportId?: string;
+
+    /**
+     * Seconds to wait before retrying, when the server requested a delay.
+     */
     retryAfterSec?: number;
+
+    /**
+     * Server API version that produced the failure.
+     */
     apiVersion: number;
+
+    /**
+     * Detection algorithm version in effect, when the server reported one.
+     */
     algorithmVersion?: string;
+
+    /**
+     * Extension version that submitted the failed request.
+     */
     extensionVersion: string;
+
+    /**
+     * Base URL for filing a support issue, when the server allows reporting.
+     */
     supportIssueBaseUrl?: string;
-};
+}
 
 /**
  * Explicit progress phase for one Server-mode caption session.
@@ -356,24 +399,44 @@ export const SERVER_ANALYSIS_TERMINAL_PHASE = 'terminal';
 /**
  * Serializable Server progress phases accepted across extension bundles.
  */
-export type ServerAnalysisPhase =
-    (typeof SERVER_ANALYSIS_PHASE)[keyof typeof SERVER_ANALYSIS_PHASE];
+export type ServerAnalysisPhase = (typeof SERVER_ANALYSIS_PHASE)[keyof typeof SERVER_ANALYSIS_PHASE];
 
 /**
  * Fields shared by every detection snapshot shown for the active tab.
  */
-type PromoDetectionStateBase = {
+interface PromoDetectionStateBase {
+    /**
+     * YouTube video id the snapshot describes.
+     */
     videoId: string;
+
+    /**
+     * Detected promo blocks, when analysis has produced results.
+     */
     promoBlocks?: PromoBlock[];
+
+    /**
+     * Video duration in seconds, when known.
+     */
     durationSec?: number;
+
+    /**
+     * User-facing error message, when the latest attempt failed.
+     */
     error?: string;
+
+    /**
+     * Structured server failure context, when the failure came from Server
+     * mode.
+     */
     serverFailure?: ServerAnalysisFailureContext;
+
     /**
      * True when some transcript regions were not analyzed or a chunk failed
      * (multi-chunk pipeline).
      */
     partialCoverage?: boolean;
-};
+}
 
 /**
  * Pending Server work must identify both its session and visible phase.
@@ -414,24 +477,23 @@ export type LocalDetectionState = PromoDetectionStateBase & {
 /**
  * Detection snapshot for the active tab’s current video (popup).
  */
-export type PromoDetectionStatePayload =
-    | PendingServerDetectionState
+export type PromoDetectionStatePayload = | PendingServerDetectionState
     | TerminalServerDetectionState
     | LocalDetectionState;
 
 /**
  * Popup response containing the latest detection state for the active tab.
  */
-export type GetDetectionStatusResponse =
-    | {
-          ok: true;
-          tabId: number | null;
-          state: PromoDetectionStatePayload | null;
-          /**
-           * Whether the Debug logging switch is currently on (popup indicator).
-           */
-          debugLoggingEnabled: boolean;
-      }
+export type GetDetectionStatusResponse = | {
+    ok: true;
+    tabId: number | null;
+    state: PromoDetectionStatePayload | null;
+
+    /**
+     * Whether the Debug logging switch is currently on (popup indicator).
+     */
+    debugLoggingEnabled: boolean;
+}
     | { ok: false; error: string };
 
 /**
@@ -452,8 +514,9 @@ export const CONTENT_SCRIPT_REATTACH_OUTCOME = {
 /**
  * Outcome reported for one re-attach request.
  */
-export type ContentScriptReattachOutcome =
-    (typeof CONTENT_SCRIPT_REATTACH_OUTCOME)[keyof typeof CONTENT_SCRIPT_REATTACH_OUTCOME];
+export type ContentScriptReattachOutcome = (typeof CONTENT_SCRIPT_REATTACH_OUTCOME)[
+    keyof typeof CONTENT_SCRIPT_REATTACH_OUTCOME
+];
 
 /**
  * Popup response describing what the background did for the active tab.
@@ -480,11 +543,22 @@ export type ReattachContentScriptResponse = v.InferOutput<
 /**
  * Tab-scoped detection push sent over the extension-global runtime channel.
  */
-export type PromoDetectionUpdatedMessage = {
+export interface PromoDetectionUpdatedMessage {
+    /**
+     * Discriminant identifying this message.
+     */
     type: typeof TOPSKIP_MESSAGE.PROMO_DETECTION_UPDATED;
+
+    /**
+     * Tab the detection state belongs to.
+     */
     tabId: number;
+
+    /**
+     * Latest detection snapshot for the tab, or `null` when cleared.
+     */
     payload: PromoDetectionStatePayload | null;
-};
+}
 
 /**
  * Bounded UUID schema used to reject stale or malformed Server session events.
@@ -591,15 +665,17 @@ export const requestServerAnalysisRuntimeMessageSchema = v.strictObject({
 /**
  * Watch-open readiness probe for a video assigned to the Private BYOK route.
  */
-export type PreflightByokSetupPayload = {
+export interface PreflightByokSetupPayload {
+    /**
+     * Video the readiness probe is scoped to.
+     */
     videoId: string;
-};
+}
 
 /**
  * Ack for a caption-independent Private BYOK readiness probe.
  */
-export type PreflightByokSetupResponse =
-    | { ok: true; status: 'inactive' | 'ready' | 'setup_required' }
+export type PreflightByokSetupResponse = | { ok: true; status: 'inactive' | 'ready' | 'setup_required' }
     | { ok: false; error: string };
 
 /**
@@ -681,8 +757,7 @@ export const refreshServerAnalysisStatusRuntimeMessageSchema = v.strictObject({
 /**
  * Terminal server-analysis statuses acknowledged by background polling.
  */
-export type ServerAnalysisTerminalStatus =
-    | 'ready'
+export type ServerAnalysisTerminalStatus = | 'ready'
     | 'no_promo'
     | 'unavailable'
     | 'error'
@@ -741,83 +816,113 @@ export type RefreshServerAnalysisStatusResponse = RequestServerAnalysisResponse;
 /**
  * Result of opening a sanitized GitHub server-analysis report.
  */
-export type OpenServerAnalysisIssueResponse =
-    | { ok: true }
+export type OpenServerAnalysisIssueResponse = | { ok: true }
     | { ok: false; error: string };
 
 /**
  * Serialized provider availability state sent over runtime messages.
  */
-export type ProviderAvailabilityMessage =
-    (typeof PROVIDER_AVAILABILITY)[keyof typeof PROVIDER_AVAILABILITY];
+export type ProviderAvailabilityMessage = (typeof PROVIDER_AVAILABILITY)[keyof typeof PROVIDER_AVAILABILITY];
 
 /**
  * Provider registry item exposed to extension UI.
  */
-export type ProviderListItem = {
+export interface ProviderListItem {
+    /**
+     * Provider identifier.
+     */
     id: string;
+
+    /**
+     * User-facing provider name.
+     */
     displayName: string;
+
+    /**
+     * Current serialized availability of this provider.
+     */
     availability: ProviderAvailabilityMessage;
-};
+}
 
 /**
  * Active provider metadata used by legacy provider-first UI paths.
  */
-export type GetActiveProviderResponse =
-    | { ok: true; providerId: string; displayName: string; modelName: string }
+export type GetActiveProviderResponse = | { ok: true; providerId: string; displayName: string; modelName: string }
     | { ok: false; error: string };
 
 /**
  * Result of changing the active provider through legacy provider messages.
  */
-export type SetActiveProviderResponse =
-    | { ok: true }
+export type SetActiveProviderResponse = | { ok: true }
     | { ok: false; error: string };
 
 /**
  * Provider list response returned to extension UI.
  */
-export type GetProviderListResponse =
-    | { ok: true; providers: ProviderListItem[] }
+export type GetProviderListResponse = | { ok: true; providers: ProviderListItem[] }
     | { ok: false; error: string };
 
 /**
  * Chrome Prompt API readiness and download progress response.
  */
-export type GetChromePromptApiStatusResponse =
-    | {
-          ok: true;
-          availability: ProviderAvailabilityMessage;
-          downloadProgress: number | null;
-      }
+export type GetChromePromptApiStatusResponse = | {
+    ok: true;
+    availability: ProviderAvailabilityMessage;
+    downloadProgress: number | null;
+}
     | { ok: false; error: string };
 
 /**
  * Result of requesting Chrome Prompt API model download.
  */
-export type TriggerChromeModelDownloadResponse =
-    | { ok: true }
+export type TriggerChromeModelDownloadResponse = | { ok: true }
     | { ok: false; error: string };
 
 /**
  * Response from slug validation: format check + optional API check.
  */
-export type ValidateOpenRouterModelResponse =
-    | { ok: true; valid: boolean; error?: string; unverified?: boolean }
+export type ValidateOpenRouterModelResponse = | { ok: true; valid: boolean; error?: string; unverified?: boolean }
     | { ok: false; error: string };
 
 /**
  * User-facing model option serialized for options and popup UI.
  */
-export type DetectionModelMessage = {
+export interface DetectionModelMessage {
+    /**
+     * Stable provider-prefixed identifier persisted as the active model.
+     */
     id: string;
+
+    /**
+     * User-facing model name shown in selection UI.
+     */
     label: string;
+
+    /**
+     * Provider this model routes through.
+     */
     providerId: ProviderId;
+
+    /**
+     * User-facing name of the provider this model routes through.
+     */
     providerLabel: string;
+
+    /**
+     * Provider-native model name (not the prefixed id) sent in requests.
+     */
     modelName: string;
+
+    /**
+     * Whether using this model requires a configured provider connection.
+     */
     requiresConnection: boolean;
+
+    /**
+     * Current serialized availability of this model's provider.
+     */
     availability: ProviderAvailabilityMessage;
-};
+}
 
 export const CONNECTION_STATUS = {
     Missing: 'missing',
@@ -827,46 +932,65 @@ export const CONNECTION_STATUS = {
 /**
  * Saved/missing key state for a provider connection row.
  */
-export type ConnectionStatus =
-    (typeof CONNECTION_STATUS)[keyof typeof CONNECTION_STATUS];
+export type ConnectionStatus = (typeof CONNECTION_STATUS)[keyof typeof CONNECTION_STATUS];
 
 /**
  * Provider connection row sent to the model-first settings UI.
  */
-export type ConnectionEntryMessage = {
+export interface ConnectionEntryMessage {
+    /**
+     * Provider this connection row configures.
+     */
     providerId: ConnectionProviderId;
+
+    /**
+     * User-facing name of the provider this connection row configures.
+     */
     providerLabel: string;
+
+    /**
+     * Whether the currently active model needs this connection to work.
+     */
     requiredForActiveModel: boolean;
+
+    /**
+     * Masked form of the saved API key for display, or `null` when unset.
+     */
     apiKeyMasked: string | null;
+
+    /**
+     * Whether a key is currently saved for this provider.
+     */
     status: ConnectionStatus;
+
+    /**
+     * Whether the optional host permission for this provider is granted.
+     */
     hostAccessStatus: ProviderHostAccessStatus;
-};
+}
 
 /**
  * Complete model-first settings snapshot for options and popup.
  */
-export type GetModelSettingsResponse =
-    | {
-          ok: true;
-          activeModelId: string;
-          models: DetectionModelMessage[];
-          connections: ConnectionEntryMessage[];
-          customOpenRouterModels: string[];
-      }
+export type GetModelSettingsResponse = | {
+    ok: true;
+    activeModelId: string;
+    models: DetectionModelMessage[];
+    connections: ConnectionEntryMessage[];
+    customOpenRouterModels: string[];
+}
     | { ok: false; error: string };
 
 /**
  * Result of persisting a new active detection model.
  */
-export type SetActiveModelResponse =
-    | { ok: true }
+export type SetActiveModelResponse = | { ok: true }
     | { ok: false; error: string };
 
 /**
  * Result of saving a provider connection key.
  */
-export type SaveConnectionKeyResponse =
-    | { ok: true; apiKeyMasked: string | null }
+export type SaveConnectionKeyResponse = | { ok: true; apiKeyMasked: string | null }
     | { ok: false; error: string };
 
 /**
@@ -879,19 +1003,29 @@ export const PROVIDER_CONNECTION_FAILURE_CODE = {
 /**
  * A revoked optional grant tells options to restore an explicit access action.
  */
-export type ProviderHostAccessRequiredFailure = {
+export interface ProviderHostAccessRequiredFailure {
+    /**
+     * Discriminates this failure from a successful result.
+     */
     ok: false;
+
+    /**
+     * Marks the failure as a revoked optional host permission.
+     */
     code: typeof PROVIDER_CONNECTION_FAILURE_CODE.HostAccessRequired;
+
+    /**
+     * Provider whose host permission was revoked.
+     */
     providerId: ConnectionProviderId;
-};
+}
 
 /**
  * Result of validating a draft or saved provider connection key.
  */
-export type TestConnectionKeyResponse =
-    | { ok: true; valid: true }
+export type TestConnectionKeyResponse = | { ok: true; valid: true }
     | { ok: true; valid: false; error: string }
-    | { ok: false; error: string; retryable?: boolean }
+    | { ok: false; error: string; retryable?: boolean | undefined }
     | ProviderHostAccessRequiredFailure;
 
 /**
@@ -934,6 +1068,7 @@ const testConnectionKeyResponseSchema = v.union([
  * Narrows an untrusted runtime reply before options may classify it.
  *
  * @param value - Unknown response returned through runtime messaging.
+ *
  * @returns Parsed documented response, or `null` for malformed data.
  */
 export function parseTestConnectionKeyResponse(
@@ -951,124 +1086,124 @@ export type ContentLogLevel = 'info' | 'warn' | 'error';
 /**
  * Union of all runtime messages routed through the background service worker.
  */
-export type TopSkipRuntimeMessage =
-    | { type: typeof TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY }
+export type TopSkipRuntimeMessage = | { type: typeof TOPSKIP_MESSAGE.CONTENT_SCRIPT_READY }
     | { type: typeof TOPSKIP_MESSAGE.CONTENT_ROUTE_STATUS }
     | { type: typeof TOPSKIP_MESSAGE.GET_PREFS }
     | { type: typeof TOPSKIP_MESSAGE.SET_PREFS; enabled: boolean }
     | {
-          type: typeof TOPSKIP_MESSAGE.SET_ANALYSIS_MODE;
-          analysisMode: AnalysisMode;
-      }
+        type: typeof TOPSKIP_MESSAGE.SET_ANALYSIS_MODE;
+        analysisMode: AnalysisMode;
+    }
     | { type: typeof TOPSKIP_MESSAGE.GET_ACTIVE_PROVIDER }
     | {
-          type: typeof TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER;
-          providerId: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.SET_ACTIVE_PROVIDER;
+        providerId: string;
+    }
     | { type: typeof TOPSKIP_MESSAGE.GET_PROVIDER_LIST }
     | { type: typeof TOPSKIP_MESSAGE.GET_MODEL_SETTINGS }
     | {
-          type: typeof TOPSKIP_MESSAGE.SET_ACTIVE_MODEL;
-          modelId: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.SET_ACTIVE_MODEL;
+        modelId: string;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.SAVE_CONNECTION_KEY;
-          providerId: ConnectionProviderId;
-          apiKey: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.SAVE_CONNECTION_KEY;
+        providerId: ConnectionProviderId;
+        apiKey: string;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.TEST_CONNECTION_KEY;
-          providerId: ConnectionProviderId;
-          apiKey?: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.TEST_CONNECTION_KEY;
+        providerId: ConnectionProviderId;
+        apiKey?: string;
+    }
     | { type: typeof TOPSKIP_MESSAGE.PREFS_UPDATED; prefs: UserPreferences }
     | {
-          type: typeof TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT;
-          payload: CaptionsFromContentPayload;
-      }
+        type: typeof TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT;
+        payload: CaptionsFromContentPayload;
+    }
     | { type: typeof TOPSKIP_MESSAGE.GET_OPENROUTER_CONFIG }
     | {
-          type: typeof TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG;
-          apiKey: string;
-          model: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.SET_OPENROUTER_CONFIG;
+        apiKey: string;
+        model: string;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.ADD_OPENROUTER_CUSTOM_MODEL;
-          slug: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.ADD_OPENROUTER_CUSTOM_MODEL;
+        slug: string;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.REMOVE_OPENROUTER_CUSTOM_MODEL;
-          slug: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.REMOVE_OPENROUTER_CUSTOM_MODEL;
+        slug: string;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL;
-          slug: string;
-          apiKey: string;
-      }
+        type: typeof TOPSKIP_MESSAGE.VALIDATE_OPENROUTER_MODEL;
+        slug: string;
+        apiKey: string;
+    }
     | { type: typeof TOPSKIP_MESSAGE.GET_DETECTION_STATUS }
     | { type: typeof TOPSKIP_MESSAGE.REATTACH_CONTENT_SCRIPT }
     | {
-          type: typeof TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP;
-          payload: PreflightByokSetupPayload;
-      }
+        type: typeof TOPSKIP_MESSAGE.PREFLIGHT_BYOK_SETUP;
+        payload: PreflightByokSetupPayload;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT;
-          payload: ServerAnalysisSessionEventPayload;
-      }
+        type: typeof TOPSKIP_MESSAGE.SERVER_ANALYSIS_SESSION_EVENT;
+        payload: ServerAnalysisSessionEventPayload;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS;
-          payload: RequestServerAnalysisPayload;
-      }
+        type: typeof TOPSKIP_MESSAGE.REQUEST_SERVER_ANALYSIS;
+        payload: RequestServerAnalysisPayload;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS;
-          payload: RefreshServerAnalysisStatusPayload;
-      }
+        type: typeof TOPSKIP_MESSAGE.REFRESH_SERVER_ANALYSIS_STATUS;
+        payload: RefreshServerAnalysisStatusPayload;
+    }
     | { type: typeof TOPSKIP_MESSAGE.OPEN_SERVER_ANALYSIS_ISSUE }
     | {
-          type: typeof TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS;
-          state: PromoDetectionStatePayload | null;
-      }
+        type: typeof TOPSKIP_MESSAGE.DEV_SET_DETECTION_STATUS;
+        state: PromoDetectionStatePayload | null;
+    }
     | PromoDetectionUpdatedMessage
     | {
-          type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
-          source: ServerPromoDetectionSource;
-          sessionId: string;
-          videoId: string;
-          promoBlocks: PromoBlock[];
-          /**
-           * True when the chunk plan was capped, a chunk failed, or the merged
-           * transcript hit the global safety cap (same meaning as detection
-           * status payload).
-           */
-          partialCoverage?: boolean;
-      }
+        type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
+        source: ServerPromoDetectionSource;
+        sessionId: string;
+        videoId: string;
+        promoBlocks: PromoBlock[];
+
+        /**
+         * True when the chunk plan was capped, a chunk failed, or the merged
+         * transcript hit the global safety cap (same meaning as detection
+         * status payload).
+         */
+        partialCoverage?: boolean;
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
-          source: typeof PROMO_DETECTION_SOURCE.LocalProvider;
-          videoId: string;
-          promoBlocks: PromoBlock[];
-          partialCoverage?: boolean;
-      }
+        type: typeof TOPSKIP_MESSAGE.PROMO_BLOCKS_DETECTED;
+        source: typeof PROMO_DETECTION_SOURCE.LocalProvider;
+        videoId: string;
+        promoBlocks: PromoBlock[];
+        partialCoverage?: boolean;
+    }
     | { type: typeof TOPSKIP_MESSAGE.GET_CHROME_PROMPT_API_STATUS }
     | { type: typeof TOPSKIP_MESSAGE.TRIGGER_CHROME_MODEL_DOWNLOAD }
     | {
-          type: typeof TOPSKIP_MESSAGE.CONTENT_LOG;
-          level: ContentLogLevel;
-          args: unknown[];
-      }
+        type: typeof TOPSKIP_MESSAGE.CONTENT_LOG;
+        level: ContentLogLevel;
+        args: unknown[];
+    }
     | {
-          type: typeof TOPSKIP_MESSAGE.DEBUG_LOG_APPEND;
-          payload: DebugLogAppendPayload;
-      }
+        type: typeof TOPSKIP_MESSAGE.DEBUG_LOG_APPEND;
+        payload: DebugLogAppendPayload;
+    }
     | { type: typeof TOPSKIP_MESSAGE.GET_DEBUG_LOG_STATUS }
     | { type: typeof TOPSKIP_MESSAGE.GET_DEBUG_LOG_PREVIEW }
     | { type: typeof TOPSKIP_MESSAGE.GET_DEBUG_LOG_BUNDLE }
     | { type: typeof TOPSKIP_MESSAGE.SET_DEBUG_LOGGING; enabled: boolean }
     | DebugLogStateUpdatedMessage
     | {
-          type: typeof TOPSKIP_MESSAGE.DEV_SEED_DEBUG_LOG;
-          payload: DevSeedDebugLogPayload;
-      };
+        type: typeof TOPSKIP_MESSAGE.DEV_SEED_DEBUG_LOG;
+        payload: DevSeedDebugLogPayload;
+    };
 
 /**
  * Narrows an opaque runtime `message` to the specific member of
@@ -1079,6 +1214,7 @@ export type TopSkipRuntimeMessage =
  *
  * @param type - The expected `type` literal (from `TOPSKIP_MESSAGE.*`).
  * @param message - Opaque value from `runtime.onMessage`.
+ *
  * @returns The narrowed message, or `undefined` when the type does not match.
  */
 export function pickMessage<K extends TopSkipRuntimeMessage['type']>(
@@ -1086,9 +1222,9 @@ export function pickMessage<K extends TopSkipRuntimeMessage['type']>(
     message: unknown,
 ): Extract<TopSkipRuntimeMessage, { type: K }> | undefined {
     if (
-        message === null ||
-        typeof message !== 'object' ||
-        Reflect.get(message, 'type') !== type
+        message === null
+        || typeof message !== 'object'
+        || Reflect.get(message, 'type') !== type
     ) {
         return undefined;
     }
@@ -1098,16 +1234,16 @@ export function pickMessage<K extends TopSkipRuntimeMessage['type']>(
 /**
  * Response from reading stored user preferences.
  */
-export type GetPrefsResponse =
-    | {
-          ok: true;
-          prefs: UserPreferences;
-          /**
-           * Whether the Debug logging switch is on; sibling of `prefs`, never
-           * part of the preferences schema.
-           */
-          debugLogEnabled: boolean;
-      }
+export type GetPrefsResponse = | {
+    ok: true;
+    prefs: UserPreferences;
+
+    /**
+     * Whether the Debug logging switch is on; sibling of `prefs`, never
+     * part of the preferences schema.
+     */
+    debugLogEnabled: boolean;
+}
     | { ok: false; error: string };
 
 /**
@@ -1118,25 +1254,30 @@ export type SetPrefsResponse = { ok: true } | { ok: false; error: string };
 /**
  * Result of changing the selected analysis route without replacing BYOK setup.
  */
-export type SetAnalysisModeResponse =
-    | { ok: true; prefs: UserPreferences }
+export type SetAnalysisModeResponse = | { ok: true; prefs: UserPreferences }
     | { ok: false; error: string };
 
 /**
  * Ack for {@link TOPSKIP_MESSAGE.CAPTIONS_FROM_CONTENT}.
  */
-export type CaptionsFromContentAck =
-    | { ok: true }
+export type CaptionsFromContentAck = | { ok: true }
     | { ok: false; error: string };
 
 /**
  * Message sent over the long-lived prefs port from the background to
  * connected extension pages.
  */
-export type PrefsPortMessage = {
+export interface PrefsPortMessage {
+    /**
+     * Discriminant identifying this message.
+     */
     type: typeof TOPSKIP_MESSAGE.PREFS_UPDATED;
+
+    /**
+     * Full updated preferences broadcast to connected pages.
+     */
     prefs: UserPreferences;
-};
+}
 
 /**
  * Valibot schema for {@link PrefsPortMessage} and the equivalent
@@ -1153,6 +1294,7 @@ export const prefsUpdatedMessageSchema = v.object({
  * Type guard for messages received on a prefs port.
  *
  * @param msg Unknown value from `port.onMessage`.
+ *
  * @returns Whether `msg` is a valid {@link PrefsPortMessage}.
  */
 export function isPrefsPortMessage(msg: unknown): msg is PrefsPortMessage {
@@ -1403,8 +1545,7 @@ export const debugLogAppendRuntimeMessageSchema = v.strictObject({
  * Reply to an append: the current switch state so the client can stop
  * batching once logging is off.
  */
-export type DebugLogAppendResponse =
-    | { ok: true; enabled: boolean }
+export type DebugLogAppendResponse = | { ok: true; enabled: boolean }
     | { ok: false; error: string };
 
 /**
@@ -1535,6 +1676,7 @@ export type DebugLogStateUpdatedMessage = v.InferOutput<
  * Type guard for the switch-state push received by content and UI pages.
  *
  * @param msg - Unknown value from `runtime.onMessage`.
+ *
  * @returns Whether `msg` is a valid {@link DebugLogStateUpdatedMessage}.
  */
 export function isDebugLogStateUpdatedMessage(
@@ -1555,8 +1697,7 @@ export const DEV_DEBUG_LOG_SEED_STATE = {
 /**
  * Seed state literal.
  */
-export type DevDebugLogSeedState =
-    (typeof DEV_DEBUG_LOG_SEED_STATE)[keyof typeof DEV_DEBUG_LOG_SEED_STATE];
+export type DevDebugLogSeedState = (typeof DEV_DEBUG_LOG_SEED_STATE)[keyof typeof DEV_DEBUG_LOG_SEED_STATE];
 
 /**
  * Dev-only seeding payload; `approxBytes` fills the store to a near-cap size.

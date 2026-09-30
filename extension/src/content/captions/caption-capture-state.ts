@@ -1,3 +1,8 @@
+/**
+ * @file Session/state helpers for the caption-capture flow: session tokens,
+ * stale-payload filtering, and whether cleanup should restore captions off.
+ */
+
 import type {
     CaptionCaptureSession,
     CaptionCaptureSnapshot,
@@ -11,6 +16,7 @@ let nextActivationId = 0;
  *
  * @param videoId Current YouTube watch video id.
  * @param captureTimeoutMs Bounded wait for the player-mediated request.
+ *
  * @returns New caption capture session.
  */
 export function createCaptureSession(
@@ -34,6 +40,7 @@ export function createCaptureSession(
  *
  * @param session Active capture session.
  * @param payload Page-world timedtext capture payload.
+ *
  * @returns Whether the payload belongs to another video.
  */
 export function shouldIgnoreCapturedTimedtext(
@@ -47,6 +54,7 @@ export function shouldIgnoreCapturedTimedtext(
  * Restores captions only when TopSkip made the temporary state change.
  *
  * @param snapshot Pre-capture user state plus later intervention flag.
+ *
  * @returns Whether cleanup should turn captions back off.
  */
 export function shouldRestoreCaptionsOff(

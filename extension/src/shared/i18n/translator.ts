@@ -1,3 +1,8 @@
+/**
+ * @file Plain-string translator instance shared by non-React contexts
+ * (background, content scripts).
+ */
+
 import { translate, type I18nInterface } from '@adguard/translate';
 
 import { i18n } from '@/shared/i18n/i18n';

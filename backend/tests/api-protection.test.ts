@@ -1,4 +1,10 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+} from 'vitest';
 
 import {
     BACKEND_REQUEST_COST_CLASS,

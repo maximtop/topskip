@@ -1,4 +1,10 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import {
+
+    afterEach,
+    describe,
+    expect,
+    it,
+} from 'vitest';
 
 import {
     SERVER_ORIGIN_ENV_VAR,
@@ -97,24 +103,16 @@ describe('backend origin policy', () => {
     it.each(TOPSKIP_BUILD_MODES)(
         'rejects surrounding whitespace for %s',
         (build) => {
-            expect(() =>
-                validateServerOrigin(build, ` ${PUBLIC_SERVER_ORIGIN}`),
-            ).toThrow(/whitespace/);
-            expect(() =>
-                validateServerOrigin(build, `${PUBLIC_SERVER_ORIGIN} `),
-            ).toThrow(/whitespace/);
+            expect(() => validateServerOrigin(build, ` ${PUBLIC_SERVER_ORIGIN}`)).toThrow(/whitespace/);
+            expect(() => validateServerOrigin(build, `${PUBLIC_SERVER_ORIGIN} `)).toThrow(/whitespace/);
         },
     );
 
     it.each([TopSkipBuild.Beta, TopSkipBuild.Release])(
         'requires public HTTPS for %s',
         (build) => {
-            expect(() =>
-                validateServerOrigin(build, 'http://topskip.example.com'),
-            ).toThrow(/public HTTPS/);
-            expect(() =>
-                validateServerOrigin(build, DEV_LOOPBACK_SERVER_ORIGIN),
-            ).toThrow(/public HTTPS/);
+            expect(() => validateServerOrigin(build, 'http://topskip.example.com')).toThrow(/public HTTPS/);
+            expect(() => validateServerOrigin(build, DEV_LOOPBACK_SERVER_ORIGIN)).toThrow(/public HTTPS/);
         },
     );
 
@@ -148,9 +146,7 @@ describe('backend origin policy', () => {
         'rejects special-use DNS suffixes for %s',
         (build) => {
             for (const suffix of specialUseSuffixes) {
-                expect(() =>
-                    validateServerOrigin(build, `https://api.${suffix}`),
-                ).toThrow(/public HTTPS/);
+                expect(() => validateServerOrigin(build, `https://api.${suffix}`)).toThrow(/public HTTPS/);
             }
             expect(() => validateServerOrigin(build, 'https://localhost')).toThrow(
                 /public HTTPS/,
@@ -175,9 +171,7 @@ describe('backend origin policy', () => {
         'https://example.com\uFF0E',
         'https://example.com\uFF61',
     ])('rejects the rooted DNS spelling %s', (origin) => {
-        expect(() =>
-            validateServerOrigin(TopSkipBuild.Release, origin),
-        ).toThrow(/public HTTPS/);
+        expect(() => validateServerOrigin(TopSkipBuild.Release, origin)).toThrow(/public HTTPS/);
     });
 
     it.each([
@@ -200,9 +194,7 @@ describe('backend origin policy', () => {
         'https://[fc00::1]',
         'https://[fe80::1]',
     ])('rejects the canonical IP literal %s', (origin) => {
-        expect(() =>
-            validateServerOrigin(TopSkipBuild.Release, origin),
-        ).toThrow(/public HTTPS/);
+        expect(() => validateServerOrigin(TopSkipBuild.Release, origin)).toThrow(/public HTTPS/);
     });
 
     it.each([
@@ -216,9 +208,7 @@ describe('backend origin policy', () => {
         ['https://example.com#fragment', /bare origin/],
         ['https://*.example.com', /public HTTPS/],
     ])('rejects non-origin input %p', (value, message) => {
-        expect(() =>
-            validateServerOrigin(TopSkipBuild.Release, value),
-        ).toThrow(message);
+        expect(() => validateServerOrigin(TopSkipBuild.Release, value)).toThrow(message);
     });
 
     it('makes the environment-backed getters use the same policy', () => {

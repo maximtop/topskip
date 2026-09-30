@@ -1,4 +1,22 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+    beforeEach,
+} from 'vitest';
+
+import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
+import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
+import { PromoAnalysis } from '@/background/messaging/promo-analysis';
+import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
+import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
+import {
+    ANALYSIS_MODE,
+    STORAGE_KEY_PREFS,
+    STORAGE_KEY_OPENROUTER,
+} from '@/shared/constants';
 
 const {
     sendMessage,
@@ -29,17 +47,6 @@ vi.mock('@/shared/browser', () => ({
         tabs: { query: tabsQuery, sendMessage: tabsSendMessage },
     },
 }));
-
-import { PrefsRuntimeMessages } from '@/background/messaging/runtime-messages';
-import { PromoAnalysis } from '@/background/messaging/promo-analysis';
-import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
-import { OpenRouterRuntimeMessages } from '@/background/messaging/openrouter-runtime-messages';
-import { PrefsPortHub } from '@/background/messaging/prefs-port-hub';
-import {
-    ANALYSIS_MODE,
-    STORAGE_KEY_PREFS,
-    STORAGE_KEY_OPENROUTER,
-} from '@/shared/constants';
 
 // --------------------------------------------------------------
 // FR-014 removed: SET_PREFS no longer touches OpenRouter storage
@@ -170,8 +177,7 @@ describe('SET_ANALYSIS_MODE', () => {
                 .spyOn(PrefsPortHub, 'broadcastPrefsUpdate')
                 .mockImplementation(() => {});
 
-            const response =
-                await PrefsRuntimeMessages.handleSetAnalysisMode(analysisMode);
+            const response = await PrefsRuntimeMessages.handleSetAnalysisMode(analysisMode);
             const prefs = { ...currentPrefs, analysisMode };
 
             expect(storageSet).toHaveBeenCalledWith({

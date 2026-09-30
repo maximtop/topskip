@@ -1,17 +1,28 @@
-import { type ReactElement, useEffect, useRef, useState } from 'react';
+/**
+ * @file Diagnostics section container: owns debug-log state independently of
+ * the rest of options and wires it to the `DiagnosticsPanel` presentation.
+ */
+
+import {
+
+    type ReactElement,
+    useEffect,
+    useRef,
+    useState,
+} from 'react';
 
 import { DebugLogExportActions } from '@/options/debug-log-export-actions';
-import {
-    DiagnosticsPanel,
-    type DiagnosticsFeedback,
-    type DiagnosticsPreview,
-} from '@/options/DiagnosticsPanel';
 import { DiagnosticsRefreshLoop } from '@/options/diagnostics-refresh-loop';
 import {
     requestDebugLogBundle,
     requestSetDebugLogging,
 } from '@/options/diagnostics-request';
 import { toDiagnosticsPhase } from '@/options/diagnostics-state';
+import {
+    DiagnosticsPanel,
+    type DiagnosticsFeedback,
+    type DiagnosticsPreview,
+} from '@/options/DiagnosticsPanel';
 import browser from '@/shared/browser';
 import { buildDebugLogFileName } from '@/shared/debug-log-format';
 import {

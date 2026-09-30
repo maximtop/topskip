@@ -1,3 +1,8 @@
+/**
+ * @file Converts a thrown value of unknown shape into a loggable string
+ * message.
+ */
+
 import { isValiError } from 'valibot';
 
 import { extractMessageFromValiError } from '@/shared/valibot';
@@ -7,6 +12,7 @@ import { extractMessageFromValiError } from '@/shared/valibot';
  * If `error` is a {@link ValiError}, uses {@link extractMessageFromValiError}.
  *
  * @param error Thrown value (typically from `catch`).
+ *
  * @returns Message suitable for logging or API error fields.
  */
 export function getErrorMessage(error: unknown): string {

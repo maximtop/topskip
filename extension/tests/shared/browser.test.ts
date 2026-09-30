@@ -1,4 +1,12 @@
-import { afterAll, afterEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    afterAll,
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 type NativeListener = (
     message: unknown,
@@ -31,6 +39,7 @@ const { default: browser } = await import('@/shared/browser');
  * listener kept the channel open and what it replied.
  *
  * @param listener - Native listener registered by the polyfill wrapper.
+ *
  * @returns Channel flag returned to Chrome and the captured reply.
  */
 async function deliver(

@@ -1,28 +1,48 @@
+/**
+ * @file Splits a canonical transcript into fixed-overlap chunks sized for one model call each,
+ * so the server-side prompt budget can be planned independently of a video's total length.
+ */
+
 import { ChunkPlanner } from '@topskip/common/promo-chunk-planner';
 import {
     SERVER_CHUNK_BUDGET_CHARS,
     SERVER_CHUNK_OVERLAP_SEC,
     SERVER_MAX_CHUNKS_PER_VIDEO,
 } from '@topskip/common/promo-chunking-config';
+
 import type { CaptionSegment } from '@topskip/common/caption-types';
 
 /**
  * One transcript slice for one model call, with its caption time range.
  */
-export type ServerTranscriptChunk = {
+export interface ServerTranscriptChunk {
+    /**
+     * Zero-based position of this chunk within the plan's chunk sequence.
+     */
     index: number;
+
+    /**
+     * Start of this chunk's caption time range, in seconds.
+     */
     startSec: number;
+
+    /**
+     * End of this chunk's caption time range, in seconds.
+     */
     endSec: number;
+
+    /**
+     * Canonical transcript segments covered by this chunk, including fixed overlap.
+     */
     segments: CaptionSegment[];
-};
+}
 
 /**
  * Failure means the plan could not cover the transcript within the chunk cap;
  * contract limits make this unreachable, so callers treat it as an internal
  * error rather than truncating coverage silently.
  */
-export type ServerChunkPlanResult =
-    | { ok: true; chunks: ServerTranscriptChunk[] }
+export type ServerChunkPlanResult = | { ok: true; chunks: ServerTranscriptChunk[] }
     | { ok: false };
 
 /**
@@ -30,6 +50,7 @@ export type ServerChunkPlanResult =
  * adapter's prompt lines, so the char budget maps 1:1 to prompt size.
  *
  * @param segments - Canonical transcript segments (already validated).
+ *
  * @returns Chunk slices, or `ok: false` when coverage would be partial.
  */
 export function buildServerTranscriptChunks(

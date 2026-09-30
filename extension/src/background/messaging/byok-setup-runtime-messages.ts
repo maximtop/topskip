@@ -1,8 +1,14 @@
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+/**
+ * @file Handles the BYOK preflight-setup runtime message, resolving provider
+ * readiness before caption acquisition can finish.
+ */
+
+import {
+    PROMO_DETECTION_STATUS,
+} from '@topskip/common/promo-types';
 
 import { PromoDetectionStore } from '@/background/promo-detection-store';
 import { defaultRegistry } from '@/background/providers/default-registry';
-import type { ProviderRegistry } from '@/background/providers/provider-registry';
 import { PrefsSyncStorage } from '@/background/storage/prefs-sync';
 import { PROVIDER_AVAILABILITY } from '@/shared/chrome-prompt-api';
 import { ANALYSIS_MODE } from '@/shared/constants';
@@ -12,9 +18,9 @@ import {
     type PreflightByokSetupPayload,
     type PreflightByokSetupResponse,
 } from '@/shared/messages';
-import {
-    PROMO_DETECTION_STATUS,
-} from '@topskip/common/promo-types';
+
+import type { ProviderRegistry } from '@/background/providers/provider-registry';
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 /**
  * Resolves Private BYOK readiness before caption acquisition can finish.
@@ -39,6 +45,7 @@ export class ByokSetupRuntimeMessages {
      *
      * @param payload - Video whose locked BYOK route is opening.
      * @param sender - Content-script sender containing the source tab id.
+     *
      * @returns Provider readiness without any fallback analysis source.
      */
     static async handle(
@@ -64,9 +71,9 @@ export class ByokSetupRuntimeMessages {
                 prefs.providerId,
             );
             if (
-                adapter !== undefined &&
-                (await adapter.availability()) !==
-                    PROVIDER_AVAILABILITY.UNAVAILABLE
+                adapter !== undefined
+                && (await adapter.availability())
+                    !== PROVIDER_AVAILABILITY.UNAVAILABLE
             ) {
                 return { ok: true, status: 'ready' };
             }

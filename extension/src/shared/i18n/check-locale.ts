@@ -1,10 +1,14 @@
+/**
+ * @file Matches a browser-reported locale code against the extension's
+ * supported locales.
+ */
+
 import type { AvailableLocale } from '@/shared/i18n/locale-constants';
 
 /**
  * Result of matching a locale code against available locales.
  */
-export type CheckLocaleResult =
-    | { suitable: true; locale: AvailableLocale }
+export type CheckLocaleResult = | { suitable: true; locale: AvailableLocale }
     | { suitable: false; locale: string };
 
 /**
@@ -19,6 +23,7 @@ export type CheckLocaleResult =
  *
  * @param availableLocales - List of supported locale codes
  * @param locale - Browser locale code to resolve
+ *
  * @returns Result indicating whether a match was found
  */
 export function checkLocale(
@@ -57,15 +62,13 @@ export function checkLocale(
         }
     }
 
-    const baseMatch = lookupMap.get(parts[0]);
+    const baseMatch = lookupMap.get(parts[0]!); // split() always yields at least one part
     if (baseMatch) {
         return { suitable: true, locale: baseMatch };
     }
 
     const prefix = `${parts[0]}_`;
-    const prefixMatch = availableLocales.find((available) =>
-        available.toLowerCase().startsWith(prefix),
-    );
+    const prefixMatch = availableLocales.find((available) => available.toLowerCase().startsWith(prefix));
     if (prefixMatch) {
         return { suitable: true, locale: prefixMatch };
     }

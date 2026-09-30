@@ -1,7 +1,13 @@
+/**
+ * @file Negotiates and caches server-owned analysis compatibility config,
+ * refreshing at most once per hour and decoupled from the extension release.
+ */
+
 import { ServerAnalysisClient } from '@/background/server-analysis-client';
 import { ServerConfigStorage } from '@/background/storage/server-config-storage';
 import { ServerResultCacheStorage } from '@/background/storage/server-result-cache';
 import { MS_PER_SECOND, SECONDS_PER_HOUR } from '@/shared/constants';
+
 import type { ServerConfigResponse } from '@topskip/common/server-analysis-contract';
 
 const SERVER_CONFIG_REFRESH_INTERVAL_MS = SECONDS_PER_HOUR * MS_PER_SECOND;
@@ -14,8 +20,7 @@ export class ServerAnalysisConfiguration {
     /**
      * Coalesces config refreshes caused by simultaneous watch tabs.
      */
-    private static refreshInFlight: Promise<ServerConfigResponse | null> | null =
-        null;
+    private static refreshInFlight: Promise<ServerConfigResponse | null> | null = null;
 
     /**
      * Covers the rare case where Chrome cannot persist an attempt timestamp
@@ -27,6 +32,7 @@ export class ServerAnalysisConfiguration {
      * Invalidates cache rows produced by any other server algorithm.
      *
      * @param algorithmVersion - Active version reported by the server.
+     *
      * @returns Promise resolved after a best-effort cleanup.
      */
     private static async removeOtherAlgorithms(
@@ -47,6 +53,7 @@ export class ServerAnalysisConfiguration {
      *
      * @param fallback - Last validated config, if any.
      * @param nowMs - Fetch time used for persistence.
+     *
      * @returns Fresh config, the offline fallback, or `null`.
      */
     private static async refresh(
@@ -60,11 +67,9 @@ export class ServerAnalysisConfiguration {
         ServerAnalysisConfiguration.refreshInFlight = (async () => {
             try {
                 await ServerConfigStorage.saveRefreshAttempt(nowMs);
-                ServerAnalysisConfiguration.unpersistedRefreshAttemptAtMs =
-                    null;
+                ServerAnalysisConfiguration.unpersistedRefreshAttemptAtMs = null;
             } catch {
-                ServerAnalysisConfiguration.unpersistedRefreshAttemptAtMs =
-                    nowMs;
+                ServerAnalysisConfiguration.unpersistedRefreshAttemptAtMs = nowMs;
             }
 
             let fresh: ServerConfigResponse;
@@ -80,8 +85,8 @@ export class ServerAnalysisConfiguration {
                 // The in-memory response remains authoritative for this request.
             }
             if (
-                fallback === null ||
-                fallback.config.algorithmVersion !== fresh.algorithmVersion
+                fallback === null
+                || fallback.config.algorithmVersion !== fresh.algorithmVersion
             ) {
                 await ServerAnalysisConfiguration.removeOtherAlgorithms(
                     fresh.algorithmVersion,
@@ -101,6 +106,7 @@ export class ServerAnalysisConfiguration {
      * Resolves the active config, making at most one HTTP refresh per hour.
      *
      * @param nowMs - Current epoch time, injectable for tests.
+     *
      * @returns Active or offline-fallback config, otherwise `null`.
      */
     static async loadActive(
@@ -115,14 +121,14 @@ export class ServerAnalysisConfiguration {
             ServerAnalysisConfiguration.unpersistedRefreshAttemptAtMs ?? 0,
         );
         if (
-            cached !== null &&
-            nowMs - cached.fetchedAtMs < SERVER_CONFIG_REFRESH_INTERVAL_MS
+            cached !== null
+            && nowMs - cached.fetchedAtMs < SERVER_CONFIG_REFRESH_INTERVAL_MS
         ) {
             return cached.config;
         }
         if (
-            lastAttemptAtMs > 0 &&
-            nowMs - lastAttemptAtMs < SERVER_CONFIG_REFRESH_INTERVAL_MS
+            lastAttemptAtMs > 0
+            && nowMs - lastAttemptAtMs < SERVER_CONFIG_REFRESH_INTERVAL_MS
         ) {
             return cached?.config ?? null;
         }
@@ -143,6 +149,7 @@ export class ServerAnalysisConfiguration {
      * future local cache lookups follow that server-owned version.
      *
      * @param algorithmVersion - Version from an analysis response.
+     *
      * @returns Promise resolved after best-effort persistence and cleanup.
      */
     static async noteAlgorithmVersion(algorithmVersion: string): Promise<void> {

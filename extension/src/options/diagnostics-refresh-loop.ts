@@ -1,3 +1,8 @@
+/**
+ * @file Bounded polling loop that keeps the Diagnostics section's status and
+ * preview in sync with the background while the section is visible.
+ */
+
 import { OPTIONS_DIAGNOSTICS_REFRESH_MS } from '@/options/constants';
 import {
     requestDebugLogPreview,
@@ -5,26 +10,27 @@ import {
     type DebugLogPreviewResult,
 } from '@/options/diagnostics-request';
 import { shouldRefetchPreview } from '@/options/diagnostics-state';
+
 import type { DebugLogStatusPayload } from '@/shared/messages';
 
 /**
  * Receives loop outcomes; the React container maps them onto state.
  * `onPreview(null)` means no log is stored, so any shown tail must go.
  */
-export type DiagnosticsRefreshSink = {
+export interface DiagnosticsRefreshSink {
     onStatus(status: DebugLogStatusPayload): void;
     onPreview(preview: DebugLogPreviewResult | null): void;
     onUnavailable(): void;
-};
+}
 
 /**
  * Background reads the loop performs; injected by tests so the cadence can be
  * driven with fake timers and scripted replies.
  */
-export type DiagnosticsRefreshReads = {
+export interface DiagnosticsRefreshReads {
     requestStatus(): Promise<DebugLogStatusPayload>;
     requestPreview(): Promise<DebugLogPreviewResult>;
-};
+}
 
 const DEFAULT_READS: DiagnosticsRefreshReads = {
     requestStatus: requestDebugLogStatus,

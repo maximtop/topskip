@@ -1,3 +1,8 @@
+/**
+ * @file OpenRouter API key, model selection, and custom-model management
+ * panel.
+ */
+
 import {
     ActionIcon,
     Alert,
@@ -11,7 +16,6 @@ import {
     TextInput,
     Title,
 } from '@mantine/core';
-import type { ReactElement } from 'react';
 
 import {
     CheckIcon,
@@ -23,32 +27,101 @@ import {
     XIcon,
 } from '@/shared/topskip-icons';
 
+import type { ReactElement } from 'react';
+
 /**
  * Select option shape for built-in and custom OpenRouter models.
  */
-type OpenRouterSelectOption = {
+interface OpenRouterSelectOption {
+    /**
+     * OpenRouter model slug submitted on selection.
+     */
     value: string;
+
+    /**
+     * Display label shown in the select control.
+     */
     label: string;
-};
+}
 
 /**
  * OpenRouter form state and callbacks owned by the options container.
  */
-type OpenRouterConfigPanelProps = {
+interface OpenRouterConfigPanelProps {
+    /**
+     * Draft (unsaved) API key text.
+     */
     apiKey: string;
+
+    /**
+     * Whether the API key input shows plain text instead of masked dots.
+     */
     apiKeyVisible: boolean;
+
+    /**
+     * Masked form of the saved API key, or `null` when none is saved.
+     */
     savedApiKeyMasked: string | null;
+
+    /**
+     * Currently selected model slug.
+     */
     modelChoice: string;
+
+    /**
+     * Options offered by the model select control (built-in and custom).
+     */
     modelSelectData: OpenRouterSelectOption[];
+
+    /**
+     * Saved custom OpenRouter model slugs.
+     */
     customModels: string[];
+
+    /**
+     * Current text of the new-model input.
+     */
     newModelDraft: string;
+
+    /**
+     * Whether an add-model request is in flight.
+     */
     addBusy: boolean;
+
+    /**
+     * Whether an API key save request is in flight.
+     */
     saveBusy: boolean;
+
+    /**
+     * Slug currently being removed, or `null` when none is in flight.
+     */
     removeBusySlug: string | null;
+
+    /**
+     * Slug currently being edited inline, or `null` when none is.
+     */
     editingModelSlug: string | null;
+
+    /**
+     * Draft text for the slug being edited inline.
+     */
     editingModelDraft: string;
+
+    /**
+     * Slug whose inline edit is being saved, or `null` when none is.
+     */
     updateBusySlug: string | null;
+
+    /**
+     * Safe validation error message, or `null` when the last check passed.
+     */
     validationError: string | null;
+
+    /**
+     * Custom model slugs whose validity could not be confirmed against the
+     * OpenRouter API.
+     */
     unverifiedModels: Set<string>;
     onApiKeyChange(value: string): void;
     onToggleApiKeyVisibility(): void;
@@ -61,7 +134,7 @@ type OpenRouterConfigPanelProps = {
     onSaveCustomModelEdit(slug: string): void;
     onCancelCustomModelEdit(): void;
     onRemoveCustomModel(slug: string): void;
-};
+}
 
 const OPTIONS_PANEL_BLUE_SOFT = '#eff6ff';
 const OPTIONS_PANEL_BORDER = '#dbe3ee';
@@ -73,15 +146,15 @@ const OPTIONS_PANEL_MUTED = '#64748b';
  * options page container.
  *
  * @param props - Current OpenRouter form state and callbacks
+ *
  * @returns OpenRouter provider panel
  */
 export function OpenRouterConfigPanel(
     props: OpenRouterConfigPanelProps,
 ): ReactElement {
-    const apiKeyPlaceholder =
-        props.savedApiKeyMasked !== null
-            ? '••••••••••••••••••••••••••••••••'
-            : 'sk-or-v1-...';
+    const apiKeyPlaceholder = props.savedApiKeyMasked !== null
+        ? '••••••••••••••••••••••••••••••••'
+        : 'sk-or-v1-...';
 
     return (
         <Stack gap="lg">
@@ -167,14 +240,14 @@ export function OpenRouterConfigPanel(
                                             >
                                                 <path
                                                     d={
-                                                        'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-' +
-                                                        '11-8a18.45 18.45 0 0 1 5.06-5.94'
+                                                        'M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-'
+                                                        + '11-8a18.45 18.45 0 0 1 5.06-5.94'
                                                     }
                                                 />
                                                 <path
                                                     d={
-                                                        'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18' +
-                                                        '.5 18.5 0 0 1-2.16 3.19'
+                                                        'M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18'
+                                                        + '.5 18.5 0 0 1-2.16 3.19'
                                                     }
                                                 />
                                                 <line
@@ -285,9 +358,8 @@ export function OpenRouterConfigPanel(
                         >
                             {props.customModels.map((slug) => {
                                 const editing = props.editingModelSlug === slug;
-                                const busy =
-                                    props.removeBusySlug === slug ||
-                                    props.updateBusySlug === slug;
+                                const busy = props.removeBusySlug === slug
+                                    || props.updateBusySlug === slug;
                                 return (
                                     <Group
                                         key={slug}
@@ -336,18 +408,18 @@ export function OpenRouterConfigPanel(
                                                 {props.unverifiedModels.has(
                                                     slug,
                                                 ) ? (
-                                                            <Badge
-                                                                size="xs"
-                                                                color="yellow"
-                                                                variant="light"
-                                                                style={{
-                                                                    textTransform:
+                                                        <Badge
+                                                            size="xs"
+                                                            color="yellow"
+                                                            variant="light"
+                                                            style={{
+                                                                textTransform:
                                                                 'none',
-                                                                }}
-                                                            >
-                                                                Unverified
-                                                            </Badge>
-                                                        ) : null}
+                                                            }}
+                                                        >
+                                                            Unverified
+                                                        </Badge>
+                                                    ) : null}
                                             </Group>
                                         )}
                                         {editing ? (
@@ -357,8 +429,8 @@ export function OpenRouterConfigPanel(
                                                     variant="light"
                                                     color="green"
                                                     loading={
-                                                        props.updateBusySlug ===
-                                                        slug
+                                                        props.updateBusySlug
+                                                        === slug
                                                     }
                                                     leftSection={(
                                                         <CheckIcon
@@ -418,16 +490,16 @@ export function OpenRouterConfigPanel(
                                                     variant="light"
                                                     color="red"
                                                     loading={
-                                                        props.removeBusySlug ===
-                                                        slug
+                                                        props.removeBusySlug
+                                                        === slug
                                                     }
                                                     disabled={
-                                                        props.updateBusySlug !==
-                                                            null ||
-                                                        (props.removeBusySlug !==
-                                                            null &&
-                                                            props.removeBusySlug !==
-                                                                slug)
+                                                        props.updateBusySlug
+                                                            !== null
+                                                        || (props.removeBusySlug
+                                                            !== null
+                                                            && props.removeBusySlug
+                                                                !== slug)
                                                     }
                                                     leftSection={(
                                                         <TrashIcon

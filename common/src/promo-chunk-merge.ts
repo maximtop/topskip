@@ -1,3 +1,9 @@
+/**
+ * @file Filters promo blocks reported for one caption chunk down to the
+ * blocks that plausibly belong to that chunk's time range, before
+ * cross-chunk merge.
+ */
+
 import type { PromoBlock } from '@topskip/common/promo-types';
 
 /**
@@ -14,6 +20,7 @@ export class ChunkMerge {
      * @param chunkStartSec - First caption `startSec` in the chunk
      * @param chunkEndSec - Last caption `startSec` in the chunk
      * @param toleranceSec - Slack on both sides
+     *
      * @returns Filtered blocks (copy)
      */
     static filterPromoBlocksForChunkTimeRange(

@@ -1,9 +1,31 @@
-import * as v from 'valibot';
+/**
+ * @file Runs the backend promo-analysis pipeline for one selected transcript: chunking, calling
+ * the configured LLM adapter per chunk with retry, merging blocks across chunk boundaries, and
+ * building the validated terminal response plus its retained run artifact.
+ */
+
 import { randomUUID } from 'node:crypto';
+
+import { MS_PER_SECOND, SECONDS_PER_HOUR } from '@topskip/common/constants';
+import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
+import {
+    BLOCK_MERGE_GAP_SEC,
+    CHUNK_BLOCK_TOLERANCE_SEC,
+} from '@topskip/common/promo-chunking-config';
+import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
+import {
+    noPromoResponseSchema,
+    readyResponseSchema,
+    SERVER_ANALYSIS_ERROR_CODE,
+    terminalErrorResponseSchema,
+    type NoPromoResponse,
+    type ReadyResponse,
+    type TerminalErrorResponse,
+} from '@topskip/common/server-analysis-contract';
+import * as v from 'valibot';
 
 import { LocalPromoAnalysisFixtureAdapter } from '@topskip/backend/analysis/local-analysis-fixtures';
 import { OpenRouterAnalysisAdapter } from '@topskip/backend/analysis/openrouter-analysis-adapter';
-import { normalizeBackendPromoBlocks } from '@topskip/backend/analysis/promo-block-normalization';
 import { buildServerTranscriptChunks } from '@topskip/backend/analysis/promo-analysis-chunking';
 import {
     BACKEND_ANALYSIS_FAILURE_REASON,
@@ -16,37 +38,22 @@ import {
     type BackendLlmAnalysisUsage,
     type ParsedModelPromoResult,
 } from '@topskip/backend/analysis/promo-analysis-types';
+import { normalizeBackendPromoBlocks } from '@topskip/backend/analysis/promo-block-normalization';
 import { parseBackendPromoResponse } from '@topskip/backend/analysis/promo-response-parser';
-import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
 import {
     legacyNoPromoResponseSchema,
     legacyReadyResponseSchema,
     legacyTerminalErrorResponseSchema,
     type LegacyServerAnalysisResponse,
 } from '@topskip/backend/legacy/legacy-server-analysis-contract';
-import {
-    noPromoResponseSchema,
-    readyResponseSchema,
-    SERVER_ANALYSIS_ERROR_CODE,
-    terminalErrorResponseSchema,
-    type NoPromoResponse,
-    type ReadyResponse,
-    type TerminalErrorResponse,
-} from '@topskip/common/server-analysis-contract';
+
+import type { TranscriptArtifact } from '@topskip/backend/extraction/subtitle-extraction-types';
 import type { PromoBlock } from '@topskip/common/promo-types';
-import { ChunkMerge } from '@topskip/common/promo-chunk-merge';
-import { mergePromoBlocksWithGap } from '@topskip/common/promo-dedupe';
-import {
-    BLOCK_MERGE_GAP_SEC,
-    CHUNK_BLOCK_TOLERANCE_SEC,
-} from '@topskip/common/promo-chunking-config';
-import { MS_PER_SECOND, SECONDS_PER_HOUR } from '@topskip/common/constants';
 
 /**
  * Reanalysis window balances provider cost with eventual caption corrections.
  */
-export const SERVER_ANALYSIS_RESULT_TTL_MS =
-    30 * 24 * SECONDS_PER_HOUR * MS_PER_SECOND;
+export const SERVER_ANALYSIS_RESULT_TTL_MS = 30 * 24 * SECONDS_PER_HOUR * MS_PER_SECOND;
 
 const INVALID_PROVIDER_METADATA_ID = 'invalid_provider_metadata';
 const BACKEND_ANALYSIS_MODEL_MAX_LENGTH = 160;
@@ -68,28 +75,59 @@ const backendAnalysisAdapterMetadataSchema = v.strictObject({
 /**
  * Worker input for one selected transcript analysis run.
  */
-export type BackendPromoAnalysisWorkerInput = {
+export interface BackendPromoAnalysisWorkerInput {
+    /**
+     * Canonical transcript artifact selected for this analysis run.
+     */
     transcriptArtifact: TranscriptArtifact;
+
+    /**
+     * Reported video duration in seconds; `undefined` when the source did not supply one.
+     */
     durationSec: number | undefined;
+
+    /**
+     * Clock reading in epoch ms used as the run's start time and for schema validation.
+     */
     nowMs: number;
-    adapter?: BackendLlmAnalysisAdapter;
+
+    /**
+     * LLM adapter override for tests; defaults to the environment-selected adapter when omitted.
+     */
+    adapter?: BackendLlmAnalysisAdapter | undefined;
+
+    /**
+     * Completion-time clock override for deterministic tests; defaults to `Date.now` when omitted.
+     */
     clock?: () => number;
-};
+}
 
 /**
  * Worker output always pairs the terminal response with retained run metadata.
  */
-export type BackendPromoAnalysisWorkerResult = {
+export interface BackendPromoAnalysisWorkerResult {
+    /**
+     * Terminal response the HTTP layer returns to the caller for this analysis run.
+     */
     terminalResponse:
         | ReadyResponse
         | NoPromoResponse
         | TerminalErrorResponse
         | Extract<
-              LegacyServerAnalysisResponse,
-              { status: 'ready' | 'no_promo' | 'error' }
-          >;
+            LegacyServerAnalysisResponse,
+            {
+                /**
+                 * Discriminant narrowing the legacy response to its non-processing terminal variants.
+                 */
+                status: 'ready' | 'no_promo' | 'error';
+            }
+        >;
+
+    /**
+     * Retained run record persisted for diagnostics and cache reuse.
+     */
     analysisRun: AnalysisRunArtifact;
-};
+}
 
 /**
  * Converts a selected transcript artifact into a terminal server-analysis result.
@@ -99,15 +137,14 @@ export class BackendPromoAnalysisWorker {
      * Runs deterministic analysis and records safe artifacts for diagnostics.
      *
      * @param input - Transcript, duration, clock, and optional adapter override.
+     *
      * @returns Terminal response plus stored analysis run metadata.
      */
     static async analyze(
         input: BackendPromoAnalysisWorkerInput,
     ): Promise<BackendPromoAnalysisWorkerResult> {
-        const adapter =
-            input.adapter ?? BackendPromoAnalysisWorker.defaultAdapter();
-        const adapterMetadata =
-            BackendPromoAnalysisWorker.validateAdapterMetadata(adapter);
+        const adapter = input.adapter ?? BackendPromoAnalysisWorker.defaultAdapter();
+        const adapterMetadata = BackendPromoAnalysisWorker.validateAdapterMetadata(adapter);
 
         if (adapterMetadata === null) {
             return BackendPromoAnalysisWorker.providerError(input);
@@ -133,18 +170,17 @@ export class BackendPromoAnalysisWorker {
         let mergedBlocks: PromoBlock[] = [];
         const rawResponses: string[] = [];
         let usage: BackendLlmAnalysisUsage | undefined;
-        let model = adapterMetadata.model;
+        let { model } = adapterMetadata;
 
         for (const chunk of chunkPlan.chunks) {
             const chunkArtifact: TranscriptArtifact = {
                 ...input.transcriptArtifact,
                 segments: chunk.segments,
             };
-            const attempt =
-                await BackendPromoAnalysisWorker.analyzeChunkWithRetry(
-                    adapter,
-                    chunkArtifact,
-                );
+            const attempt = await BackendPromoAnalysisWorker.analyzeChunkWithRetry(
+                adapter,
+                chunkArtifact,
+            );
             if (!attempt.ok) {
                 return BackendPromoAnalysisWorker.failure(input, {
                     provider: adapterMetadata.provider,
@@ -160,44 +196,41 @@ export class BackendPromoAnalysisWorker {
             }
 
             model = attempt.model;
-            rawResponses.push(
-                `[chunk ${String(chunk.index)} ${String(chunk.startSec)}-${String(chunk.endSec)}s]\n${attempt.rawModelResponse}`,
-            );
+            const chunkLabel = `[chunk ${String(chunk.index)} `
+                + `${String(chunk.startSec)}-${String(chunk.endSec)}s]`;
+            rawResponses.push(`${chunkLabel}\n${attempt.rawModelResponse}`);
             usage = BackendPromoAnalysisWorker.sumUsage(usage, attempt.usage);
 
-            if (!attempt.parsedResult.hasPromo) {
-                continue;
+            if (attempt.parsedResult.hasPromo) {
+                // Only trim interior chunk boundaries: a block outside a middle
+                // chunk's caption span belongs to an adjacent overlapping chunk,
+                // but the first chunk has no earlier neighbor and the last none
+                // later, so their outer edges stay open. A single chunk is both,
+                // so nothing is filtered — identical to whole-transcript analysis.
+                const isFirstChunk = chunk.index === 0;
+                const isLastChunk = chunk.index === chunkPlan.chunks.length - 1;
+                const loSec = isFirstChunk
+                    ? Number.NEGATIVE_INFINITY
+                    : chunk.startSec;
+                const hiSec = isLastChunk ? Number.POSITIVE_INFINITY : chunk.endSec;
+                const filtered = ChunkMerge.filterPromoBlocksForChunkTimeRange(
+                    attempt.parsedResult.promoBlocks,
+                    loSec,
+                    hiSec,
+                    CHUNK_BLOCK_TOLERANCE_SEC,
+                );
+                mergedBlocks = mergePromoBlocksWithGap(
+                    [...mergedBlocks, ...filtered],
+                    BLOCK_MERGE_GAP_SEC,
+                );
             }
-            // Only trim interior chunk boundaries: a block outside a middle
-            // chunk's caption span belongs to an adjacent overlapping chunk,
-            // but the first chunk has no earlier neighbor and the last none
-            // later, so their outer edges stay open. A single chunk is both,
-            // so nothing is filtered — identical to whole-transcript analysis.
-            const isFirstChunk = chunk.index === 0;
-            const isLastChunk = chunk.index === chunkPlan.chunks.length - 1;
-            const loSec = isFirstChunk
-                ? Number.NEGATIVE_INFINITY
-                : chunk.startSec;
-            const hiSec = isLastChunk ? Number.POSITIVE_INFINITY : chunk.endSec;
-            const filtered = ChunkMerge.filterPromoBlocksForChunkTimeRange(
-                attempt.parsedResult.promoBlocks,
-                loSec,
-                hiSec,
-                CHUNK_BLOCK_TOLERANCE_SEC,
-            );
-            mergedBlocks = mergePromoBlocksWithGap(
-                [...mergedBlocks, ...filtered],
-                BLOCK_MERGE_GAP_SEC,
-            );
         }
 
         const completedAtMs = BackendPromoAnalysisWorker.readClock(input);
-        const rawModelResponse =
-            rawResponses.length > 0 ? rawResponses.join('\n\n') : null;
-        const combinedParsedResult: ParsedModelPromoResult =
-            mergedBlocks.length > 0
-                ? { hasPromo: true, promoBlocks: mergedBlocks }
-                : { hasPromo: false };
+        const rawModelResponse = rawResponses.length > 0 ? rawResponses.join('\n\n') : null;
+        const combinedParsedResult: ParsedModelPromoResult = mergedBlocks.length > 0
+            ? { hasPromo: true, promoBlocks: mergedBlocks }
+            : { hasPromo: false };
 
         if (!combinedParsedResult.hasPromo) {
             const analysisRun = BackendPromoAnalysisWorker.buildAnalysisRun(
@@ -270,6 +303,7 @@ export class BackendPromoAnalysisWorker {
      *
      * @param adapter - Backend LLM adapter.
      * @param chunkArtifact - Transcript slice for this chunk.
+     *
      * @returns Parsed chunk outcome, or a stable failure after the retry.
      */
     private static async analyzeChunkWithRetry(
@@ -277,64 +311,61 @@ export class BackendPromoAnalysisWorker {
         chunkArtifact: TranscriptArtifact,
     ): Promise<
         | {
-              ok: true;
-              parsedResult: ParsedModelPromoResult;
-              rawModelResponse: string;
-              model: string;
-              usage?: BackendLlmAnalysisUsage;
-          }
+            ok: true;
+            parsedResult: ParsedModelPromoResult;
+            rawModelResponse: string;
+            model: string;
+            usage?: BackendLlmAnalysisUsage | undefined;
+        }
         | {
-              ok: false;
-              failureReason: BackendAnalysisFailureReason;
-              rawModelResponse: string | null;
-          }
+            ok: false;
+            failureReason: BackendAnalysisFailureReason;
+            rawModelResponse: string | null;
+        }
     > {
         let lastFailure:
             | {
-                  failureReason: BackendAnalysisFailureReason;
-                  rawModelResponse: string | null;
-              }
+                failureReason: BackendAnalysisFailureReason;
+                rawModelResponse: string | null;
+            }
             | undefined;
-        for (let attempt = 0; attempt < 2; attempt++) {
-            let adapterResult: BackendLlmAnalysisAdapterResult;
+        for (let attempt = 0; attempt < 2; attempt += 1) {
             try {
-                adapterResult = await adapter.analyze({
+                const adapterResult: BackendLlmAnalysisAdapterResult = await adapter.analyze({
                     transcriptArtifact: chunkArtifact,
                 });
+                const parsed = parseBackendPromoResponse(
+                    adapterResult.rawModelResponse,
+                );
+                if (parsed.ok) {
+                    return {
+                        ok: true,
+                        parsedResult: parsed.parsedResult,
+                        rawModelResponse: adapterResult.rawModelResponse,
+                        model: adapterResult.model,
+                        usage: adapterResult.usage,
+                    };
+                }
+                lastFailure = {
+                    failureReason: parsed.failureReason,
+                    rawModelResponse: adapterResult.rawModelResponse,
+                };
             } catch {
                 lastFailure = {
                     failureReason:
                         BACKEND_ANALYSIS_FAILURE_REASON.ModelProviderError,
                     rawModelResponse: null,
                 };
-                continue;
             }
-            const parsed = parseBackendPromoResponse(
-                adapterResult.rawModelResponse,
-            );
-            if (!parsed.ok) {
-                lastFailure = {
-                    failureReason: parsed.failureReason,
-                    rawModelResponse: adapterResult.rawModelResponse,
-                };
-                continue;
-            }
-            return {
-                ok: true,
-                parsedResult: parsed.parsedResult,
-                rawModelResponse: adapterResult.rawModelResponse,
-                model: adapterResult.model,
-                usage: adapterResult.usage,
-            };
         }
         return lastFailure !== undefined
             ? { ok: false, ...lastFailure }
             : {
-                    ok: false,
-                    failureReason:
+                ok: false,
+                failureReason:
                       BACKEND_ANALYSIS_FAILURE_REASON.ModelProviderError,
-                    rawModelResponse: null,
-                };
+                rawModelResponse: null,
+            };
     }
 
     /**
@@ -343,6 +374,7 @@ export class BackendPromoAnalysisWorker {
      *
      * @param prev - Running usage total, or `undefined` before the first chunk.
      * @param next - This chunk's usage, or `undefined` when the adapter omits it.
+     *
      * @returns Combined usage, or `undefined` when neither side has usage.
      */
     private static sumUsage(
@@ -378,6 +410,7 @@ export class BackendPromoAnalysisWorker {
      * Uses an injected clock for deterministic tests and wall time in production.
      *
      * @param input - Worker input with optional clock override.
+     *
      * @returns Completion timestamp.
      */
     private static readClock(input: BackendPromoAnalysisWorkerInput): number {
@@ -388,6 +421,7 @@ export class BackendPromoAnalysisWorker {
      * Keeps untrusted adapter metadata out of persisted analysis artifacts.
      *
      * @param adapter - Adapter-owned stable metadata and analysis behavior.
+     *
      * @returns Valid stable metadata, or `null` when unsafe.
      */
     private static validateAdapterMetadata(
@@ -408,6 +442,7 @@ export class BackendPromoAnalysisWorker {
      * Builds the safe terminal response for invalid provider metadata.
      *
      * @param input - Transcript analysis input.
+     *
      * @returns Terminal provider error and diagnostic artifact.
      */
     private static providerError(
@@ -427,6 +462,16 @@ export class BackendPromoAnalysisWorker {
      *
      * @param input - Transcript analysis input.
      * @param details - Safe run details to retain.
+     * @param details.provider - Provider id stored on the run artifact.
+     * @param details.rawModelResponse - Raw assistant text retained, or `null` before any response.
+     * @param details.parsedResult - Parsed model result, or `null` when parsing did not run.
+     * @param details.normalizedPromoBlocks - Normalized blocks, empty for a non-ready outcome.
+     * @param details.failureReason - Stable failure reason recorded on the run.
+     * @param details.model - Model id reported by the adapter, when available.
+     * @param details.promptVersion - Prompt version used, when available.
+     * @param details.usage - Provider token/cost accounting, when available.
+     * @param details.completedAtMs - Completion clock reading in epoch ms, when available.
+     *
      * @returns Terminal error and diagnostic artifact.
      */
     private static failure(
@@ -437,10 +482,10 @@ export class BackendPromoAnalysisWorker {
             parsedResult: ParsedModelPromoResult | null;
             normalizedPromoBlocks: PromoBlock[];
             failureReason: BackendAnalysisFailureReason;
-            model?: string;
-            promptVersion?: string;
-            usage?: BackendLlmAnalysisUsage;
-            completedAtMs?: number;
+            model?: string | undefined;
+            promptVersion?: string | undefined;
+            usage?: BackendLlmAnalysisUsage | undefined;
+            completedAtMs?: number | undefined;
         },
     ): BackendPromoAnalysisWorkerResult {
         return {
@@ -460,6 +505,16 @@ export class BackendPromoAnalysisWorker {
      *
      * @param input - Transcript analysis input.
      * @param details - Model output, parsed output, and failure metadata.
+     * @param details.provider - Provider id stored on the run artifact.
+     * @param details.rawModelResponse - Raw assistant text retained, or `null` before any response.
+     * @param details.parsedResult - Parsed model result, or `null` when parsing did not run.
+     * @param details.normalizedPromoBlocks - Normalized blocks, empty for a non-ready outcome.
+     * @param details.failureReason - Stable failure reason, or `null` for a successful run.
+     * @param details.model - Model id reported by the adapter, when available.
+     * @param details.promptVersion - Prompt version used, when available.
+     * @param details.usage - Provider token/cost accounting, when available.
+     * @param details.completedAtMs - Completion clock reading in epoch ms, when available.
+     *
      * @returns Validated analysis run artifact.
      */
     private static buildAnalysisRun(
@@ -470,10 +525,10 @@ export class BackendPromoAnalysisWorker {
             parsedResult: ParsedModelPromoResult | null;
             normalizedPromoBlocks: PromoBlock[];
             failureReason: BackendAnalysisFailureReason | null;
-            model?: string;
-            promptVersion?: string;
-            usage?: BackendLlmAnalysisUsage;
-            completedAtMs?: number;
+            model?: string | undefined;
+            promptVersion?: string | undefined;
+            usage?: BackendLlmAnalysisUsage | undefined;
+            completedAtMs?: number | undefined;
         },
     ): AnalysisRunArtifact {
         return v.parse(analysisRunArtifactSchema, {
@@ -500,6 +555,7 @@ export class BackendPromoAnalysisWorker {
      * @param input - Transcript analysis input.
      * @param promoBlocks - Safe sorted blocks to deliver.
      * @param completedAtMs - Completion time used to derive cache freshness.
+     *
      * @returns Ready terminal response.
      */
     private static buildReadyResponse(
@@ -539,6 +595,7 @@ export class BackendPromoAnalysisWorker {
      *
      * @param input - Transcript analysis input.
      * @param completedAtMs - Completion time used to derive cache freshness.
+     *
      * @returns No-promo terminal response.
      */
     private static buildNoPromoResponse(
@@ -575,6 +632,7 @@ export class BackendPromoAnalysisWorker {
      *
      * @param input - Transcript analysis input.
      * @param failureReason - Stable failure reason to expose as an error code.
+     *
      * @returns Error terminal response.
      */
     private static buildErrorResponse(
@@ -609,7 +667,10 @@ export class BackendPromoAnalysisWorker {
      * Maps internal failure reasons onto the public terminal contract.
      *
      * @param failureReason - Stable backend analysis failure reason.
+     *
      * @returns Public terminal error code.
+     *
+     * @throws {Error} When `failureReason` is none of the known failure reasons.
      */
     private static toTerminalErrorCode(
         failureReason: BackendAnalysisFailureReason,
@@ -621,6 +682,8 @@ export class BackendPromoAnalysisWorker {
                 return SERVER_ANALYSIS_ERROR_CODE.UnsafeModelBlocks;
             case BACKEND_ANALYSIS_FAILURE_REASON.ModelProviderError:
                 return SERVER_ANALYSIS_ERROR_CODE.ModelProviderError;
+            default:
+                throw new Error(`Unhandled analysis failure reason: ${String(failureReason)}`);
         }
     }
 
@@ -637,6 +700,7 @@ export class BackendPromoAnalysisWorker {
      * Builds the source result id shared by terminal status responses.
      *
      * @param transcriptArtifact - Transcript consumed by the run.
+     *
      * @returns Stable source result id.
      */
     private static buildSourceResultId(

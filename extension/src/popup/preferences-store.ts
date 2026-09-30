@@ -1,7 +1,12 @@
-import { makeAutoObservable, runInAction } from 'mobx';
-import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
+/**
+ * @file MobX store synchronizing user preferences with the background
+ * service worker over a long-lived port.
+ */
 
-import { getErrorMessage } from '@/shared/error';
+import { makeAutoObservable, runInAction } from 'mobx';
+
+import { POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS } from '@/popup/constants';
+import { requestPopupRuntimeMessage } from '@/popup/runtime-message-request';
 import browser from '@/shared/browser';
 import {
     ANALYSIS_MODE,
@@ -9,7 +14,8 @@ import {
     PREFS_PORT_NAME,
     type AnalysisMode,
 } from '@/shared/constants';
-import { PROVIDER_ID } from '@/shared/providers';
+import { getErrorMessage } from '@/shared/error';
+import { translator } from '@/shared/i18n/translator';
 import {
     TOPSKIP_MESSAGE,
     type GetActiveProviderResponse,
@@ -20,9 +26,9 @@ import {
     type SetPrefsResponse,
     isPrefsPortMessage,
 } from '@/shared/messages';
-import { translator } from '@/shared/i18n/translator';
-import { POPUP_CORE_PREFS_REQUEST_TIMEOUT_MS } from '@/popup/constants';
-import { requestPopupRuntimeMessage } from '@/popup/runtime-message-request';
+import { PROVIDER_ID } from '@/shared/providers';
+
+import type { Runtime } from 'webextension-polyfill/namespaces/runtime';
 
 const CORE_PREFS_TIMEOUT_ERROR = 'Core preferences request timed out.';
 
@@ -30,19 +36,20 @@ const CORE_PREFS_TIMEOUT_ERROR = 'Core preferences request timed out.';
  * Type guard for a successful GET_PREFS response from the background page.
  *
  * @param res Untyped `runtime.sendMessage` result.
+ *
  * @returns Whether `res` is `{ ok: true, prefs }` with a boolean `enabled`.
  */
 function isGetPrefsOk(
     res: unknown,
 ): res is Extract<GetPrefsResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true &&
-        'prefs' in res &&
-        typeof (res as { prefs: { enabled?: boolean } }).prefs?.enabled ===
-            'boolean'
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
+        && 'prefs' in res
+        && typeof (res as { prefs: { enabled?: boolean } }).prefs?.enabled
+            === 'boolean'
     );
 }
 
@@ -50,36 +57,39 @@ function isGetPrefsOk(
  * Type guard for a successful SET_PREFS response from the background page.
  *
  * @param res Untyped `runtime.sendMessage` result.
+ *
  * @returns Whether `res` is `{ ok: true }`.
  */
 function isSetPrefsOk(
     res: unknown,
 ): res is Extract<SetPrefsResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
     );
 }
 
 // FIXME use valibot for checking shapes
+
 /**
  * Type guard for a successful GET_ACTIVE_PROVIDER response.
  *
  * @param res - Untyped `runtime.sendMessage` result.
+ *
  * @returns Whether `res` is `{ ok: true, providerId, displayName, modelName }`.
  */
 function isGetActiveProviderOk(
     res: unknown,
 ): res is Extract<GetActiveProviderResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true &&
-        'displayName' in res &&
-        typeof (res as { displayName: unknown }).displayName === 'string'
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
+        && 'displayName' in res
+        && typeof (res as { displayName: unknown }).displayName === 'string'
     );
 }
 
@@ -87,40 +97,43 @@ function isGetActiveProviderOk(
  * Type guard for successful model-first settings response.
  *
  * @param res - Untyped `runtime.sendMessage` result.
+ *
  * @returns Whether `res` includes active model and model list.
  */
 function isGetModelSettingsOk(
     res: unknown,
 ): res is Extract<GetModelSettingsResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true &&
-        'activeModelId' in res &&
-        typeof (res as { activeModelId: unknown }).activeModelId === 'string' &&
-        'models' in res &&
-        Array.isArray((res as { models: unknown }).models)
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
+        && 'activeModelId' in res
+        && typeof (res as { activeModelId: unknown }).activeModelId === 'string'
+        && 'models' in res
+        && Array.isArray((res as { models: unknown }).models)
     );
 }
 
 // FIXME use valibot for checking shapes
+
 /**
  * Type guard for a successful GET_CHROME_PROMPT_API_STATUS response.
  *
  * @param res - Untyped `runtime.sendMessage` result.
+ *
  * @returns Whether `res` includes a valid availability payload.
  */
 function isGetChromePromptApiStatusOk(
     res: unknown,
 ): res is Extract<GetChromePromptApiStatusResponse, { ok: true }> {
     return (
-        typeof res === 'object' &&
-        res !== null &&
-        'ok' in res &&
-        (res as { ok: boolean }).ok === true &&
-        'availability' in res &&
-        typeof (res as { availability: unknown }).availability === 'string'
+        typeof res === 'object'
+        && res !== null
+        && 'ok' in res
+        && (res as { ok: boolean }).ok === true
+        && 'availability' in res
+        && typeof (res as { availability: unknown }).availability === 'string'
     );
 }
 
@@ -133,22 +146,27 @@ export class PreferencesStore {
      * Whether TopSkip is enabled for this browser profile.
      */
     enabled = true;
+
     /**
      * Selected analysis route mirrored from background preferences.
      */
     analysisMode: AnalysisMode = ANALYSIS_MODE.Server;
+
     /**
      * Active LLM provider id mirrored from background prefs.
      */
     providerId: string = DEFAULT_PROVIDER_ID;
+
     /**
      * Provider label for the popup header.
      */
-    providerDisplayName: string = '';
+    providerDisplayName = '';
+
     /**
      * Model label (OpenRouter slug or built-in name) when applicable.
      */
-    modelDisplayName: string = '';
+    modelDisplayName = '';
+
     /**
      * Chrome built-in model availability snapshot for inline status.
      */
@@ -252,8 +270,7 @@ export class PreferencesStore {
                 const prevProviderId = this.providerId;
                 runInAction(() => {
                     this.enabled = msg.prefs.enabled;
-                    this.analysisMode =
-                        msg.prefs.analysisMode ?? ANALYSIS_MODE.Server;
+                    this.analysisMode = msg.prefs.analysisMode ?? ANALYSIS_MODE.Server;
                     if (typeof msg.prefs.providerId === 'string') {
                         this.providerId = msg.prefs.providerId;
                     }
@@ -290,17 +307,15 @@ export class PreferencesStore {
         // FIXME use valibot for validating; tighten response types so the
         // background contract is checked when message shapes change.
         if (!isGetPrefsOk(prefsRes)) {
-            const err =
-                prefsRes && typeof prefsRes === 'object' && 'error' in prefsRes
-                    ? String((prefsRes as { error: string }).error)
-                    : translator.getMessage('prefs_error_load');
+            const err = prefsRes && typeof prefsRes === 'object' && 'error' in prefsRes
+                ? String((prefsRes as { error: string }).error)
+                : translator.getMessage('prefs_error_load');
             throw new Error(err);
         }
 
         runInAction(() => {
             this.enabled = prefsRes.prefs.enabled;
-            this.analysisMode =
-                prefsRes.prefs.analysisMode ?? ANALYSIS_MODE.Server;
+            this.analysisMode = prefsRes.prefs.analysisMode ?? ANALYSIS_MODE.Server;
 
             // FIXME type should be specified
             if (typeof prefsRes.prefs.providerId === 'string') {
@@ -315,6 +330,7 @@ export class PreferencesStore {
      * Updates the enabled flag via the background and reverts on failure.
      *
      * @param value New enabled state for the master switch.
+     *
      * @returns A promise that resolves when the preference is saved.
      */
     async setEnabled(value: boolean): Promise<void> {
@@ -328,10 +344,9 @@ export class PreferencesStore {
                 enabled: value,
             });
             if (!isSetPrefsOk(res)) {
-                const err =
-                    res && typeof res === 'object' && 'error' in res
-                        ? String((res as { error: string }).error)
-                        : translator.getMessage('prefs_error_save');
+                const err = res && typeof res === 'object' && 'error' in res
+                    ? String((res as { error: string }).error)
+                    : translator.getMessage('prefs_error_save');
                 throw new Error(err);
             }
         } catch (e) {

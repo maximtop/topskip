@@ -1,10 +1,14 @@
+/**
+ * @file Maintenance CLI that fetches the latest yt-dlp nightly release
+ * metadata and checksums from GitHub and rewrites the pinned tag/SHA-256
+ * constants in `scripts/lib/yt-dlp-release.ts`.
+ */
+
 import { readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 
-const RELEASE_API_URL =
-    'https://api.github.com/repos/yt-dlp/yt-dlp-nightly-builds/releases/latest';
-const RELEASE_DOWNLOAD_BASE_URL =
-    'https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download';
+const RELEASE_API_URL = 'https://api.github.com/repos/yt-dlp/yt-dlp-nightly-builds/releases/latest';
+const RELEASE_DOWNLOAD_BASE_URL = 'https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/download';
 const RELEASE_SOURCE_PATH = path.join(
     process.cwd(),
     'scripts',
@@ -63,13 +67,11 @@ class YtDlpPinRefresher {
         );
         const macosUpdated = tagUpdated.replace(
             /(assetName: 'yt-dlp_macos',\n\s+sha256: ')[a-f\d]{64}(';)/u,
-            (_match, prefix: string, suffix: string) =>
-                `${prefix}${macosSha256}${suffix}`,
+            (_match, prefix: string, suffix: string) => `${prefix}${macosSha256}${suffix}`,
         );
         const updated = macosUpdated.replace(
             /(assetName: 'yt-dlp_linux',\n\s+sha256: ')[a-f\d]{64}(';)/u,
-            (_match, prefix: string, suffix: string) =>
-                `${prefix}${linuxSha256}${suffix}`,
+            (_match, prefix: string, suffix: string) => `${prefix}${linuxSha256}${suffix}`,
         );
         if (updated === source) {
             console.info(`yt-dlp bootstrap pin is already ${tag}.`);
@@ -83,15 +85,18 @@ class YtDlpPinRefresher {
      * Validates the small GitHub response field needed by this maintenance task.
      *
      * @param input - Untrusted GitHub JSON response.
+     *
      * @returns Nightly release tag.
+     *
+     * @throws {Error} When the response has no non-empty `tag_name` string.
      */
     private static readTag(input: unknown): string {
         if (
-            typeof input !== 'object' ||
-            input === null ||
-            !('tag_name' in input) ||
-            typeof input.tag_name !== 'string' ||
-            input.tag_name.length === 0
+            typeof input !== 'object'
+            || input === null
+            || !('tag_name' in input)
+            || typeof input.tag_name !== 'string'
+            || input.tag_name.length === 0
         ) {
             throw new Error('GitHub release metadata did not include a tag');
         }
@@ -102,6 +107,7 @@ class YtDlpPinRefresher {
      * Converts the official checksum manifest into an asset lookup.
      *
      * @param contents - SHA2-256SUMS response body.
+     *
      * @returns Asset names mapped to validated lowercase digests.
      */
     private static parseChecksums(contents: string): Map<string, string> {
@@ -109,9 +115,9 @@ class YtDlpPinRefresher {
         for (const line of contents.split('\n')) {
             const [sha256, assetName] = line.trim().split(/\s+/u);
             if (
-                sha256 !== undefined &&
-                assetName !== undefined &&
-                SHA256_PATTERN.test(sha256)
+                sha256 !== undefined
+                && assetName !== undefined
+                && SHA256_PATTERN.test(sha256)
             ) {
                 checksums.set(assetName, sha256);
             }
@@ -124,7 +130,10 @@ class YtDlpPinRefresher {
      *
      * @param checksums - Parsed official checksum manifest.
      * @param assetName - Required standalone artifact name.
+     *
      * @returns Verified-format SHA-256 digest.
+     *
+     * @throws {Error} When the manifest has no entry for `assetName`.
      */
     private static requireChecksum(
         checksums: ReadonlyMap<string, string>,

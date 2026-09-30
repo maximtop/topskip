@@ -1,4 +1,9 @@
-import twosky from '../../../../.twosky.json';
+/**
+ * @file Locale identity derived from the repository's `.twosky.json`
+ * languages configuration.
+ */
+
+import twosky from '../../../.twosky.json';
 
 /**
  * Locale code derived from the `.twosky.json` languages object.
@@ -15,7 +20,7 @@ export const BASE_LOCALE: AvailableLocale = 'en';
  * Sorted alphabetically.
  */
 export const AVAILABLE_LOCALES: AvailableLocale[] = (
-    Object.keys(twosky[0].languages) as AvailableLocale[]
+    Object.keys(twosky[0]!.languages) as AvailableLocale[] // .twosky.json always has one config entry
 ).sort();
 
 /**

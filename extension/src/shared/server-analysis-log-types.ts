@@ -1,4 +1,8 @@
 /**
+ * @file Shared type for server-analysis diagnostic log fields.
+ */
+
+/**
  * Restricts permanent diagnostics to identifiers and bounded scalar metadata.
  */
 export type ServerAnalysisLogFields = Readonly<

@@ -1,5 +1,5 @@
 /**
- * Chunking tunables shared by the BYOK (extension) and server (backend)
+ * @file Chunking tunables shared by the BYOK (extension) and server (backend)
  * promo-analysis routes. Change only with evaluation data.
  */
 

@@ -1,5 +1,5 @@
 /**
- * Provider identity constants shared across all extension bundles.
+ * @file Provider identity constants shared across all extension bundles.
  *
  * Values cross bundle boundaries over `runtime.sendMessage`; keeping them
  * in `shared/` lets every bundle (background, popup, options, content) import

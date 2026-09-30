@@ -1,7 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import {
 
-const { ChromePromptApiRuntimeMessages } =
-    await import('@/background/messaging/chrome-prompt-api-runtime-messages');
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
+
+const { ChromePromptApiRuntimeMessages } = await import('@/background/messaging/chrome-prompt-api-runtime-messages');
 
 describe('ChromePromptApiRuntimeMessages', () => {
     afterEach(() => {
@@ -11,8 +17,7 @@ describe('ChromePromptApiRuntimeMessages', () => {
 
     describe('GET_CHROME_PROMPT_API_STATUS', () => {
         it('returns unavailable when LanguageModel is absent', async () => {
-            const result =
-                await ChromePromptApiRuntimeMessages.handleGetStatus();
+            const result = await ChromePromptApiRuntimeMessages.handleGetStatus();
 
             expect(result.ok).toBe(true);
             if (result.ok) {
@@ -27,8 +32,7 @@ describe('ChromePromptApiRuntimeMessages', () => {
                 create: vi.fn(),
             });
 
-            const result =
-                await ChromePromptApiRuntimeMessages.handleGetStatus();
+            const result = await ChromePromptApiRuntimeMessages.handleGetStatus();
 
             expect(result.ok).toBe(true);
             if (result.ok) {
@@ -39,8 +43,7 @@ describe('ChromePromptApiRuntimeMessages', () => {
 
     describe('TRIGGER_CHROME_MODEL_DOWNLOAD', () => {
         it('returns error when LanguageModel is absent', () => {
-            const result =
-                ChromePromptApiRuntimeMessages.handleTriggerDownload();
+            const result = ChromePromptApiRuntimeMessages.handleTriggerDownload();
 
             expect(result.ok).toBe(false);
             if (!result.ok) {
@@ -59,8 +62,7 @@ describe('ChromePromptApiRuntimeMessages', () => {
                 create: vi.fn().mockResolvedValue(mockSession),
             });
 
-            const result =
-                ChromePromptApiRuntimeMessages.handleTriggerDownload();
+            const result = ChromePromptApiRuntimeMessages.handleTriggerDownload();
             // Flush microtasks so the fire-and-forget
             // create().then(session.destroy()) runs.
             await Promise.resolve();
@@ -119,8 +121,7 @@ describe('ChromePromptApiRuntimeMessages', () => {
             listener({ loaded: 50, total: 100 });
 
             // Query status to verify progress was recorded.
-            const statusResult =
-                await ChromePromptApiRuntimeMessages.handleGetStatus();
+            const statusResult = await ChromePromptApiRuntimeMessages.handleGetStatus();
 
             expect(statusResult.ok).toBe(true);
             if (statusResult.ok) {

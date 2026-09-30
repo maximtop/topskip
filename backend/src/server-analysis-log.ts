@@ -1,3 +1,9 @@
+/**
+ * @file Opt-in, allow-listed backend tracing: per-event field contracts keep
+ * arbitrary caller text and nested payloads (response bodies, transcripts)
+ * out of the console, and logging stays silent unless a caller enables it.
+ */
+
 const SERVER_ANALYSIS_LOG_PREFIX = '[TopSkip server-analysis]';
 
 const SERVER_ANALYSIS_LOG_FIELDS_BY_EVENT = {
@@ -82,14 +88,12 @@ const ROUTE_TEMPLATES = new Set([
 /**
  * Keeps log stages stable so arbitrary caller text cannot reach the console.
  */
-export type BackendServerAnalysisLogEvent =
-    keyof typeof SERVER_ANALYSIS_LOG_FIELDS_BY_EVENT;
+export type BackendServerAnalysisLogEvent = keyof typeof SERVER_ANALYSIS_LOG_FIELDS_BY_EVENT;
 
 /**
  * Limits operational metadata to values that cannot carry nested payloads.
  */
-type BackendServerAnalysisLogScalar =
-    | string
+type BackendServerAnalysisLogScalar = | string
     | number
     | boolean
     | null
@@ -142,7 +146,7 @@ export class BackendServerAnalysisLog {
         if (safeFields === null) {
             return;
         }
-        console.info(SERVER_ANALYSIS_LOG_PREFIX, event, safeFields);
+        console.debug(SERVER_ANALYSIS_LOG_PREFIX, event, safeFields);
     }
 
     /**
@@ -170,6 +174,7 @@ export class BackendServerAnalysisLog {
      *
      * @param event - Untrusted runtime event value despite the typed API.
      * @param fields - Untrusted runtime fields despite the scalar-only API.
+     *
      * @returns Sanitized metadata, or `null` when the event is unknown.
      */
     private static filterFields(
@@ -189,14 +194,12 @@ export class BackendServerAnalysisLog {
                 fields,
                 fieldName,
             );
-            if (descriptor === undefined || !('value' in descriptor)) {
-                continue;
+            if (descriptor !== undefined && 'value' in descriptor) {
+                const value: unknown = descriptor.value;
+                if (BackendServerAnalysisLog.isSafeFieldValue(fieldName, value)) {
+                    safeFields[fieldName] = value;
+                }
             }
-            const value: unknown = descriptor.value;
-            if (!BackendServerAnalysisLog.isSafeFieldValue(fieldName, value)) {
-                continue;
-            }
-            safeFields[fieldName] = value;
         }
         return safeFields;
     }
@@ -205,6 +208,7 @@ export class BackendServerAnalysisLog {
      * Narrows runtime event strings before indexing the allow-list.
      *
      * @param event - Candidate event identifier.
+     *
      * @returns Whether the event has an explicit field contract.
      */
     private static isAllowedEvent(
@@ -218,6 +222,7 @@ export class BackendServerAnalysisLog {
      *
      * @param fieldName - Allow-listed field whose stricter shape may apply.
      * @param value - Candidate diagnostic value.
+     *
      * @returns Whether the value satisfies the public scalar-only contract.
      */
     private static isSafeFieldValue(
@@ -225,9 +230,9 @@ export class BackendServerAnalysisLog {
         value: unknown,
     ): value is BackendServerAnalysisLogScalar {
         if (
-            value === null ||
-            value === undefined ||
-            typeof value === 'boolean'
+            value === null
+            || value === undefined
+            || typeof value === 'boolean'
         ) {
             return true;
         }

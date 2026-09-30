@@ -150,11 +150,9 @@ describe('ServerAnalysisSession', () => {
         if (initial?.kind !== 'submit') {
             throw new Error('Expected a submit operation.');
         }
-        initial.payload.segments[0].text = 'Mutated outside the session';
+        initial.payload.segments[0]!.text = 'Mutated outside the session';
 
-        const retries = SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS.map(() =>
-            session.takeTransportRetry(),
-        );
+        const retries = SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS.map(() => session.takeTransportRetry());
         expect(retries.map((retry) => retry?.retryAfterMs)).toEqual(
             SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS,
         );
@@ -277,9 +275,9 @@ describe('ServerAnalysisSession', () => {
             event: 'captions_unavailable',
         });
         expect(
-            SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS.map(() =>
-                session.takeTerminalEventDeliveryRetry(),
-            ).map((retry) => retry?.retryAfterMs),
+            SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS
+                .map(() => session.takeTerminalEventDeliveryRetry())
+                .map((retry) => retry?.retryAfterMs),
         ).toEqual(SERVER_ANALYSIS_RUNTIME_RETRY_BACKOFF_MS);
         expect(session.takeTerminalEventDeliveryRetry()).toBeNull();
         expect(session.restartTerminalEventDeliveryRetries()).toBe(true);

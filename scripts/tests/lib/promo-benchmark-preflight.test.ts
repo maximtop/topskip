@@ -69,7 +69,7 @@ describe('promo benchmark preflight', () => {
             requestedModelIds: ['glm-5.2', 'gpt-5.6-sol'],
             reasoning: 'default',
         });
-        const item = preflight.manifest.items[0];
+        const item = preflight.manifest.items[0]!;
         const messages = buildBenchmarkMessages(preflight.corpusRoot, item);
         const first = buildBenchmarkRequestBody({
             model: 'glm-5.2',
@@ -90,12 +90,10 @@ describe('promo benchmark preflight', () => {
     });
 
     it('rejects an unsupported effort before inference', () => {
-        expect(() =>
-            runBenchmarkPreflight({
-                repoRoot: REPO_ROOT,
-                requestedModelIds: ['kimi-k3'],
-                reasoning: 'none',
-            }),
-        ).toThrow('Requested reasoning is unsupported.');
+        expect(() => runBenchmarkPreflight({
+            repoRoot: REPO_ROOT,
+            requestedModelIds: ['kimi-k3'],
+            reasoning: 'none',
+        })).toThrow('Requested reasoning is unsupported.');
     });
 });

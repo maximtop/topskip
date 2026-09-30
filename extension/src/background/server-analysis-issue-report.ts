@@ -1,3 +1,8 @@
+/**
+ * @file Builds the sanitized GitHub issue URL for a server-analysis failure
+ * report and opens it from the popup's trusted background state.
+ */
+
 import { DebugLog } from '@/background/debug-log/debug-log';
 import { DebugLogStore } from '@/background/debug-log/debug-log-store';
 import { PromoDetectionStore } from '@/background/promo-detection-store';
@@ -9,13 +14,13 @@ import {
     SERVER_FAILURE_REPORT_ACTION,
     getServerFailureReportAction,
 } from '@/shared/server-analysis-failure';
+
 import type {
     OpenServerAnalysisIssueResponse,
     ServerAnalysisFailureContext,
 } from '@/shared/messages';
 
-const DEFAULT_SUPPORT_ISSUE_BASE_URL =
-    'https://github.com/maximtop/topskip/issues/new';
+const DEFAULT_SUPPORT_ISSUE_BASE_URL = 'https://github.com/maximtop/topskip/issues/new';
 const GITHUB_HOSTNAME = 'github.com';
 const GITHUB_NEW_ISSUE_PATH_PATTERN = /^\/[^/]+\/[^/]+\/issues\/new\/?$/u;
 const REPORT_UNAVAILABLE_ERROR = 'Server issue reporting is unavailable.';
@@ -24,10 +29,9 @@ const REPORT_UNAVAILABLE_ERROR = 'Server issue reporting is unavailable.';
  * Added to the issue body only while a debug log exists; the log itself is
  * never embedded, the user attaches the export by hand.
  */
-export const DEBUG_LOG_ISSUE_HINT_LINE =
-    'If you enabled Debug logging in Options → Diagnostics, you can attach ' +
-    'the exported log (it lists the video IDs you watched while logging; ' +
-    'review it first).';
+export const DEBUG_LOG_ISSUE_HINT_LINE = 'If you enabled Debug logging in Options → Diagnostics, you can attach '
+    + 'the exported log (it lists the video IDs you watched while logging; '
+    + 'review it first).';
 
 /**
  * Opens sanitized server diagnostics without trusting popup-provided fields;
@@ -40,6 +44,11 @@ export class ServerAnalysisIssueReport {
      * when one exists.
      *
      * @param input - Trusted background state and deterministic report time.
+     * @param input.baseUrl - Configured GitHub "new issue" destination.
+     * @param input.failure - Server-analysis failure context to report.
+     * @param input.now - Report time, injectable for tests.
+     * @param input.hasDebugLog - Whether a debug log currently exists.
+     *
      * @returns Prefilled GitHub URL, or `null` for an unsafe destination.
      */
     static buildUrl(input: {
@@ -55,12 +64,12 @@ export class ServerAnalysisIssueReport {
             return null;
         }
         if (
-            url.protocol !== 'https:' ||
-            url.hostname !== GITHUB_HOSTNAME ||
-            url.port !== '' ||
-            url.username !== '' ||
-            url.password !== '' ||
-            !GITHUB_NEW_ISSUE_PATH_PATTERN.test(url.pathname)
+            url.protocol !== 'https:'
+            || url.hostname !== GITHUB_HOSTNAME
+            || url.port !== ''
+            || url.username !== ''
+            || url.password !== ''
+            || !GITHUB_NEW_ISSUE_PATH_PATTERN.test(url.pathname)
         ) {
             return null;
         }
@@ -115,10 +124,10 @@ export class ServerAnalysisIssueReport {
             await PromoDetectionStore.ready();
             const state = PromoDetectionStore.get(tabId);
             if (
-                state?.source !== 'server' ||
-                state.serverFailure === undefined ||
-                getServerFailureReportAction(state.serverFailure.code) ===
-                    SERVER_FAILURE_REPORT_ACTION.None
+                state?.source !== 'server'
+                || state.serverFailure === undefined
+                || getServerFailureReportAction(state.serverFailure.code)
+                    === SERVER_FAILURE_REPORT_ACTION.None
             ) {
                 return { ok: false, error: REPORT_UNAVAILABLE_ERROR };
             }
@@ -126,8 +135,8 @@ export class ServerAnalysisIssueReport {
             const hasDebugLog = await DebugLogStore.hasLog();
             const url = ServerAnalysisIssueReport.buildUrl({
                 baseUrl:
-                    state.serverFailure.supportIssueBaseUrl ??
-                    DEFAULT_SUPPORT_ISSUE_BASE_URL,
+                    state.serverFailure.supportIssueBaseUrl
+                    ?? DEFAULT_SUPPORT_ISSUE_BASE_URL,
                 failure: state.serverFailure,
                 now: new Date(),
                 hasDebugLog,

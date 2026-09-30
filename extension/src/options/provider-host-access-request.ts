@@ -1,3 +1,8 @@
+/**
+ * @file Requests an optional cross-origin host permission grant for a BYOK
+ * provider from inside the user gesture that triggered it.
+ */
+
 import browser from '@/shared/browser';
 import {
     PROVIDER_HOST_ACCESS_REQUEST_OUTCOME,
@@ -16,6 +21,7 @@ export class ProviderHostAccessRequest {
      * Calls Chrome before any asynchronous boundary can consume user activation.
      *
      * @param providerId - Provider whose single optional origin is requested.
+     *
      * @returns Safe grant outcome without exposing browser exception text.
      */
     static request(
@@ -32,10 +38,9 @@ export class ProviderHostAccessRequest {
             );
         }
         return request.then(
-            (granted) =>
-                granted
-                    ? PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Granted
-                    : PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Denied,
+            (granted) => (granted
+                ? PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Granted
+                : PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Denied),
             () => PROVIDER_HOST_ACCESS_REQUEST_OUTCOME.Failed,
         );
     }

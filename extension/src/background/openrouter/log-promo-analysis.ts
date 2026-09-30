@@ -1,3 +1,9 @@
+/**
+ * @file Developer-facing plain-text log bundle builder for promo/OpenRouter
+ * analysis: per-chunk records, the aggregate bundle, and console emission.
+ * Never logs API keys or `Authorization` headers (FR-020).
+ */
+
 import type { PromoBlock } from '@topskip/common/promo-types';
 
 const BUNDLE_TITLE = '========== TopSkip promo analysis log bundle ==========';
@@ -6,8 +12,7 @@ const MAX_RAW_ASSISTANT_IN_BUNDLE = 20_000;
 /**
  * Outcome label for per-chunk LLM logs (spec FR-009).
  */
-export type ChunkLogOutcome =
-    | 'success'
+export type ChunkLogOutcome = | 'success'
     | 'too_large'
     | 'parse_error'
     | 'adapter_error'
@@ -17,17 +22,27 @@ export type ChunkLogOutcome =
 /**
  * Timeline slice omitted from a complete analysis (spec FR-009 aggregate).
  */
-export type PromoUncoveredRange = {
+export interface PromoUncoveredRange {
+    /**
+     * Range start, in video seconds.
+     */
     startSec: number;
+
+    /**
+     * Range end, in video seconds.
+     */
     endSec: number;
+
+    /**
+     * Why this range was not covered by a successful chunk analysis.
+     */
     kind: 'dropped_tail' | 'failed_chunk' | 'irreducible_line';
-};
+}
 
 /**
  * Final outcome variants represented in the promo analysis debug bundle.
  */
-export type PromoAnalysisBundleOutcome =
-    | { type: 'openrouter_error'; error: string }
+export type PromoAnalysisBundleOutcome = | { type: 'openrouter_error'; error: string }
     | { type: 'parse_error'; error: string }
     | { type: 'adapter_error'; error: string }
     | { type: 'no_promo' }
@@ -37,6 +52,7 @@ export type PromoAnalysisBundleOutcome =
  * Parses timed lines from the merged transcript body (`[sec] text` per line).
  *
  * @param mergedText - Merged caption lines only (no videoId header)
+ *
  * @returns Rows with parsed seconds and full original line text
  */
 export function listTimedLinesFromMergedTranscript(
@@ -46,14 +62,12 @@ export function listTimedLinesFromMergedTranscript(
     for (const raw of mergedText.split('\n')) {
         const line = raw.trimEnd();
         const m = /^\[(\d+(?:\.\d+)?)\]\s*(.*)$/.exec(line);
-        if (!m) {
-            continue;
+        if (m) {
+            const sec = Number(m[1]);
+            if (Number.isFinite(sec)) {
+                rows.push({ sec, line });
+            }
         }
-        const sec = Number(m[1]);
-        if (!Number.isFinite(sec)) {
-            continue;
-        }
-        rows.push({ sec, line });
     }
     return rows;
 }
@@ -67,10 +81,11 @@ export function listTimedLinesFromMergedTranscript(
  * @param targetSec - Second on the video timeline
  * @param linesBefore - Lines to include before the anchor line
  * @param linesAfter - Lines to include after the anchor line
+ *
  * @returns Plain text (newline-separated `[sec] text` lines)
  */
 export function excerptTimedLinesAroundSec(
-    timedLines: ReadonlyArray<{ sec: number; line: string }>,
+    timedLines: readonly { sec: number; line: string }[],
     targetSec: number,
     linesBefore: number,
     linesAfter: number,
@@ -79,8 +94,8 @@ export function excerptTimedLinesAroundSec(
         return '(no [seconds] lines found in merged transcript)\n';
     }
     let anchor = 0;
-    for (let i = 0; i < timedLines.length; i++) {
-        if (timedLines[i].sec <= targetSec) {
+    for (let i = 0; i < timedLines.length; i += 1) {
+        if (timedLines[i]!.sec <= targetSec) {
             anchor = i;
         } else {
             break;
@@ -99,6 +114,7 @@ export function excerptTimedLinesAroundSec(
  *
  * @param mergedText - Merged transcript body
  * @param blocks - Validated promo blocks
+ *
  * @returns Plain-text section with START/END markers and excerpts
  */
 function formatBlockMarkersSection(
@@ -123,22 +139,19 @@ function formatBlockMarkersSection(
             );
             parts.push(excerptTimedLinesAroundSec(timed, b.endSec, 4, 6));
         } else {
-            const endOmitted =
-                `>>> PROMO ${String(n)} END ` +
-                '(model omitted endSec; context near start) <<<';
+            const endOmitted = `>>> PROMO ${String(n)} END `
+                + '(model omitted endSec; context near start) <<<';
             parts.push(endOmitted);
             parts.push(excerptTimedLinesAroundSec(timed, b.startSec, 2, 8));
         }
-        const conf =
-            b.confidence !== undefined ? ` confidence=${b.confidence}` : '';
+        const conf = b.confidence !== undefined ? ` confidence=${b.confidence}` : '';
         parts.push('');
-        const endPart =
-            b.endSec !== undefined
-                ? String(b.endSec)
-                : '(default / model omitted)';
+        const endPart = b.endSec !== undefined
+            ? String(b.endSec)
+            : '(default / model omitted)';
         parts.push(
-            `Block ${String(n)} summary: startSec=${String(b.startSec)} ` +
-                `endSec=${endPart}${conf}`,
+            `Block ${String(n)} summary: startSec=${String(b.startSec)} `
+                + `endSec=${endPart}${conf}`,
         );
     });
     return parts.join('\n');
@@ -148,6 +161,7 @@ function formatBlockMarkersSection(
  * Renders bundle header outcome lines for developer log text.
  *
  * @param outcome - Parsed / HTTP outcome for the bundle header
+ *
  * @returns Lines inserted under metadata in the log bundle
  */
 function formatOutcomeLines(outcome: PromoAnalysisBundleOutcome): string[] {
@@ -177,18 +191,21 @@ function formatOutcomeLines(outcome: PromoAnalysisBundleOutcome): string[] {
                     const end = b.endSec !== undefined ? String(b.endSec) : '—';
                     const co = b.confidence ?? '—';
                     return (
-                        `  block ${String(i + 1)}: startSec=${String(b.startSec)} ` +
-                        `endSec=${end} confidence=${co}`
+                        `  block ${String(i + 1)}: startSec=${String(b.startSec)} `
+                        + `endSec=${end} confidence=${co}`
                     );
                 }),
             ];
+        // no default
     }
+    return [];
 }
 
 /**
  * Caps raw assistant text length for bundle size with an explicit notice.
  *
  * @param raw - Full assistant message
+ *
  * @returns Possibly sliced text plus optional truncation notice line
  */
 function truncateRawAssistant(raw: string): { text: string; note: string } {
@@ -207,6 +224,7 @@ function truncateRawAssistant(raw: string): { text: string; note: string } {
  *
  * @param raw - Full text
  * @param maxChars - Maximum UTF-16 length to emit
+ *
  * @returns Possibly truncated text plus optional notice line
  */
 export function truncateForLog(
@@ -220,8 +238,8 @@ export function truncateForLog(
     return {
         text: raw.slice(0, maxChars),
         note:
-            `\n(truncated to ${lim} chars; ` +
-            `original length ${String(raw.length)})`,
+            `\n(truncated to ${lim} chars; `
+            + `original length ${String(raw.length)})`,
     };
 }
 
@@ -229,6 +247,20 @@ export function truncateForLog(
  * Emits one per-chunk or per-slice analysis record (spec FR-009).
  *
  * @param params - Chunk metadata, latency, optional payloads
+ * @param params.chunkIndex - Zero-based index of this chunk.
+ * @param params.chunkCount - Total number of chunks planned for this analysis.
+ * @param params.chunkStartSec - Chunk's start offset in video seconds.
+ * @param params.chunkEndSec - Chunk's end offset in video seconds.
+ * @param params.chunkChars - Character length of the chunk's transcript text.
+ * @param params.promptVersion - System prompt version used for this call.
+ * @param params.chunkText - User-message transcript text sent to the model.
+ * @param params.chunkTextMaxChars - Cap applied when logging `chunkText`.
+ * @param params.rawAssistant - Raw model response, or `null` when unavailable.
+ * @param params.rawAssistantMaxChars - Cap applied when logging `rawAssistant`.
+ * @param params.adapterLatencyMs - Wall-clock time of the adapter call.
+ * @param params.outcome - Stable outcome label for this chunk.
+ * @param params.parsedBlockCount - Promo blocks parsed from this chunk, if any.
+ * @param params.retryLabel - Retry attempt label, when this call was a retry.
  * @param enabled - Explicit override used by unit tests.
  */
 export function logChunkPromoEntry(
@@ -245,30 +277,28 @@ export function logChunkPromoEntry(
         rawAssistantMaxChars: number;
         adapterLatencyMs: number;
         outcome: ChunkLogOutcome;
-        parsedBlockCount?: number;
-        retryLabel?: string;
+        parsedBlockCount?: number | undefined;
+        retryLabel?: string | undefined;
     },
-    enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+    enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
 ): void {
     if (!enabled) {
         return;
     }
     const chunkT = truncateForLog(params.chunkText, params.chunkTextMaxChars);
-    const rawT =
-        params.rawAssistant === null
-            ? { text: '(not available)', note: '' }
-            : truncateForLog(params.rawAssistant, params.rawAssistantMaxChars);
-    const chunkHead =
-        params.retryLabel !== undefined
-            ? `chunk: ${String(params.chunkIndex + 1)}/` +
-              `${String(params.chunkCount)} (${params.retryLabel})`
-            : `chunk: ${String(params.chunkIndex + 1)}/` +
-              `${String(params.chunkCount)}`;
+    const rawT = params.rawAssistant === null
+        ? { text: '(not available)', note: '' }
+        : truncateForLog(params.rawAssistant, params.rawAssistantMaxChars);
+    const chunkHead = params.retryLabel !== undefined
+        ? `chunk: ${String(params.chunkIndex + 1)}/`
+              + `${String(params.chunkCount)} (${params.retryLabel})`
+        : `chunk: ${String(params.chunkIndex + 1)}/${
+            String(params.chunkCount)}`;
     const lines: string[] = [
         '---------- TopSkip chunk analysis ----------',
         chunkHead,
-        `timeRangeSec: ${String(params.chunkStartSec)}–` +
-            `${String(params.chunkEndSec)}`,
+        `timeRangeSec: ${String(params.chunkStartSec)}–${
+            String(params.chunkEndSec)}`,
         `chunkChars: ${String(params.chunkChars)}`,
         `promptVersion: ${params.promptVersion}`,
         `adapterLatencyMs: ${String(Math.round(params.adapterLatencyMs))}`,
@@ -282,7 +312,7 @@ export function logChunkPromoEntry(
         rawT.text + rawT.note,
         '---------- end chunk ----------',
     ];
-    console.info(lines.join('\n'));
+    console.debug(lines.join('\n'));
 }
 
 /**
@@ -290,6 +320,31 @@ export function logChunkPromoEntry(
  *
  * @param params - Metadata, merged body, model, optional raw assistant,
  *   and outcome
+ * @param params.videoId - YouTube video id.
+ * @param params.languageCode - Caption track language code.
+ * @param params.segmentCount - Number of caption segments merged.
+ * @param params.maxTranscriptChars - Planning budget for the merged transcript.
+ * @param params.mergedText - Merged timed-line transcript body.
+ * @param params.mergedTruncated - Whether the merged text was cut to budget.
+ * @param params.providerId - Provider that ran the analysis.
+ * @param params.model - Model name or slug used for the call.
+ * @param params.rawAssistant - Raw aggregate/last-slice model response, or `null`.
+ * @param params.outcome - Final parsed/HTTP outcome for the bundle header.
+ * @param params.chunkedMeta - Multi-chunk aggregate telemetry, when chunked.
+ * @param params.chunkedMeta.promptVersion - System prompt version used.
+ * @param params.chunkedMeta.systemPromptFull - Full system prompt text.
+ * @param params.chunkedMeta.plannedBudgetChars - Planned per-chunk char budget.
+ * @param params.chunkedMeta.overlapSec - Overlap window between chunks, in seconds.
+ * @param params.chunkedMeta.totalChunks - Total chunks planned.
+ * @param params.chunkedMeta.totalAdapterCalls - Total adapter calls made.
+ * @param params.chunkedMeta.coverageFraction - Fraction of the transcript covered.
+ * @param params.chunkedMeta.partialCoverage - Whether coverage was incomplete.
+ * @param params.chunkedMeta.uncoveredRanges - Slices omitted from analysis.
+ * @param params.chunkedMeta.totalAdapterLatencyMs - Summed adapter call latency.
+ * @param params.chunkedMeta.totalWallClockMs - Total wall-clock time for chunking.
+ * @param params.chunkedMeta.globalTruncated - Whether the transcript was globally truncated.
+ * @param params.chunkedMeta.mergedTextLogMaxChars - Cap applied when logging the merged text.
+ *
  * @returns Multiline string suitable for a single console copy/paste
  */
 export function buildPromoAnalysisLogBundle(params: {
@@ -303,6 +358,7 @@ export function buildPromoAnalysisLogBundle(params: {
     model: string;
     rawAssistant: string | null;
     outcome: PromoAnalysisBundleOutcome;
+
     /**
      * When set, includes multi-chunk aggregate telemetry (spec FR-009).
      */
@@ -315,10 +371,11 @@ export function buildPromoAnalysisLogBundle(params: {
         totalAdapterCalls: number;
         coverageFraction: number;
         partialCoverage: boolean;
+
         /**
          * Failed adapter slices and transcript tail dropped by the chunk cap.
          */
-        uncoveredRanges?: PromoUncoveredRange[];
+        uncoveredRanges?: PromoUncoveredRange[] | undefined;
         totalAdapterLatencyMs: number;
         totalWallClockMs: number;
         globalTruncated: boolean;
@@ -327,18 +384,17 @@ export function buildPromoAnalysisLogBundle(params: {
 }): string {
     const used = params.mergedText.length;
     const meta = params.chunkedMeta;
-    const mergedForLog =
-        meta !== undefined
-            ? truncateForLog(params.mergedText, meta.mergedTextLogMaxChars)
-            : { text: params.mergedText, note: '' };
+    const mergedForLog = meta !== undefined
+        ? truncateForLog(params.mergedText, meta.mergedTextLogMaxChars)
+        : { text: params.mergedText, note: '' };
     const lines: string[] = [
         BUNDLE_TITLE,
         `videoId: ${params.videoId}`,
         `language: ${params.languageCode}`,
         `providerId: ${params.providerId}`,
         `captionSegmentCount: ${String(params.segmentCount)}`,
-        `mergedTranscriptChars: ${String(used)} / ` +
-            `${String(params.maxTranscriptChars)} (budget)`,
+        `mergedTranscriptChars: ${String(used)} / `
+            + `${String(params.maxTranscriptChars)} (budget)`,
         `mergedTruncated: ${params.mergedTruncated ? 'yes' : 'no'}`,
         `model: ${params.model}`,
     ];
@@ -386,8 +442,8 @@ export function buildPromoAnalysisLogBundle(params: {
     }
 
     if (
-        params.outcome.type === 'promo_blocks' &&
-        params.outcome.blocks.length > 0
+        params.outcome.type === 'promo_blocks'
+        && params.outcome.blocks.length > 0
     ) {
         const { blocks } = params.outcome;
         lines.push('');
@@ -423,11 +479,11 @@ export class LogPromoAnalysis {
      */
     static logAnalysisBundle(
         bundle: string,
-        enabled = __TOPSKIP_INCLUDE_DEV_LOCAL__,
+        enabled = TOPSKIP_INCLUDE_DEV_LOCAL,
     ): void {
         if (!enabled) {
             return;
         }
-        console.info(bundle);
+        console.debug(bundle);
     }
 }

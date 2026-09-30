@@ -1,4 +1,11 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+
+    beforeEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 import {
     PROVIDER_HOST_ACCESS_REQUEST_OUTCOME,
@@ -22,8 +29,7 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-const { ProviderHostAccessRequest } =
-    await import('@/options/provider-host-access-request');
+const { ProviderHostAccessRequest } = await import('@/options/provider-host-access-request');
 
 describe('ProviderHostAccessRequest', () => {
     beforeEach(() => {
@@ -38,10 +44,9 @@ describe('ProviderHostAccessRequest', () => {
         async (providerId) => {
             let resolveRequest: ((granted: boolean) => void) | undefined;
             permissionsRequest.mockImplementation(
-                () =>
-                    new Promise<boolean>((resolve) => {
-                        resolveRequest = resolve;
-                    }),
+                () => new Promise<boolean>((resolve) => {
+                    resolveRequest = resolve;
+                }),
             );
 
             const result = ProviderHostAccessRequest.request(providerId);

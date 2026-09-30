@@ -1,4 +1,10 @@
-import { describe, expect, it, vi } from 'vitest';
+import {
+
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
 const setAccessLevel = vi.fn().mockResolvedValue(undefined);
 
@@ -10,8 +16,7 @@ vi.mock('@/shared/browser', () => ({
     },
 }));
 
-const { BackgroundStorageAccess } =
-    await import('@/background/storage/background-storage-access');
+const { BackgroundStorageAccess } = await import('@/background/storage/background-storage-access');
 
 describe('BackgroundStorageAccess', () => {
     it('restricts local storage to trusted contexts exactly once', async () => {

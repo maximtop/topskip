@@ -1,20 +1,28 @@
-import type { Server } from 'node:http';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { MIME_APPLICATION_JSON } from '@topskip/common/constants';
+import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
+import {
 
-vi.mock('@topskip/backend/cache-fixtures', () => ({
-    BackendCacheFixtures: { findReady: vi.fn(() => null) },
-}));
+    afterEach,
+    describe,
+    expect,
+    it,
+    vi,
+} from 'vitest';
 
+import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
 import { BackendPublicState } from '@topskip/backend/public-state';
 import { BackendHttpServer } from '@topskip/backend/server';
+import { BackendServerAnalysisBoundary } from '@topskip/backend/server-analysis-boundary';
 import {
     BACKEND_CAPTION_SOURCE,
     type BackendCaptionSource,
 } from '@topskip/backend/server-config';
-import { BackendServerAnalysisBoundary } from '@topskip/backend/server-analysis-boundary';
-import { YtDlpBinary } from '@topskip/backend/extraction/yt-dlp-binary';
-import { MIME_APPLICATION_JSON } from '@topskip/common/constants';
-import { SERVER_ANALYSIS_ALGORITHM_VERSION } from '@topskip/common/server-analysis-contract';
+
+import type { Server } from 'node:http';
+
+vi.mock('@topskip/backend/cache-fixtures', () => ({
+    BackendCacheFixtures: { findReady: vi.fn(() => null) },
+}));
 
 const ORIGINAL_API_KEY = process.env.OPENROUTER_API_KEY;
 const ORIGINAL_CAPTION_SOURCE = process.env.TOPSKIP_CAPTION_SOURCE;
@@ -50,9 +58,9 @@ function processingResponse(includeIdentity: boolean): unknown {
         algorithmVersion: SERVER_ANALYSIS_ALGORITHM_VERSION,
         ...(includeIdentity
             ? {
-                    languageCode: 'en',
-                    transcriptHash: 'a'.repeat(64),
-                }
+                languageCode: 'en',
+                transcriptHash: 'a'.repeat(64),
+            }
             : {}),
         jobId: 'job-id',
         pollAfterSec: 3,
@@ -115,7 +123,7 @@ describe('backend caption-source mode', () => {
         vi.spyOn(BackendPublicState, 'assertReady').mockImplementation(
             () => {},
         );
-        const info = vi.spyOn(console, 'info').mockImplementation(() => {});
+        const debug = vi.spyOn(console, 'debug').mockImplementation(() => {});
         const assertAvailable = vi
             .spyOn(YtDlpBinary, 'assertAvailable')
             .mockReturnValue('v-test');
@@ -126,10 +134,10 @@ describe('backend caption-source mode', () => {
         expect(createSpy).toHaveBeenLastCalledWith({
             captionSource: BACKEND_CAPTION_SOURCE.ExtensionUpload,
         });
-        expect(info).toHaveBeenLastCalledWith(
+        expect(debug).toHaveBeenLastCalledWith(
             expect.stringContaining('captionSource extension_upload'),
         );
-        expect(info.mock.lastCall?.[0]).not.toContain('yt-dlp');
+        expect(debug.mock.lastCall?.[0]).not.toContain('yt-dlp');
 
         process.env.TOPSKIP_CAPTION_SOURCE = BACKEND_CAPTION_SOURCE.LegacyYtDlp;
         BackendHttpServer.listen();
@@ -168,34 +176,24 @@ describe('backend caption-source mode', () => {
             if (source === BACKEND_CAPTION_SOURCE.ExtensionUpload) {
                 expect(publicRequest.success).toBe(true);
                 expect(legacyRequest.success).toBe(false);
-                expect(() =>
-                    boundary.serializeResponse(processingResponse(true)),
-                ).not.toThrow();
-                expect(() =>
-                    boundary.serializeResponse(processingResponse(false)),
-                ).toThrow();
+                expect(() => boundary.serializeResponse(processingResponse(true))).not.toThrow();
+                expect(() => boundary.serializeResponse(processingResponse(false))).toThrow();
                 return;
             }
 
             expect(publicRequest.success).toBe(false);
             expect(legacyRequest.success).toBe(true);
-            expect(() =>
-                boundary.serializeResponse(processingResponse(false)),
-            ).not.toThrow();
-            expect(() =>
-                boundary.serializeResponse(processingResponse(true)),
-            ).toThrow();
+            expect(() => boundary.serializeResponse(processingResponse(false))).not.toThrow();
+            expect(() => boundary.serializeResponse(processingResponse(true))).toThrow();
         },
     );
 
     it('captures one immutable source instead of rereading the environment', async () => {
-        const source: BackendCaptionSource =
-            BACKEND_CAPTION_SOURCE.ExtensionUpload;
+        const source: BackendCaptionSource = BACKEND_CAPTION_SOURCE.ExtensionUpload;
         const server = BackendHttpServer.create({ captionSource: source });
         const baseUrl = await listenOnEphemeralPort(server);
         try {
-            process.env.TOPSKIP_CAPTION_SOURCE =
-                BACKEND_CAPTION_SOURCE.LegacyYtDlp;
+            process.env.TOPSKIP_CAPTION_SOURCE = BACKEND_CAPTION_SOURCE.LegacyYtDlp;
             const response = await fetch(`${baseUrl}/v1/analysis`, {
                 method: 'POST',
                 headers: { 'content-type': MIME_APPLICATION_JSON },

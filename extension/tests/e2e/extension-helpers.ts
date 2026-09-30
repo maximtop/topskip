@@ -29,13 +29,18 @@ function isBackgroundWorker(worker: Worker): boolean {
  * Record `error` / failed `assert` from the MV3 service worker (extension
  * "background"). Call immediately after creating the persistent context so
  * existing workers are hooked too.
+ *
+ * @param context Persistent browser context to observe.
+ * @param errors Array collecting formatted error lines as they occur.
  */
 export function trackServiceWorkerConsoleErrors(
     context: BrowserContext,
     errors: string[],
 ): void {
     const attach = (worker: Worker) => {
-        if (!isBackgroundWorker(worker)) return;
+        if (!isBackgroundWorker(worker)) {
+            return;
+        }
         worker.on('console', (msg) => {
             if (FAIL_CONSOLE_TYPES.has(msg.type())) {
                 errors.push(`[service worker] ${msg.type()}: ${msg.text()}`);
@@ -51,6 +56,10 @@ export function trackServiceWorkerConsoleErrors(
 /**
  * Record `error` / failed `assert` from `console` and uncaught exceptions on a
  * normal Page (popup, fixture tab, etc.).
+ *
+ * @param page Page to observe.
+ * @param label Prefix identifying the page in collected error lines.
+ * @param errors Array collecting formatted error lines as they occur.
  */
 export function trackPageErrors(
     page: Page,
@@ -72,6 +81,7 @@ export function trackPageErrors(
  * ErrorBoundary fallback instead.
  *
  * @param popupPage - Popup page whose initial render should settle.
+ *
  * @returns Promise resolving when the healthy popup UI is visible.
  */
 export async function waitForPopupUi(popupPage: Page): Promise<void> {
@@ -166,6 +176,7 @@ export type ClipboardCaptureMode = 'capture' | 'reject';
  * still starting up.
  *
  * @param context - Persistent context hosting the unpacked extension.
+ *
  * @returns The extension's background service worker.
  */
 export async function getBackgroundWorker(
@@ -187,13 +198,14 @@ export async function getBackgroundWorker(
  *
  * @param extensionPage - Popup or options page with extension API access.
  * @param message - Serializable runtime message.
+ *
  * @returns The background's reply as received.
  */
 export async function sendExtensionRuntimeMessage(
     extensionPage: Page,
     message: Record<string, unknown>,
 ): Promise<unknown> {
-    return extensionPage.evaluate(async (message) => {
+    return extensionPage.evaluate(async (evaluatedMessage) => {
         const chromeApi = Reflect.get(globalThis, 'chrome');
         if (typeof chromeApi !== 'object' || chromeApi === null) {
             throw new Error('Missing chrome API');
@@ -208,15 +220,15 @@ export async function sendExtensionRuntimeMessage(
         }
         return new Promise<unknown>((resolve, reject) => {
             Reflect.apply(sendMessage, runtime, [
-                message,
+                evaluatedMessage,
                 (result: unknown) => {
                     const lastError = Reflect.get(runtime, 'lastError');
                     if (typeof lastError === 'object' && lastError !== null) {
                         reject(
                             new Error(
                                 String(
-                                    Reflect.get(lastError, 'message') ??
-                                        'runtime.sendMessage failed',
+                                    Reflect.get(lastError, 'message')
+                                        ?? 'runtime.sendMessage failed',
                                 ),
                             ),
                         );
@@ -236,6 +248,7 @@ export async function sendExtensionRuntimeMessage(
  * @param extensionId - Extension id derived from the worker URL.
  * @param errors - Collector for console/page errors.
  * @param prepare - Optional hook run before navigation, for init scripts.
+ *
  * @returns The Options page showing the Diagnostics section.
  */
 export async function openOptionsDiagnostics(
@@ -269,6 +282,7 @@ export async function openOptionsDiagnostics(
  *
  * @param page - Page before its extension URL is loaded.
  * @param mode - Capture the text or reject like a denied permission.
+ *
  * @returns Promise resolving once the init script is registered.
  */
 export async function installClipboardCapture(
@@ -276,9 +290,9 @@ export async function installClipboardCapture(
     mode: ClipboardCaptureMode,
 ): Promise<void> {
     await page.addInitScript(
-        ({ key, mode }) => {
+        ({ key, mode: captureMode }) => {
             const writeText = (text: string): Promise<void> => {
-                if (mode === 'reject') {
+                if (captureMode === 'reject') {
                     return Promise.reject(
                         new DOMException(
                             'Write permission denied.',
@@ -302,6 +316,7 @@ export async function installClipboardCapture(
  * Reads the last text the stubbed clipboard received.
  *
  * @param page - Page prepared with `installClipboardCapture`.
+ *
  * @returns The captured text, or `null` when nothing was written.
  */
 export async function readCapturedClipboardText(
@@ -320,6 +335,7 @@ export async function readCapturedClipboardText(
  * its own.
  *
  * @param page - Page prepared with `installClipboardCapture`.
+ *
  * @returns Promise resolving once the page global is cleared.
  */
 export async function clearCapturedClipboardText(page: Page): Promise<void> {
@@ -335,6 +351,7 @@ export async function clearCapturedClipboardText(page: Page): Promise<void> {
  *
  * @param extensionPage - Extension page allowed to call the runtime API.
  * @param payload - Store state to install.
+ *
  * @returns Promise resolving once the background acknowledged the seed.
  */
 export async function seedDebugLog(
@@ -346,9 +363,9 @@ export async function seedDebugLog(
         payload,
     });
     if (
-        typeof response !== 'object' ||
-        response === null ||
-        Reflect.get(response, 'ok') !== true
+        typeof response !== 'object'
+        || response === null
+        || Reflect.get(response, 'ok') !== true
     ) {
         throw new Error(
             `Failed to seed the debug log: ${JSON.stringify(response)}`,
@@ -362,6 +379,7 @@ export async function seedDebugLog(
  *
  * @param context - Persistent context hosting the unpacked extension.
  * @param keyPrefix - `storage.local` key prefix owned by the debug log.
+ *
  * @returns Total persisted bytes under the prefix.
  */
 export async function readDebugLogStorageBytes(
@@ -375,10 +393,9 @@ export async function readDebugLogStorageBytes(
             throw new Error('Missing chrome API');
         }
         const storage = Reflect.get(chromeApi, 'storage');
-        const local =
-            typeof storage === 'object' && storage !== null
-                ? Reflect.get(storage, 'local')
-                : undefined;
+        const local = typeof storage === 'object' && storage !== null
+            ? Reflect.get(storage, 'local')
+            : undefined;
         if (typeof local !== 'object' || local === null) {
             throw new Error('Missing chrome.storage.local API');
         }
@@ -395,12 +412,11 @@ export async function readDebugLogStorageBytes(
         const encoder = new TextEncoder();
         let bytes = 0;
         for (const [key, value] of Object.entries(all)) {
-            if (!key.startsWith(prefix)) {
-                continue;
+            if (key.startsWith(prefix)) {
+                bytes
+                    += encoder.encode(JSON.stringify(value)).byteLength
+                    + encoder.encode(key).byteLength;
             }
-            bytes +=
-                encoder.encode(JSON.stringify(value)).byteLength +
-                encoder.encode(key).byteLength;
         }
         return bytes;
     }, keyPrefix);
@@ -418,6 +434,7 @@ export async function readDebugLogStorageBytes(
  * @param popupPage - Popup showing a reportable server failure.
  * @param owningTab - Tab whose detection state the popup shows; it must be the
  *   active tab when the background resolves the report.
+ *
  * @returns The full issue URL including the prefilled query.
  */
 export async function captureIssueReportUrl(
@@ -445,11 +462,10 @@ export async function captureIssueReportUrl(
                 callback: unknown,
             ): void => {
                 // Reflect.get returns `any`; surface it as `unknown`.
-                const url: unknown =
-                    typeof createProperties === 'object' &&
-                    createProperties !== null
-                        ? Reflect.get(createProperties, 'url')
-                        : undefined;
+                const url: unknown = typeof createProperties === 'object'
+                    && createProperties !== null
+                    ? Reflect.get(createProperties, 'url')
+                    : undefined;
                 Reflect.set(globalThis, captureKey, url);
                 if (typeof callback === 'function') {
                     // Chrome invokes the callback asynchronously; mirror that
@@ -473,12 +489,11 @@ export async function captureIssueReportUrl(
     await popupPage.getByTestId('popup-report-server-issue').click();
     await expect
         .poll(
-            () =>
-                worker.evaluate(
-                    // Reflect.get returns `any`; surface it as `unknown`.
-                    (key): unknown => Reflect.get(globalThis, key),
-                    ISSUE_TAB_CAPTURE_KEY,
-                ),
+            () => worker.evaluate(
+                // Reflect.get returns `any`; surface it as `unknown`.
+                (key): unknown => Reflect.get(globalThis, key),
+                ISSUE_TAB_CAPTURE_KEY,
+            ),
             { timeout: OPTIONS_UI_TIMEOUT_MS },
         )
         .not.toBeUndefined();

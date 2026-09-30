@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
-import * as v from 'valibot';
-
 import { captionSegmentSchema } from '@topskip/common/caption-types';
+import * as v from 'valibot';
+import { describe, expect, it } from 'vitest';
+
 import {
     captionsFromContentIncomingMessageSchema,
     captionsFromContentPayloadSchema,

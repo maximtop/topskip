@@ -1,3 +1,8 @@
+/**
+ * @file Normative debug-log event vocabulary and field allow-list/sanitizer
+ * used to keep the debug log free of unstructured or oversized data.
+ */
+
 import * as v from 'valibot';
 
 import {
@@ -67,8 +72,7 @@ export const DEBUG_LOG_EVENT = {
 /**
  * Wire name of one allow-listed event.
  */
-export type DebugLogEventName =
-    (typeof DEBUG_LOG_EVENT)[keyof typeof DEBUG_LOG_EVENT];
+export type DebugLogEventName = (typeof DEBUG_LOG_EVENT)[keyof typeof DEBUG_LOG_EVENT];
 
 /**
  * Validates an event name received from a content context.
@@ -89,8 +93,7 @@ export const DEBUG_LOG_SOURCE = {
 /**
  * Source context literal.
  */
-export type DebugLogSource =
-    (typeof DEBUG_LOG_SOURCE)[keyof typeof DEBUG_LOG_SOURCE];
+export type DebugLogSource = (typeof DEBUG_LOG_SOURCE)[keyof typeof DEBUG_LOG_SOURCE];
 
 /**
  * Prefix of MAIN-world bridge stage names forwarded through the content
@@ -320,8 +323,7 @@ export const DEBUG_LOG_DROP_REASON = {
 /**
  * Drop-reason literal.
  */
-export type DebugLogDropReason =
-    (typeof DEBUG_LOG_DROP_REASON)[keyof typeof DEBUG_LOG_DROP_REASON];
+export type DebugLogDropReason = (typeof DEBUG_LOG_DROP_REASON)[keyof typeof DEBUG_LOG_DROP_REASON];
 
 /**
  * Cause recorded by the generic `runtime-restarted` marker.
@@ -338,8 +340,7 @@ export const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/u;
 /**
  * RFC 4122 textual UUID (any version, either case) — the analysis session id.
  */
-export const UUID_PATTERN =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+export const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /**
  * Backend job identifier. The contract treats it as an opaque token of at
@@ -352,8 +353,7 @@ export const JOB_ID_PATTERN = /^[A-Za-z0-9_-]{1,160}$/u;
 /**
  * Support identifier issued by the backend for failure follow-up.
  */
-export const SUPPORT_ID_PATTERN =
-    /^support-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
+export const SUPPORT_ID_PATTERN = /^support-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 
 /**
  * Validators for the identifier fields; a mismatch drops the field rather
@@ -397,6 +397,7 @@ const LOG_SECONDS_PRECISION_SCALE = 100;
  *
  * @param event - Allow-listed event name.
  * @param key - Candidate field name.
+ *
  * @returns True when the field may be logged for this event.
  */
 export function isAllowedDebugLogField(
@@ -415,10 +416,11 @@ export function isAllowedDebugLogField(
  * count of the hidden blocks is appended.
  *
  * @param blocks - Promo blocks in delivery order.
+ *
  * @returns Bounded scalar string, empty for no blocks.
  */
 export function formatPromoBlockTimings(
-    blocks: ReadonlyArray<{ startSec: number; endSec?: number }>,
+    blocks: readonly { startSec: number; endSec?: number | undefined }[],
 ): string {
     const shown = blocks.slice(0, DEBUG_LOG_MAX_BLOCK_TIMINGS).map((block) => {
         const start = block.startSec.toFixed(BLOCK_TIMING_DECIMALS);
@@ -439,12 +441,13 @@ export function formatPromoBlockTimings(
  * fields stay short and stable across emitters.
  *
  * @param value - Seconds (any finite number).
+ *
  * @returns Seconds rounded to two decimals.
  */
 export function roundLogSeconds(value: number): number {
     return (
-        Math.round(value * LOG_SECONDS_PRECISION_SCALE) /
-        LOG_SECONDS_PRECISION_SCALE
+        Math.round(value * LOG_SECONDS_PRECISION_SCALE)
+        / LOG_SECONDS_PRECISION_SCALE
     );
 }
 
@@ -454,6 +457,7 @@ export function roundLogSeconds(value: number): number {
  *
  * @param key - Field name (already allow-listed for the event).
  * @param value - Candidate value of any shape.
+ *
  * @returns Sanitized scalar, or `undefined` to drop the field.
  */
 function sanitizeDebugLogValue(
@@ -461,9 +465,9 @@ function sanitizeDebugLogValue(
     value: unknown,
 ): string | number | boolean | null | undefined {
     if (key === TAB_FIELD) {
-        return typeof value === 'number' &&
-            Number.isInteger(value) &&
-            value >= 0
+        return typeof value === 'number'
+            && Number.isInteger(value)
+            && value >= 0
             ? value
             : undefined;
     }
@@ -494,6 +498,7 @@ function sanitizeDebugLogValue(
  *
  * @param event - Allow-listed event the fields belong to.
  * @param fields - Raw fields from any emitter (background or content).
+ *
  * @returns Fields safe to format into a log line, in input order.
  */
 export function sanitizeDebugLogFields(
@@ -502,12 +507,11 @@ export function sanitizeDebugLogFields(
 ): DebugLogFields {
     const sanitized: Record<string, string | number | boolean | null> = {};
     for (const [key, value] of Object.entries(fields)) {
-        if (!isAllowedDebugLogField(event, key)) {
-            continue;
-        }
-        const safe = sanitizeDebugLogValue(key, value);
-        if (safe !== undefined) {
-            sanitized[key] = safe;
+        if (isAllowedDebugLogField(event, key)) {
+            const safe = sanitizeDebugLogValue(key, value);
+            if (safe !== undefined) {
+                sanitized[key] = safe;
+            }
         }
     }
     return sanitized;

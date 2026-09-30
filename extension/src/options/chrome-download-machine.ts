@@ -1,4 +1,16 @@
-import { assign, fromCallback, fromPromise, setup } from 'xstate';
+/**
+ * @file XState machine modelling the Chrome Built-in (Gemini Nano) model
+ * download lifecycle, calling `LanguageModel` APIs directly from the options
+ * page.
+ */
+
+import {
+
+    assign,
+    fromCallback,
+    fromPromise,
+    setup,
+} from 'xstate';
 
 import {
     DOWNLOAD_PROGRESS_EVENT,
@@ -6,23 +18,35 @@ import {
     LANGUAGE_MODEL_METHOD,
     PROVIDER_AVAILABILITY,
 } from '@/shared/chrome-prompt-api';
-import { getErrorMessage } from '@/shared/error';
 import { PERCENT_SCALE } from '@/shared/constants';
+import { getErrorMessage } from '@/shared/error';
 
 /**
  * Download progress and error state for the Prompt API model setup flow.
  */
-type DownloadContext = {
+interface DownloadContext {
+    /**
+     * Download progress percentage (0-100).
+     */
     progress: number;
+
+    /**
+     * Whether Chrome is extracting/loading the model after download reached
+     * 100% (progress alone cannot represent this stage).
+     */
     extracting: boolean;
+
+    /**
+     * Safe diagnostic from the last failed download, or `null` when none
+     * failed.
+     */
     error: string | null;
-};
+}
 
 /**
  * Events accepted by the Chrome built-in model download state machine.
  */
-type DownloadEvent =
-    | { type: 'DOWNLOAD' }
+type DownloadEvent = | { type: 'DOWNLOAD' }
     | { type: 'RETRY' }
     | { type: 'PROGRESS'; loaded: number }
     | { type: 'DOWNLOAD_COMPLETE' }
@@ -31,8 +55,7 @@ type DownloadEvent =
 /**
  * Availability states returned by the Chrome Prompt API.
  */
-type Availability =
-    | 'unavailable'
+type Availability = | 'unavailable'
     | 'downloadable'
     | 'downloading'
     | 'available';
@@ -49,10 +72,9 @@ async function checkAvailability(): Promise<Availability> {
         return PROVIDER_AVAILABILITY.UNAVAILABLE;
     }
     const lm: unknown = Reflect.get(globalThis, LANGUAGE_MODEL_GLOBAL);
-    const availFn: unknown =
-        lm && (typeof lm === 'object' || typeof lm === 'function')
-            ? Reflect.get(lm, LANGUAGE_MODEL_METHOD.AVAILABILITY)
-            : undefined;
+    const availFn: unknown = lm && (typeof lm === 'object' || typeof lm === 'function')
+        ? Reflect.get(lm, LANGUAGE_MODEL_METHOD.AVAILABILITY)
+        : undefined;
     if (typeof availFn !== 'function') {
         return PROVIDER_AVAILABILITY.UNAVAILABLE;
     }
@@ -92,8 +114,8 @@ const downloadModel = fromCallback<DownloadEvent>(({ sendBack }) => {
         sendBack({
             type: 'DOWNLOAD_ERROR',
             error:
-                `${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.CREATE}` +
-                ' not available',
+                `${LANGUAGE_MODEL_GLOBAL}.${LANGUAGE_MODEL_METHOD.CREATE}`
+                + ' not available',
         });
         return () => {};
     }
@@ -155,9 +177,9 @@ const downloadModel = fromCallback<DownloadEvent>(({ sendBack }) => {
 export const chromeDownloadMachine = setup({
     types: {
         // XState requires `{} as Type` idiom for type inference; no alternative.
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+
         context: {} as DownloadContext,
-        // eslint-disable-next-line @typescript-eslint/consistent-type-assertions
+
         events: {} as DownloadEvent,
     },
     actors: {
@@ -182,18 +204,15 @@ export const chromeDownloadMachine = setup({
                 src: 'checkAvailability',
                 onDone: [
                     {
-                        guard: ({ event }) =>
-                            event.output === PROVIDER_AVAILABILITY.UNAVAILABLE,
+                        guard: ({ event }) => event.output === PROVIDER_AVAILABILITY.UNAVAILABLE,
                         target: 'unavailable',
                     },
                     {
-                        guard: ({ event }) =>
-                            event.output === PROVIDER_AVAILABILITY.AVAILABLE,
+                        guard: ({ event }) => event.output === PROVIDER_AVAILABILITY.AVAILABLE,
                         target: 'ready',
                     },
                     {
-                        guard: ({ event }) =>
-                            event.output === PROVIDER_AVAILABILITY.DOWNLOADING,
+                        guard: ({ event }) => event.output === PROVIDER_AVAILABILITY.DOWNLOADING,
                         // Already downloading (e.g. started from another tab) —
                         // jump straight into the downloading state so we can
                         // attach a monitor and track progress.
